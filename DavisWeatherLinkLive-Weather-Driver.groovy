@@ -8,16 +8,6 @@
 public static String version() {  return "0.1"  }
 
 metadata {
-    definition (name: "Davis WeatherLink Live", namespace: "jonathanb", author: "Jonathan Bradshaw", importUrl: "/*
- * Custom Davis WeatherLink Live Hubitat Driver
- * https://www.davisinstruments.com/weatherlinklive/
- *
- * Copyright 2019 @jonathanb (Jonathan Bradshaw)
- */
-
-public static String version() {  return "0.1"  }
-
-metadata {
     definition (name: "Davis WeatherLink Live", namespace: "jonathanb", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/DavisWeatherLinkLive-Weather-Driver.groovy") {
         capability "Polling"
         capability "Refresh"
