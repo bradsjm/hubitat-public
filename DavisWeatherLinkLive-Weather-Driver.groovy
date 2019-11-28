@@ -15,7 +15,7 @@ metadata {
         capability "Pressure Measurement"
         capability "Sensor"
         capability "Temperature Measurement"
- 		capability "Ultraviolet Index"
+        capability "Ultraviolet Index"
         capability "Water Sensor"        
         
         attribute "lastUpdated", "string"
