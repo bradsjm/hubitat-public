@@ -77,7 +77,7 @@ private void scanSubnets() {
 
     // Populate queue with IPs for each subnet
     subnets.each { subnet ->
-        195.upto(216) {
+        0.upto(254) {
             discoveryQueue.add(subnet + it)
         }
     }
@@ -122,14 +122,14 @@ private void createDevice(json) {
     def statusNet = json.StatusNET
     def statusPrm = json.StatusPRM
     def statusMqt = json.StatusMQT
-    def child = getChildDevice(statusNet.Mac)
+    def child = getChildDevice(statusNet.Mac.toLowerCase())
     if (!child) {
         log.info "Creating Tasmota device ${status.FriendlyName[0]} with topic ${status.Topic}"
         try {
             child = addChildDevice(
                     "tasmota",
                     "Tasmota RGBW Driver",
-                    statusNet.Mac,
+                    statusNet.Mac.toLowerCase(),
                     null,
                     [
                         name: status.Topic,
