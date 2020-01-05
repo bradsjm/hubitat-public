@@ -59,15 +59,24 @@ void initialize() {
 
 def uninstalled() {
 	log.debug "uninstalling app"
-	// for (device in getChildDevices())
-	// {
-	// 	deleteChildDevice(device.deviceNetworkId)
-	// }
 }
 
 private void appButtonHandler(btn) {
-    if (btn == "btnDiscover") {
+    switch(btn) {
+        case "btnDiscover":
         scanSubnets()
+        break
+
+        case "btnStopDiscover":
+        discoveryQueue.clear()
+        discoveryCount.set(0)
+        break
+
+        case "btnRemoveChildren":
+	    for (device in getChildDevices()) {
+	        deleteChildDevice(device.deviceNetworkId)
+	    }
+        break
     }
 }
 
@@ -101,7 +110,7 @@ private void scanSubnets() {
 
         log.info "Probing ${params.uri} ..."
         asynchttpGet("processCallBack", params, data)
-        pauseExecution(1000)
+        pauseExecution(500)
     }
 }
 
@@ -133,15 +142,20 @@ private void createDevice(json) {
                     null,
                     [
                         name: status.Topic,
-                        label: status.FriendlyName[0]
+                        label: settings.namePrefix + status.FriendlyName[0]
                     ]
             )
-        } catch (com.hubitat.app.exception.UnknownDeviceTypeException e) {
-            log.warn "${e.message} - you need to install the appropriate driver"
+        } catch (e) {
+            log.warn "${e.message}"
+            return
         }
     }
 
+    child.name = status.Topic
+    child.label = settings.namePrefix + status.FriendlyName[0]
     child.updateSetting("deviceTopic", status.Topic)
+    child.updateSetting("deviceTopic", status.Topic)
+    child.updateSetting("fullTopic", settings.fullTopic)
     child.updateSetting("groupTopic", statusPrm.GroupTopic)
     child.updateSetting("mqttBroker", "tcp://${statusMqt.MqttHost}:${statusMqt.MqttPort}")
 }
@@ -192,17 +206,24 @@ def mainPage() {
 
     dynamicPage(name: "mainPage", title: "Tasmota Discovery Options", nextPage: "discoveryPage", uninstall: true) {
         section {
-            input "namePrefix", "text", title: "Device name prefix", description: "If you specify a prefix then all your device names will be preceded by this value", submitOnChange: false
-            input "baseIpSegment", "text", title: "IP subnet(s)", description: "e.g. 192.168.0 or 192.168.1, separate multiple subnets with commas", submitOnChange: false
-            input "savePreferences", "button", title: "Save", submitOnChange: true
+            input name: "namePrefix", type: "text", title: "Device name prefix", description: "If you specify a prefix then all your device names will be preceded by this value", submitOnChange: true
+            input name: "fullTopic", type: "text", title: "Full Topic Template", description: "Full Topic value from Tasmota", required: true, defaultValue: "%prefix%/%topic%/", submitOnChange: true
+            input name: "baseIpSegment", type: "text", title: "IP subnet(s)", description: "e.g. 192.168.0 or 192.168.1, separate multiple subnets with commas", submitOnChange: true
+        }
+        section {
+            input "btnRemoveChildren", "button", title: "Remove child devices"
         }
     }
 }
 
 def discoveryPage() {
-    dynamicPage(name: "discoveryPage", title: "Tasmota Device Discovery", refreshInterval: 5) {
+    dynamicPage(name: "discoveryPage", title: "Tasmota Device Discovery", refreshInterval: 5, install: true) {
         section {
-            input "btnDiscover", "button", title: "Start Discovery"
+            if (!discoveryCount.get()) {
+                input "btnDiscover", "button", title: "Start Discovery"
+            } else {
+                input "btnStopDiscover", "button", title: "Stop Discovery"
+            }
             paragraph(
                 "<div class='meter'>" +
                 "<span style='width:${getProgressPercentage()}'><strong>${getProgressPercentage()}</strong></span>" +
