@@ -73,16 +73,16 @@ metadata {
     }
 
     preferences() {
+        section("MQTT Device Topics") {
+            input name: "deviceTopic", type: "text", title: "Device Topic (Name)", description: "Topic value from Tasmota", required: true, defaultValue: "tasmota"
+            input name: "fullTopic", type: "text", title: "Full Topic Template", description: "Full Topic value from Tasmota", required: true, defaultValue: "%prefix%/%topic%/"
+        }
+
         section("MQTT Broker") {
             input name: "mqttBroker", type: "text", title: "MQTT Broker Host/IP", description: "ex: tcp://hostnameorip:1883", required: true, defaultValue: "tcp://mqtt:1883"
             input name: "mqttUsername", type: "text", title: "MQTT Username", description: "(blank if none)", required: false
             input name: "mqttPassword", type: "password", title: "MQTT Password", description: "(blank if none)", required: false
             input name: "mqttQOS", type: "text", title: "MQTT QOS setting", description: "0 = Only Once, 1 = At Least Once, 2 = Exactly Once", required: true, defaultValue: "1"
-        }
-
-        section("MQTT Device Topics") {
-            input name: "deviceTopic", type: "text", title: "Device Topic (Name)", description: "Topic value from Tasmota", required: true, defaultValue: "tasmota"
-            input name: "fullTopic", type: "text", title: "Full Topic Template", description: "Full Topic value from Tasmota", required: true, defaultValue: "%prefix%/%topic%/"
         }
 
         section("Misc") {
@@ -107,10 +107,11 @@ void parse(String data) {
 }
 
 // Called when the user requests a refresh (from Refresh capability)
+// Requests latest STATE and STATUS 5 (Network)
 void refresh() {
     if (logEnable) log.debug "Refreshing state of ${device.name}"
-    def commandTopic = getTopic("cmnd", "STATE")
-    mqttPublish(commandTopic)
+    def commandTopic = getTopic("cmnd", "Backlog")
+    mqttPublish(commandTopic, "State;Status 5")
 }
 
 // Called with MQTT client status messages
@@ -138,7 +139,6 @@ void updated() {
 
     if (settings.mqttBroker) {
         mqttConnect()
-        refresh()
     } else {
         log.warn "${device.displayName} requires a broker configured to connect"
     }
@@ -266,7 +266,7 @@ void parseTasmota(String topic, Map json) {
     def item = [name:"", value:"", descriptionText:""]
 
     if (json.containsKey("POWER")) {
-        if (logEnable) log.debug "parseTasmota: [json.POWER: ${json.POWER}]"
+        if (logEnable) log.debug "Parsing [ POWER: ${json.POWER} ]"
         item.with {
             name = "switch"
             value = json.POWER.toLowerCase()
@@ -276,12 +276,12 @@ void parseTasmota(String topic, Map json) {
     }
 
     if (json.containsKey("Fade")) {
-        if (logEnable) log.debug "parseTasmota: [json.Fade: ${json.Fade}]"
+        if (logEnable) log.debug "Parsing [ Fade: ${json.Fade} ]"
         if (json.Fade == "OFF") json.Speed = 0
     }
 
     if (json.containsKey("Speed")) {
-        if (logEnable) log.debug "parseTasmota: [json.Speed: ${json.Speed}]"
+        if (logEnable) log.debug "Parsing [ Speed: ${json.Speed} ]"
         item.with {
             name = "fadeSpeed"
             value = sprintf("%.1f", json.Speed.toInteger().div(2)) // seconds
@@ -291,7 +291,7 @@ void parseTasmota(String topic, Map json) {
     }
 
     if (json.containsKey("Color")) {
-        if (logEnable) log.debug "parseTasmota: [json.Color: ${json.Color}]"
+        if (logEnable) log.debug "Parsing [ Color: ${json.Color} ]"
         // Check for active white channels to set ColorMode
         def color = json.Color.tokenize(",")
         def white = (color.size() > 3 && color.drop(3).any{e -> e.toInteger() > 0})
@@ -313,7 +313,7 @@ void parseTasmota(String topic, Map json) {
     }
 
     if (json.containsKey("Dimmer")) {
-        if (logEnable) log.debug "parseTasmota: [json.Dimmer: ${json.Dimmer}]"
+        if (logEnable) log.debug "Parsing [ Dimmer: ${json.Dimmer} ]"
         item.with {
             name = "level"
             value = json.Dimmer
@@ -323,7 +323,7 @@ void parseTasmota(String topic, Map json) {
     }
 
     if (json.containsKey("HSBColor")) {
-        if (logEnable) log.debug "parseTasmota: [json.HSBColor: ${json.HSBColor}]"
+        if (logEnable) log.debug "Parsing [ HSBColor: ${json.HSBColor} ]"
         def hsbColor = json.HSBColor.tokenize(",")
         def hue = Math.round((hsbColor[0] as int) / 3.6)
         def saturation = hsbColor[1] as int
@@ -341,12 +341,11 @@ void parseTasmota(String topic, Map json) {
             value = saturation
         }
         item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
-        if (txtEnable) log.info "${item.descriptionText}"
         sendEvent(item)
     }
 
     if (json.containsKey("Wifi")) {
-        if (logEnable) log.debug "parseTasmota: [json.Wifi: ${json.Wifi}]"
+        if (logEnable) log.debug "Parsing [ Wifi: ${json.Wifi} ]"
         item.with {
             name = "rssi"
             value = json.Wifi.RSSI
@@ -362,7 +361,16 @@ void parseTasmota(String topic, Map json) {
         sendEvent(item)
     }
 
-    // Update state (prefix keys with Tasmota)
+    if (json.containsKey("StatusNET")) {
+        if (logEnable) log.debug "Parsing [ StatusNET: ${json.StatusNET} ]"
+        def mac = json.StatusNET.Mac.toLowerCase()
+        if (device.deviceNetworkId != mac) {
+            log.info "Updating Device Network Id to ${mac} from ${device.deviceNetworkId}"
+            device.deviceNetworkId = mac
+        }
+    }
+
+    // Update state (prefix keys with 'Tasmota')
     json.each {
         state["Tasmota${it.key}"] = it.value
     }
@@ -381,7 +389,7 @@ private int getRetrySeconds() {
     return Math.min(minimumRetrySec * Math.pow(2, count) + jitter, maximumRetrySec)
 }
 
-private String getTopic(String prefix, String postfix)
+private String getTopic(String prefix, String postfix = "")
 {
     settings.fullTopic
         .replaceFirst("%prefix%", prefix)
@@ -440,6 +448,7 @@ private boolean mqttConnect() {
         )
         pauseExecution(1000)
         mqttSubscribeTopics()
+        refresh()
         return true
     } catch(e) {
         log.error "MQTT connect error: ${e}"
@@ -479,33 +488,26 @@ private void mqttReceive(Map message) {
     def payload = message.get("payload")
 
     def availabilityTopic = getTopic("tele", "LWT")
-    def teleTopic = getTopic("tele", "STATE")
-    def resultTopic = getTopic("stat", "RESULT")
-
-    switch(topic) {
-        case availabilityTopic:
+    if (topic == availabilityTopic) {
         switch(payload.toLowerCase()) {
             case "online":
             sendEvent (name: "presence", value: "present")
+            log.info "${device.displayName} is online"
             break
 
             case "offline":
+            log.warn "${device.displayName} has gone offline"
             sendEvent (name: "presence", value: "not present")
             break
 
             default:
-            if (logEnable) log.debug "Unknown Tasmota topic: ${topic} = ${payload}"
+            if (logEnable) log.debug "Unknown availability: ${topic} = ${payload}"
         }
-        break
-
-        case teleTopic:
-        case resultTopic:
+    } else if (payload[0] == "{") {
         payload = parseJson(payload)
         parseTasmota(topic, payload)
-        break
-
-        default:
-        if (logEnable) log.debug "Unknown Tasmota topic: ${topic} = ${payload}"
+    } else {
+        if (logEnable) log.debug "Unknown Tasmota message: ${topic} = ${payload}"
     }
 }
 
