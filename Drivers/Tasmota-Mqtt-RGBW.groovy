@@ -87,7 +87,6 @@ metadata {
 
         section("Misc") {
             input name: "logEnable", type: "bool", title: "Enable debug logging", defaultValue: true
-            input name: "txtEnable", type: "bool", title: "Enable descriptionText logging", defaultValue: true
         }
     }
 }
@@ -176,7 +175,7 @@ void setLevel(level, duration = 0) {
     def speed = Math.min(40f, duration * 2).toInteger()
     if (speed > 0) {
         def commandTopic = getTopic("cmnd", "Backlog")
-        mqttPublish(commandTopic, "Speed ${speed};Fade 1;Dimmer ${level};Delay ${duration};Speed ${oldSpeed};Fade ${oldFade}")
+        mqttPublish(commandTopic, "Speed ${speed};Fade 1;Dimmer ${level};Delay ${duration * 10};Speed ${oldSpeed};Fade ${oldFade}")
     } else {
         def commandTopic = getTopic("cmnd", "Dimmer")
         mqttPublish(commandTopic, level.toString())
@@ -264,11 +263,7 @@ void wakeup(level, duration) {
 
 // Parses Tasmota JSON content and send driver events
 void parseTasmota(String topic, Map json) {
-    Map item = [name:"", value:"", descriptionText:""]
-
-    json.each {
-        state["Tasmota${it.key}"] = it.value
-    }
+    def item = [name:"", value:"", descriptionText:""]
 
     if (json.containsKey("POWER")) {
         if (logEnable) log.debug "parseTasmota: [json.POWER: ${json.POWER}]"
@@ -278,7 +273,6 @@ void parseTasmota(String topic, Map json) {
         }
         item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
         sendEvent(item)
-        if (txtEnable) log.info "${item.descriptionText}"
     }
 
     if (json.containsKey("Fade")) {
@@ -293,7 +287,6 @@ void parseTasmota(String topic, Map json) {
             value = sprintf("%.1f", json.Speed.toInteger().div(2)) // seconds
         }
         item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
-        if (txtEnable) log.info "${item.descriptionText}"
         sendEvent(item)
     }
 
@@ -307,7 +300,6 @@ void parseTasmota(String topic, Map json) {
             value = white ? "CT" : "RGB"
         }
         item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
-        if (txtEnable) log.info "${item.descriptionText}"
         sendEvent(item)
 
         if (white) {
@@ -316,7 +308,6 @@ void parseTasmota(String topic, Map json) {
                 value = "6500" // Bogus max value for non-CT bulb
             }
             item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
-            if (txtEnable) log.info "${item.descriptionText}"
             sendEvent(item)
         }
     }
@@ -327,7 +318,6 @@ void parseTasmota(String topic, Map json) {
             name = "level"
             value = json.Dimmer
         }
-        item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
         if (txtEnable) log.info "${item.descriptionText}"
         sendEvent(item)
     }
@@ -344,7 +334,6 @@ void parseTasmota(String topic, Map json) {
             value = hue
         }
         item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
-        if (txtEnable) log.info "${item.descriptionText}"
         sendEvent(item)
 
         item.with {
@@ -363,7 +352,6 @@ void parseTasmota(String topic, Map json) {
             value = json.Wifi.RSSI
         }
         item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
-        if (txtEnable) log.info "${item.descriptionText}"
         sendEvent(item)
 
         item.with {
@@ -371,8 +359,12 @@ void parseTasmota(String topic, Map json) {
             value = Math.max(0, 256 - json.Wifi.LinkCount)
         }
         item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
-        if (txtEnable) log.info "${item.descriptionText}"
         sendEvent(item)
+    }
+
+    // Update state (prefix keys with Tasmota)
+    json.each {
+        state["Tasmota${it.key}"] = it.value
     }
 }
 
