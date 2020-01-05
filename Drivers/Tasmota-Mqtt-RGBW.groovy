@@ -36,6 +36,19 @@ metadata {
 
         attribute "fadeSpeed", "Number"
         attribute "fxScheme", "String"
+        attribute "groupMode", "String"
+
+        command "setGroupTopicMode", [
+            [
+                name:"Group Mode*",
+                type: "ENUM",
+                description: "Select if changes are applied to the group",
+                constraints: [
+                    "Single",
+                    "Group",
+                ]
+            ]
+        ]
 
         command "setFadeSpeed", [
             [
@@ -98,7 +111,8 @@ metadata {
 
 // Called when the device is first created.
 void installed() {
-    log.debug "${device.displayName} driver v{$version} installed"
+    log.debug "${device.displayName} driver v${version()} installed"
+    setGroupTopicMode("Single")
 }
 
 // Called to parse received MQTT data
@@ -113,6 +127,7 @@ void refresh() {
     if (logEnable) log.debug "Refreshing state of ${device.name}"
     def commandTopic = getTopic("cmnd", "Backlog")
     mqttPublish(commandTopic, "State;Status 5")
+    setGroupTopicMode(state.groupMode)
 }
 
 // Called with MQTT client status messages
@@ -251,11 +266,24 @@ void setFadeSpeed(seconds) {
     }
 }
 
+// Perform Tasmota wakeup function
 void wakeup(level, duration) {
     level = limit(level).toInteger()
     duration = limit(duration, 1, 3000).toInteger()
     def commandTopic = getTopic("cmnd", "BACKLOG")
     mqttPublish(commandTopic, "WakeupDuration ${duration};Wakeup ${level}")
+}
+
+// Set the driver group topic mode
+void setGroupTopicMode(mode) {
+    mode = mode.toLowerCase()
+    def item = [
+        name: "groupMode",
+        value: mode
+    ]
+    item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
+    sendEvent(item)
+    state.DriverGroupMode = mode
 }
 
 /**
@@ -390,11 +418,16 @@ private int getRetrySeconds() {
     return Math.min(minimumRetrySec * Math.pow(2, count) + jitter, maximumRetrySec)
 }
 
-private String getTopic(String prefix, String postfix = "")
+private String getTopic(String prefix, String postfix = "", boolean forceSingle = false)
 {
+    def topic = settings.deviceTopic
+    if (!forceSingle && state.DriverGroupMode == "group" && settings.groupTopic) {
+        topic = settings.groupTopic
+    }
+
     settings.fullTopic
         .replaceFirst("%prefix%", prefix)
-        .replaceFirst("%topic%", settings.deviceTopic)
+        .replaceFirst("%topic%", topic)
         .plus(postfix)
 }
 
@@ -514,11 +547,11 @@ private void mqttReceive(Map message) {
 
 private void mqttSubscribeTopics() {
     int qos = settings.mqttQOS.toInteger()
-    def teleTopic = getTopic("tele", "+")
+    def teleTopic = getTopic("tele", "+", true)
     if (logEnable) log.debug "Subscribing to Tasmota telemetry topic: ${teleTopic}"
     interfaces.mqtt.subscribe(teleTopic, qos)
 
-    def statTopic = getTopic("stat", "+")
+    def statTopic = getTopic("stat", "+", true)
     if (logEnable) log.debug "Subscribing to Tasmota stat topic: ${statTopic}"
     interfaces.mqtt.subscribe(statTopic, qos)
 }
