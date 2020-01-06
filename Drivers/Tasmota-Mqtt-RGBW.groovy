@@ -25,6 +25,7 @@ static final String version() { return "0.1" }
 
 metadata {
     definition (name: "Tasmota RGBW Driver", namespace: "tasmota", author: "Jonathan Bradshaw") {
+        capability "ChangeLevel"
         capability "ColorControl"
         capability "ColorMode"
         capability "ColorTemperature"
@@ -34,6 +35,7 @@ metadata {
         capability "SignalStrength"
         capability "SwitchLevel"
 
+        attribute "fadeMode", "String"
         attribute "fadeSpeed", "Number"
         attribute "fxScheme", "String"
         attribute "groupMode", "String"
@@ -44,8 +46,8 @@ metadata {
                 type: "ENUM",
                 description: "Select if changes are applied to the group",
                 constraints: [
-                    "Single",
-                    "Group",
+                    "single",
+                    "grouped",
                 ]
             ]
         ]
@@ -71,7 +73,7 @@ metadata {
                 ]
             ]
         ]
-        command "wakeup", [
+        command "startWakeup", [
             [
                 name:"Dimmer Level*",
                 type: "NUMBER",
@@ -96,23 +98,25 @@ metadata {
             input name: "mqttBroker", type: "text", title: "MQTT Broker Host/IP", description: "ex: tcp://hostnameorip:1883", required: true, defaultValue: "tcp://mqtt:1883"
             input name: "mqttUsername", type: "text", title: "MQTT Username", description: "(blank if none)", required: false
             input name: "mqttPassword", type: "password", title: "MQTT Password", description: "(blank if none)", required: false
-            input name: "mqttQOS", type: "text", title: "MQTT QOS setting", description: "0 = Only Once, 1 = At Least Once, 2 = Exactly Once", required: true, defaultValue: "1"
+            input name: "mqttQOS", type: "text", title: "MQTT QOS setting", description: "0 = Only Once, 1 = At Least Once*, 2 = Exactly Once", required: true, defaultValue: "1"
         }
 
         section("Misc") {
+            input name: "changeLevelStep", type: "decimal", title: "Change level step size", description: "Between 1 and 10", required: true, defaultValue: 2
+            input name: "changeLevelEvery", type: "number", title: "Change level every x milliseconds", description: "Between 100ms and 1000ms", required: true, defaultValue: 100
+            input name: "initialGroupMode", type: "enum", title: "Initial group mode", description: "Grouped uses the group topic", options: ["single", "grouped"], required: true, defaultValue: "single"
             input name: "logEnable", type: "bool", title: "Enable debug logging", defaultValue: true
         }
     }
 }
 
 /**
- *  Driver Hubitat Event Handlers
+ *  Hubitat Driver Event Handlers
  */
 
 // Called when the device is first created.
 void installed() {
     log.debug "${device.displayName} driver v${version()} installed"
-    setGroupTopicMode("Single")
 }
 
 // Called to parse received MQTT data
@@ -125,9 +129,10 @@ void parse(String data) {
 // Requests latest STATE and STATUS 5 (Network)
 void refresh() {
     if (logEnable) log.debug "Refreshing state of ${device.name}"
+
     def commandTopic = getTopic("cmnd", "Backlog")
     mqttPublish(commandTopic, "State;Status 5")
-    setGroupTopicMode(state.groupMode)
+    state.clear()
 }
 
 // Called with MQTT client status messages
@@ -149,9 +154,10 @@ void uninstalled() {
 // Called when the preferences of a device are updated.
 void updated() {
     log.debug "${device.displayName} driver v${version()} configuration updated"
+    setGroupTopicMode(options.initialGroupMode)
+
     mqttDisconnect()
     unschedule()
-    state.clear()
 
     if (settings.mqttBroker) {
         mqttConnect()
@@ -180,6 +186,32 @@ void off() {
 }
 
 /**
+ *  Capability: ChangeLevel
+ */
+
+// Start level change (up or down)
+void startLevelChange(direction) {
+    if (settings.changeLevelStep && settings.changeLevelEvery) {
+        int delta = (direction == "down") ? -settings.changeLevelStep : settings.changeLevelStep
+        doLevelChange(limit(delta, 1, 10))
+    }
+}
+
+// Stop level change (up or down)
+void stopLevelChange() {
+    unschedule("doLevelChange")
+}
+
+private void doLevelChange(delta) {
+    def newLevel = limit(device.currentValue("level").toInteger() + delta)
+    setLevel(newLevel)
+    if (newLevel > 0 && newLevel < 100) {
+        def delay = limit(settings.changeLevelEvery, 100, 1000)
+        runInMillis(delay, "doLevelChange", [ data: delta ])
+    }
+}
+
+/**
  *  Capability: SwitchLevel
  */
 
@@ -187,8 +219,8 @@ void off() {
 void setLevel(level, duration = 0) {
     level = limit(level, 0, 100).toInteger()
 
-    def oldSpeed = state.TasmotaSpeed ?: 1
-    def oldFade = state.TasmotaFade ?: 0
+    def oldSpeed = device.currentValue("fadeSpeed") * 2
+    def oldFade = device.currentValue("fadeMode")
     def speed = Math.min(40f, duration * 2).toInteger()
     if (speed > 0) {
         def commandTopic = getTopic("cmnd", "Backlog")
@@ -232,7 +264,7 @@ void setSaturation(saturation) {
 // Value ignored as CT not supported, only White
 void setColorTemperature(kelvin) {
     def commandTopic = getTopic("cmnd", "White")
-    mqttPublish(commandTopic, state.TasmotaDimmer.toString())
+    mqttPublish(commandTopic, device.currentValue("level"))
 }
 
 /**
@@ -259,7 +291,7 @@ void setEffectsScheme(scheme) {
 void setFadeSpeed(seconds) {
     def speed = Math.min(40f, seconds * 2).toInteger()
     if (speed > 0) {
-        def commandTopic = getTopic("cmnd", "BACKLOG")
+        def commandTopic = getTopic("cmnd", "Backlog")
         mqttPublish(commandTopic, "Speed ${speed};Fade 1")
     } else {
         def commandTopic = getTopic("cmnd", "Fade")
@@ -268,23 +300,21 @@ void setFadeSpeed(seconds) {
 }
 
 // Perform Tasmota wakeup function
-void wakeup(level, duration) {
+void startWakeup(level, duration) {
     level = limit(level).toInteger()
     duration = limit(duration, 1, 3000).toInteger()
-    def commandTopic = getTopic("cmnd", "BACKLOG")
+    def commandTopic = getTopic("cmnd", "Backlog")
     mqttPublish(commandTopic, "WakeupDuration ${duration};Wakeup ${level}")
 }
 
 // Set the driver group topic mode
 void setGroupTopicMode(mode) {
-    mode = mode.toLowerCase()
     def item = [
         name: "groupMode",
         value: mode
     ]
     item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
     sendEvent(item)
-    state.DriverGroupMode = mode
 }
 
 /**
@@ -308,6 +338,12 @@ void parseTasmota(String topic, Map json) {
     if (json.containsKey("Fade")) {
         if (logEnable) log.debug "Parsing [ Fade: ${json.Fade} ]"
         if (json.Fade == "OFF") json.Speed = 0
+        item.with {
+            name = "fadeMode"
+            value = json.Fade.toLowerCase()
+        }
+        item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
+        sendEvent(item)
     }
 
     if (json.containsKey("Speed")) {
@@ -348,7 +384,7 @@ void parseTasmota(String topic, Map json) {
             name = "level"
             value = json.Dimmer
         }
-        if (txtEnable) log.info "${item.descriptionText}"
+        item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
         sendEvent(item)
     }
 
@@ -400,10 +436,7 @@ void parseTasmota(String topic, Map json) {
         }
     }
 
-    // Update state (prefix keys with 'Tasmota')
-    json.each {
-        state["Tasmota${it.key}"] = it.value
-    }
+    state.lastResult = json
 }
 
 /**
@@ -413,16 +446,16 @@ void parseTasmota(String topic, Map json) {
 private int getRetrySeconds() {
     final minimumRetrySec = 20
     final maximumRetrySec = minimumRetrySec * 6
-    def count = state.DriverRetryCount ?: 0
+    def count = state.mqttRetryCount ?: 0
     def jitter = new Random().nextInt(minimumRetrySec.intdiv(2))
-    state.DriverRetryCount = count + 1
+    state.mqttRetryCount = count + 1
     return Math.min(minimumRetrySec * Math.pow(2, count) + jitter, maximumRetrySec)
 }
 
 private String getTopic(String prefix, String postfix = "", boolean forceSingle = false)
 {
     def topic = settings.deviceTopic
-    if (!forceSingle && state.DriverGroupMode == "group" && settings.groupTopic) {
+    if (!forceSingle && device.currentValue("groupMode") == "grouped" && settings.groupTopic) {
         topic = settings.groupTopic
     }
 
@@ -464,7 +497,7 @@ private boolean mqttCheckConnected() {
         }
     }
 
-    state.remove("DriverRetryCount")
+    state.remove("mqttRetryCount")
     return true
 }
 
@@ -474,13 +507,15 @@ private boolean mqttConnect() {
         def mqtt = interfaces.mqtt
         def clientId = device.getDeviceNetworkId()
         log.info "Connecting to MQTT broker at ${settings.mqttBroker}"
-        state.DriverMqttCount = (state.DriverMqttCount ?: 0) + 1
+        state.mqttConnectCount = (state?.mqttConnectCount ?: 0) + 1
+
         mqtt.connect(
             settings.mqttBroker,
             clientId,
             settings?.username,
             settings?.password
         )
+
         pauseExecution(1000)
         mqttSubscribeTopics()
         refresh()
@@ -512,6 +547,7 @@ private void mqttPublish(String topic, String message = "") {
 
     if (mqttCheckConnected()) {
         interfaces.mqtt.publish(topic, message, qos, false)
+        state.mqttTransmitCount = (state?.mqttTransmitCount ?: 0) + 1
     } else {
         log.warn "Unable to publish topic (MQTT not connected)"
     }
@@ -521,6 +557,7 @@ private void mqttReceive(Map message) {
     if (logEnable) log.debug "MQTT Receive: ${message}"
     def topic = message.get("topic")
     def payload = message.get("payload")
+    state.mqttReceiveCount = (state?.mqttReceiveCount ?: 0) + 1
 
     def availabilityTopic = getTopic("tele", "LWT")
     if (topic == availabilityTopic) {

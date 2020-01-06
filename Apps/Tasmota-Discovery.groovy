@@ -158,6 +158,7 @@ private void createDevice(json) {
     child.updateSetting("fullTopic", settings.fullTopic)
     child.updateSetting("groupTopic", statusPrm.GroupTopic)
     child.updateSetting("mqttBroker", "tcp://${statusMqt.MqttHost}:${statusMqt.MqttPort}")
+    child.sendEvent([name: "refresh"])
 }
 
 def getProgressPercentage()
