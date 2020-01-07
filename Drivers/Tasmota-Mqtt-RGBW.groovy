@@ -21,20 +21,25 @@
  *  SOFTWARE.
 */
 
-static final String version() { return "0.1" }
+static final String version() { "0.1" }
+
+static final String deviceType() { "RGBW" }
 
 metadata {
-    definition (name: "Tasmota RGBW Driver", namespace: "tasmota", author: "Jonathan Bradshaw") {
+    definition (name: "Tasmota ${deviceType()} Driver", namespace: "tasmota", author: "Jonathan Bradshaw") {
+        capability "Actuator"
         capability "ChangeLevel"
         capability "ColorControl"
         capability "ColorMode"
         capability "ColorTemperature"
         capability "Light"
-        capability "PresenceSensor"
         capability "Refresh"
+        capability "Sensor"
         capability "SignalStrength"
+        capability "Switch"
         capability "SwitchLevel"
 
+        attribute "connection", "String"
         attribute "fadeMode", "String"
         attribute "fadeSpeed", "Number"
         attribute "fxScheme", "String"
@@ -105,7 +110,7 @@ metadata {
             input name: "changeLevelStep", type: "decimal", title: "Change level step size", description: "Between 1 and 10", required: true, defaultValue: 2
             input name: "changeLevelEvery", type: "number", title: "Change level every x milliseconds", description: "Between 100ms and 1000ms", required: true, defaultValue: 100
             input name: "initialGroupMode", type: "enum", title: "Initial group mode", description: "Grouped uses the group topic", options: ["single", "grouped"], required: true, defaultValue: "single"
-            input name: "logEnable", type: "bool", title: "Enable debug logging", defaultValue: true
+            input name: "logEnable", type: "bool", title: "Enable debug logging", description: "Automatically disabled after 30 minutes", defaultValue: true
         }
     }
 }
@@ -154,7 +159,7 @@ void uninstalled() {
 // Called when the preferences of a device are updated.
 void updated() {
     log.debug "${device.displayName} driver v${version()} configuration updated"
-    setGroupTopicMode(options.initialGroupMode)
+    setGroupTopicMode(settings.initialGroupMode)
 
     mqttDisconnect()
     unschedule()
@@ -260,11 +265,19 @@ void setSaturation(saturation) {
     mqttPublish(commandTopic, "${saturation}")
 }
 
-// Set the color temperature (0-100)
-// Value ignored as CT not supported, only White
+// Set the color temperature (2000-6536)
 void setColorTemperature(kelvin) {
-    def commandTopic = getTopic("cmnd", "White")
-    mqttPublish(commandTopic, device.currentValue("level"))
+    kelvin = limit(kelvin, 2000, 6536)
+    def channelCount = state.channelCount
+    if (channelCount == 5) {
+        def commandTopic = getTopic("cmnd", "CT")
+        def mired = limit(Math.round(1000000f / kelvin), 153, 500).toInteger()
+        if (logEnable) log.debug "Converted ${kelvin} kelvin to ${mired} mired"
+        mqttPublish(commandTopic, mired.toString())
+    } else if (channelCount == 4) {
+        def commandTopic = getTopic("cmnd", "White")
+        mqttPublish(commandTopic, device.currentValue("level").toString())
+    }
 }
 
 /**
@@ -356,19 +369,21 @@ void parseTasmota(String topic, Map json) {
         sendEvent(item)
     }
 
-    if (json.containsKey("Color")) {
-        if (logEnable) log.debug "Parsing [ Color: ${json.Color} ]"
-        // Check for active white channels to set ColorMode
-        def color = json.Color.tokenize(",")
-        def white = (color.size() > 3 && color.drop(3).any{e -> e.toInteger() > 0})
-        item.with {
-            name = "colorMode"
-            value = white ? "CT" : "RGB"
+    if (json.containsKey("Channel")) {
+        if (logEnable) log.debug "Parsing [ Channel: ${json.Channel} ]"
+        def channelCount = json.Channel.size()
+        item.name = "colorMode"
+        item.value = "RGB"
+        if (channelCount == 4 && json.Channel[3] > 0) {
+            item.value = "White"
+        } else if (channelCount == 5 && (json.Channel[3] > 0 || json.Channel[4] > 0)) {
+            item.value = "CT"
         }
         item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
         sendEvent(item)
+        state.channelCount = channelCount
 
-        if (white) {
+        if (channelCount == 4 && json.Channel[3] > 0) {
             item.with {
                 name = "colorTemperature"
                 value = "6500" // Bogus max value for non-CT bulb
@@ -376,6 +391,18 @@ void parseTasmota(String topic, Map json) {
             item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
             sendEvent(item)
         }
+    }
+
+    if (json.containsKey("CT")) {
+        if (logEnable) log.debug "Parsing [ CT: ${json.CT} ]"
+        def kelvin = Math.round(1000000f / json.CT).toInteger()
+        if (logEnable) log.debug "Converted ${json.CT} CT to ${kelvin} kelvin"
+        item.with {
+            name = "colorTemperature"
+            value = kelvin
+        }
+        item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
+        sendEvent(item)
     }
 
     if (json.containsKey("Dimmer")) {
@@ -412,28 +439,17 @@ void parseTasmota(String topic, Map json) {
 
     if (json.containsKey("Wifi")) {
         if (logEnable) log.debug "Parsing [ Wifi: ${json.Wifi} ]"
-        item.with {
-            name = "rssi"
-            value = json.Wifi.RSSI
-        }
-        item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
-        sendEvent(item)
-
-        item.with {
-            name = "lqi"
-            value = Math.max(0, 256 - json.Wifi.LinkCount)
-        }
-        item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
-        sendEvent(item)
+        updateDataValue("SSId", json.Wifi.SSId)
+        updateDataValue("Channel", json.Wifi.Channel.toString())
+        updateDataValue("RSSI", json.Wifi.RSSI.toString())
+        updateDataValue("LinkCount", json.Wifi.LinkCount.toString())
     }
 
     if (json.containsKey("StatusNET")) {
         if (logEnable) log.debug "Parsing [ StatusNET: ${json.StatusNET} ]"
-        def mac = json.StatusNET.Mac.toLowerCase()
-        if (device.deviceNetworkId != mac) {
-            log.info "Updating Device Network Id to ${mac} from ${device.deviceNetworkId}"
-            device.deviceNetworkId = mac
-        }
+        updateDataValue("Hostname", json.StatusNET.Hostname)
+        updateDataValue("IPAddress", json.StatusNET.IPAddress)
+        device.deviceNetworkId = json.StatusNET.Mac.toLowerCase()
     }
 
     state.lastResult = json
@@ -488,7 +504,7 @@ private void logsOff() {
 private boolean mqttCheckConnected() {
     if (interfaces.mqtt.isConnected() == false) {
         log.warn "MQTT is not connected"
-        sendEvent (name: "presence", value: "not present")
+        sendEvent (name: "connection", value: "offline", descriptionText: "${device.displayName} connection now offline")
         if (!mqttConnect()) {
             def waitSeconds = getRetrySeconds()
             log.info "Retrying MQTT connection in ${waitSeconds} seconds"
@@ -534,6 +550,7 @@ private void mqttDisconnect() {
 
     try {
         interfaces.mqtt.disconnect()
+        sendEvent (name: "connection", value: "offline", descriptionText: "${device.displayName} connection now offline")
     }
     catch (any)
     {
@@ -561,20 +578,13 @@ private void mqttReceive(Map message) {
 
     def availabilityTopic = getTopic("tele", "LWT")
     if (topic == availabilityTopic) {
-        switch(payload.toLowerCase()) {
-            case "online":
-            sendEvent (name: "presence", value: "present")
-            log.info "${device.displayName} is online"
-            break
-
-            case "offline":
-            log.warn "${device.displayName} has gone offline"
-            sendEvent (name: "presence", value: "not present")
-            break
-
-            default:
-            if (logEnable) log.debug "Unknown availability: ${topic} = ${payload}"
-        }
+        def event = [
+            name: "connection",
+            value: payload.toLowerCase()
+        ]
+        event.descriptionText = "${device.displayName} ${event.name} now ${event.value}"
+        sendEvent (event)
+        log.info event.descriptionText
     } else if (payload[0] == "{") {
         payload = parseJson(payload)
         parseTasmota(topic, payload)
