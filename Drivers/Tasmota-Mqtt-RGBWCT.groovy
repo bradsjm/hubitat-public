@@ -112,6 +112,7 @@ metadata {
         section("Misc") {
             input name: "changeLevelStep", type: "decimal", title: "Change level step size", description: "Between 1 and 10", required: true, defaultValue: 2
             input name: "changeLevelEvery", type: "number", title: "Change level every x milliseconds", description: "Between 100ms and 1000ms", required: true, defaultValue: 100
+            input name: "colorStaging", type: "bool", title: "Enable color pre-staging", description: "Allows staging color and level changes when off", required: true, defaultValue: false
             input name: "initialGroupMode", type: "enum", title: "Initial group mode", description: "Grouped uses the group topic", options: ["single", "grouped"], required: true, defaultValue: "single"
             input name: "logEnable", type: "bool", title: "Enable debug logging", description: "Automatically disabled after 30 minutes", defaultValue: true
         }
@@ -121,6 +122,14 @@ metadata {
 /**
  *  Hubitat Driver Event Handlers
  */
+
+// Called after MQTT successfully connects
+void connected() {
+    mqttSubscribeTopics()
+
+    def commandTopic = getTopic("cmnd", "SetOption20")
+    mqttPublish(commandTopic, colorStaging ? "1" : "0")
+}
 
 // Called when the device is first created.
 void installed() {
@@ -137,10 +146,10 @@ void parse(String data) {
 // Requests latest STATE and STATUS 5 (Network)
 void refresh() {
     if (logEnable) log.debug "Refreshing state of ${device.name}"
+    state.clear()
 
     def commandTopic = getTopic("cmnd", "Backlog")
     mqttPublish(commandTopic, "State;Status 5")
-    state.clear()
 }
 
 // Called with MQTT client status messages
@@ -465,10 +474,12 @@ void parseTasmota(String topic, Map json) {
 
     if (json.containsKey("Wifi")) {
         if (logEnable) log.debug "Parsing [ Wifi: ${json.Wifi} ]"
-        updateDataValue("SSId", json.Wifi.SSId)
+        updateDataValue("BSSId", json.Wifi.BSSId)
         updateDataValue("Channel", json.Wifi.Channel.toString())
-        updateDataValue("RSSI", json.Wifi.RSSI.toString())
         updateDataValue("LinkCount", json.Wifi.LinkCount.toString())
+        updateDataValue("RSSI", json.Wifi.RSSI.toString())
+        updateDataValue("Signal", json.Wifi.Signal.toString())
+        updateDataValue("SSId", json.Wifi.SSId)
     }
 
     if (json.containsKey("StatusNET")) {
@@ -619,7 +630,7 @@ private boolean mqttConnect() {
         )
 
         pauseExecution(1000)
-        mqttSubscribeTopics()
+        connected()
         refresh()
         return true
     } catch(e) {
