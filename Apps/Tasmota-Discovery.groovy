@@ -23,10 +23,12 @@
  *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  *  SOFTWARE.
 */
+static final String namespace() { "tasmota-mqtt" }
+static final String version() { "0.1" }
 
 definition(
-    name: "Tasmota Device Discovery",
-    namespace: "tasmota",
+    name: "Tasmota Device Discovery v${version()}",
+    namespace: "${namespace()}",
     author: "Jonathan Bradshaw",
     description: "Discover Tasmota devices on network",
     category: "Discovery",
@@ -131,18 +133,19 @@ private void createDevice(json) {
     def statusNet = json.StatusNET
     def statusPrm = json.StatusPRM
     def statusMqt = json.StatusMQT
+    def friendlyName = status.FriendlyName instanceof String ? status.FriendlyName : status.FriendlyName[0]
     def child = getChildDevice(statusNet.Mac.toLowerCase())
     if (!child) {
-        log.info "Creating Tasmota device ${status.FriendlyName[0]} with topic ${status.Topic}"
+        log.info "Creating Tasmota device ${friendlyName} with topic ${status.Topic}"
         try {
             child = addChildDevice(
-                    "tasmota",
-                    "Tasmota RGBW Driver",
+                    "${namespace()}",
+                    "Tasmota RGBW/CT v${version()}",
                     statusNet.Mac.toLowerCase(),
                     null,
                     [
                         name: status.Topic,
-                        label: settings.namePrefix + status.FriendlyName[0]
+                        label: (settings.namePrefix :? "") + friendlyName
                     ]
             )
         } catch (e) {
@@ -151,14 +154,11 @@ private void createDevice(json) {
         }
     }
 
-    child.name = status.Topic
-    child.label = settings.namePrefix + status.FriendlyName[0]
-    child.updateSetting("deviceTopic", status.Topic)
     child.updateSetting("deviceTopic", status.Topic)
     child.updateSetting("fullTopic", settings.fullTopic)
     child.updateSetting("groupTopic", statusPrm.GroupTopic)
     child.updateSetting("mqttBroker", "tcp://${statusMqt.MqttHost}:${statusMqt.MqttPort}")
-    child.sendEvent([name: "refresh"])
+    child.refresh()
 }
 
 def getProgressPercentage()
@@ -253,8 +253,9 @@ private String getFoundDevices() {
         def status = entry.value.Status
         def statusNet = entry.value.StatusNET
         def statusPrm = entry.value.StatusPRM
+        def friendlyName = status.FriendlyName instanceof String ? status.FriendlyName : status.FriendlyName[0]
         text <<= "<li class='device'>"
-        text <<= "${statusNet.IPAddress}: ${status.FriendlyName[0]} (Topic: ${status.Topic} Group: ${statusPrm.GroupTopic})"
+        text <<= "${statusNet.IPAddress}: ${friendlyName} (Topic: ${status.Topic} Group: ${statusPrm.GroupTopic})"
         text <<= "</li>"
     }
     text <<= "</ul>"

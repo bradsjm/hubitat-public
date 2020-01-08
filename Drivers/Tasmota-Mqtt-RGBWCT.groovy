@@ -20,13 +20,12 @@
  *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  *  SOFTWARE.
 */
-
 static final String version() { "0.1" }
 
-static final String deviceType() { "RGBW" }
+static final String deviceType() { "RGBW/CT" }
 
 metadata {
-    definition (name: "Tasmota ${deviceType()} Driver", namespace: "tasmota", author: "Jonathan Bradshaw") {
+    definition (name: "Tasmota ${deviceType()} v${version()}", namespace: "tasmota-mqtt", author: "Jonathan Bradshaw") {
         capability "Actuator"
         capability "ChangeLevel"
         capability "ColorControl"
@@ -44,26 +43,9 @@ metadata {
         attribute "fadeSpeed", "Number"
         attribute "fxScheme", "String"
         attribute "groupMode", "String"
+        attribute "hueName", "String"
+        attribute "colorTemperatureName", "String"
 
-        command "setGroupTopicMode", [
-            [
-                name:"Group Mode*",
-                type: "ENUM",
-                description: "Select if changes are applied to the group",
-                constraints: [
-                    "single",
-                    "grouped",
-                ]
-            ]
-        ]
-
-        command "setFadeSpeed", [
-            [
-                name:"Fade Speed*",
-                type: "NUMBER",
-                description: "Seconds (0 to 20) where 0 is off"
-            ]
-        ]
         command "setEffectsScheme", [
             [
                 name:"Effects Scheme*",
@@ -78,6 +60,27 @@ metadata {
                 ]
             ]
         ]
+
+        command "setFadeSpeed", [
+            [
+                name:"Fade Speed*",
+                type: "NUMBER",
+                description: "Seconds (0 to 20) where 0 is off"
+            ]
+        ]
+
+        command "setGroupTopicMode", [
+            [
+                name:"Group Mode*",
+                type: "ENUM",
+                description: "Select if changes are applied to the group",
+                constraints: [
+                    "single",
+                    "grouped",
+                ]
+            ]
+        ]
+
         command "startWakeup", [
             [
                 name:"Dimmer Level*",
@@ -253,7 +256,8 @@ void setColor(colormap) {
 
 // Set the hue (0-100)
 void setHue(hue) {
-    hue = limit(colormap.hue * 3.6, 0, 360).toInteger()
+    // Hubitat hue is 0-100 to be converted to Tasmota 0-360
+    hue = limit(Math.round(hue * 3.6), 0, 360).toInteger()
     def commandTopic = getTopic("cmnd", "HsbColor1")
     mqttPublish(commandTopic, "${hue}")
 }
@@ -384,9 +388,17 @@ void parseTasmota(String topic, Map json) {
         state.channelCount = channelCount
 
         if (channelCount == 4 && json.Channel[3] > 0) {
+            def fakeKelvin = 6500
             item.with {
                 name = "colorTemperature"
-                value = "6500" // Bogus max value for non-CT bulb
+                value = fakeKelvin
+            }
+            item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
+            sendEvent(item)
+
+            item.with {
+                name = "colorTemperatureName"
+                value = getTemperatureName(fakeKelvin)
             }
             item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
             sendEvent(item)
@@ -400,6 +412,13 @@ void parseTasmota(String topic, Map json) {
         item.with {
             name = "colorTemperature"
             value = kelvin
+        }
+        item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
+        sendEvent(item)
+
+        item.with {
+            name = "colorTemperatureName"
+            value = getTemperatureName(kelvin)
         }
         item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
         sendEvent(item)
@@ -418,13 +437,20 @@ void parseTasmota(String topic, Map json) {
     if (json.containsKey("HSBColor")) {
         if (logEnable) log.debug "Parsing [ HSBColor: ${json.HSBColor} ]"
         def hsbColor = json.HSBColor.tokenize(",")
-        def hue = Math.round((hsbColor[0] as int) / 3.6)
+        def hue = hsbColor[0] as int
         def saturation = hsbColor[1] as int
-        def level = hsbColor[2] = hsbColor[2] as int
 
+        // Hubitat hue is 0-100 to be converted from Tasmota 0-360
         item.with {
             name = "hue"
-            value = hue
+            value = Math.round(hue / 3.6) as int
+        }
+        item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
+        sendEvent(item)
+
+        item.with {
+            name = "hueName"
+            value = getHueName(hue)
         }
         item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
         sendEvent(item)
@@ -479,6 +505,66 @@ private String getTopic(String prefix, String postfix = "", boolean forceSingle 
         .replaceFirst("%prefix%", prefix)
         .replaceFirst("%topic%", topic)
         .plus(postfix)
+}
+
+private String getTemperatureName(int kelvin) {
+    if (!kelvin) return ""
+    def temperatureName
+    switch (limit(kelvin, 1000, 6500)) {
+        case 1000..1999: temperatureName = "Candlelight"
+            break
+        case 2000..2399: temperatureName = "Sunrise"
+            break
+        case 2400..2999: temperatureName = "Soft White"
+            break
+        case 3000..3199: temperatureName = "Warm White"
+            break
+        case 3200..3350: temperatureName = "Studio White"
+            break
+        case 4000..4300: temperatureName = "Cool White"
+            break
+        case 5000..5765: temperatureName = "Full Spectrum"
+            break
+        case 6500: temperatureName = "Daylight"
+            break
+    }
+
+    return temperatureName
+}
+
+private String getHueName(int hue) {
+    if (!hue) return ""
+    def colorName
+    switch (limit(hue, 1, 360)){
+        case 1..15: colorName = "Red"
+            break
+        case 16..45: colorName = "Orange"
+            break
+        case 46..75: colorName = "Yellow"
+            break
+        case 76..105: colorName = "Chartreuse"
+            break
+        case 106..135: colorName = "Green"
+            break
+        case 136..165: colorName = "Spring"
+            break
+        case 166..195: colorName = "Cyan"
+            break
+        case 196..225: colorName = "Azure"
+            break
+        case 226..255: colorName = "Blue"
+            break
+        case 256..285: colorName = "Violet"
+            break
+        case 286..315: colorName = "Magenta"
+            break
+        case 316..345: colorName = "Rose"
+            break
+        case 346..360: colorName = "Red"
+            break
+    }
+
+    return colorName
 }
 
 private def limit(value, lowerBound = 0, upperBound = 100) {
