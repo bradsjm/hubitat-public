@@ -26,7 +26,7 @@
 static final String version() {  return "0.1"  }
 
 metadata {
-    definition (name: "Davis WeatherLink Live", namespace: "jonathanb", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/DavisWeatherLinkLive-Weather-Driver.groovy") {
+    definition (name: "Davis WeatherLink Live", namespace: "jonathanb", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/DavisWeatherLinkLive.groovy") {
         capability "Polling"
         capability "Refresh"
         capability "Relative Humidity Measurement"

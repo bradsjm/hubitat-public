@@ -34,7 +34,8 @@ definition(
     category: "Discovery",
     iconUrl: "",
     iconX2Url: "",
-    iconX3Url: ""
+    iconX3Url: "",
+    importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/Apps/Tasmota-Discovery.groovy"
 )
 
 import groovy.transform.Field

@@ -25,7 +25,7 @@ static final String version() { "0.1" }
 static final String deviceType() { "RGBW/CT" }
 
 metadata {
-    definition (name: "Tasmota ${deviceType()} v${version()}", namespace: "tasmota-mqtt", author: "Jonathan Bradshaw") {
+    definition (name: "Tasmota ${deviceType()} v${version()}", namespace: "tasmota-mqtt", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/Drivers/Tasmota-Mqtt-RGBWCT.groovy") {
         capability "Actuator"
         capability "ChangeLevel"
         capability "ColorControl"
