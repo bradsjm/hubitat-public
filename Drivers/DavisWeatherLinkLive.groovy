@@ -26,9 +26,8 @@
 static final String version() {  return "0.1"  }
 
 metadata {
-    definition (name: "Davis WeatherLink Live", namespace: "jonathanb", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/DavisWeatherLinkLive.groovy") {
+    definition (name: "Davis WeatherLink Live", namespace: "jbradshaw", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/DavisWeatherLinkLive.groovy") {
         capability "Polling"
-        capability "Refresh"
         capability "Relative Humidity Measurement"
         capability "Pressure Measurement"
         capability "Sensor"
@@ -58,11 +57,10 @@ metadata {
 
 void updated() {
     unschedule()
-    def pollIntervalVal = (settings?.pollInterval)
 
-    if (autoPoll && pollIntervalVal > 0) {
-    	def randomSeconds = new Random(now()).nextInt(60)
-        def sched = "${randomSeconds} 0/${pollIntervalVal} * * * ?"
+    if (settings.autoPoll && settings.pollIntervalVal > 0) {
+    	int randomSeconds = new Random(now()).nextInt(60)
+        String sched = "${randomSeconds} 0/${pollIntervalVal} * * * ?"
         schedule("${sched}", "poll")
     }
 
@@ -71,58 +69,52 @@ void updated() {
     poll()
 }
 
-void refresh() {
-    poll()
-}
-
 void poll() {
-    log.info "[${device?.displayName}] Executing 'poll', location: ${location.name}"
+    log.info "${device.displayName} Polling current conditions ..."
     def params = [
         uri: "http://${weatherLinkHost}:${weatherLinkPort}",
         path: "/v1/current_conditions",
         requestContentType: "application/json"
     ]
-    if (logEnable) log.debug "[${device?.displayName}] Request ${params.uri}/${params.path}"
+    if (logEnable) log.debug "Requesting ${params.uri}/${params.path}"
     asynchttpGet("pollHandler", params)
 }
 
-void pollHandler(response, data) {
-    def status = response.getStatus()
+private void pollHandler(response, data) {
+    def status = response.status
     if (status == 200) {
-        if (logEnable) log.debug "[${device?.displayName}] Device returned: ${response.data}"
-        def json = response.getJson()
+        if (logEnable) log.debug "Device returned: ${response.data}"
+        def json = response.json
         if (json?.data) {
     		parseWeatherData(json.data)
         } else if (json?.error) {
-            log.error "[${device?.displayName}] ${json.error.code} ${json.error.message}"
+            log.error "JSON parsing error: ${json.error.code} ${json.error.message}"
         } else {
-            log.error "[${device?.displayName}] Unable to parse response (valid Json?)"
+            log.error "Unable to parse response (valid Json?)"
         }
 	} else {
-		log.error "[${device?.displayName}] Device returned HTTP status ${status}"
+		log.error "Device returned HTTP status ${status}"
 	}
 }
 
-void logsOff() {
-    log.warn "[${device?.displayName}] debug logging disabled"
+private void logsOff() {
+    log.warn "${device.displayName} debug logging disabled"
     device.updateSetting("logEnable", [value:"false", type:"bool"])
 }
 
-void parseWeatherData(Map json) {
-    def rainMultiplier = 0
-    def rainUnit = ""
+private void parseWeatherData(Map json) {
+    int rainMultiplier = 0
+    String rainUnit = ""
+
+    // Transfer data into state for debug
+    state.lastResponse = json.conditions
 
     json.conditions.each {
-        // Transfer data into state for debug
-        it.each {
-            if (it.key != "data_structure_type") state[it.key] = it.value
-        }
-
         // Parse data structures
         switch (it.data_structure_type) {
         case 1:
             if (it.txid != transmitterId) return
-            if (logEnable) log.debug "[${device?.displayName}] Received ISS #${it.txid} Current Conditions data"
+            if (logEnable) log.debug "Received ISS #${it.txid} Current Conditions data"
             switch (it.rain_size) {
                 case 1:
                     rainMultiplier = 0.01

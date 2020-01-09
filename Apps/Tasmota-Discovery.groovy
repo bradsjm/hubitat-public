@@ -222,8 +222,16 @@ def discoveryPage() {
     dynamicPage(name: "discoveryPage", title: "Tasmota Device Discovery", refreshInterval: 5, install: true) {
         section {
             if (!discoveryCount.get()) {
+                paragraph(
+                    "<p>Click the start button to discover your Tasmota devices.</p>"
+                )
                 input "btnDiscover", "button", title: "Start Discovery"
             } else {
+                paragraph(
+                    "<p>Please wait while we discover your Tasmota devices. " +
+                    "Discovery can take a while, so sit back and relax! " +
+                    "Click Next once discovered.</p>"
+                )
                 input "btnStopDiscover", "button", title: "Stop Discovery"
             }
             paragraph(
@@ -247,9 +255,7 @@ private String getFoundDevices() {
         return "No Tasmota devices found ..."
     }
 
-    def text = "Found <strong>${count}</strong> Tasmota device(s):<br>"
-    text <<= '<ul class="device">'
-
+    def text = "Found Tasmota Devices (${count}):<br>"
     for (entry in foundDeviceMap.entrySet()) {
         def status = entry.value.Status
         def statusNet = entry.value.StatusNET
@@ -259,7 +265,6 @@ private String getFoundDevices() {
         text <<= "${statusNet.IPAddress}: ${friendlyName} (Topic: ${status.Topic} Group: ${statusPrm.GroupTopic})"
         text <<= "</li>"
     }
-    text <<= "</ul>"
 
     return text
 }

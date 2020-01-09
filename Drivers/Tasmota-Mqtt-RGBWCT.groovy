@@ -21,8 +21,10 @@
  *  SOFTWARE.
 */
 static final String version() { "0.1" }
-
 static final String deviceType() { "RGBW/CT" }
+
+import groovy.json.JsonSlurper
+import groovy.transform.Field
 
 metadata {
     definition (name: "Tasmota ${deviceType()} v${version()}", namespace: "tasmota-mqtt", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/Drivers/Tasmota-Mqtt-RGBWCT.groovy") {
@@ -32,6 +34,7 @@ metadata {
         capability "ColorMode"
         capability "ColorTemperature"
         capability "Light"
+        capability "LightEffects"
         capability "Refresh"
         capability "Sensor"
         capability "Switch"
@@ -41,25 +44,9 @@ metadata {
         attribute "connection", "String"
         attribute "fadeMode", "String"
         attribute "fadeSpeed", "Number"
-        attribute "fxScheme", "String"
         attribute "groupMode", "String"
         attribute "hueName", "String"
         attribute "wifiSignal", "String"
-
-        command "setEffectsScheme", [
-            [
-                name:"Effects Scheme*",
-                type: "ENUM",
-                description: "Select light effect scheme",
-                constraints: [
-                    "None",
-                    "Wakeup",
-                    "Cycle Up",
-                    "Cycle Down",
-                    "Random Cycle"
-                ]
-            ]
-        ]
 
         command "setFadeSpeed", [
             [
@@ -120,6 +107,15 @@ metadata {
     }
 }
 
+@Field static Map lightEffects = [
+    0: "None",
+    1: "Blink",
+    2: "Wakeup",
+    3: "Cycle Up",
+    4: "Cycle Down",
+    5: "Random Cycle"
+]
+
 /**
  *  Hubitat Driver Event Handlers
  */
@@ -129,33 +125,34 @@ void connected() {
     mqttSubscribeTopics()
 
     if (settings.watchdogEnable) {
-    	def randomSeconds = new Random(now()).nextInt(60)
+    	int randomSeconds = new Random(now()).nextInt(60)
         schedule("${randomSeconds} 0/5 * * * ?", "mqttCheckReceiveTime")
     }
 
     // Set option 20 (Update of Dimmer/Color/CT without turning power on)
-    def commandTopic = getTopic("cmnd", "SetOption20")
+    String commandTopic = getTopic("cmnd", "SetOption20")
     mqttPublish(commandTopic, colorStaging ? "1" : "0")
 }
 
 // Called when the device is first created.
 void installed() {
-    log.debug "${device.displayName} driver v${version()} installed"
+    log.info "${device.displayName} driver v${version()} installed"
+    sendEvent(name: "lightEffects", value: new groovy.json.JsonBuilder(lightEffects))
 }
 
 // Called to parse received MQTT data
-void parse(String data) {
-    def message = interfaces.mqtt.parseMessage(data)
+void parse(data) {
+    Map message = interfaces.mqtt.parseMessage(data)
     mqttReceive(message)
 }
 
 // Called when the user requests a refresh (from Refresh capability)
 // Requests latest STATE and STATUS 5 (Network)
 void refresh() {
-    if (logEnable) log.debug "Refreshing state of ${device.name}"
+    log.info "Refreshing state of ${device.name}"
     state.clear()
 
-    def commandTopic = getTopic("cmnd", "Backlog")
+    String commandTopic = getTopic("cmnd", "Backlog")
     mqttPublish(commandTopic, "State;Status 5")
 }
 
@@ -172,12 +169,14 @@ void mqttClientStatus(String message) {
 // Called when the device is removed.
 void uninstalled() {
     mqttDisconnect()
-    log.debug "${device.displayName} driver v${version()} uninstalled"
+    log.info "${device.displayName} driver v${version()} uninstalled"
 }
 
 // Called when the preferences of a device are updated.
 void updated() {
-    log.debug "${device.displayName} driver v${version()} configuration updated"
+    log.info "${device.displayName} driver v${version()} configuration updated"
+    log.debug settings
+
     setGroupTopicMode(settings.initialGroupMode)
 
     mqttDisconnect()
@@ -199,13 +198,13 @@ void updated() {
 
 // Turn on
 void on() {
-    def commandTopic = getTopic("cmnd", "POWER")
+    String commandTopic = getTopic("cmnd", "POWER")
     mqttPublish(commandTopic, "1")
 }
 
 // Turn off
 void off() {
-    def commandTopic = getTopic("cmnd", "POWER")
+    String commandTopic = getTopic("cmnd", "POWER")
     mqttPublish(commandTopic, "0")
 }
 
@@ -227,10 +226,10 @@ void stopLevelChange() {
 }
 
 private void doLevelChange(delta) {
-    def newLevel = limit(device.currentValue("level").toInteger() + delta)
+    int newLevel = limit(device.currentValue("level").toInteger() + delta)
     setLevel(newLevel)
     if (newLevel > 0 && newLevel < 100) {
-        def delay = limit(settings.changeLevelEvery, 100, 1000)
+        int delay = limit(settings.changeLevelEvery, 100, 1000)
         runInMillis(delay, "doLevelChange", [ data: delta ])
     }
 }
@@ -243,14 +242,14 @@ private void doLevelChange(delta) {
 void setLevel(level, duration = 0) {
     level = limit(level, 0, 100).toInteger()
 
-    def oldSpeed = device.currentValue("fadeSpeed") * 2
-    def oldFade = device.currentValue("fadeMode")
-    def speed = Math.min(40f, duration * 2).toInteger()
+    int oldSpeed = device.currentValue("fadeSpeed") * 2
+    int oldFade = device.currentValue("fadeMode")
+    int speed = Math.min(40f, duration * 2).toInteger()
     if (speed > 0) {
-        def commandTopic = getTopic("cmnd", "Backlog")
+        String commandTopic = getTopic("cmnd", "Backlog")
         mqttPublish(commandTopic, "Speed ${speed};Fade 1;Dimmer ${level};Delay ${duration * 10};Speed ${oldSpeed};Fade ${oldFade}")
     } else {
-        def commandTopic = getTopic("cmnd", "Dimmer")
+        String commandTopic = getTopic("cmnd", "Dimmer")
         mqttPublish(commandTopic, level.toString())
     }
 }
@@ -262,11 +261,11 @@ void setLevel(level, duration = 0) {
 // Set the HSB color [hue:(0-100), saturation:(0-100), level:(0-100)]
 void setColor(colormap) {
     if (colormap.hue == null || colormap.saturation == null) return
-    def hue = limit(colormap.hue * 3.6, 0, 360).toInteger()
-    def saturation = limit(colormap.saturation).toInteger()
-    def level = limit(colormap.level).toInteger()
+    int hue = limit(colormap.hue * 3.6, 0, 360).toInteger()
+    int saturation = limit(colormap.saturation).toInteger()
+    int level = limit(colormap.level).toInteger()
 
-    def commandTopic = getTopic("cmnd", "HsbColor")
+    String commandTopic = getTopic("cmnd", "HsbColor")
     mqttPublish(commandTopic, "${hue},${saturation},${level}")
 }
 
@@ -274,30 +273,89 @@ void setColor(colormap) {
 void setHue(hue) {
     // Hubitat hue is 0-100 to be converted to Tasmota 0-360
     hue = limit(Math.round(hue * 3.6), 0, 360).toInteger()
-    def commandTopic = getTopic("cmnd", "HsbColor1")
-    mqttPublish(commandTopic, "${hue}")
+    String commandTopic = getTopic("cmnd", "HsbColor1")
+    mqttPublish(commandTopic, hue.toString())
 }
 
 // Set the saturation (0-100)
 void setSaturation(saturation) {
     saturation = limit(saturation).toInteger()
-    def commandTopic = getTopic("cmnd", "HsbColor2")
-    mqttPublish(commandTopic, "${saturation}")
+    String commandTopic = getTopic("cmnd", "HsbColor2")
+    mqttPublish(commandTopic, saturation.toString())
 }
 
 // Set the color temperature (2000-6536)
 void setColorTemperature(kelvin) {
     kelvin = limit(kelvin, 2000, 6536)
-    def channelCount = state.channelCount
+    int channelCount = state.channelCount
     if (channelCount == 5) {
-        def commandTopic = getTopic("cmnd", "CT")
-        def mired = limit(Math.round(1000000f / kelvin), 153, 500).toInteger()
+        String commandTopic = getTopic("cmnd", "CT")
+        int mired = limit(Math.round(1000000f / kelvin), 153, 500).toInteger()
         if (logEnable) log.debug "Converted ${kelvin} kelvin to ${mired} mired"
         mqttPublish(commandTopic, mired.toString())
     } else if (channelCount == 4) {
-        def commandTopic = getTopic("cmnd", "White")
+        String commandTopic = getTopic("cmnd", "White")
         mqttPublish(commandTopic, device.currentValue("level").toString())
     }
+}
+
+/**
+ *  Capability: Light Effects
+ */
+
+void setEffect(String effect) {
+    def id = lightEffects.find { it.value == effect }
+    if (id != null) setEffect(id.key)
+}
+
+def setEffect(id) {
+    if (logEnable) log.debug "Setting effect $id"
+    switch (id) {
+        case 0:
+            setEffectsScheme(0)
+            blinkoff()
+            break
+        case 1: blinkOn()
+            break
+        case 2: setEffectsScheme(1)
+            break
+        case 3: setEffectsScheme(2)
+            break
+        case 4: setEffectsScheme(3)
+            break
+        case 5: setEffectsScheme(4)
+            break
+    }
+}
+
+def setNextEffect() {
+    def currentEffect = state.crntEffectId ?: 0
+    currentEffect++
+    if (currentEffect > lightEffects.size() - 1) currentEffect = 0
+    setEffect(currentEffect)
+}
+
+def setPreviousEffect() {
+    def currentEffect = state.crntEffectId ?: 0
+    currentEffect--
+    if (currentEffect < 0) currentEffect = lightEffects.size() - 1
+    setEffect(currentEffect)
+}
+
+void blinkOn() {
+    String commandTopic = getTopic("cmnd", "Power")
+    mqttPublish(commandTopic, "blink")
+}
+
+void blinkoff() {
+    String commandTopic = getTopic("cmnd", "Power")
+    mqttPublish(commandTopic, "blinkoff")
+}
+
+
+void setEffectsScheme(scheme) {
+    String commandTopic = getTopic("cmnd", "Scheme")
+    mqttPublish(commandTopic, scheme.toString())
 }
 
 /**
@@ -305,29 +363,14 @@ void setColorTemperature(kelvin) {
  * Tasmota Custom Commands
  */
 
-void setEffectsScheme(scheme) {
-    def choices = [
-        "None",
-        "Wakeup",
-        "Cycle Up",
-        "Cycle Down",
-        "Random Cycle"
-    ]
-    def value = choices.findIndexOf{ it == scheme }
-    if (value >= 0) {
-        def commandTopic = getTopic("cmnd", "Scheme")
-        mqttPublish(commandTopic, value.toString())
-    }
-}
-
 // Set the Tasmota fade speed
 void setFadeSpeed(seconds) {
-    def speed = Math.min(40f, seconds * 2).toInteger()
+    int speed = Math.min(40f, seconds * 2).toInteger()
     if (speed > 0) {
-        def commandTopic = getTopic("cmnd", "Backlog")
+        String commandTopic = getTopic("cmnd", "Backlog")
         mqttPublish(commandTopic, "Speed ${speed};Fade 1")
     } else {
-        def commandTopic = getTopic("cmnd", "Fade")
+        String commandTopic = getTopic("cmnd", "Fade")
         mqttPublish(commandTopic, "0")
     }
 }
@@ -336,7 +379,7 @@ void setFadeSpeed(seconds) {
 void startWakeup(level, duration) {
     level = limit(level).toInteger()
     duration = limit(duration, 1, 3000).toInteger()
-    def commandTopic = getTopic("cmnd", "Backlog")
+    String commandTopic = getTopic("cmnd", "Backlog")
     mqttPublish(commandTopic, "WakeupDuration ${duration};Wakeup ${level}")
 }
 
@@ -356,14 +399,12 @@ void setGroupTopicMode(mode) {
 
 // Parses Tasmota JSON content and send driver events
 void parseTasmota(String topic, Map json) {
-    def item = [name:"", value:"", descriptionText:""]
-
     if (json.containsKey("POWER")) {
         if (logEnable) log.debug "Parsing [ POWER: ${json.POWER} ]"
-        item.with {
-            name = "switch"
-            value = json.POWER.toLowerCase()
-        }
+        def item = [
+            name: "switch",
+            value: json.POWER.toLowerCase()
+        ]
         item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
         sendEvent(item)
     }
@@ -371,29 +412,32 @@ void parseTasmota(String topic, Map json) {
     if (json.containsKey("Fade")) {
         if (logEnable) log.debug "Parsing [ Fade: ${json.Fade} ]"
         if (json.Fade == "OFF") json.Speed = 0
-        item.with {
-            name = "fadeMode"
-            value = json.Fade.toLowerCase()
-        }
+        def item = [
+            name: "fadeMode",
+            value: json.Fade.toLowerCase()
+        ]
         item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
         sendEvent(item)
     }
 
     if (json.containsKey("Speed")) {
         if (logEnable) log.debug "Parsing [ Speed: ${json.Speed} ]"
-        item.with {
-            name = "fadeSpeed"
-            value = sprintf("%.1f", json.Speed.toInteger().div(2)) // seconds
-        }
+        def item = [
+            name: "fadeSpeed",
+            value: sprintf("%.1f", json.Speed.toInteger().div(2)), // seconds
+            unit: "s"
+        ]
         item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
         sendEvent(item)
     }
 
     if (json.containsKey("Channel")) {
         if (logEnable) log.debug "Parsing [ Channel: ${json.Channel} ]"
-        def channelCount = json.Channel.size()
-        item.name = "colorMode"
-        item.value = "RGB"
+        int channelCount = json.Channel.size()
+        def item = [
+            name: "colorMode",
+            value: "RGB"
+        ]
         if (channelCount == 4 && json.Channel[3] > 0) {
             item.value = "White"
         } else if (channelCount == 5 && (json.Channel[3] > 0 || json.Channel[4] > 0)) {
@@ -404,18 +448,20 @@ void parseTasmota(String topic, Map json) {
         state.channelCount = channelCount
 
         if (channelCount == 4 && json.Channel[3] > 0) {
-            def fakeKelvin = 6500
-            item.with {
-                name = "colorTemperature"
-                value = fakeKelvin
-            }
+            int fakeKelvin = 6500
+            item = [
+                name: "colorTemperature",
+                value: fakeKelvin,
+                unit: "K"
+            ]
             item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
             sendEvent(item)
 
-            item.with {
-                name = "colorTemperatureName"
-                value = getTemperatureName(fakeKelvin)
-            }
+            item = [
+                name: "colorTemperatureName",
+                value: getTemperatureName(fakeKelvin),
+                unit: "K"
+            ]
             item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
             sendEvent(item)
         }
@@ -423,29 +469,30 @@ void parseTasmota(String topic, Map json) {
 
     if (json.containsKey("CT")) {
         if (logEnable) log.debug "Parsing [ CT: ${json.CT} ]"
-        def kelvin = Math.round(1000000f / json.CT).toInteger()
+        int kelvin = Math.round(1000000f / json.CT).toInteger()
         if (logEnable) log.debug "Converted ${json.CT} CT to ${kelvin} kelvin"
-        item.with {
-            name = "colorTemperature"
-            value = kelvin
-        }
+        def item = [
+            name: "colorTemperature",
+            value: kelvin
+        ]
         item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
         sendEvent(item)
 
-        item.with {
-            name = "colorTemperatureName"
-            value = getTemperatureName(kelvin)
-        }
+        item = [
+            name: "colorTemperatureName",
+            value: getTemperatureName(kelvin)
+        ]
         item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
         sendEvent(item)
     }
 
     if (json.containsKey("Dimmer")) {
         if (logEnable) log.debug "Parsing [ Dimmer: ${json.Dimmer} ]"
-        item.with {
-            name = "level"
-            value = json.Dimmer
-        }
+        def item = [
+            name: "level",
+            value: json.Dimmer,
+            unit: "%"
+        ]
         item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
         sendEvent(item)
     }
@@ -453,28 +500,28 @@ void parseTasmota(String topic, Map json) {
     if (json.containsKey("HSBColor")) {
         if (logEnable) log.debug "Parsing [ HSBColor: ${json.HSBColor} ]"
         def hsbColor = json.HSBColor.tokenize(",")
-        def hue = hsbColor[0] as int
-        def saturation = hsbColor[1] as int
+        int hue = hsbColor[0].toInteger()
+        int saturation = hsbColor[1].toInteger()
 
         // Hubitat hue is 0-100 to be converted from Tasmota 0-360
-        item.with {
-            name = "hue"
-            value = Math.round(hue / 3.6) as int
-        }
+        def item = [
+            name: "hue",
+            value: Math.round(hue / 3.6) as int
+        ]
         item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
         sendEvent(item)
 
-        item.with {
-            name = "hueName"
-            value = getHueName(hue)
-        }
+        item = [
+            name: "hueName",
+            value: getHueName(hue)
+        ]
         item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
         sendEvent(item)
 
-        item.with {
-            name = "saturation"
-            value = saturation
-        }
+        item = [
+            name: "saturation",
+            value: saturation
+        ]
         item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
         sendEvent(item)
     }
@@ -488,10 +535,10 @@ void parseTasmota(String topic, Map json) {
         updateDataValue("Signal", json.Wifi.Signal.toString())
         updateDataValue("SSId", json.Wifi.SSId)
 
-        item.with {
-            name = "wifiSignal"
-            value = getWifiSignalName(json.Wifi.RSSI)
-        }
+        def item = [
+            name: "wifiSignal",
+            value: getWifiSignalName(json.Wifi.RSSI)
+        ]
         item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
         sendEvent(item)
     }
@@ -513,15 +560,15 @@ void parseTasmota(String topic, Map json) {
 private int getRetrySeconds() {
     final minimumRetrySec = 20
     final maximumRetrySec = minimumRetrySec * 6
-    def count = state.mqttRetryCount ?: 0
-    def jitter = new Random().nextInt(minimumRetrySec.intdiv(2))
+    int count = state.mqttRetryCount ?: 0
+    int jitter = new Random().nextInt(minimumRetrySec.intdiv(2))
     state.mqttRetryCount = count + 1
     return Math.min(minimumRetrySec * Math.pow(2, count) + jitter, maximumRetrySec)
 }
 
 private String getTopic(String prefix, String postfix = "", boolean forceSingle = false)
 {
-    def topic = settings.deviceTopic
+    String topic = settings.deviceTopic
     if (!forceSingle && device.currentValue("groupMode") == "grouped" && settings.groupTopic) {
         topic = settings.groupTopic
     }
@@ -534,7 +581,7 @@ private String getTopic(String prefix, String postfix = "", boolean forceSingle 
 
 private String getTemperatureName(int kelvin) {
     if (!kelvin) return ""
-    def temperatureName
+    String temperatureName
     switch (limit(kelvin, 1000, 6500)) {
         case 1000..1999: temperatureName = "Candlelight"
             break
@@ -559,7 +606,7 @@ private String getTemperatureName(int kelvin) {
 
 private String getHueName(int hue) {
     if (!hue) return ""
-    def colorName
+    String colorName
     switch (limit(hue, 1, 360)){
         case 1..15: colorName = "Red"
             break
@@ -593,7 +640,7 @@ private String getHueName(int hue) {
 }
 
 private String getWifiSignalName(int rssi) {
-    def signalName
+    String signalName
     switch(rssi) {
         case 75..100: signalName = "High"
             break
@@ -632,15 +679,16 @@ private void logsOff() {
 }
 
 private void mqttCheckReceiveTime() {
-    def timeoutMs = 5 * 60 * 1000
+    int timeout = 5 * 60
     if (state.mqttReceiveTime) {
-        def elapsedMs = now() - state.mqttReceiveTime
-        if (elapsedMs > timeoutMs) {
-            log.warn "No messages received from ${device.displayName} in ${elapsedMs/1000} seconds"
-            sendEvent (name: "connection", value: "offline", descriptionText: "${device.displayName} silent for ${elapsedMs/1000} seconds")
+        int elapsedSeconds = (now() - state.mqttReceiveTime).intdiv(1000)
+
+        if (elapsedSeconds > timeout) {
+            log.warn "No messages received from ${device.displayName} in ${elapsedSeconds} seconds"
+            sendEvent (name: "connection", value: "offline", descriptionText: "${device.displayName} silent for ${elapsedSeconds} seconds")
         } else
         {
-            sendEvent (name: "connection", value: "online", descriptionText: "${device.displayName} last message was ${elapsedMs/1000} seconds ago")
+            sendEvent (name: "connection", value: "online", descriptionText: "${device.displayName} last message was ${elapsedSeconds} seconds ago")
         }
     }
 }
@@ -650,7 +698,7 @@ private boolean mqttCheckConnected() {
         log.warn "MQTT is not connected"
         sendEvent (name: "connection", value: "offline", descriptionText: "${device.displayName} connection now offline")
         if (!mqttConnect()) {
-            def waitSeconds = getRetrySeconds()
+            int waitSeconds = getRetrySeconds()
             log.info "Retrying MQTT connection in ${waitSeconds} seconds"
             runIn(waitSeconds, "mqttCheckConnected")
             return false
@@ -665,7 +713,7 @@ private boolean mqttConnect() {
     try {
         def hub = device.getHub()
         def mqtt = interfaces.mqtt
-        def clientId = device.getDeviceNetworkId()
+        String clientId = device.getDeviceNetworkId()
         log.info "Connecting to MQTT broker at ${settings.mqttBroker}"
         state.mqttConnectCount = (state?.mqttConnectCount ?: 0) + 1
 
@@ -716,11 +764,11 @@ private void mqttPublish(String topic, String message = "") {
 
 private void mqttReceive(Map message) {
     if (logEnable) log.debug "MQTT Receive: ${message}"
-    def topic = message.get("topic")
-    def payload = message.get("payload")
+    String topic = message.get("topic")
+    String payload = message.get("payload")
     state.mqttReceiveCount = (state?.mqttReceiveCount ?: 0) + 1
 
-    def availabilityTopic = getTopic("tele", "LWT")
+    String availabilityTopic = getTopic("tele", "LWT")
     if (topic == availabilityTopic) {
         def event = [
             name: "connection",
@@ -731,8 +779,7 @@ private void mqttReceive(Map message) {
         log.info event.descriptionText
     } else if (payload[0] == "{") {
         state.mqttReceiveTime = now()
-        payload = parseJson(payload)
-        parseTasmota(topic, payload)
+        parseTasmota(topic, parseJson(payload))
     } else {
         if (logEnable) log.debug "Unknown Tasmota message: ${topic} = ${payload}"
     }
@@ -740,11 +787,11 @@ private void mqttReceive(Map message) {
 
 private void mqttSubscribeTopics() {
     int qos = settings.mqttQOS.toInteger()
-    def teleTopic = getTopic("tele", "+", true)
+    String teleTopic = getTopic("tele", "+", true)
     if (logEnable) log.debug "Subscribing to Tasmota telemetry topic: ${teleTopic}"
     interfaces.mqtt.subscribe(teleTopic, qos)
 
-    def statTopic = getTopic("stat", "+", true)
+    String statTopic = getTopic("stat", "+", true)
     if (logEnable) log.debug "Subscribing to Tasmota stat topic: ${statTopic}"
     interfaces.mqtt.subscribe(statTopic, qos)
 }
