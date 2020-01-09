@@ -34,17 +34,17 @@ metadata {
         capability "Light"
         capability "Refresh"
         capability "Sensor"
-        capability "SignalStrength"
         capability "Switch"
         capability "SwitchLevel"
 
+        attribute "colorTemperatureName", "String"
         attribute "connection", "String"
         attribute "fadeMode", "String"
         attribute "fadeSpeed", "Number"
         attribute "fxScheme", "String"
         attribute "groupMode", "String"
         attribute "hueName", "String"
-        attribute "colorTemperatureName", "String"
+        attribute "wifiSignal", "String"
 
         command "setEffectsScheme", [
             [
@@ -112,9 +112,10 @@ metadata {
         section("Misc") {
             input name: "changeLevelStep", type: "decimal", title: "Change level step size", description: "Between 1 and 10", required: true, defaultValue: 2
             input name: "changeLevelEvery", type: "number", title: "Change level every x milliseconds", description: "Between 100ms and 1000ms", required: true, defaultValue: 100
-            input name: "colorStaging", type: "bool", title: "Enable color pre-staging", description: "Allows staging color and level changes when off", required: true, defaultValue: false
+            input name: "colorStaging", type: "bool", title: "Enable color pre-staging", description: "Update of Dimmer/Color/CT without turning power on", required: true, defaultValue: false
             input name: "initialGroupMode", type: "enum", title: "Initial group mode", description: "Grouped uses the group topic", options: ["single", "grouped"], required: true, defaultValue: "single"
-            input name: "logEnable", type: "bool", title: "Enable debug logging", description: "Automatically disabled after 30 minutes", defaultValue: true
+            input name: "logEnable", type: "bool", title: "Enable debug logging", description: "Automatically disabled after 30 minutes", required: true, defaultValue: true
+            input name: "watchdogEnable", type: "bool", title: "Enable watchdog logging", description: "Checks for activity every 5 minutes", required: true, defaultValue: true
         }
     }
 }
@@ -127,6 +128,12 @@ metadata {
 void connected() {
     mqttSubscribeTopics()
 
+    if (settings.watchdogEnable) {
+    	def randomSeconds = new Random(now()).nextInt(60)
+        schedule("${randomSeconds} 0/5 * * * ?", "mqttCheckReceiveTime")
+    }
+
+    // Set option 20 (Update of Dimmer/Color/CT without turning power on)
     def commandTopic = getTopic("cmnd", "SetOption20")
     mqttPublish(commandTopic, colorStaging ? "1" : "0")
 }
@@ -480,6 +487,13 @@ void parseTasmota(String topic, Map json) {
         updateDataValue("RSSI", json.Wifi.RSSI.toString())
         updateDataValue("Signal", json.Wifi.Signal.toString())
         updateDataValue("SSId", json.Wifi.SSId)
+
+        item.with {
+            name = "wifiSignal"
+            value = getWifiSignalName(json.Wifi.RSSI)
+        }
+        item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
+        sendEvent(item)
     }
 
     if (json.containsKey("StatusNET")) {
@@ -578,6 +592,25 @@ private String getHueName(int hue) {
     return colorName
 }
 
+private String getWifiSignalName(int rssi) {
+    def signalName
+    switch(rssi) {
+        case 75..100: signalName = "High"
+            break
+
+        case 45..74: signalName = "Medium"
+            break
+
+        case 1..44: signalName = "Low"
+            break
+
+        case 0: signalName = "None"
+            break;
+    }
+
+    return signalName
+}
+
 private def limit(value, lowerBound = 0, upperBound = 100) {
     value == null ? value = upperBound : null
 
@@ -596,6 +629,20 @@ private def limit(value, lowerBound = 0, upperBound = 100) {
 private void logsOff() {
     log.warn "debug logging disabled for ${device.displayName}"
     device.updateSetting("logEnable", [value: "false", type: "bool"] )
+}
+
+private void mqttCheckReceiveTime() {
+    def timeoutMs = 5 * 60 * 1000
+    if (state.mqttReceiveTime) {
+        def elapsedMs = now() - state.mqttReceiveTime
+        if (elapsedMs > timeoutMs) {
+            log.warn "No messages received from ${device.displayName} in ${elapsedMs/1000} seconds"
+            sendEvent (name: "connection", value: "offline", descriptionText: "${device.displayName} silent for ${elapsedMs/1000} seconds")
+        } else
+        {
+            sendEvent (name: "connection", value: "online", descriptionText: "${device.displayName} last message was ${elapsedMs/1000} seconds ago")
+        }
+    }
 }
 
 private boolean mqttCheckConnected() {
@@ -683,6 +730,7 @@ private void mqttReceive(Map message) {
         sendEvent (event)
         log.info event.descriptionText
     } else if (payload[0] == "{") {
+        state.mqttReceiveTime = now()
         payload = parseJson(payload)
         parseTasmota(topic, payload)
     } else {
