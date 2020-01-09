@@ -242,8 +242,8 @@ private void doLevelChange(delta) {
 void setLevel(level, duration = 0) {
     level = limit(level, 0, 100).toInteger()
 
-    int oldSpeed = device.currentValue("fadeSpeed") * 2
-    int oldFade = device.currentValue("fadeMode")
+    int oldSpeed = device.currentValue("fadeSpeed").toInteger() * 2
+    String oldFade = device.currentValue("fadeMode")
     int speed = Math.min(40f, duration * 2).toInteger()
     if (speed > 0) {
         String commandTopic = getTopic("cmnd", "Backlog")
