@@ -33,13 +33,7 @@ metadata {
         capability "PresenceSensor"
         capability "ContactSensor"
 
-        command "soundBuzzer", [
-            [
-                name: "Duration*",
-                type: "number",
-                description: "Seconds (0 to 20)"
-            ]
-        ]
+        command "soundBeeper"
 
         attribute "connection", "string"
         attribute "wifiSignal", "string"
@@ -66,7 +60,7 @@ metadata {
             input name: "travelTime", type: "number", title: "Door Travel Time", description: "Time to fully open/close (seconds)", required: true, defaultValue: 30
             input name: "telePeriod", type: "number", title: "Sensor Read Interval", description: "Time between distance readings (seconds)", required: true, defaultValue: 5
             input name: "useMetric", type: "bool", title: "Use metric", description: "Displays distance using centimeters", required: true, defaultValue: true
-            input name: "warnOnClose", type: "number", title: "Warning Buzzer on Closing", description: "Alarm beeps before closing (0 for none)", required: true, defaultValue: 3
+            input name: "warnOnClose", type: "bool", title: "Warning Beeper on Closing", description: "Beeps 3 times before closing", required: true, defaultValue: true
         }
 
         section("Misc") {
@@ -98,7 +92,6 @@ void connected() {
 // Called when the device is first created.
 void installed() {
     log.info "${device.displayName} driver v${version()} installed"
-    sendEvent(newEvent("door", "unknown"))
 }
 
 // Called to parse received MQTT data
@@ -113,6 +106,7 @@ void refresh() {
     log.info "Refreshing state of ${device.name}"
     state.clear()
     state.sensorHistory = []
+    sendEvent(newEvent("door", "unknown"))
 
     String commandTopic = getTopic("cmnd", "Backlog")
     mqttPublish(commandTopic, "State;Status 5;Status 10")
@@ -185,8 +179,8 @@ void close() {
     sendEvent(newEvent("door", "closing"))
 
     if (settings.warnOnClose) {
-        soundBuzzer(settings.warnOnClose)
-        pauseExecution(settings.warnOnClose * 1000)
+        soundBeeper()
+        pauseExecution(3000)
     }
 
     String commandTopic = getTopic("cmnd", "Backlog")
@@ -196,34 +190,41 @@ void close() {
 }
 
 // Sound the buzzer
-void soundBuzzer(count = 1, beep = 1, silence = 1) {
-    String commandTopic = getTopic("cmnd", "Buzzer")
-    mqttPublish(commandTopic, "${count},${beep},${silence}")
+void soundBeeper(count = 3, freq = 750) {
+    String commandTopic = getTopic("cmnd", "Backlog")
+    String beep = "Pwm2 512;Delay 2;Pwm2 0;Delay 3;"
+    mqttPublish(commandTopic, "PwmFrequency ${freq};" + beep * count)
 }
 
 private void setClosed() {
     String doorState = device.currentValue("door")
-    if (doorState == "closed")
+    if (doorState == "closed") {
+		log.info "${device.displayName} is already ${doorState} within ${settings.travelTime} seconds"
         return
+    }
 
     if (doorState != "closing") {
-		log.warn "${device.displayName} should be closing but is ${doorState}"
+		log.warn "${device.displayName} door state should be 'closing' but is ${doorState}"
         return
 	}
 
+    log.info "${device.displayName} setting door state to 'closed' (${settings.travelTime} second timer)"
     sendEvent(newEvent("door", "closed"))
 }
 
 private void setOpen() {
     String doorState = device.currentValue("door")
-    if (doorState == "open")
+    if (doorState == "open") {
+		log.info "${device.displayName} is already ${doorState} within ${settings.travelTime} seconds"
         return
+    }
 
     if (doorState != "opening") {
-		log.warn "${device.displayName} should be opening but is ${doorState}"
+		log.warn "${device.displayName} door state should be 'opening' but is ${doorState}"
         return
 	}
 
+    log.info "${device.displayName} setting door state to 'open' (${settings.travelTime} second timer)"
     sendEvent(newEvent("door", "open"))
 }
 
@@ -239,14 +240,14 @@ void parseTasmota(String topic, Map json) {
 
     if (json.containsKey("SR04")) {
         if (logEnable) log.debug "Parsing [ SR04: ${json.SR04} ]"
-        int historySize = 4 // adjust if required for stable readings
+        int historySize = 3 // adjust if required for stable readings
         int value = limit(Math.round(json.SR04.Distance), 0, 400)
 
         if (value) {
             // Track distance sensorHistory values
-            state.sensorHistory = (state?.sensorHistory ?: []).takeRight(historySize).plus(value)
-            state.medianDistance = median(state.sensorHistory)
-            int distance = state.medianDistance
+            //state.sensorHistory = (state?.sensorHistory ?: []).takeRight(historySize-1).plus(value)
+            //state.medianDistance = median(state.sensorHistory)
+            int distance = value //state.medianDistance
 
             // Publish distance value (optionally converted to inches)
             sendEvent(newEvent("distance", distance, settings.useMetric ? "cm" : "in"))
@@ -255,11 +256,16 @@ void parseTasmota(String topic, Map json) {
             sendEvent(newEvent("contact", distance < settings.doorThreshold ? "open" : "closed"))
 
             // Publish door status based on distance to door threshold
-            String doorState = device.currentValue("door")
-            if (distance < settings.doorThreshold)
-                sendEvent(newEvent("door", "open"))
-            else if (doorState == "open")
-                sendEvent(newEvent("door", "closed"))
+            def currentState = device.currentValue("door")
+            switch (currentState) {
+                case "open":
+                case "closed":
+                case "unknown":
+                    def newState = distance < settings.doorThreshold ? "open" : "closed"
+                    if (logEnable && newState != oldState) log.debug "setting door state to ${newState} from ${oldState} (distance ${distance}, threshold ${settings.doorThreshold})"
+                    sendEvent(newEvent("door", newState))
+                    break
+            }
 
             // Publish door status based on distance to vehicle threshold
             boolean presence = distance >= settings.doorThreshold && distance < settings.vehicleThreshold
@@ -294,7 +300,7 @@ private Map newEvent(String name, value, unit = null) {
         name: name,
         value: value,
         unit: unit,
-        descriptionText: "${device.displayName} ${name} is ${value}${unit}"
+        descriptionText: "${device.displayName} ${name} is ${value}${unit ?: ''}"
     ]
 }
 

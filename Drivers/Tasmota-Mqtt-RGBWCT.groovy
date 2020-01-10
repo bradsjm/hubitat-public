@@ -602,7 +602,7 @@ private Map newEvent(String name, value, unit = null) {
         name: name,
         value: value,
         unit: unit,
-        descriptionText: "${device.displayName} ${name} is ${value}${unit}"
+        descriptionText: "${device.displayName} ${name} is ${value}${unit ?: ''}"
     ]
 }
 
