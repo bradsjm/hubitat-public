@@ -22,7 +22,7 @@
 */
 static final String version() { "0.1" }
 
-static final String deviceType() { "GarageDoor" }
+static final String deviceType() { "OpenGarage" }
 
 metadata {
     definition (name: "Tasmota ${deviceType()} v${version()}", namespace: "tasmota-mqtt", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/Drivers/Tasmota-Mqtt-RGBWCT.groovy") {
@@ -31,6 +31,7 @@ metadata {
         capability "Sensor"
         capability "GarageDoorControl"
         capability "PresenceSensor"
+        capability "ContactSensor"
 
         command "soundBuzzer", [
             [
@@ -97,13 +98,7 @@ void connected() {
 // Called when the device is first created.
 void installed() {
     log.info "${device.displayName} driver v${version()} installed"
-
-    def item = [
-        name = "door"
-        value = "unknown"
-    ]
-    item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
-    sendEvent(item)
+    sendEvent(newEvent("door", "unknown"))
 }
 
 // Called to parse received MQTT data
@@ -169,12 +164,7 @@ void open() {
         return
 	}
 
-    def item = [
-        name = "door"
-        value = "opening"
-    ]
-    item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
-    sendEvent(item)
+    sendEvent(newEvent("door", "opening"))
 
     String commandTopic = getTopic("cmnd", "Backlog")
     mqttPublish(commandTopic, "PulseTime ${settings.pulseTime};Power 1")
@@ -190,12 +180,7 @@ void close() {
         return
 	}
 
-    def item = [
-        name = "door"
-        value = "closing"
-    ]
-    item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
-    sendEvent(item)
+    sendEvent(newEvent("door", "closing"))
 
     if (settings.warnOnClose) {
         soundBuzzer(settings.warnOnClose)
@@ -224,12 +209,7 @@ private void setClosed() {
         return
 	}
 
-    def item = [
-        name = "door"
-        value = "closed"
-    ]
-    item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
-    sendEvent(item)
+    sendEvent(newEvent("door", "closed"))
 }
 
 private void setOpen() {
@@ -242,12 +222,7 @@ private void setOpen() {
         return
 	}
 
-    def item = [
-        name = "door"
-        value = "open"
-    ]
-    item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
-    sendEvent(item)
+    sendEvent(newEvent("door", "open"))
 }
 
 /**
@@ -262,7 +237,7 @@ void parseTasmota(String topic, Map json) {
 
     if (json.containsKey("SR04")) {
         if (logEnable) log.debug "Parsing [ SR04: ${json.SR04} ]"
-        int historySize = 4
+        int historySize = 4 // adjust if required for stable readings
         int value = limit(Math.round(json.SR04.Distance), 0, 400)
 
         if (value) {
@@ -272,31 +247,21 @@ void parseTasmota(String topic, Map json) {
             int distance = state.medianDistance
 
             // Publish distance value (optionally converted to inches)
-            def item = [
-                name: "distance",
-                value: distance,
-                unit: settings.useMetric ? "cm" : "in"
-            ]
-            item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
-            sendEvent(item)
+            sendEvent(newEvent("distance", distance, settings.useMetric ? "cm" : "in"))
+
+            // Publish open/close contact status based on distance to door threshold
+            sendEvent(newEvent("contact", distance < settings.doorThreshold ? "open" : "closed"))
 
             // Publish door status based on distance to door threshold
-            item = [
-                name: "door",
-                value: distance < settings.doorThreshold ? "open" : "closed"
-            ]
-            if (logEnable) log.debug "${item.name} is ${item.value} (distance = ${distance}, doorThreshold = ${settings.doorThreshold}"
-            item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
-            sendEvent(item)
+            String doorState = device.currentValue("door")
+            if (distance < settings.doorThreshold)
+                sendEvent(newEvent("door", "open"))
+            else if (doorState == "open")
+                sendEvent(newEvent("door", "closed"))
 
-            def presence = distance >= settings.doorThreshold && distance < settings.vehicleThreshold
-            item = [
-                name: "presence",
-                value: presence ? "present" : "not present"
-            ]
-            if (logEnable) log.debug "Vehicle is considered ${item.value} (${distance} between ${settings.vehicleThreshold} and ${settings.vehicleThreshold})"
-            item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
-            sendEvent(item)
+            // Publish door status based on distance to vehicle threshold
+            boolean presence = distance >= settings.doorThreshold && distance < settings.vehicleThreshold
+            sendEvent(newEvent("presence", presence ? "present" : "not present"))
         }
     }
 
@@ -309,12 +274,7 @@ void parseTasmota(String topic, Map json) {
         updateDataValue("Signal", json.Wifi.Signal.toString())
         updateDataValue("SSId", json.Wifi.SSId)
 
-        def item = [
-            name: "wifiSignal",
-            value: getWifiSignalName(json.Wifi.RSSI)
-        ]
-        item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
-        sendEvent(item)
+        sendEvent(newEvent("wifiSignal", getWifiSignalName(json.Wifi.RSSI)))
     }
 
     if (json.containsKey("StatusNET")) {
@@ -327,7 +287,16 @@ void parseTasmota(String topic, Map json) {
     state.lastResult = json
 }
 
-def median(data) {
+private Map newEvent(String name, value, unit = null) {
+    return [
+        name: name,
+        value: value,
+        unit: unit,
+        descriptionText: "${device.displayName} ${name} is ${value}${unit}"
+    ]
+}
+
+private def median(data) {
     def copy = data.toSorted()
     def middle = data.size().intdiv(2)
     return data.size() % 2 ? copy[middle] : (copy[middle - 1] + copy[middle]) / 2
