@@ -99,7 +99,7 @@ metadata {
         section("Misc") {
             input name: "changeLevelStep", type: "decimal", title: "Change level step size", description: "Between 1 and 10", required: true, defaultValue: 2
             input name: "changeLevelEvery", type: "number", title: "Change level every x milliseconds", description: "Between 100ms and 1000ms", required: true, defaultValue: 100
-            input name: "colorStaging", type: "bool", title: "Enable color pre-staging", description: "Update of Dimmer/Color/CT without turning power on", required: true, defaultValue: false
+            input name: "preStaging", type: "bool", title: "Enable color and level pre-staging", description: "Update of Dimmer/Color/CT without turning power on", required: true, defaultValue: false
             input name: "initialGroupMode", type: "enum", title: "Initial group mode", description: "Grouped uses the group topic", options: ["single", "grouped"], required: true, defaultValue: "single"
             input name: "logEnable", type: "bool", title: "Enable debug logging", description: "Automatically disabled after 30 minutes", required: true, defaultValue: true
             input name: "watchdogEnable", type: "bool", title: "Enable watchdog logging", description: "Checks for activity every 5 minutes", required: true, defaultValue: true
@@ -131,7 +131,7 @@ void connected() {
 
     // Set option 20 (Update of Dimmer/Color/CT without turning power on)
     String commandTopic = getTopic("cmnd", "SetOption20")
-    mqttPublish(commandTopic, colorStaging ? "1" : "0")
+    mqttPublish(commandTopic, preStaging ? "1" : "0")
 }
 
 // Called when the device is first created.
@@ -243,7 +243,7 @@ void setLevel(level, duration = 0) {
     level = limit(level, 0, 100).toInteger()
 
     int oldSpeed = device.currentValue("fadeSpeed").toInteger() * 2
-    String oldFade = device.currentValue("fadeMode")
+    int oldFade = device.currentValue("fadeMode") == "on" ? 1 : 0
     int speed = Math.min(40f, duration * 2).toInteger()
     if (speed > 0) {
         String commandTopic = getTopic("cmnd", "Backlog")
@@ -313,7 +313,7 @@ def setEffect(id) {
     switch (id) {
         case 0:
             setEffectsScheme(0)
-            blinkoff()
+            blinkOff()
             break
         case 1: blinkOn()
             break
@@ -343,15 +343,15 @@ def setPreviousEffect() {
 }
 
 void blinkOn() {
-    String commandTopic = getTopic("cmnd", "Power")
-    mqttPublish(commandTopic, "blink")
+    int oldFade = device.currentValue("fadeMode") == "on" ? 1 : 0
+    String commandTopic = getTopic("cmnd", "Backlog")
+    mqttPublish(commandTopic, "Fade 0;Power blink;Delay 100;Fade ${oldFade}")
 }
 
-void blinkoff() {
+void blinkOff() {
     String commandTopic = getTopic("cmnd", "Power")
     mqttPublish(commandTopic, "blinkoff")
 }
-
 
 void setEffectsScheme(scheme) {
     String commandTopic = getTopic("cmnd", "Scheme")
@@ -385,12 +385,7 @@ void startWakeup(level, duration) {
 
 // Set the driver group topic mode
 void setGroupTopicMode(mode) {
-    def item = [
-        name: "groupMode",
-        value: mode
-    ]
-    item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
-    sendEvent(item)
+    sendEvent(newEvent("groupMode", mode))
 }
 
 /**
@@ -401,69 +396,37 @@ void setGroupTopicMode(mode) {
 void parseTasmota(String topic, Map json) {
     if (json.containsKey("POWER")) {
         if (logEnable) log.debug "Parsing [ POWER: ${json.POWER} ]"
-        def item = [
-            name: "switch",
-            value: json.POWER.toLowerCase()
-        ]
-        item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
-        sendEvent(item)
+        sendEvent(newEvent("switch", json.POWER.toLowerCase()))
     }
 
     if (json.containsKey("Fade")) {
         if (logEnable) log.debug "Parsing [ Fade: ${json.Fade} ]"
         if (json.Fade == "OFF") json.Speed = 0
-        def item = [
-            name: "fadeMode",
-            value: json.Fade.toLowerCase()
-        ]
-        item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
-        sendEvent(item)
+        sendEvent(newEvent("fadeMode", json.Fade.toLowerCase()))
     }
 
     if (json.containsKey("Speed")) {
         if (logEnable) log.debug "Parsing [ Speed: ${json.Speed} ]"
-        def item = [
-            name: "fadeSpeed",
-            value: sprintf("%.1f", json.Speed.toInteger().div(2)), // seconds
-            unit: "s"
-        ]
-        item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
-        sendEvent(item)
+        def value = sprintf("%.1f", json.Speed.toInteger().div(2))
+        sendEvent(newEvent("fadeSpeed", value, "s"))
     }
 
     if (json.containsKey("Channel")) {
         if (logEnable) log.debug "Parsing [ Channel: ${json.Channel} ]"
         int channelCount = json.Channel.size()
-        def item = [
-            name: "colorMode",
-            value: "RGB"
-        ]
-        if (channelCount == 4 && json.Channel[3] > 0) {
-            item.value = "White"
-        } else if (channelCount == 5 && (json.Channel[3] > 0 || json.Channel[4] > 0)) {
-            item.value = "CT"
-        }
-        item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
-        sendEvent(item)
         state.channelCount = channelCount
+        def value = "RGB"
+        if (channelCount == 4 && json.Channel[3] > 0) {
+            value = "White"
+        } else if (channelCount == 5 && (json.Channel[3] > 0 || json.Channel[4] > 0)) {
+            value = "CT"
+        }
+        sendEvent(newEvent("colorMode", value))
 
         if (channelCount == 4 && json.Channel[3] > 0) {
             int fakeKelvin = 6500
-            item = [
-                name: "colorTemperature",
-                value: fakeKelvin,
-                unit: "K"
-            ]
-            item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
-            sendEvent(item)
-
-            item = [
-                name: "colorTemperatureName",
-                value: getTemperatureName(fakeKelvin),
-                unit: "K"
-            ]
-            item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
-            sendEvent(item)
+            sendEvent(newEvent("colorTemperature", fakeKelvin, "K"))
+            sendEvent(newEvent("colorTemperatureName", getTemperatureName(fakeKelvin)))
         }
     }
 
@@ -471,30 +434,13 @@ void parseTasmota(String topic, Map json) {
         if (logEnable) log.debug "Parsing [ CT: ${json.CT} ]"
         int kelvin = Math.round(1000000f / json.CT).toInteger()
         if (logEnable) log.debug "Converted ${json.CT} CT to ${kelvin} kelvin"
-        def item = [
-            name: "colorTemperature",
-            value: kelvin
-        ]
-        item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
-        sendEvent(item)
-
-        item = [
-            name: "colorTemperatureName",
-            value: getTemperatureName(kelvin)
-        ]
-        item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
-        sendEvent(item)
+        sendEvent(newEvent("colorTemperature", kelvin, "K"))
+        sendEvent(newEvent("colorTemperatureName", getTemperatureName(kelvin)))
     }
 
     if (json.containsKey("Dimmer")) {
         if (logEnable) log.debug "Parsing [ Dimmer: ${json.Dimmer} ]"
-        def item = [
-            name: "level",
-            value: json.Dimmer,
-            unit: "%"
-        ]
-        item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
-        sendEvent(item)
+        sendEvent(newEvent("level", json.Dimmer, "%"))
     }
 
     if (json.containsKey("HSBColor")) {
@@ -504,26 +450,9 @@ void parseTasmota(String topic, Map json) {
         int saturation = hsbColor[1].toInteger()
 
         // Hubitat hue is 0-100 to be converted from Tasmota 0-360
-        def item = [
-            name: "hue",
-            value: Math.round(hue / 3.6) as int
-        ]
-        item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
-        sendEvent(item)
-
-        item = [
-            name: "hueName",
-            value: getHueName(hue)
-        ]
-        item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
-        sendEvent(item)
-
-        item = [
-            name: "saturation",
-            value: saturation
-        ]
-        item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
-        sendEvent(item)
+        sendEvent(newEvent("hue", Math.round(hue / 3.6) as int))
+        sendEvent(newEvent("hueName", getHueName(hue)))
+        sendEvent(newEvent("saturation", saturation))
     }
 
     if (json.containsKey("Wifi")) {
@@ -534,13 +463,7 @@ void parseTasmota(String topic, Map json) {
         updateDataValue("RSSI", json.Wifi.RSSI.toString())
         updateDataValue("Signal", json.Wifi.Signal.toString())
         updateDataValue("SSId", json.Wifi.SSId)
-
-        def item = [
-            name: "wifiSignal",
-            value: getWifiSignalName(json.Wifi.RSSI)
-        ]
-        item.descriptionText = "${device.displayName} ${item.name} is ${item.value}"
-        sendEvent(item)
+        sendEvent(newEvent("wifiSignal", getWifiSignalName(json.Wifi.RSSI)))
     }
 
     if (json.containsKey("StatusNET")) {
@@ -671,6 +594,15 @@ private def limit(value, lowerBound = 0, upperBound = 100) {
     }
 
     return value
+}
+
+private Map newEvent(String name, value, unit = null) {
+    return [
+        name: name,
+        value: value,
+        unit: unit,
+        descriptionText: "${device.displayName} ${name} is ${value}${unit}"
+    ]
 }
 
 private void logsOff() {
