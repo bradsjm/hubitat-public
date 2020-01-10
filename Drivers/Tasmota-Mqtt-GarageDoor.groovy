@@ -139,6 +139,8 @@ void updated() {
     log.info "${device.displayName} driver v${version()} configuration updated"
     log.debug settings
 
+    device.setName("mqtt-${settings.deviceTopic}")
+
     mqttDisconnect()
     unschedule()
 

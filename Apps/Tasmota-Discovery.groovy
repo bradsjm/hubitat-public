@@ -145,7 +145,7 @@ private void createDevice(json) {
                     statusNet.Mac.toLowerCase(),
                     null,
                     [
-                        name: status.Topic,
+                        name: "mqtt-${status.Topic}",
                         label: (settings.namePrefix :? "") + friendlyName
                     ]
             )

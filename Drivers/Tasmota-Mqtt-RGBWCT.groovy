@@ -178,6 +178,7 @@ void updated() {
     log.debug settings
 
     setGroupTopicMode(settings.initialGroupMode)
+    device.setName("mqtt-${settings.deviceTopic}")
 
     mqttDisconnect()
     unschedule()
