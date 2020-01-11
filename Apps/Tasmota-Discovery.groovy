@@ -27,7 +27,7 @@ static final String namespace() { "tasmota-mqtt" }
 static final String version() { "0.1" }
 
 definition(
-    name: "Tasmota Device Discovery v${version()}",
+    name: "Tasmota Device Discovery",
     namespace: "${namespace()}",
     author: "Jonathan Bradshaw",
     description: "Discover Tasmota devices on network",
@@ -146,7 +146,7 @@ private void createDevice(json) {
                     null,
                     [
                         name: "mqtt-${status.Topic}",
-                        label: (settings.namePrefix :? "") + friendlyName
+                        label: (settings?.namePrefix ?: "") + friendlyName
                     ]
             )
         } catch (e) {

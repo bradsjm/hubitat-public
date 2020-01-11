@@ -27,12 +27,13 @@ import groovy.json.JsonSlurper
 import groovy.transform.Field
 
 metadata {
-    definition (name: "Tasmota ${deviceType()} v${version()}", namespace: "tasmota-mqtt", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/Drivers/Tasmota-Mqtt-RGBWCT.groovy") {
+    definition (name: "Tasmota ${deviceType()}", namespace: "tasmota-mqtt", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/Drivers/Tasmota-Mqtt-RGBWCT.groovy") {
         capability "Actuator"
         capability "ChangeLevel"
         capability "ColorControl"
         capability "ColorMode"
         capability "ColorTemperature"
+        capability "Configuration"
         capability "Light"
         capability "LightEffects"
         capability "Refresh"
@@ -93,7 +94,6 @@ metadata {
             input name: "mqttBroker", type: "text", title: "MQTT Broker Host/IP", description: "ex: tcp://hostnameorip:1883", required: true, defaultValue: "tcp://mqtt:1883"
             input name: "mqttUsername", type: "text", title: "MQTT Username", description: "(blank if none)", required: false
             input name: "mqttPassword", type: "password", title: "MQTT Password", description: "(blank if none)", required: false
-            input name: "mqttQOS", type: "text", title: "MQTT QOS setting", description: "0 = Only Once, 1 = At Least Once*, 2 = Exactly Once", required: true, defaultValue: "1"
         }
 
         section("Misc") {
@@ -123,12 +123,16 @@ metadata {
 // Called after MQTT successfully connects
 void connected() {
     mqttSubscribeTopics()
+    configure()
 
     if (settings.watchdogEnable) {
     	int randomSeconds = new Random(now()).nextInt(60)
         schedule("${randomSeconds} 0/5 * * * ?", "mqttCheckReceiveTime")
     }
+}
 
+void configure()
+{
     // Set option 20 (Update of Dimmer/Color/CT without turning power on)
     String commandTopic = getTopic("cmnd", "SetOption20")
     mqttPublish(commandTopic, preStaging ? "1" : "0")
@@ -566,16 +570,16 @@ private String getHueName(int hue) {
 private String getWifiSignalName(int rssi) {
     String signalName
     switch(rssi) {
-        case 75..100: signalName = "High"
+        case 75..100: signalName = "high"
             break
 
-        case 45..74: signalName = "Medium"
+        case 45..74: signalName = "medium"
             break
 
-        case 1..44: signalName = "Low"
+        case 1..44: signalName = "low"
             break
 
-        case 0: signalName = "None"
+        case 0: signalName = "none"
             break;
     }
 
@@ -683,12 +687,12 @@ private void mqttDisconnect() {
     }
 }
 
-private void mqttPublish(String topic, String message = "") {
-    int qos = settings.mqttQOS.toInteger()
-    if (logEnable) log.debug "MQTT Publish: ${topic} = ${message} (qos: ${qos})"
+private void mqttPublish(String topic, String payload = "") {
+    int qos = 1 // at least once delivery
+    if (logEnable) log.debug "MQTT PUBLISH ---> ${topic} = ${payload}"
 
     if (mqttCheckConnected()) {
-        interfaces.mqtt.publish(topic, message, qos, false)
+        interfaces.mqtt.publish(topic, payload, qos, false)
         state.mqttTransmitCount = (state?.mqttTransmitCount ?: 0) + 1
     } else {
         log.warn "Unable to publish topic (MQTT not connected)"
@@ -696,9 +700,9 @@ private void mqttPublish(String topic, String message = "") {
 }
 
 private void mqttReceive(Map message) {
-    if (logEnable) log.debug "MQTT Receive: ${message}"
     String topic = message.get("topic")
     String payload = message.get("payload")
+    if (logEnable) log.debug "MQTT RECEIVE <--- ${topic} = ${payload}"
     state.mqttReceiveCount = (state?.mqttReceiveCount ?: 0) + 1
 
     String availabilityTopic = getTopic("tele", "LWT")
@@ -719,12 +723,12 @@ private void mqttReceive(Map message) {
 }
 
 private void mqttSubscribeTopics() {
-    int qos = settings.mqttQOS.toInteger()
+    int qos = 1 // at least once delivery
     String teleTopic = getTopic("tele", "+", true)
     if (logEnable) log.debug "Subscribing to Tasmota telemetry topic: ${teleTopic}"
     interfaces.mqtt.subscribe(teleTopic, qos)
 
-    String statTopic = getTopic("stat", "+", true)
+    String statTopic = getTopic("stat", "RESULT", true)
     if (logEnable) log.debug "Subscribing to Tasmota stat topic: ${statTopic}"
     interfaces.mqtt.subscribe(statTopic, qos)
 }

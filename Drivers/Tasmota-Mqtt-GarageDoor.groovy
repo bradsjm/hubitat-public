@@ -25,15 +25,16 @@ static final String version() { "0.1" }
 static final String deviceType() { "OpenGarage" }
 
 metadata {
-    definition (name: "Tasmota ${deviceType()} v${version()}", namespace: "tasmota-mqtt", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/Drivers/Tasmota-Mqtt-RGBWCT.groovy") {
+    definition (name: "Tasmota ${deviceType()}", namespace: "tasmota-mqtt", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/Drivers/Tasmota-Mqtt-RGBWCT.groovy") {
         capability "Actuator"
+        capability "Configuration"
         capability "Refresh"
         capability "Sensor"
         capability "GarageDoorControl"
         capability "PresenceSensor"
         capability "ContactSensor"
 
-        command "soundBeeper"
+        command "soundWarning"
 
         attribute "connection", "string"
         attribute "wifiSignal", "string"
@@ -50,15 +51,13 @@ metadata {
             input name: "mqttBroker", type: "text", title: "MQTT Broker Host/IP", description: "ex: tcp://hostnameorip:1883", required: true, defaultValue: "tcp://mqtt:1883"
             input name: "mqttUsername", type: "text", title: "MQTT Username", description: "(blank if none)", required: false
             input name: "mqttPassword", type: "password", title: "MQTT Password", description: "(blank if none)", required: false
-            input name: "mqttQOS", type: "text", title: "MQTT QOS setting", description: "0 = Only Once, 1 = At Least Once*, 2 = Exactly Once", required: true, defaultValue: "1"
         }
 
         section("Opener") {
-            input name: "doorThreshold", type: "number", title: "Door Threshold", description: "Distance at which door is regarded as open (cm)", required: true, defaultValue: 150
-            input name: "vehicleThreshold", type: "number", title: "Vehicle Threshold", description: "Distance at which car is detected (cm)", required: true, defaultValue: 50
+            input name: "doorThreshold", type: "number", title: "Maximum Door Distance", description: "Measured from sensor to top of garage door (cm)", required: true, defaultValue: 50
+            input name: "vehicleThreshold", type: "number", title: "Maximum Vehicle Distance", description: "Measured from sensor to top of car (cm)", required: true, defaultValue: 150
             input name: "pulseTime", type: "number", title: "Relay Pulse Time", description: "In tenths of a second (ms)", required: true, defaultValue: 7
             input name: "travelTime", type: "number", title: "Door Travel Time", description: "Time to fully open/close (seconds)", required: true, defaultValue: 30
-            input name: "telePeriod", type: "number", title: "Sensor Read Interval", description: "Time between distance readings (seconds)", required: true, defaultValue: 5
             input name: "useMetric", type: "bool", title: "Use metric", description: "Displays distance using centimeters", required: true, defaultValue: true
             input name: "warnOnClose", type: "bool", title: "Warning Beeper on Closing", description: "Beeps 3 times before closing", required: true, defaultValue: true
         }
@@ -78,15 +77,26 @@ metadata {
 // Called after MQTT successfully connects
 void connected() {
     mqttSubscribeTopics()
+    configure()
 
     if (settings.watchdogEnable) {
     	int randomSeconds = new Random(now()).nextInt(60)
         schedule("${randomSeconds} 0/5 * * * ?", "mqttCheckReceiveTime")
     }
+}
 
+void configure() {
     // Set options
     def commandTopic = getTopic("cmnd", "Backlog")
-    mqttPublish(commandTopic, "SetOption0 0;PowerOnState 0;TelePeriod ${settings.telePeriod}")
+    mqttPublish(commandTopic, "SetOption0 0;PowerOnState 0")
+
+    // Create rule to publish distance on change of +/- 10cm
+    def rule = """
+        on SR04#Distance>%var1% do backlog publish tele/garagedoor/SENSOR {"SR04":{"Distance":%value%}};var1 %value%;var2 %value%;add1 10;sub2 10 endon on SR04#Distance<%var2% do backlog publish tele/garagedoor/SENSOR {"SR04":{"Distance":%value%}};var1 %value%;var2 %value%;add1 10;sub2 10 endon
+    """
+    commandTopic = getTopic("cmnd", "Rule1")
+    mqttPublish(commandTopic, rule) // send the rule content
+    mqttPublish(commandTopic, "1") // enable the rule
 }
 
 // Called when the device is first created.
@@ -179,7 +189,7 @@ void close() {
     sendEvent(newEvent("door", "closing"))
 
     if (settings.warnOnClose) {
-        soundBeeper()
+        soundWarning()
         pauseExecution(3000)
     }
 
@@ -189,8 +199,7 @@ void close() {
     runIn(settings.travelTime, "setClosed")
 }
 
-// Sound the buzzer
-void soundBeeper(count = 3, freq = 750) {
+void soundWarning(count = 3, freq = 750) {
     String commandTopic = getTopic("cmnd", "Backlog")
     String beep = "Pwm2 512;Delay 2;Pwm2 0;Delay 3;"
     mqttPublish(commandTopic, "PwmFrequency ${freq};" + beep * count)
@@ -240,37 +249,40 @@ void parseTasmota(String topic, Map json) {
 
     if (json.containsKey("SR04")) {
         if (logEnable) log.debug "Parsing [ SR04: ${json.SR04} ]"
-        int historySize = 3 // adjust if required for stable readings
-        int value = limit(Math.round(json.SR04.Distance), 0, 400)
+        int distance = limit(Math.round(json.SR04.Distance), 0, 400)
 
-        if (value) {
-            // Track distance sensorHistory values
-            //state.sensorHistory = (state?.sensorHistory ?: []).takeRight(historySize-1).plus(value)
-            //state.medianDistance = median(state.sensorHistory)
-            int distance = value //state.medianDistance
+        state.minDistance = Math.min(distance, state.minDistance ?: 400)
+        state.maxDistance = Math.max(distance, state.maxDistance ?: 0)
 
-            // Publish distance value (optionally converted to inches)
-            sendEvent(newEvent("distance", distance, settings.useMetric ? "cm" : "in"))
+        // Track distance sensorHistory values
+        //int historySize = 3 // adjust if required for stable readings
+        //state.sensorHistory = (state?.sensorHistory ?: []).takeRight(historySize-1).plus(distance)
+        //state.medianDistance = median(state.sensorHistory)
+        //distance = state.medianDistance
 
-            // Publish open/close contact status based on distance to door threshold
-            sendEvent(newEvent("contact", distance < settings.doorThreshold ? "open" : "closed"))
+        // Publish distance value (optionally converted to inches)
+        sendEvent(newEvent("distance", distance, settings.useMetric ? "cm" : "in"))
 
-            // Publish door status based on distance to door threshold
-            def currentState = device.currentValue("door")
-            switch (currentState) {
-                case "open":
-                case "closed":
-                case "unknown":
-                    def newState = distance < settings.doorThreshold ? "open" : "closed"
-                    if (logEnable && newState != oldState) log.debug "setting door state to ${newState} from ${oldState} (distance ${distance}, threshold ${settings.doorThreshold})"
-                    sendEvent(newEvent("door", newState))
-                    break
-            }
+        // Check if distance is less than the open door threshold
+        def newState = distance < settings.doorThreshold ? "open" : "closed"
 
-            // Publish door status based on distance to vehicle threshold
-            boolean presence = distance >= settings.doorThreshold && distance < settings.vehicleThreshold
-            sendEvent(newEvent("presence", presence ? "present" : "not present"))
+        // Publish open/close contact status based on distance to door threshold
+        sendEvent(newEvent("contact", newState))
+
+        // Publish door status based on distance to door threshold
+        def oldState = device.currentValue("door")
+        switch (oldState) {
+            case "open":
+            case "closed":
+            case "unknown":
+                if (logEnable && newState != oldState) log.debug "setting door state to ${newState} from ${oldState} (distance ${distance}, threshold ${settings.doorThreshold})"
+                sendEvent(newEvent("door", newState))
+                break
         }
+
+        // If distance is greater than the door but less than the vehicle then a car is present
+        boolean presence = distance > settings.doorThreshold && distance < settings.vehicleThreshold
+        sendEvent(newEvent("presence", presence ? "present" : "not present"))
     }
 
     if (json.containsKey("Wifi")) {
@@ -334,16 +346,16 @@ private String getTopic(String prefix, String postfix = "")
 private String getWifiSignalName(int rssi) {
     String signalName
     switch(rssi) {
-        case 75..100: signalName = "High"
+        case 75..100: signalName = "high"
             break
 
-        case 45..74: signalName = "Medium"
+        case 45..74: signalName = "medium"
             break
 
-        case 1..44: signalName = "Low"
+        case 1..44: signalName = "low"
             break
 
-        case 0: signalName = "None"
+        case 0: signalName = "none"
             break;
     }
 
@@ -449,12 +461,12 @@ private void mqttDisconnect() {
     }
 }
 
-private void mqttPublish(String topic, String message = "") {
-    int qos = settings.mqttQOS.toInteger()
-    if (logEnable) log.debug "MQTT Publish: ${topic} = ${message} (qos: ${qos})"
+private void mqttPublish(String topic, String payload = "") {
+    int qos = 1 // at least once delivery
+    if (logEnable) log.debug "MQTT PUBLISH ---> ${topic} = ${payload}"
 
     if (mqttCheckConnected()) {
-        interfaces.mqtt.publish(topic, message, qos, false)
+        interfaces.mqtt.publish(topic, payload, qos, false)
         state.mqttTransmitCount = (state?.mqttTransmitCount ?: 0) + 1
     } else {
         log.warn "Unable to publish topic (MQTT not connected)"
@@ -462,9 +474,9 @@ private void mqttPublish(String topic, String message = "") {
 }
 
 private void mqttReceive(Map message) {
-    if (logEnable) log.debug "MQTT Receive: ${message}"
     String topic = message.get("topic")
     String payload = message.get("payload")
+    if (logEnable) log.debug "MQTT RECEIVE <--- ${topic} = ${payload}"
     state.mqttReceiveCount = (state?.mqttReceiveCount ?: 0) + 1
 
     String availabilityTopic = getTopic("tele", "LWT")
@@ -485,12 +497,12 @@ private void mqttReceive(Map message) {
 }
 
 private void mqttSubscribeTopics() {
-    int qos = settings.mqttQOS.toInteger()
+    int qos = 1 // at least once delivery
     String teleTopic = getTopic("tele", "+")
     if (logEnable) log.debug "Subscribing to Tasmota telemetry topic: ${teleTopic}"
     interfaces.mqtt.subscribe(teleTopic, qos)
 
-    String statTopic = getTopic("stat", "+")
+    String statTopic = getTopic("stat", "RESULT")
     if (logEnable) log.debug "Subscribing to Tasmota stat topic: ${statTopic}"
     interfaces.mqtt.subscribe(statTopic, qos)
 }
