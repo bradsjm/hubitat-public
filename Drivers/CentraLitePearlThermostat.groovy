@@ -165,6 +165,10 @@ def parse(String description) {
             log.debug "OPERATING MODE"
             map.name = "thermostatOperatingState"
             map.value = getThermostatOperatingStateMap()[descMap.value]
+            sendEvent(
+                name: "thermostatFanMode",
+                value: map.value == "idle" ? "auto" : "on"
+            )
         } else if (descMap.cluster == "0000" && descMap.attrId == "0007") {
             log.debug "POWER SOURCE"
             map.name = "powerSource"
@@ -256,10 +260,9 @@ def getTemperature(value) {
         def celsius = temp / 100
 
         if (getTemperatureScale() == "C") {
-            return celsius
+            return Math.round(celsius)
         } else {
-            def fahrenheit = Math.round(celsiusToFahrenheit(celsius))
-            return fahrenheit
+            return Math.round(celsiusToFahrenheit(celsius))
         }
     }
 }

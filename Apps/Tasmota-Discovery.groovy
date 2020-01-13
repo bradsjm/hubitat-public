@@ -141,7 +141,7 @@ private void createDevice(json) {
         try {
             child = addChildDevice(
                     "${namespace()}",
-                    "Tasmota RGBW/CT v${version()}",
+                    "Tasmota Switch", // default new devices to basic switch driver
                     statusNet.Mac.toLowerCase(),
                     null,
                     [

@@ -30,6 +30,7 @@ metadata {
         capability "Configuration"
         capability "Refresh"
         capability "Sensor"
+        capability "DoorControl"
         capability "GarageDoorControl"
         capability "PresenceSensor"
         capability "ContactSensor"
@@ -54,17 +55,18 @@ metadata {
         }
 
         section("Opener") {
-            input name: "doorThreshold", type: "number", title: "Maximum Door Distance", description: "Measured from sensor to top of garage door (cm)", required: true, defaultValue: 50
-            input name: "vehicleThreshold", type: "number", title: "Maximum Vehicle Distance", description: "Measured from sensor to top of car (cm)", required: true, defaultValue: 150
-            input name: "pulseTime", type: "number", title: "Relay Pulse Time", description: "In tenths of a second (ms)", required: true, defaultValue: 7
-            input name: "travelTime", type: "number", title: "Door Travel Time", description: "Time to fully open/close (seconds)", required: true, defaultValue: 30
-            input name: "useMetric", type: "bool", title: "Use metric", description: "Displays distance using centimeters", required: true, defaultValue: true
+            input name: "doorThreshold", type: "number", title: "Max Door Distance", description: "Measured to top of garage door (cm)", required: true, defaultValue: 50
+            input name: "vehicleThreshold", type: "number", title: "Max Vehicle Distance", description: "Measured to top of car (cm)", required: true, defaultValue: 150
+            input name: "debounceTime", type: "number", title: "Sensor Debounce", description: "Time to wait for measurement to settle (seconds)", required: true, defaultValue: 5
+            input name: "pulseTime", type: "number", title: "Relay Pulse", description: "In tenths of a second (ms)", required: true, defaultValue: 7
+            input name: "travelTime", type: "number", title: "Door Travel", description: "Time to fully open/close (seconds)", required: true, defaultValue: 30
             input name: "warnOnClose", type: "bool", title: "Warning Beeper on Closing", description: "Beeps 3 times before closing", required: true, defaultValue: true
         }
 
         section("Misc") {
+            input name: "useMetric", type: "bool", title: "Display Metric", description: "Displays distance using centimeters", required: true, defaultValue: true
             input name: "logEnable", type: "bool", title: "Enable debug logging", description: "Automatically disabled after 30 minutes", required: true, defaultValue: true
-            input name: "watchdogEnable", type: "bool", title: "Enable watchdog logging", description: "Checks for activity every 5 minutes", required: true, defaultValue: true
+            input name: "watchdogEnable", type: "bool", title: "Enable watchdog logging", description: "Checks for mqtt activity every 5 minutes", required: true, defaultValue: true
         }
     }
 }
@@ -115,8 +117,6 @@ void parse(data) {
 void refresh() {
     log.info "Refreshing state of ${device.name}"
     state.clear()
-    state.sensorHistory = []
-    sendEvent(newEvent("door", "unknown"))
 
     String commandTopic = getTopic("cmnd", "Backlog")
     mqttPublish(commandTopic, "State;Status 5;Status 10")
@@ -250,39 +250,21 @@ void parseTasmota(String topic, Map json) {
     if (json.containsKey("SR04")) {
         if (logEnable) log.debug "Parsing [ SR04: ${json.SR04} ]"
         int distance = limit(Math.round(json.SR04.Distance), 0, 400)
-
         state.minDistance = Math.min(distance, state.minDistance ?: 400)
         state.maxDistance = Math.max(distance, state.maxDistance ?: 0)
 
-        // Track distance sensorHistory values
-        //int historySize = 3 // adjust if required for stable readings
-        //state.sensorHistory = (state?.sensorHistory ?: []).takeRight(historySize-1).plus(distance)
-        //state.medianDistance = median(state.sensorHistory)
-        //distance = state.medianDistance
+        def oldDistance = device.currentValue("distance")
+        def delta = oldDistance ? Math.abs(oldDistance - distance) : 0
 
-        // Publish distance value (optionally converted to inches)
-        sendEvent(newEvent("distance", distance, settings.useMetric ? "cm" : "in"))
-
-        // Check if distance is less than the open door threshold
-        def newState = distance < settings.doorThreshold ? "open" : "closed"
-
-        // Publish open/close contact status based on distance to door threshold
-        sendEvent(newEvent("contact", newState))
-
-        // Publish door status based on distance to door threshold
-        def oldState = device.currentValue("door")
-        switch (oldState) {
-            case "open":
-            case "closed":
-            case "unknown":
-                if (logEnable && newState != oldState) log.debug "setting door state to ${newState} from ${oldState} (distance ${distance}, threshold ${settings.doorThreshold})"
-                sendEvent(newEvent("door", newState))
-                break
+        if (delta > 10) {
+            def deBounceTime = settings.debounceTime
+            // Rudimentary debounce for reading spikes
+            if (logEnable) log.debug "waiting ${deBounceTime}s to process value (${distance})"
+            unschedule("updateDistance")
+            runIn(settings.debounceTime, "updateDistance", [ data: distance ])
+        } else {
+            updateDistance(distance)
         }
-
-        // If distance is greater than the door but less than the vehicle then a car is present
-        boolean presence = distance > settings.doorThreshold && distance < settings.vehicleThreshold
-        sendEvent(newEvent("presence", presence ? "present" : "not present"))
     }
 
     if (json.containsKey("Wifi")) {
@@ -305,6 +287,32 @@ void parseTasmota(String topic, Map json) {
     }
 
     state.lastResult = json
+}
+
+private void updateDistance(int distance) {
+    // Publish distance value (optionally converted to inches)
+    sendEvent(newEvent("distance", conversion(distance), settings.useMetric ? "cm" : "in"))
+
+    // Check if distance is less than the open door threshold
+    def newState = distance < settings.doorThreshold ? "open" : "closed"
+
+    // Publish open/close contact status based on distance to door threshold
+    sendEvent(newEvent("contact", newState))
+
+    // Publish door status based on distance to door threshold
+    def oldState = device.currentValue("door")
+    switch (oldState) {
+        case "open":
+        case "closed":
+        case "unknown":
+            if (logEnable && newState != oldState) log.debug "setting door state to ${newState} from ${oldState} (distance ${distance}, threshold ${settings.doorThreshold})"
+            sendEvent(newEvent("door", newState))
+            break
+    }
+
+    // If distance is greater than the door but less than the vehicle then a car is present
+    boolean presence = distance > settings.doorThreshold && distance < settings.vehicleThreshold
+    sendEvent(newEvent("presence", presence ? "present" : "not present"))
 }
 
 private Map newEvent(String name, value, unit = null) {
@@ -502,7 +510,7 @@ private void mqttSubscribeTopics() {
     if (logEnable) log.debug "Subscribing to Tasmota telemetry topic: ${teleTopic}"
     interfaces.mqtt.subscribe(teleTopic, qos)
 
-    String statTopic = getTopic("stat", "RESULT")
+    String statTopic = getTopic("stat", "+")
     if (logEnable) log.debug "Subscribing to Tasmota stat topic: ${statTopic}"
     interfaces.mqtt.subscribe(statTopic, qos)
 }

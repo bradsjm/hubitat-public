@@ -21,7 +21,7 @@
  *  SOFTWARE.
 */
 static final String version() { "0.1" }
-static final String deviceType() { "RGBW/CT" }
+static final String deviceType() { "Switch" }
 
 import groovy.json.JsonSlurper
 import groovy.transform.Field
@@ -29,32 +29,13 @@ import groovy.transform.Field
 metadata {
     definition (name: "Tasmota ${deviceType()}", namespace: "tasmota-mqtt", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/Drivers/Tasmota-Mqtt-RGBWCT.groovy") {
         capability "Actuator"
-        capability "ChangeLevel"
-        capability "ColorControl"
-        capability "ColorMode"
-        capability "ColorTemperature"
         capability "Configuration"
-        capability "Light"
-        capability "LightEffects"
         capability "Refresh"
         capability "Switch"
-        capability "SwitchLevel"
 
-        attribute "colorTemperatureName", "String"
         attribute "connection", "String"
-        attribute "fadeMode", "String"
-        attribute "fadeSpeed", "Number"
         attribute "groupMode", "String"
-        attribute "hueName", "String"
         attribute "wifiSignal", "String"
-
-        command "setFadeSpeed", [
-            [
-                name:"Fade Speed*",
-                type: "NUMBER",
-                description: "Seconds (0 to 20) where 0 is off"
-            ]
-        ]
 
         command "setGroupTopicMode", [
             [
@@ -65,19 +46,6 @@ metadata {
                     "single",
                     "grouped",
                 ]
-            ]
-        ]
-
-        command "startWakeup", [
-            [
-                name:"Dimmer Level*",
-                type: "NUMBER",
-                description: "Target dimmer level (0-100)"
-            ],
-            [
-                name:"Duration*",
-                type: "NUMBER",
-                description: "Duration in seconds (1-3000)"
             ]
         ]
     }
@@ -96,24 +64,12 @@ metadata {
         }
 
         section("Misc") {
-            input name: "changeLevelStep", type: "decimal", title: "Change level step size", description: "Between 1 and 10", required: true, defaultValue: 2
-            input name: "changeLevelEvery", type: "number", title: "Change level every x milliseconds", description: "Between 100ms and 1000ms", required: true, defaultValue: 100
-            input name: "preStaging", type: "bool", title: "Enable color and level pre-staging", description: "Update of Dimmer/Color/CT without turning power on", required: true, defaultValue: false
             input name: "initialGroupMode", type: "enum", title: "Initial group mode", description: "Grouped uses the group topic", options: ["single", "grouped"], required: true, defaultValue: "single"
             input name: "logEnable", type: "bool", title: "Enable debug logging", description: "Automatically disabled after 30 minutes", required: true, defaultValue: true
             input name: "watchdogEnable", type: "bool", title: "Enable watchdog logging", description: "Checks for mqtt activity every 5 minutes", required: true, defaultValue: true
         }
     }
 }
-
-@Field static Map lightEffects = [
-    0: "None",
-    1: "Blink",
-    2: "Wakeup",
-    3: "Cycle Up",
-    4: "Cycle Down",
-    5: "Random Cycle"
-]
 
 /**
  *  Hubitat Driver Event Handlers
@@ -130,17 +86,14 @@ void connected() {
     }
 }
 
+// Called when the device connects to mqtt or when configure action is invoked.
 void configure()
 {
-    // Set option 20 (Update of Dimmer/Color/CT without turning power on)
-    String commandTopic = getTopic("cmnd", "SetOption20")
-    mqttPublish(commandTopic, preStaging ? "1" : "0")
 }
 
 // Called when the device is first created.
 void installed() {
     log.info "${device.displayName} driver v${version()} installed"
-    sendEvent(name: "lightEffects", value: new groovy.json.JsonBuilder(lightEffects))
 }
 
 // Called to parse received MQTT data
@@ -218,181 +171,6 @@ void off() {
 }
 
 /**
- *  Capability: ChangeLevel
- */
-
-// Start level change (up or down)
-void startLevelChange(direction) {
-    if (settings.changeLevelStep && settings.changeLevelEvery) {
-        int delta = (direction == "down") ? -settings.changeLevelStep : settings.changeLevelStep
-        doLevelChange(limit(delta, 1, 10))
-    }
-}
-
-// Stop level change (up or down)
-void stopLevelChange() {
-    unschedule("doLevelChange")
-}
-
-private void doLevelChange(delta) {
-    int newLevel = limit(device.currentValue("level").toInteger() + delta)
-    setLevel(newLevel)
-    if (newLevel > 0 && newLevel < 100) {
-        int delay = limit(settings.changeLevelEvery, 100, 1000)
-        runInMillis(delay, "doLevelChange", [ data: delta ])
-    }
-}
-
-/**
- *  Capability: SwitchLevel
- */
-
-// Set the brightness level and optional duration
-void setLevel(level, duration = 0) {
-    level = limit(level, 0, 100).toInteger()
-
-    int oldSpeed = device.currentValue("fadeSpeed").toInteger() * 2
-    int oldFade = device.currentValue("fadeMode") == "on" ? 1 : 0
-    int speed = Math.min(40f, duration * 2).toInteger()
-    if (speed > 0) {
-        String commandTopic = getTopic("cmnd", "Backlog")
-        mqttPublish(commandTopic, "Speed ${speed};Fade 1;Dimmer ${level};Delay ${duration * 10};Speed ${oldSpeed};Fade ${oldFade}")
-    } else {
-        String commandTopic = getTopic("cmnd", "Dimmer")
-        mqttPublish(commandTopic, level.toString())
-    }
-}
-
-/**
- *  Capability: ColorControl
- */
-
-// Set the HSB color [hue:(0-100), saturation:(0-100), level:(0-100)]
-void setColor(colormap) {
-    if (colormap.hue == null || colormap.saturation == null) return
-    int hue = limit(colormap.hue * 3.6, 0, 360).toInteger()
-    int saturation = limit(colormap.saturation).toInteger()
-    int level = limit(colormap.level).toInteger()
-
-    String commandTopic = getTopic("cmnd", "HsbColor")
-    mqttPublish(commandTopic, "${hue},${saturation},${level}")
-}
-
-// Set the hue (0-100)
-void setHue(hue) {
-    // Hubitat hue is 0-100 to be converted to Tasmota 0-360
-    hue = limit(Math.round(hue * 3.6), 0, 360).toInteger()
-    String commandTopic = getTopic("cmnd", "HsbColor1")
-    mqttPublish(commandTopic, hue.toString())
-}
-
-// Set the saturation (0-100)
-void setSaturation(saturation) {
-    saturation = limit(saturation).toInteger()
-    String commandTopic = getTopic("cmnd", "HsbColor2")
-    mqttPublish(commandTopic, saturation.toString())
-}
-
-// Set the color temperature (2000-6536)
-void setColorTemperature(kelvin) {
-    kelvin = limit(kelvin, 2000, 6536)
-    int channelCount = state.channelCount
-    if (channelCount == 5) {
-        String commandTopic = getTopic("cmnd", "CT")
-        int mired = limit(Math.round(1000000f / kelvin), 153, 500).toInteger()
-        if (logEnable) log.debug "Converted ${kelvin} kelvin to ${mired} mired"
-        mqttPublish(commandTopic, mired.toString())
-    } else if (channelCount == 4) {
-        String commandTopic = getTopic("cmnd", "White")
-        mqttPublish(commandTopic, device.currentValue("level").toString())
-    }
-}
-
-/**
- *  Capability: Light Effects
- */
-
-void setEffect(String effect) {
-    def id = lightEffects.find { it.value == effect }
-    if (id != null) setEffect(id.key)
-}
-
-def setEffect(id) {
-    if (logEnable) log.debug "Setting effect $id"
-    switch (id) {
-        case 0:
-            setEffectsScheme(0)
-            blinkOff()
-            break
-        case 1: blinkOn()
-            break
-        case 2: setEffectsScheme(1)
-            break
-        case 3: setEffectsScheme(2)
-            break
-        case 4: setEffectsScheme(3)
-            break
-        case 5: setEffectsScheme(4)
-            break
-    }
-}
-
-def setNextEffect() {
-    def currentEffect = state.crntEffectId ?: 0
-    currentEffect++
-    if (currentEffect > lightEffects.size() - 1) currentEffect = 0
-    setEffect(currentEffect)
-}
-
-def setPreviousEffect() {
-    def currentEffect = state.crntEffectId ?: 0
-    currentEffect--
-    if (currentEffect < 0) currentEffect = lightEffects.size() - 1
-    setEffect(currentEffect)
-}
-
-void blinkOn() {
-    int oldFade = device.currentValue("fadeMode") == "on" ? 1 : 0
-    String commandTopic = getTopic("cmnd", "Backlog")
-    mqttPublish(commandTopic, "Fade 0;Power blink;Delay 100;Fade ${oldFade}")
-}
-
-void blinkOff() {
-    String commandTopic = getTopic("cmnd", "Power")
-    mqttPublish(commandTopic, "blinkoff")
-}
-
-void setEffectsScheme(scheme) {
-    String commandTopic = getTopic("cmnd", "Scheme")
-    mqttPublish(commandTopic, scheme.toString())
-}
-
-/**
- *
- * Tasmota Custom Commands
- */
-
-// Set the Tasmota fade speed
-void setFadeSpeed(seconds) {
-    int speed = Math.min(40f, seconds * 2).toInteger()
-    if (speed > 0) {
-        String commandTopic = getTopic("cmnd", "Backlog")
-        mqttPublish(commandTopic, "Speed ${speed};Fade 1")
-    } else {
-        String commandTopic = getTopic("cmnd", "Fade")
-        mqttPublish(commandTopic, "0")
-    }
-}
-
-// Perform Tasmota wakeup function
-void startWakeup(level, duration) {
-    level = limit(level).toInteger()
-    duration = limit(duration, 1, 3000).toInteger()
-    String commandTopic = getTopic("cmnd", "Backlog")
-    mqttPublish(commandTopic, "WakeupDuration ${duration};Wakeup ${level}")
-}
-
-/**
  *  Tasmota Device Specific
  */
 
@@ -401,62 +179,6 @@ void parseTasmota(String topic, Map json) {
     if (json.containsKey("POWER")) {
         if (logEnable) log.debug "Parsing [ POWER: ${json.POWER} ]"
         sendEvent(newEvent("switch", json.POWER.toLowerCase()))
-    }
-
-    if (json.containsKey("Fade")) {
-        if (logEnable) log.debug "Parsing [ Fade: ${json.Fade} ]"
-        if (json.Fade == "OFF") json.Speed = 0
-        sendEvent(newEvent("fadeMode", json.Fade.toLowerCase()))
-    }
-
-    if (json.containsKey("Speed")) {
-        if (logEnable) log.debug "Parsing [ Speed: ${json.Speed} ]"
-        def value = sprintf("%.1f", json.Speed.toInteger().div(2))
-        sendEvent(newEvent("fadeSpeed", value, "s"))
-    }
-
-    if (json.containsKey("Channel")) {
-        if (logEnable) log.debug "Parsing [ Channel: ${json.Channel} ]"
-        int channelCount = json.Channel.size()
-        state.channelCount = channelCount
-        def value = "RGB"
-        if (channelCount == 4 && json.Channel[3] > 0) {
-            value = "White"
-        } else if (channelCount == 5 && (json.Channel[3] > 0 || json.Channel[4] > 0)) {
-            value = "CT"
-        }
-        sendEvent(newEvent("colorMode", value))
-
-        if (channelCount == 4 && json.Channel[3] > 0) {
-            int fakeKelvin = 6500
-            sendEvent(newEvent("colorTemperature", fakeKelvin, "K"))
-            sendEvent(newEvent("colorTemperatureName", getTemperatureName(fakeKelvin)))
-        }
-    }
-
-    if (json.containsKey("CT")) {
-        if (logEnable) log.debug "Parsing [ CT: ${json.CT} ]"
-        int kelvin = Math.round(1000000f / json.CT).toInteger()
-        if (logEnable) log.debug "Converted ${json.CT} CT to ${kelvin} kelvin"
-        sendEvent(newEvent("colorTemperature", kelvin, "K"))
-        sendEvent(newEvent("colorTemperatureName", getTemperatureName(kelvin)))
-    }
-
-    if (json.containsKey("Dimmer")) {
-        if (logEnable) log.debug "Parsing [ Dimmer: ${json.Dimmer} ]"
-        sendEvent(newEvent("level", json.Dimmer, "%"))
-    }
-
-    if (json.containsKey("HSBColor")) {
-        if (logEnable) log.debug "Parsing [ HSBColor: ${json.HSBColor} ]"
-        def hsbColor = json.HSBColor.tokenize(",")
-        int hue = hsbColor[0].toInteger()
-        int saturation = hsbColor[1].toInteger()
-
-        // Hubitat hue is 0-100 to be converted from Tasmota 0-360
-        sendEvent(newEvent("hue", Math.round(hue / 3.6) as int))
-        sendEvent(newEvent("hueName", getHueName(hue)))
-        sendEvent(newEvent("saturation", saturation))
     }
 
     if (json.containsKey("Wifi")) {
@@ -478,85 +200,6 @@ void parseTasmota(String topic, Map json) {
     }
 
     state.lastResult = json
-}
-
-private String getTemperatureName(int kelvin) {
-    if (!kelvin) return ""
-    String temperatureName
-    switch (limit(kelvin, 1000, 6500)) {
-        case 1000..1999: temperatureName = "Candlelight"
-            break
-        case 2000..2399: temperatureName = "Sunrise"
-            break
-        case 2400..2999: temperatureName = "Soft White"
-            break
-        case 3000..3199: temperatureName = "Warm White"
-            break
-        case 3200..3350: temperatureName = "Studio White"
-            break
-        case 4000..4300: temperatureName = "Cool White"
-            break
-        case 5000..5765: temperatureName = "Full Spectrum"
-            break
-        case 6500: temperatureName = "Daylight"
-            break
-    }
-
-    return temperatureName
-}
-
-private String getHueName(int hue) {
-    if (!hue) return ""
-    String colorName
-    switch (limit(hue, 1, 360)){
-        case 1..15: colorName = "Red"
-            break
-        case 16..45: colorName = "Orange"
-            break
-        case 46..75: colorName = "Yellow"
-            break
-        case 76..105: colorName = "Chartreuse"
-            break
-        case 106..135: colorName = "Green"
-            break
-        case 136..165: colorName = "Spring"
-            break
-        case 166..195: colorName = "Cyan"
-            break
-        case 196..225: colorName = "Azure"
-            break
-        case 226..255: colorName = "Blue"
-            break
-        case 256..285: colorName = "Violet"
-            break
-        case 286..315: colorName = "Magenta"
-            break
-        case 316..345: colorName = "Rose"
-            break
-        case 346..360: colorName = "Red"
-            break
-    }
-
-    return colorName
-}
-
-private String getWifiSignalName(int rssi) {
-    String signalName
-    switch(rssi) {
-        case 75..100: signalName = "high"
-            break
-
-        case 45..74: signalName = "medium"
-            break
-
-        case 1..44: signalName = "low"
-            break
-
-        case 0: signalName = "none"
-            break;
-    }
-
-    return signalName
 }
 
 /**
@@ -583,6 +226,25 @@ private String getTopic(String prefix, String postfix = "", boolean forceSingle 
         .replaceFirst("%prefix%", prefix)
         .replaceFirst("%topic%", topic)
         .plus(postfix)
+}
+
+private String getWifiSignalName(int rssi) {
+    String signalName
+    switch(rssi) {
+        case 75..100: signalName = "high"
+            break
+
+        case 45..74: signalName = "medium"
+            break
+
+        case 1..44: signalName = "low"
+            break
+
+        case 0: signalName = "none"
+            break;
+    }
+
+    return signalName
 }
 
 private def limit(value, lowerBound = 0, upperBound = 100) {
