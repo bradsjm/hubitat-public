@@ -27,7 +27,7 @@ import groovy.json.JsonSlurper
 import groovy.transform.Field
 
 metadata {
-    definition (name: "Tasmota ${deviceType()}", namespace: "tasmota-mqtt", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/Drivers/Tasmota-Mqtt-RGBWCT.groovy") {
+    definition (name: "Tasmota MQTT ${deviceType()}", namespace: "tasmota-mqtt", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/Drivers/Tasmota-Mqtt-RGBWCT.groovy") {
         capability "Actuator"
         capability "ChangeLevel"
         capability "ColorControl"
@@ -47,6 +47,8 @@ metadata {
         attribute "groupMode", "String"
         attribute "hueName", "String"
         attribute "wifiSignal", "String"
+
+        command "restart"
 
         command "setFadeSpeed", [
             [
@@ -133,8 +135,7 @@ void connected() {
 void configure()
 {
     // Set option 20 (Update of Dimmer/Color/CT without turning power on)
-    String commandTopic = getTopic("cmnd", "SetOption20")
-    mqttPublish(commandTopic, preStaging ? "1" : "0")
+    mqttPublish(getTopic("cmnd", "SetOption20"), preStaging ? "1" : "0")
 }
 
 // Called when the device is first created.
@@ -150,13 +151,13 @@ void parse(data) {
 }
 
 // Called when the user requests a refresh (from Refresh capability)
-// Requests latest STATE and STATUS 5 (Network)
+// Requests latest STATE and STATUS 0
 void refresh() {
     log.info "Refreshing state of ${device.name}"
     state.clear()
 
     String commandTopic = getTopic("cmnd", "Backlog")
-    mqttPublish(commandTopic, "State;Status 5")
+    mqttPublish(commandTopic, "State;Status 0")
 }
 
 // Called with MQTT client status messages
@@ -207,14 +208,12 @@ void setGroupTopicMode(mode) {
 
 // Turn on
 void on() {
-    String commandTopic = getTopic("cmnd", "POWER")
-    mqttPublish(commandTopic, "1")
+    mqttPublish(getTopic("cmnd", "POWER"), "1")
 }
 
 // Turn off
 void off() {
-    String commandTopic = getTopic("cmnd", "POWER")
-    mqttPublish(commandTopic, "0")
+    mqttPublish(getTopic("cmnd", "POWER"), "0")
 }
 
 /**
@@ -255,11 +254,9 @@ void setLevel(level, duration = 0) {
     int oldFade = device.currentValue("fadeMode") == "on" ? 1 : 0
     int speed = Math.min(40f, duration * 2).toInteger()
     if (speed > 0) {
-        String commandTopic = getTopic("cmnd", "Backlog")
-        mqttPublish(commandTopic, "Speed ${speed};Fade 1;Dimmer ${level};Delay ${duration * 10};Speed ${oldSpeed};Fade ${oldFade}")
+        mqttPublish(getTopic("cmnd", "Backlog"), "Speed ${speed};Fade 1;Dimmer ${level};Delay ${duration * 10};Speed ${oldSpeed};Fade ${oldFade}")
     } else {
-        String commandTopic = getTopic("cmnd", "Dimmer")
-        mqttPublish(commandTopic, level.toString())
+        mqttPublish(getTopic("cmnd", "Dimmer"), level.toString())
     }
 }
 
@@ -274,23 +271,20 @@ void setColor(colormap) {
     int saturation = limit(colormap.saturation).toInteger()
     int level = limit(colormap.level).toInteger()
 
-    String commandTopic = getTopic("cmnd", "HsbColor")
-    mqttPublish(commandTopic, "${hue},${saturation},${level}")
+    mqttPublish(getTopic("cmnd", "HsbColor"), "${hue},${saturation},${level}")
 }
 
 // Set the hue (0-100)
 void setHue(hue) {
     // Hubitat hue is 0-100 to be converted to Tasmota 0-360
     hue = limit(Math.round(hue * 3.6), 0, 360).toInteger()
-    String commandTopic = getTopic("cmnd", "HsbColor1")
-    mqttPublish(commandTopic, hue.toString())
+    mqttPublish(getTopic("cmnd", "HsbColor1"), hue.toString())
 }
 
 // Set the saturation (0-100)
 void setSaturation(saturation) {
     saturation = limit(saturation).toInteger()
-    String commandTopic = getTopic("cmnd", "HsbColor2")
-    mqttPublish(commandTopic, saturation.toString())
+    mqttPublish(getTopic("cmnd", "HsbColor2"), saturation.toString())
 }
 
 // Set the color temperature (2000-6536)
@@ -298,13 +292,11 @@ void setColorTemperature(kelvin) {
     kelvin = limit(kelvin, 2000, 6536)
     int channelCount = state.channelCount
     if (channelCount == 5) {
-        String commandTopic = getTopic("cmnd", "CT")
         int mired = limit(Math.round(1000000f / kelvin), 153, 500).toInteger()
         if (logEnable) log.debug "Converted ${kelvin} kelvin to ${mired} mired"
-        mqttPublish(commandTopic, mired.toString())
+        mqttPublish(getTopic("cmnd", "CT"), mired.toString())
     } else if (channelCount == 4) {
-        String commandTopic = getTopic("cmnd", "White")
-        mqttPublish(commandTopic, device.currentValue("level").toString())
+        mqttPublish(getTopic("cmnd", "White"), device.currentValue("level").toString())
     }
 }
 
@@ -353,18 +345,15 @@ def setPreviousEffect() {
 
 void blinkOn() {
     int oldFade = device.currentValue("fadeMode") == "on" ? 1 : 0
-    String commandTopic = getTopic("cmnd", "Backlog")
-    mqttPublish(commandTopic, "Fade 0;Power blink;Delay 100;Fade ${oldFade}")
+    mqttPublish(getTopic("cmnd", "Backlog"), "Fade 0;Power blink;Delay 100;Fade ${oldFade}")
 }
 
 void blinkOff() {
-    String commandTopic = getTopic("cmnd", "Power")
-    mqttPublish(commandTopic, "blinkoff")
+    mqttPublish(getTopic("cmnd", "Power"), "blinkoff")
 }
 
 void setEffectsScheme(scheme) {
-    String commandTopic = getTopic("cmnd", "Scheme")
-    mqttPublish(commandTopic, scheme.toString())
+    mqttPublish(getTopic("cmnd", "Scheme"), scheme.toString())
 }
 
 /**
@@ -376,11 +365,9 @@ void setEffectsScheme(scheme) {
 void setFadeSpeed(seconds) {
     int speed = Math.min(40f, seconds * 2).toInteger()
     if (speed > 0) {
-        String commandTopic = getTopic("cmnd", "Backlog")
-        mqttPublish(commandTopic, "Speed ${speed};Fade 1")
+        mqttPublish(getTopic("cmnd", "Backlog"), "Speed ${speed};Fade 1")
     } else {
-        String commandTopic = getTopic("cmnd", "Fade")
-        mqttPublish(commandTopic, "0")
+        mqttPublish(getTopic("cmnd", "Fade"), "0")
     }
 }
 
@@ -388,13 +375,16 @@ void setFadeSpeed(seconds) {
 void startWakeup(level, duration) {
     level = limit(level).toInteger()
     duration = limit(duration, 1, 3000).toInteger()
-    String commandTopic = getTopic("cmnd", "Backlog")
-    mqttPublish(commandTopic, "WakeupDuration ${duration};Wakeup ${level}")
+    mqttPublish(getTopic("cmnd", "Backlog"), "WakeupDuration ${duration};Wakeup ${level}")
 }
 
 /**
  *  Tasmota Device Specific
  */
+
+ void restart() {
+    mqttPublish(getTopic("cmnd", "Restart"), "1")
+ }
 
 // Parses Tasmota JSON content and send driver events
 void parseTasmota(String topic, Map json) {
@@ -498,7 +488,7 @@ private String getTemperatureName(int kelvin) {
             break
         case 5000..5765: temperatureName = "Full Spectrum"
             break
-        case 6500: temperatureName = "Daylight"
+        case 5766..6500: temperatureName = "Daylight"
             break
     }
 
@@ -615,16 +605,17 @@ private void logsOff() {
 }
 
 private void mqttCheckReceiveTime() {
-    int timeout = 5 * 60
+    int timeout = 5
     if (state.mqttReceiveTime) {
-        int elapsedSeconds = (now() - state.mqttReceiveTime).intdiv(1000)
+        int elapsedMinutes = (now() - state.mqttReceiveTime).intdiv(60000)
 
-        if (elapsedSeconds > timeout) {
-            log.warn "No messages received from ${device.displayName} in ${elapsedSeconds} seconds"
-            sendEvent (name: "connection", value: "offline", descriptionText: "${device.displayName} silent for ${elapsedSeconds} seconds")
+        if (elapsedMinutes > timeout) {
+            log.warn "No messages received from ${device.displayName} in ${elapsedMinutes} minutes"
+            sendEvent (name: "connection", value: "offline", descriptionText: "${device.displayName} silent for ${elapsedMinutes} minutes")
+            mqttCheckConnected()
         } else
         {
-            sendEvent (name: "connection", value: "online", descriptionText: "${device.displayName} last message was ${elapsedSeconds} seconds ago")
+            sendEvent (name: "connection", value: "online", descriptionText: "${device.displayName} last message was ${elapsedMinutes} minutes ago")
         }
     }
 }
@@ -636,11 +627,13 @@ private boolean mqttCheckConnected() {
         if (!mqttConnect()) {
             int waitSeconds = getRetrySeconds()
             log.info "Retrying MQTT connection in ${waitSeconds} seconds"
+            unschedule("mqttCheckConnected")
             runIn(waitSeconds, "mqttCheckConnected")
             return false
         }
     }
 
+    unschedule("mqttCheckConnected")
     state.remove("mqttRetryCount")
     return true
 }

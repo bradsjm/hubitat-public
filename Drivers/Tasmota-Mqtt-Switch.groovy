@@ -27,15 +27,17 @@ import groovy.json.JsonSlurper
 import groovy.transform.Field
 
 metadata {
-    definition (name: "Tasmota ${deviceType()}", namespace: "tasmota-mqtt", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/Drivers/Tasmota-Mqtt-RGBWCT.groovy") {
+    definition (name: "Tasmota MQTT ${deviceType()}", namespace: "tasmota-mqtt", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/Drivers/Tasmota-Mqtt-RGBWCT.groovy") {
         capability "Actuator"
-        capability "Configuration"
+//      capability "Configuration"
         capability "Refresh"
         capability "Switch"
 
         attribute "connection", "String"
         attribute "groupMode", "String"
         attribute "wifiSignal", "String"
+
+        command "restart"
 
         command "setGroupTopicMode", [
             [
@@ -103,13 +105,13 @@ void parse(data) {
 }
 
 // Called when the user requests a refresh (from Refresh capability)
-// Requests latest STATE and STATUS 5 (Network)
+// Requests latest STATE and STATUS 0
 void refresh() {
     log.info "Refreshing state of ${device.name}"
     state.clear()
 
     String commandTopic = getTopic("cmnd", "Backlog")
-    mqttPublish(commandTopic, "State;Status 5")
+    mqttPublish(commandTopic, "State;Status 0")
 }
 
 // Called with MQTT client status messages
@@ -160,19 +162,21 @@ void setGroupTopicMode(mode) {
 
 // Turn on
 void on() {
-    String commandTopic = getTopic("cmnd", "POWER")
-    mqttPublish(commandTopic, "1")
+    mqttPublish(getTopic("cmnd", "POWER"), "1")
 }
 
 // Turn off
 void off() {
-    String commandTopic = getTopic("cmnd", "POWER")
-    mqttPublish(commandTopic, "0")
+    mqttPublish(getTopic("cmnd", "POWER"), "0")
 }
 
 /**
  *  Tasmota Device Specific
  */
+
+ void restart() {
+    mqttPublish(getTopic("cmnd", "Restart"), "1")
+ }
 
 // Parses Tasmota JSON content and send driver events
 void parseTasmota(String topic, Map json) {
@@ -198,6 +202,13 @@ void parseTasmota(String topic, Map json) {
         updateDataValue("IPAddress", json.StatusNET.IPAddress)
         device.deviceNetworkId = json.StatusNET.Mac.toLowerCase()
     }
+
+    //TODO:
+    //  Version
+    //  Module
+    //  Template
+    //  RestartReason
+    //  Uptime
 
     state.lastResult = json
 }
@@ -277,16 +288,17 @@ private void logsOff() {
 }
 
 private void mqttCheckReceiveTime() {
-    int timeout = 5 * 60
+    int timeout = 5
     if (state.mqttReceiveTime) {
-        int elapsedSeconds = (now() - state.mqttReceiveTime).intdiv(1000)
+        int elapsedMinutes = (now() - state.mqttReceiveTime).intdiv(60000)
 
-        if (elapsedSeconds > timeout) {
-            log.warn "No messages received from ${device.displayName} in ${elapsedSeconds} seconds"
-            sendEvent (name: "connection", value: "offline", descriptionText: "${device.displayName} silent for ${elapsedSeconds} seconds")
+        if (elapsedMinutes > timeout) {
+            log.warn "No messages received from ${device.displayName} in ${elapsedMinutes} minutes"
+            sendEvent (name: "connection", value: "offline", descriptionText: "${device.displayName} silent for ${elapsedMinutes} minutes")
+            mqttCheckConnected()
         } else
         {
-            sendEvent (name: "connection", value: "online", descriptionText: "${device.displayName} last message was ${elapsedSeconds} seconds ago")
+            sendEvent (name: "connection", value: "online", descriptionText: "${device.displayName} last message was ${elapsedMinutes} minutes ago")
         }
     }
 }
@@ -298,11 +310,13 @@ private boolean mqttCheckConnected() {
         if (!mqttConnect()) {
             int waitSeconds = getRetrySeconds()
             log.info "Retrying MQTT connection in ${waitSeconds} seconds"
+            unschedule("mqttCheckConnected")
             runIn(waitSeconds, "mqttCheckConnected")
             return false
         }
     }
 
+    unschedule("mqttCheckConnected")
     state.remove("mqttRetryCount")
     return true
 }

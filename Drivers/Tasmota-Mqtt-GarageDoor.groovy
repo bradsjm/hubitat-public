@@ -25,7 +25,7 @@ static final String version() { "0.1" }
 static final String deviceType() { "OpenGarage" }
 
 metadata {
-    definition (name: "Tasmota ${deviceType()}", namespace: "tasmota-mqtt", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/Drivers/Tasmota-Mqtt-RGBWCT.groovy") {
+    definition (name: "Tasmota MQTT ${deviceType()}", namespace: "tasmota-mqtt", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/Drivers/Tasmota-Mqtt-RGBWCT.groovy") {
         capability "Actuator"
         capability "Configuration"
         capability "Refresh"
@@ -36,6 +36,7 @@ metadata {
         capability "ContactSensor"
 
         command "soundWarning"
+        command "restart"
 
         attribute "connection", "string"
         attribute "wifiSignal", "string"
@@ -241,6 +242,10 @@ private void setOpen() {
  *  Tasmota Device Specific
  */
 
+ void restart() {
+    mqttPublish(getTopic("cmnd", "Restart"), "1")
+ }
+
 // Parses Tasmota JSON content and send driver events
 void parseTasmota(String topic, Map json) {
     if (json.containsKey("StatusSNS")) {
@@ -398,16 +403,17 @@ private void logsOff() {
 }
 
 private void mqttCheckReceiveTime() {
-    int timeout = 5 * 60
+    int timeout = 5
     if (state.mqttReceiveTime) {
-        int elapsedSeconds = (now() - state.mqttReceiveTime).intdiv(1000)
+        int elapsedMinutes = (now() - state.mqttReceiveTime).intdiv(60000)
 
-        if (elapsedSeconds > timeout) {
-            log.warn "No messages received from ${device.displayName} in ${elapsedSeconds} seconds"
-            sendEvent (name: "connection", value: "offline", descriptionText: "${device.displayName} silent for ${elapsedSeconds} seconds")
+        if (elapsedMinutes > timeout) {
+            log.warn "No messages received from ${device.displayName} in ${elapsedMinutes} minutes"
+            sendEvent (name: "connection", value: "offline", descriptionText: "${device.displayName} silent for ${elapsedMinutes} minutes")
+            mqttCheckConnected()
         } else
         {
-            sendEvent (name: "connection", value: "online", descriptionText: "${device.displayName} last message was ${elapsedSeconds} seconds ago")
+            sendEvent (name: "connection", value: "online", descriptionText: "${device.displayName} last message was ${elapsedMinutes} minutes ago")
         }
     }
 }
@@ -419,11 +425,13 @@ private boolean mqttCheckConnected() {
         if (!mqttConnect()) {
             int waitSeconds = getRetrySeconds()
             log.info "Retrying MQTT connection in ${waitSeconds} seconds"
+            unschedule("mqttCheckConnected")
             runIn(waitSeconds, "mqttCheckConnected")
             return false
         }
     }
 
+    unschedule("mqttCheckConnected")
     state.remove("mqttRetryCount")
     return true
 }
