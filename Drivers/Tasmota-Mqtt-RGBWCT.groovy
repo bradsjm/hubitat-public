@@ -98,6 +98,7 @@ metadata {
         }
 
         section("Misc") {
+            input name: "relayNumber", type: "number", title: "Relay Number", description: "Used for Power commands", required: true, defaultValue: 1
             input name: "changeLevelStep", type: "decimal", title: "Change level step size", description: "Between 1 and 10", required: true, defaultValue: 2
             input name: "changeLevelEvery", type: "number", title: "Change level every x milliseconds", description: "Between 100ms and 1000ms", required: true, defaultValue: 100
             input name: "preStaging", type: "bool", title: "Enable color and level pre-staging", description: "Update of Dimmer/Color/CT without turning power on", required: true, defaultValue: false
@@ -208,12 +209,12 @@ void setGroupTopicMode(mode) {
 
 // Turn on
 void on() {
-    mqttPublish(getTopic("cmnd", "POWER"), "1")
+    mqttPublish(getTopic("cmnd", "Power${options.relayNumber}"), "1")
 }
 
 // Turn off
 void off() {
-    mqttPublish(getTopic("cmnd", "POWER"), "0")
+    mqttPublish(getTopic("cmnd", "Power${options.relayNumber}"), "0")
 }
 
 /**
@@ -345,11 +346,11 @@ def setPreviousEffect() {
 
 void blinkOn() {
     int oldFade = device.currentValue("fadeMode") == "on" ? 1 : 0
-    mqttPublish(getTopic("cmnd", "Backlog"), "Fade 0;Power blink;Delay 100;Fade ${oldFade}")
+    mqttPublish(getTopic("cmnd", "Backlog"), "Fade 0;Power${options.relayNumber} blink;Delay 100;Fade ${oldFade}")
 }
 
 void blinkOff() {
-    mqttPublish(getTopic("cmnd", "Power"), "blinkoff")
+    mqttPublish(getTopic("cmnd", "Power${options.relayNumber}"), "blinkoff")
 }
 
 void setEffectsScheme(scheme) {
@@ -465,6 +466,21 @@ void parseTasmota(String topic, Map json) {
         updateDataValue("Hostname", json.StatusNET.Hostname)
         updateDataValue("IPAddress", json.StatusNET.IPAddress)
         device.deviceNetworkId = json.StatusNET.Mac.toLowerCase()
+    }
+
+    if (json.containsKey("Uptime")) {
+        if (logEnable) log.debug "Parsing [ Uptime: ${json.Uptime} ]"
+        state.uptime = json.Uptime
+    }
+
+    if (json.containsKey("StatusPRM")) {
+        if (logEnable) log.debug "Parsing [ StatusPRM: ${json.StatusPRM} ]"
+        state.restartReason = json.StatusPRM.RestartReason
+    }
+
+    if (json.containsKey("StatusFWR")) {
+        if (logEnable) log.debug "Parsing [ StatusFWR: ${json.StatusFWR} ]"
+        state.version = json.StatusFWR.Version
     }
 
     state.lastResult = json

@@ -291,6 +291,21 @@ void parseTasmota(String topic, Map json) {
         device.deviceNetworkId = json.StatusNET.Mac.toLowerCase()
     }
 
+    if (json.containsKey("Uptime")) {
+        if (logEnable) log.debug "Parsing [ Uptime: ${json.Uptime} ]"
+        state.uptime = json.Uptime
+    }
+
+    if (json.containsKey("StatusPRM")) {
+        if (logEnable) log.debug "Parsing [ StatusPRM: ${json.StatusPRM} ]"
+        state.restartReason = json.StatusPRM.RestartReason
+    }
+
+    if (json.containsKey("StatusFWR")) {
+        if (logEnable) log.debug "Parsing [ StatusFWR: ${json.StatusFWR} ]"
+        state.version = json.StatusFWR.Version
+    }
+
     state.lastResult = json
 }
 

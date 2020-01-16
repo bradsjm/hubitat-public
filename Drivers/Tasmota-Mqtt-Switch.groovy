@@ -66,9 +66,11 @@ metadata {
         }
 
         section("Misc") {
-            input name: "initialGroupMode", type: "enum", title: "Initial group mode", description: "Grouped uses the group topic", options: ["single", "grouped"], required: true, defaultValue: "single"
-            input name: "logEnable", type: "bool", title: "Enable debug logging", description: "Automatically disabled after 30 minutes", required: true, defaultValue: true
-            input name: "watchdogEnable", type: "bool", title: "Enable watchdog logging", description: "Checks for mqtt activity every 5 minutes", required: true, defaultValue: true
+            input name: "relayNumber", type: "number", title: "Relay Number", description: "Used for Power commands", required: true, defaultValue: 1
+            input name: "lockPower", type: "bool", title: "Disable Power controls", description: "Ignores power on/off commands", required: true, defaultValue: false
+            input name: "initialGroupMode", type: "enum", title: "Initial Group mode", description: "Grouped uses the group topic", options: ["single", "grouped"], required: true, defaultValue: "single"
+            input name: "logEnable", type: "bool", title: "Enable Debug logging", description: "Automatically disabled after 30 minutes", required: true, defaultValue: true
+            input name: "watchdogEnable", type: "bool", title: "Enable Watchdog logging", description: "Checks for mqtt activity every 5 minutes", required: true, defaultValue: true
         }
     }
 }
@@ -162,12 +164,14 @@ void setGroupTopicMode(mode) {
 
 // Turn on
 void on() {
-    mqttPublish(getTopic("cmnd", "POWER"), "1")
+    if (settings.lockPower) return
+    mqttPublish(getTopic("cmnd", "Power${options.relayNumber}"), "1")
 }
 
 // Turn off
 void off() {
-    mqttPublish(getTopic("cmnd", "POWER"), "0")
+    if (settings.lockPower) return
+    mqttPublish(getTopic("cmnd", "Power${options.relayNumber}"), "0")
 }
 
 /**
@@ -203,12 +207,20 @@ void parseTasmota(String topic, Map json) {
         device.deviceNetworkId = json.StatusNET.Mac.toLowerCase()
     }
 
-    //TODO:
-    //  Version
-    //  Module
-    //  Template
-    //  RestartReason
-    //  Uptime
+    if (json.containsKey("Uptime")) {
+        if (logEnable) log.debug "Parsing [ Uptime: ${json.Uptime} ]"
+        state.uptime = json.Uptime
+    }
+
+    if (json.containsKey("StatusPRM")) {
+        if (logEnable) log.debug "Parsing [ StatusPRM: ${json.StatusPRM} ]"
+        state.restartReason = json.StatusPRM.RestartReason
+    }
+
+    if (json.containsKey("StatusFWR")) {
+        if (logEnable) log.debug "Parsing [ StatusFWR: ${json.StatusFWR} ]"
+        state.version = json.StatusFWR.Version
+    }
 
     state.lastResult = json
 }
