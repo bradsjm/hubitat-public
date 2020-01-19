@@ -209,12 +209,12 @@ void setGroupTopicMode(mode) {
 
 // Turn on
 void on() {
-    mqttPublish(getTopic("cmnd", "Power${options.relayNumber}"), "1")
+    mqttPublish(getTopic("cmnd", "Power${settings.relayNumber}"), "1")
 }
 
 // Turn off
 void off() {
-    mqttPublish(getTopic("cmnd", "Power${options.relayNumber}"), "0")
+    mqttPublish(getTopic("cmnd", "Power${settings.relayNumber}"), "0")
 }
 
 /**
@@ -255,9 +255,9 @@ void setLevel(level, duration = 0) {
     int oldFade = device.currentValue("fadeMode") == "on" ? 1 : 0
     int speed = Math.min(40f, duration * 2).toInteger()
     if (speed > 0) {
-        mqttPublish(getTopic("cmnd", "Backlog"), "Speed ${speed};Fade 1;Dimmer ${level};Delay ${duration * 10};Speed ${oldSpeed};Fade ${oldFade}")
+        mqttPublish(getTopic("cmnd", "Backlog"), "Speed ${speed};Fade 1;Dimmer${settings.relayNumber} ${level};Delay ${duration * 10};Speed ${oldSpeed};Fade ${oldFade}")
     } else {
-        mqttPublish(getTopic("cmnd", "Dimmer"), level.toString())
+        mqttPublish(getTopic("cmnd", "Dimmer${settings.relayNumber}"), level.toString())
     }
 }
 
@@ -345,12 +345,11 @@ def setPreviousEffect() {
 }
 
 void blinkOn() {
-    int oldFade = device.currentValue("fadeMode") == "on" ? 1 : 0
-    mqttPublish(getTopic("cmnd", "Backlog"), "Fade 0;Power${options.relayNumber} blink;Delay 100;Fade ${oldFade}")
+    mqttPublish(getTopic("cmnd", "Power${settings.relayNumber}"), "blink")
 }
 
 void blinkOff() {
-    mqttPublish(getTopic("cmnd", "Power${options.relayNumber}"), "blinkoff")
+    mqttPublish(getTopic("cmnd", "Power${settings.relayNumber}"), "blinkoff")
 }
 
 void setEffectsScheme(scheme) {
@@ -726,7 +725,9 @@ private void mqttReceive(Map message) {
         state.mqttReceiveTime = now()
         parseTasmota(topic, parseJson(payload))
     } else {
-        if (logEnable) log.debug "Unknown Tasmota message: ${topic} = ${payload}"
+        state.mqttReceiveTime = now()
+        def key = topic.substring(topic.lastIndexOf("/")+1)
+        parseTasmota(topic, [ (key): payload ])
     }
 }
 

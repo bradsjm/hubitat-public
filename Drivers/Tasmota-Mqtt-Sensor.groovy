@@ -21,41 +21,26 @@
  *  SOFTWARE.
 */
 static final String version() { "0.1" }
-static final String deviceType() { "Switch" }
+static final String deviceType() { "Sensor" }
 
 import groovy.json.JsonSlurper
 import groovy.transform.Field
 
 metadata {
     definition (name: "Tasmota MQTT ${deviceType()}", namespace: "tasmota-mqtt", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/Drivers/Tasmota-Mqtt-RGBWCT.groovy") {
-        capability "Actuator"
 //      capability "Configuration"
         capability "Refresh"
-        capability "Switch"
+        capability "ContactSensor"
 
         attribute "connection", "String"
-        attribute "groupMode", "String"
         attribute "wifiSignal", "String"
 
         command "restart"
-
-        command "setGroupTopicMode", [
-            [
-                name:"Group Mode*",
-                type: "ENUM",
-                description: "Select if changes are applied to the group",
-                constraints: [
-                    "single",
-                    "grouped",
-                ]
-            ]
-        ]
     }
 
     preferences() {
         section("MQTT Device Topics") {
             input name: "deviceTopic", type: "text", title: "Device Topic (Name)", description: "Topic value from Tasmota", required: true, defaultValue: "tasmota"
-            input name: "groupTopic", type: "text", title: "Group Topic (Name)", description: "Group Topic value from Tasmota", required: true, defaultValue: "tasmotas"
             input name: "fullTopic", type: "text", title: "Full Topic Template", description: "Full Topic value from Tasmota", required: true, defaultValue: "%prefix%/%topic%/"
         }
 
@@ -66,9 +51,7 @@ metadata {
         }
 
         section("Misc") {
-            input name: "relayNumber", type: "number", title: "Relay Number", description: "Used for Power commands", required: true, defaultValue: 1
-            input name: "lockPower", type: "bool", title: "Disable Power controls", description: "Ignores power on/off commands", required: true, defaultValue: false
-            input name: "initialGroupMode", type: "enum", title: "Initial Group mode", description: "Grouped uses the group topic", options: ["single", "grouped"], required: true, defaultValue: "single"
+            input name: "invertState", type: "bool", title: "Invert Sensor", description: "Switches open and closed states", required: true, defaultValue: false
             input name: "logEnable", type: "bool", title: "Enable Debug logging", description: "Automatically disabled after 30 minutes", required: true, defaultValue: true
             input name: "watchdogEnable", type: "bool", title: "Enable Watchdog logging", description: "Checks for mqtt activity every 5 minutes", required: true, defaultValue: true
         }
@@ -137,7 +120,6 @@ void updated() {
     log.info "${device.displayName} driver v${version()} configuration updated"
     log.debug settings
 
-    setGroupTopicMode(settings.initialGroupMode)
     device.setName("mqtt-${settings.deviceTopic}")
 
     mqttDisconnect()
@@ -153,27 +135,6 @@ void updated() {
     if (logEnable) runIn(1800, "logsOff")
 }
 
-// Set the driver group topic mode
-void setGroupTopicMode(mode) {
-    sendEvent(newEvent("groupMode", mode))
-}
-
-/**
- *  Capability: Switch
- */
-
-// Turn on
-void on() {
-    if (settings.lockPower) return
-    mqttPublish(getTopic("cmnd", "Power${options.relayNumber}"), "1")
-}
-
-// Turn off
-void off() {
-    if (settings.lockPower) return
-    mqttPublish(getTopic("cmnd", "Power${options.relayNumber}"), "0")
-}
-
 /**
  *  Tasmota Device Specific
  */
@@ -186,7 +147,10 @@ void off() {
 void parseTasmota(String topic, Map json) {
     if (json.containsKey("POWER")) {
         if (logEnable) log.debug "Parsing [ POWER: ${json.POWER} ]"
-        sendEvent(newEvent("switch", json.POWER.toLowerCase()))
+        if (settings.invertState)
+            sendEvent(newEvent("contact", json.POWER == "ON" ? "closed" : "open"))
+        else
+            sendEvent(newEvent("contact", json.POWER == "ON" ? "open" : "closed"))
     }
 
     if (json.containsKey("Wifi")) {
@@ -238,7 +202,7 @@ private int getRetrySeconds() {
     return Math.min(minimumRetrySec * Math.pow(2, count) + jitter, maximumRetrySec)
 }
 
-private String getTopic(String prefix, String postfix = "", boolean forceSingle = false)
+private String getTopic(String prefix, String postfix = "")
 {
     String topic = settings.deviceTopic
     if (!forceSingle && device.currentValue("groupMode") == "grouped" && settings.groupTopic) {
@@ -268,21 +232,6 @@ private String getWifiSignalName(int rssi) {
     }
 
     return signalName
-}
-
-private def limit(value, lowerBound = 0, upperBound = 100) {
-    value == null ? value = upperBound : null
-
-    if (lowerBound < upperBound){
-        if (value < lowerBound) value = lowerBound
-        if (value > upperBound) value = upperBound
-    }
-    else if (upperBound < lowerBound) {
-        if (value < upperBound) value = upperBound
-        if (value > lowerBound) value = lowerBound
-    }
-
-    return value
 }
 
 private Map newEvent(String name, value, unit = null) {
@@ -413,11 +362,11 @@ private void mqttReceive(Map message) {
 
 private void mqttSubscribeTopics() {
     int qos = 1 // at least once delivery
-    String teleTopic = getTopic("tele", "+", true)
+    String teleTopic = getTopic("tele", "+")
     if (logEnable) log.debug "Subscribing to Tasmota telemetry topic: ${teleTopic}"
     interfaces.mqtt.subscribe(teleTopic, qos)
 
-    String statTopic = getTopic("stat", "+", true)
+    String statTopic = getTopic("stat", "+")
     if (logEnable) log.debug "Subscribing to Tasmota stat topic: ${statTopic}"
     interfaces.mqtt.subscribe(statTopic, qos)
 }

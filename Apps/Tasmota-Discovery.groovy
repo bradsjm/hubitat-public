@@ -141,7 +141,7 @@ private void createDevice(json) {
         try {
             child = addChildDevice(
                     "${namespace()}",
-                    "Tasmota Switch", // default new devices to basic switch driver
+                    "Tasmota MQTT Switch", // default new devices to basic switch driver
                     statusNet.Mac.toLowerCase(),
                     null,
                     [
