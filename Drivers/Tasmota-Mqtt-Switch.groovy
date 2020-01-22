@@ -165,13 +165,13 @@ void setGroupTopicMode(mode) {
 // Turn on
 void on() {
     if (settings.lockPower) return
-    mqttPublish(getTopic("cmnd", "Power${options.relayNumber}"), "1")
+    mqttPublish(getTopic("cmnd", "Power${settings.relayNumber}"), "1")
 }
 
 // Turn off
 void off() {
     if (settings.lockPower) return
-    mqttPublish(getTopic("cmnd", "Power${options.relayNumber}"), "0")
+    mqttPublish(getTopic("cmnd", "Power${settings.relayNumber}"), "0")
 }
 
 /**
@@ -184,9 +184,10 @@ void off() {
 
 // Parses Tasmota JSON content and send driver events
 void parseTasmota(String topic, Map json) {
-    if (json.containsKey("POWER")) {
-        if (logEnable) log.debug "Parsing [ POWER: ${json.POWER} ]"
-        sendEvent(newEvent("switch", json.POWER.toLowerCase()))
+    String powerKey = "POWER".plus(settings.relayNumber)
+    if (json.containsKey(powerKey)) {
+        if (logEnable) log.debug "Parsing [ ${powerKey}: ${json[powerKey]} ]"
+        sendEvent(newEvent("switch", json[powerKey].toLowerCase()))
     }
 
     if (json.containsKey("Wifi")) {

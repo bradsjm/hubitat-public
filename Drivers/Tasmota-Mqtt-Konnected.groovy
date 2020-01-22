@@ -82,7 +82,7 @@ void configure()
 
     // Set rule to publish zone changes
     def rule = """
-        on switch1#state do publish stat/%topic%/Switch1 %value% break on switch2#state do publish stat/%topic%/Switch2 %value% break on switch3#state do publish stat/%topic%/Switch3 %value% break on switch4#state do publish stat/%topic%/Switch4 %value% break on switch5#state do publish stat/%topic%/Switch5 %value% break on switch6#state do publish stat/%topic%/Switch6 %value% break
+        on switch1#state do publish stat/%topic%/SWITCH1 %value% break on switch2#state do publish stat/%topic%/SWITCH2 %value% break on switch3#state do publish stat/%topic%/SWITCH3 %value% break on switch4#state do publish stat/%topic%/SWITCH4 %value% break on switch5#state do publish stat/%topic%/SWITCH5 %value% break on switch6#state do publish stat/%topic%/SWITCH6 %value% break
     """
     commandTopic = getTopic("cmnd", "Rule1")
     mqttPublish(commandTopic, rule) // send the rule content
@@ -194,49 +194,49 @@ void updateChildContact(zone, isOpen) {
 
 // Parses Tasmota JSON content and send driver events
 void parseTasmota(String topic, Map json) {
-    if (json.containsKey("StatusSNS")) {
-        if (logEnable) log.debug "Parsing [ StatusSNS: ${json.StatusSNS} ]"
-        json = json.StatusSNS
+    if (json.containsKey("statussns")) {
+        if (logEnable) log.debug "Parsing [ StatusSNS: ${json.statussns} ]"
+        json = json.statussns
     }
 
-    if (json.containsKey("Wifi")) {
-        if (logEnable) log.debug "Parsing [ Wifi: ${json.Wifi} ]"
-        updateDataValue("BSSId", json.Wifi.BSSId)
-        updateDataValue("Channel", json.Wifi.Channel.toString())
-        updateDataValue("LinkCount", json.Wifi.LinkCount.toString())
-        updateDataValue("RSSI", json.Wifi.RSSI.toString())
-        updateDataValue("Signal", json.Wifi.Signal.toString())
-        updateDataValue("SSId", json.Wifi.SSId)
-        sendEvent(newEvent("wifiSignal", getWifiSignalName(json.Wifi.RSSI)))
+    if (json.containsKey("wifi")) {
+        if (logEnable) log.debug "Parsing [ Wifi: ${json.wifi} ]"
+        updateDataValue("BSSId", json.wifi.bssid)
+        updateDataValue("Channel", json.wifi.channel.toString())
+        updateDataValue("LinkCount", json.wifi.linkcount.toString())
+        updateDataValue("RSSI", json.wifi.rssi.toString())
+        updateDataValue("Signal", json.wifi.signal.toString())
+        updateDataValue("SSId", json.wifi.ssid)
+        sendEvent(newEvent("wifiSignal", getWifiSignalName(json.wifi.rssi)))
     }
 
-    if (json.containsKey("StatusNET")) {
-        if (logEnable) log.debug "Parsing [ StatusNET: ${json.StatusNET} ]"
-        updateDataValue("Hostname", json.StatusNET.Hostname)
-        updateDataValue("IPAddress", json.StatusNET.IPAddress)
-        device.deviceNetworkId = json.StatusNET.Mac.toLowerCase()
+    if (json.containsKey("statusnet")) {
+        if (logEnable) log.debug "Parsing [ StatusNET: ${json.statusnet} ]"
+        updateDataValue("Hostname", json.statusnet.hostname)
+        updateDataValue("IPAddress", json.statusnet.ipaddress)
+        device.deviceNetworkId = json.statusnet.mac.toLowerCase()
     }
 
-    if (json.containsKey("Uptime")) {
-        if (logEnable) log.debug "Parsing [ Uptime: ${json.Uptime} ]"
-        state.uptime = json.Uptime
+    if (json.containsKey("uptime")) {
+        if (logEnable) log.debug "Parsing [ Uptime: ${json.uptime} ]"
+        state.uptime = json.uptime
     }
 
-    if (json.containsKey("StatusPRM")) {
-        if (logEnable) log.debug "Parsing [ StatusPRM: ${json.StatusPRM} ]"
-        state.restartReason = json.StatusPRM.RestartReason
+    if (json.containsKey("statusprm")) {
+        if (logEnable) log.debug "Parsing [ StatusPRM: ${json.statusprm} ]"
+        state.restartReason = json.statusprm.restartreason
     }
 
-    if (json.containsKey("StatusFWR")) {
-        if (logEnable) log.debug "Parsing [ StatusFWR: ${json.StatusFWR} ]"
-        state.version = json.StatusFWR.Version
+    if (json.containsKey("statusfwr")) {
+        if (logEnable) log.debug "Parsing [ StatusFWR: ${json.statusfwr} ]"
+        state.version = json.statusfwr.version
     }
 
     // Check each zone (this code should go last)
     1.upto(settings.zoneCount) {
-        String key = "Switch".plus(it)
+        String key = "switch".plus(it)
         if (json.containsKey(key)) {
-            def isOpen = json[key] == "1" || json[key].toLowerCase() == "on"
+            def isOpen = json[key] == "1" || json[key] == "on"
             updateChildContact(it, isOpen)
         }
     }
@@ -403,11 +403,11 @@ private void mqttReceive(Map message) {
         log.info event.descriptionText
     } else if (payload[0] == "{") {
         state.mqttReceiveTime = now()
-        parseTasmota(topic, parseJson(payload))
+        parseTasmota(topic, parseJson(payload.toLowerCase()))
     } else {
         state.mqttReceiveTime = now()
-        def key = topic.substring(topic.lastIndexOf("/")+1)
-        parseTasmota(topic, [ (key): payload ])
+        def key = topic.substring(topic.lastIndexOf("/")+1).toLowerCase()
+        parseTasmota(topic, [ (key): payload.toLowerCase() ])
     }
 }
 

@@ -93,9 +93,9 @@ void configure() {
     def commandTopic = getTopic("cmnd", "Backlog")
     mqttPublish(commandTopic, "SetOption0 0;PowerOnState 0")
 
-    // Create rule to publish distance on change of +/- 10cm
+    // Create rule to publish distance on change of +/- 12cm/1in
     def rule = """
-        on SR04#Distance>%var1% do backlog publish tele/garagedoor/SENSOR {"SR04":{"Distance":%value%}};var1 %value%;var2 %value%;add1 10;sub2 10 endon on SR04#Distance<%var2% do backlog publish tele/garagedoor/SENSOR {"SR04":{"Distance":%value%}};var1 %value%;var2 %value%;add1 10;sub2 10 endon
+        on SR04#Distance>%var1% do backlog publish stat/%topic%/Distance %value%;var1 %value%;var2 %value%;add1 12;sub2 12 break on SR04#Distance<%var2% do backlog publish stat/%topic%/Distance %value%;var1 %value%;var2 %value%;add1 12;sub2 12 endon
     """
     commandTopic = getTopic("cmnd", "Rule1")
     mqttPublish(commandTopic, rule) // send the rule content
@@ -114,13 +114,13 @@ void parse(data) {
 }
 
 // Called when the user requests a refresh (from Refresh capability)
-// Requests latest STATE and STATUS 5 (Network)
+// Requests latest STATE and full STATUS
 void refresh() {
     log.info "Refreshing state of ${device.name}"
     state.clear()
 
     String commandTopic = getTopic("cmnd", "Backlog")
-    mqttPublish(commandTopic, "State;Status 5;Status 10")
+    mqttPublish(commandTopic, "State;Status 0")
 }
 
 // Called with MQTT client status messages
@@ -310,6 +310,8 @@ void parseTasmota(String topic, Map json) {
 }
 
 private void updateDistance(int distance) {
+    if (!distance) return
+
     // Publish distance value (optionally converted to inches)
     sendEvent(newEvent("distance", conversion(distance), settings.useMetric ? "cm" : "in"))
 
@@ -523,7 +525,9 @@ private void mqttReceive(Map message) {
         state.mqttReceiveTime = now()
         parseTasmota(topic, parseJson(payload))
     } else {
-        if (logEnable) log.debug "Unknown Tasmota message: ${topic} = ${payload}"
+        state.mqttReceiveTime = now()
+        def key = topic.substring(topic.lastIndexOf("/")+1)
+        parseTasmota(topic, [ (key): payload ])
     }
 }
 

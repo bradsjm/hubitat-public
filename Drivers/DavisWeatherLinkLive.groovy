@@ -58,9 +58,9 @@ metadata {
 void updated() {
     unschedule()
 
-    if (settings.autoPoll && settings.pollIntervalVal > 0) {
+    if (settings.autoPoll && settings.pollInterval > 0) {
     	int randomSeconds = new Random(now()).nextInt(60)
-        String sched = "${randomSeconds} 0/${pollIntervalVal} * * * ?"
+        String sched = "${randomSeconds} 0/${pollInterval} * * * ?"
         schedule("${sched}", "poll")
     }
 
