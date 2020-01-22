@@ -210,7 +210,6 @@ void parseTasmota(String topic, Map json) {
         if (logEnable) log.debug "Parsing [ StatusNET: ${json.statusnet} ]"
         updateDataValue("Hostname", json.statusnet.hostname)
         updateDataValue("IPAddress", json.statusnet.ipaddress)
-        device.deviceNetworkId = json.statusnet.mac.toLowerCase()
     }
 
     if (json.containsKey("uptime")) {
