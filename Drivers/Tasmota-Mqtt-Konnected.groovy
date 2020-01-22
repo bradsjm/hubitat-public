@@ -23,9 +23,6 @@
 static final String version() { "0.1" }
 static final String deviceType() { "Konnected" }
 
-import groovy.json.JsonSlurper
-import groovy.transform.Field
-
 metadata {
     definition (name: "Tasmota MQTT ${deviceType()}", namespace: "tasmota-mqtt", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/Drivers/Tasmota-Mqtt-RGBWCT.groovy") {
         capability "Configuration"
@@ -138,7 +135,6 @@ void updated() {
 
     if (settings.mqttBroker) {
         mqttConnect()
-        refresh()
     } else {
         log.warn "${device.displayName} requires a broker configured to connect"
     }
@@ -172,15 +168,15 @@ def getZoneDevice(zone) {
 void updateChildContact(zone, isOpen) {
     def child = getZoneDevice(zone)
     if (child) {
-        if (isOpen) {
+        if (isOpen && child.currentValue("contact") != "open") {
             if (logEnable) log.debug "Setting zone ${zone} to OPEN"
             child.open()
-        } else {
+        } else if (child.currentValue("contact") != "closed") {
             if (logEnable) log.debug "Setting zone ${zone} to closed"
             child.close()
         }
     } else {
-        log.warn "Unable to find child device DNI ${childDNI}"
+        log.warn "Unable to find child device for zone ${zone}"
     }
 }
 

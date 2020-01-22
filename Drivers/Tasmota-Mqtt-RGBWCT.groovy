@@ -190,7 +190,6 @@ void updated() {
 
     if (settings.mqttBroker) {
         mqttConnect()
-        refresh()
     } else {
         log.warn "${device.displayName} requires a broker configured to connect"
     }
