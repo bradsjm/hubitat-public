@@ -174,9 +174,15 @@ void off() {
  *  Tasmota Device Specific
  */
 
- void restart() {
+void setGroupTopic(name) {
+    if (name != state.groupTopic) {
+        mqttPublish(getTopic("GroupTopic"), name)
+    }
+}
+
+void restart() {
     mqttPublish(getTopic("Restart"), "1")
- }
+}
 
 // Parses Tasmota JSON content and send driver events
 void parseTasmota(String topic, Map json) {

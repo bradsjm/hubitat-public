@@ -28,6 +28,7 @@ import java.security.MessageDigest;
 metadata {
     definition (name: "Tasmota MQTT ${deviceType()}", namespace: "tasmota-mqtt", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/Drivers/Tasmota-Mqtt-RGBWCT.groovy") {
         capability "Refresh"
+        capability "Configure"
         attribute "connection", "String"
     }
 
@@ -53,6 +54,16 @@ metadata {
 /**
  *  Hubitat Driver Event Handlers
  */
+
+void configure() {
+    // Update group topic for all devices
+    if (settings.groupTopic) {
+        getChildDevices().each {
+            log.info "Setting group topic for ${it.name} to ${settings.groupTopic}"
+            it.setGroupTopic(settings.groupTopic)
+        }
+    }
+}
 
 // Called after MQTT successfully connects
 void connected() {

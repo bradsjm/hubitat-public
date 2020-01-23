@@ -365,6 +365,12 @@ void setFadeSpeed(seconds) {
     }
 }
 
+void setGroupTopic(name) {
+    if (name != state.groupTopic) {
+        mqttPublish(getTopic("GroupTopic"), name)
+    }
+}
+
 // Perform Tasmota wakeup function
 void startWakeup(level, duration) {
     level = limit(level).toInteger()
