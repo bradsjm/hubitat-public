@@ -34,6 +34,7 @@ metadata {
     preferences() {
         section("MQTT Device Topics") {
             input name: "fullTopic", type: "text", title: "Topic to monitor", description: "For new Tasmota devices", required: true, defaultValue: "%prefix%/%topic%/"
+            input name: "groupTopic", type: "text", title: "Group Topic to use", description: "If set, will update devices", required: false
         }
 
         section("MQTT Broker") {
@@ -122,7 +123,7 @@ void createChildDevice(String topic) {
 
     def childDevice = getChildDevice(deviceNetworkId)
     if (childDevice) {
-        if (logEnable) log.debug "Tasmota device: ${deviceTopic} is owned by ${childDevice.label ?: childDevice.name}"
+        if (logEnable) log.debug "Tasmota device: ${deviceTopic} is connected to ${childDevice.label ?: childDevice.name}"
         return
     }
 
@@ -164,12 +165,17 @@ private int getRetrySeconds() {
     return Math.min(minimumRetrySec * Math.pow(2, count) + jitter, maximumRetrySec)
 }
 
-private String getTopic(String prefix, String postfix = "")
+private String getTopic(String postfix)
+{
+    getTopic("cmnd", postfix)
+}
+
+private String getTopic(String topic, String prefix, String postfix = "")
 {
     if (!settings.fullTopic.endsWith("/")) settings.fullTopic += "/"
     settings.fullTopic
         .replaceFirst("%prefix%", prefix)
-        .replaceFirst("%topic%", "+")
+        .replaceFirst("%topic%", topic)
         .plus(postfix)
 }
 
@@ -248,7 +254,12 @@ private void mqttDisconnect() {
 
 private void mqttSubscribeTopics() {
     int qos = 1 // at least once delivery
-    def topic = getTopic("tele", "LWT")
+    if (!settings.fullTopic.endsWith("/")) settings.fullTopic += "/"
+    def topic = settings.fullTopic
+        .replaceFirst("%prefix%", "tele")
+        .replaceFirst("%topic%", "+")
+        .plus("LWT")
+
     if (logEnable) log.debug "Subscribing to Tasmota telemetry topic: ${topic}"
     interfaces.mqtt.subscribe(topic, qos)
 }

@@ -95,7 +95,7 @@ void refresh() {
     log.info "Refreshing state of ${device.name}"
     state.clear()
 
-    String commandTopic = getTopic("cmnd", "Backlog")
+    String commandTopic = getTopic("Backlog")
     mqttPublish(commandTopic, "State;Status 0")
 }
 
@@ -137,7 +137,7 @@ void updated() {
  */
 
  void restart() {
-    mqttPublish(getTopic("cmnd", "Restart"), "1")
+    mqttPublish(getTopic("Restart"), "1")
  }
 
 // Parses Tasmota JSON content and send driver events
@@ -215,6 +215,11 @@ private int getRetrySeconds() {
     int jitter = new Random().nextInt(minimumRetrySec.intdiv(2))
     state.mqttRetryCount = count + 1
     return Math.min(minimumRetrySec * Math.pow(2, count) + jitter, maximumRetrySec)
+}
+
+private String getTopic(String postfix)
+{
+    getTopic("cmnd", postfix)
 }
 
 private String getTopic(String prefix, String postfix = "")

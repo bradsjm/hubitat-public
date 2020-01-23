@@ -133,7 +133,7 @@ void connected() {
 void configure()
 {
     // Set option 20 (Update of Dimmer/Color/CT without turning power on)
-    mqttPublish(getTopic("cmnd", "SetOption20"), preStaging ? "1" : "0")
+    mqttPublish(getTopic("SetOption20"), preStaging ? "1" : "0")
 }
 
 // Called when the device is first created.
@@ -155,7 +155,7 @@ void refresh() {
     log.info "Refreshing state of ${device.name}"
     state.clear()
 
-    String commandTopic = getTopic("cmnd", "Backlog")
+    String commandTopic = getTopic("Backlog")
     mqttPublish(commandTopic, "State;Status 0")
 }
 
@@ -203,12 +203,12 @@ void setGroupTopicMode(mode) {
 
 // Turn on
 void on() {
-    mqttPublish(getTopic("cmnd", "Power${settings.relayNumber}"), "1")
+    mqttPublish(getTopic("Power${settings.relayNumber}"), "1")
 }
 
 // Turn off
 void off() {
-    mqttPublish(getTopic("cmnd", "Power${settings.relayNumber}"), "0")
+    mqttPublish(getTopic("Power${settings.relayNumber}"), "0")
 }
 
 /**
@@ -249,9 +249,9 @@ void setLevel(level, duration = 0) {
     int oldFade = device.currentValue("fadeMode") == "on" ? 1 : 0
     int speed = Math.min(40f, duration * 2).toInteger()
     if (speed > 0) {
-        mqttPublish(getTopic("cmnd", "Backlog"), "Speed ${speed};Fade 1;Dimmer${settings.relayNumber} ${level};Delay ${duration * 10};Speed ${oldSpeed};Fade ${oldFade}")
+        mqttPublish(getTopic("Backlog"), "Speed ${speed};Fade 1;Dimmer${settings.relayNumber} ${level};Delay ${duration * 10};Speed ${oldSpeed};Fade ${oldFade}")
     } else {
-        mqttPublish(getTopic("cmnd", "Dimmer${settings.relayNumber}"), level.toString())
+        mqttPublish(getTopic("Dimmer${settings.relayNumber}"), level.toString())
     }
 }
 
@@ -266,20 +266,20 @@ void setColor(colormap) {
     int saturation = limit(colormap.saturation).toInteger()
     int level = limit(colormap.level).toInteger()
 
-    mqttPublish(getTopic("cmnd", "HsbColor"), "${hue},${saturation},${level}")
+    mqttPublish(getTopic("HsbColor"), "${hue},${saturation},${level}")
 }
 
 // Set the hue (0-100)
 void setHue(hue) {
     // Hubitat hue is 0-100 to be converted to Tasmota 0-360
     hue = limit(Math.round(hue * 3.6), 0, 360).toInteger()
-    mqttPublish(getTopic("cmnd", "HsbColor1"), hue.toString())
+    mqttPublish(getTopic("HsbColor1"), hue.toString())
 }
 
 // Set the saturation (0-100)
 void setSaturation(saturation) {
     saturation = limit(saturation).toInteger()
-    mqttPublish(getTopic("cmnd", "HsbColor2"), saturation.toString())
+    mqttPublish(getTopic("HsbColor2"), saturation.toString())
 }
 
 // Set the color temperature (2000-6536)
@@ -289,9 +289,9 @@ void setColorTemperature(kelvin) {
     if (channelCount == 5) {
         int mired = limit(Math.round(1000000f / kelvin), 153, 500).toInteger()
         if (logEnable) log.debug "Converted ${kelvin} kelvin to ${mired} mired"
-        mqttPublish(getTopic("cmnd", "CT"), mired.toString())
+        mqttPublish(getTopic("CT"), mired.toString())
     } else if (channelCount == 4) {
-        mqttPublish(getTopic("cmnd", "White"), device.currentValue("level").toString())
+        mqttPublish(getTopic("White"), device.currentValue("level").toString())
     }
 }
 
@@ -339,15 +339,15 @@ def setPreviousEffect() {
 }
 
 void blinkOn() {
-    mqttPublish(getTopic("cmnd", "Power${settings.relayNumber}"), "blink")
+    mqttPublish(getTopic("Power${settings.relayNumber}"), "blink")
 }
 
 void blinkOff() {
-    mqttPublish(getTopic("cmnd", "Power${settings.relayNumber}"), "blinkoff")
+    mqttPublish(getTopic("Power${settings.relayNumber}"), "blinkoff")
 }
 
 void setEffectsScheme(scheme) {
-    mqttPublish(getTopic("cmnd", "Scheme"), scheme.toString())
+    mqttPublish(getTopic("Scheme"), scheme.toString())
 }
 
 /**
@@ -359,9 +359,9 @@ void setEffectsScheme(scheme) {
 void setFadeSpeed(seconds) {
     int speed = Math.min(40f, seconds * 2).toInteger()
     if (speed > 0) {
-        mqttPublish(getTopic("cmnd", "Backlog"), "Speed ${speed};Fade 1")
+        mqttPublish(getTopic("Backlog"), "Speed ${speed};Fade 1")
     } else {
-        mqttPublish(getTopic("cmnd", "Fade"), "0")
+        mqttPublish(getTopic("Fade"), "0")
     }
 }
 
@@ -369,7 +369,7 @@ void setFadeSpeed(seconds) {
 void startWakeup(level, duration) {
     level = limit(level).toInteger()
     duration = limit(duration, 1, 3000).toInteger()
-    mqttPublish(getTopic("cmnd", "Backlog"), "WakeupDuration ${duration};Wakeup ${level}")
+    mqttPublish(getTopic("Backlog"), "WakeupDuration ${duration};Wakeup ${level}")
 }
 
 /**
@@ -377,7 +377,7 @@ void startWakeup(level, duration) {
  */
 
  void restart() {
-    mqttPublish(getTopic("cmnd", "Restart"), "1")
+    mqttPublish(getTopic("Restart"), "1")
  }
 
 // Parses Tasmota JSON content and send driver events
@@ -586,7 +586,12 @@ private int getRetrySeconds() {
     return Math.min(minimumRetrySec * Math.pow(2, count) + jitter, maximumRetrySec)
 }
 
-private String getTopic(String prefix, String postfix = "", boolean forceSingle = false)
+private String getTopic(String postfix)
+{
+    getTopic("cmnd", postfix)
+}
+
+private String getTopic(String prefix, String postfix, boolean forceSingle = false)
 {
     String topic = settings.deviceTopic
     if (!forceSingle && device.currentValue("groupMode") == "grouped" && state.groupTopic) {

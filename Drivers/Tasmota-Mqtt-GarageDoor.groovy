@@ -90,14 +90,14 @@ void connected() {
 
 void configure() {
     // Set options
-    def commandTopic = getTopic("cmnd", "Backlog")
+    def commandTopic = getTopic("Backlog")
     mqttPublish(commandTopic, "SetOption0 0;PowerOnState 0")
 
     // Create rule to publish distance on change of +/- 12cm/1in
     def rule = """
         on SR04#Distance>%var1% do backlog publish stat/%topic%/Distance %value%;var1 %value%;var2 %value%;add1 12;sub2 12 break on SR04#Distance<%var2% do backlog publish stat/%topic%/Distance %value%;var1 %value%;var2 %value%;add1 12;sub2 12 endon
     """
-    commandTopic = getTopic("cmnd", "Rule1")
+    commandTopic = getTopic("Rule1")
     mqttPublish(commandTopic, rule) // send the rule content
     mqttPublish(commandTopic, "1") // enable the rule
 }
@@ -119,7 +119,7 @@ void refresh() {
     log.info "Refreshing state of ${device.name}"
     state.clear()
 
-    String commandTopic = getTopic("cmnd", "Backlog")
+    String commandTopic = getTopic("Backlog")
     mqttPublish(commandTopic, "State;Status 0")
 }
 
@@ -170,7 +170,7 @@ void open() {
 
     sendEvent(newEvent("door", "opening"))
 
-    String commandTopic = getTopic("cmnd", "Backlog")
+    String commandTopic = getTopic("Backlog")
     mqttPublish(commandTopic, "PulseTime ${settings.pulseTime};Power 1")
 
     runIn(settings.travelTime, "setOpen")
@@ -191,14 +191,14 @@ void close() {
         pauseExecution(3000)
     }
 
-    String commandTopic = getTopic("cmnd", "Backlog")
+    String commandTopic = getTopic("Backlog")
     mqttPublish(commandTopic, "PulseTime ${settings.pulseTime};Power 1")
 
     runIn(settings.travelTime, "setClosed")
 }
 
 void soundWarning(count = 3, freq = 750) {
-    String commandTopic = getTopic("cmnd", "Backlog")
+    String commandTopic = getTopic("Backlog")
     String beep = "Pwm2 512;Delay 2;Pwm2 0;Delay 3;"
     mqttPublish(commandTopic, "PwmFrequency ${freq};" + beep * count)
 }
@@ -240,7 +240,7 @@ private void setOpen() {
  */
 
  void restart() {
-    mqttPublish(getTopic("cmnd", "Restart"), "1")
+    mqttPublish(getTopic("Restart"), "1")
  }
 
 // Parses Tasmota JSON content and send driver events
@@ -367,6 +367,11 @@ private int getRetrySeconds() {
     int jitter = new Random().nextInt(minimumRetrySec.intdiv(2))
     state.mqttRetryCount = count + 1
     return Math.min(minimumRetrySec * Math.pow(2, count) + jitter, maximumRetrySec)
+}
+
+private String getTopic(String postfix)
+{
+    getTopic("cmnd", postfix)
 }
 
 private String getTopic(String prefix, String postfix = "")

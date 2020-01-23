@@ -74,14 +74,14 @@ void configure()
 {
     // Set switches (zones) to follow mode
     1.upto(settings.zoneCount) {
-        mqttPublish(getTopic("cmnd", "Switchmode${it}"), "1")
+        mqttPublish(getTopic("Switchmode${it}"), "1")
     }
 
     // Set rule to publish zone changes
     def rule = """
         on switch1#state do publish stat/%topic%/SWITCH1 %value% break on switch2#state do publish stat/%topic%/SWITCH2 %value% break on switch3#state do publish stat/%topic%/SWITCH3 %value% break on switch4#state do publish stat/%topic%/SWITCH4 %value% break on switch5#state do publish stat/%topic%/SWITCH5 %value% break on switch6#state do publish stat/%topic%/SWITCH6 %value% break
     """
-    commandTopic = getTopic("cmnd", "Rule1")
+    commandTopic = getTopic("Rule1")
     mqttPublish(commandTopic, rule) // send the rule content
     mqttPublish(commandTopic, "1") // enable the rule
 }
@@ -103,7 +103,7 @@ void refresh() {
     log.info "Refreshing state of ${device.name}"
     state.clear()
 
-    String commandTopic = getTopic("cmnd", "Backlog")
+    String commandTopic = getTopic("Backlog")
     mqttPublish(commandTopic, "State;Status 0")
 }
 
@@ -183,7 +183,7 @@ void updateChildContact(zone, isOpen) {
  */
 
  void restart() {
-    mqttPublish(getTopic("cmnd", "Restart"), "1")
+    mqttPublish(getTopic("Restart"), "1")
  }
 
 // Parses Tasmota JSON content and send driver events
@@ -262,6 +262,11 @@ private int getRetrySeconds() {
     int jitter = new Random().nextInt(minimumRetrySec.intdiv(2))
     state.mqttRetryCount = count + 1
     return Math.min(minimumRetrySec * Math.pow(2, count) + jitter, maximumRetrySec)
+}
+
+private String getTopic(String postfix)
+{
+    getTopic("cmnd", postfix)
 }
 
 private String getTopic(String prefix, String postfix = "")
