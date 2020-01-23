@@ -46,7 +46,6 @@ metadata {
         attribute "fadeSpeed", "Number"
         attribute "groupMode", "String"
         attribute "hueName", "String"
-        attribute "wifiSignal", "String"
 
         command "restart"
 
@@ -87,7 +86,6 @@ metadata {
     preferences() {
         section("MQTT Device Topics") {
             input name: "deviceTopic", type: "text", title: "Device Topic (Name)", description: "Topic value from Tasmota", required: true, defaultValue: "tasmota"
-            input name: "groupTopic", type: "text", title: "Group Topic (Name)", description: "Group Topic value from Tasmota", required: true, defaultValue: "tasmotas"
             input name: "fullTopic", type: "text", title: "Full Topic Template", description: "Full Topic value from Tasmota", required: true, defaultValue: "%prefix%/%topic%/"
         }
 
@@ -98,11 +96,10 @@ metadata {
         }
 
         section("Misc") {
-            input name: "relayNumber", type: "number", title: "Relay Number", description: "Used for Power commands", required: true, defaultValue: 1
-            input name: "changeLevelStep", type: "decimal", title: "Change level step size", description: "Between 1 and 10", required: true, defaultValue: 2
-            input name: "changeLevelEvery", type: "number", title: "Change level every x milliseconds", description: "Between 100ms and 1000ms", required: true, defaultValue: 100
-            input name: "preStaging", type: "bool", title: "Enable color and level pre-staging", description: "Update of Dimmer/Color/CT without turning power on", required: true, defaultValue: false
-            input name: "initialGroupMode", type: "enum", title: "Initial group mode", description: "Grouped uses the group topic", options: ["single", "grouped"], required: true, defaultValue: "single"
+            input name: "relayNumber", type: "number", title: "Relay Number", description: "For Power commands", required: true, defaultValue: 1
+            input name: "changeLevelStep", type: "decimal", title: "Change level step %", description: "1% to 10%", required: true, defaultValue: 2
+            input name: "changeLevelEvery", type: "number", title: "Change level interval", description: "100ms to 1000ms", required: true, defaultValue: 100
+            input name: "preStaging", type: "bool", title: "Enable pre-staging", description: "Color and level changes while off", required: true, defaultValue: false
             input name: "logEnable", type: "bool", title: "Enable debug logging", description: "Automatically disabled after 30 minutes", required: true, defaultValue: true
             input name: "watchdogEnable", type: "bool", title: "Enable watchdog logging", description: "Checks for mqtt activity every 5 minutes", required: true, defaultValue: true
         }
@@ -143,6 +140,7 @@ void configure()
 void installed() {
     log.info "${device.displayName} driver v${version()} installed"
     sendEvent(name: "lightEffects", value: new groovy.json.JsonBuilder(lightEffects))
+    setGroupTopicMode("single")
 }
 
 // Called to parse received MQTT data
@@ -181,9 +179,6 @@ void uninstalled() {
 void updated() {
     log.info "${device.displayName} driver v${version()} configuration updated"
     log.debug settings
-
-    setGroupTopicMode(settings.initialGroupMode)
-    device.setName("mqtt-${settings.deviceTopic}")
 
     mqttDisconnect()
     unschedule()
@@ -387,9 +382,16 @@ void startWakeup(level, duration) {
 
 // Parses Tasmota JSON content and send driver events
 void parseTasmota(String topic, Map json) {
-    if (json.containsKey("POWER")) {
-        if (logEnable) log.debug "Parsing [ POWER: ${json.POWER} ]"
-        sendEvent(newEvent("switch", json.POWER.toLowerCase()))
+    String powerKey = "POWER".plus(settings.relayNumber)
+    if (json.containsKey(powerKey)) {
+        if (logEnable) log.debug "Parsing [ ${powerKey}: ${json[powerKey]} ]"
+        sendEvent(newEvent("switch", json[powerKey].toLowerCase()))
+    }
+
+    powerKey = "Power".plus(settings.relayNumber)
+    if (json.containsKey(powerKey)) {
+        if (logEnable) log.debug "Parsing [ ${powerKey}: ${json[powerKey]} ]"
+        sendEvent(newEvent("switch", json[powerKey].toLowerCase()))
     }
 
     if (json.containsKey("Fade")) {
@@ -448,36 +450,45 @@ void parseTasmota(String topic, Map json) {
         sendEvent(newEvent("saturation", saturation))
     }
 
+    if (json.containsKey("Status")) {
+        if (logEnable) log.debug "Parsing [ Status: ${json.Status} ]"
+        int relayNumber = Math.max(1, settings.relayNumber)
+        String friendlyName = json.Status.FriendlyName instanceof String 
+            ? json.Status.FriendlyName 
+            : json.Status.FriendlyName[relayNumber-1]
+        if (!device.label) device.setLabel(friendlyName)
+    }
+
     if (json.containsKey("Wifi")) {
         if (logEnable) log.debug "Parsing [ Wifi: ${json.Wifi} ]"
-        updateDataValue("BSSId", json.Wifi.BSSId)
-        updateDataValue("Channel", json.Wifi.Channel.toString())
-        updateDataValue("LinkCount", json.Wifi.LinkCount.toString())
-        updateDataValue("RSSI", json.Wifi.RSSI.toString())
-        updateDataValue("Signal", json.Wifi.Signal.toString())
-        updateDataValue("SSId", json.Wifi.SSId)
-        sendEvent(newEvent("wifiSignal", getWifiSignalName(json.Wifi.RSSI)))
+        updateDataValue("bssId", json.Wifi.BSSId)
+        updateDataValue("channel", json.Wifi.Channel.toString())
+        updateDataValue("linkCount", json.Wifi.LinkCount.toString())
+        updateDataValue("rssi", json.Wifi.RSSI.toString())
+        updateDataValue("signal", json.Wifi.Signal.toString())
+        updateDataValue("ssId", json.Wifi.SSId)
     }
 
     if (json.containsKey("StatusNET")) {
         if (logEnable) log.debug "Parsing [ StatusNET: ${json.StatusNET} ]"
-        updateDataValue("Hostname", json.StatusNET.Hostname)
-        updateDataValue("IPAddress", json.StatusNET.IPAddress)
+        updateDataValue("hostname", json.StatusNET.Hostname)
+        updateDataValue("ipAddress", json.StatusNET.IPAddress)
     }
 
     if (json.containsKey("Uptime")) {
         if (logEnable) log.debug "Parsing [ Uptime: ${json.Uptime} ]"
-        state.uptime = json.Uptime
+        updateDataValue("uptime", json.Uptime)
     }
 
     if (json.containsKey("StatusPRM")) {
         if (logEnable) log.debug "Parsing [ StatusPRM: ${json.StatusPRM} ]"
-        state.restartReason = json.StatusPRM.RestartReason
+        updateDataValue("restartReason", json.StatusPRM.RestartReason)
+        state.groupTopic = json.StatusPRM.GroupTopic
     }
 
     if (json.containsKey("StatusFWR")) {
         if (logEnable) log.debug "Parsing [ StatusFWR: ${json.StatusFWR} ]"
-        state.version = json.StatusFWR.Version
+        updateDataValue("firmwareVersion", json.StatusFWR.Version)
     }
 
     state.lastResult = json
@@ -578,10 +589,11 @@ private int getRetrySeconds() {
 private String getTopic(String prefix, String postfix = "", boolean forceSingle = false)
 {
     String topic = settings.deviceTopic
-    if (!forceSingle && device.currentValue("groupMode") == "grouped" && settings.groupTopic) {
-        topic = settings.groupTopic
+    if (!forceSingle && device.currentValue("groupMode") == "grouped" && state.groupTopic) {
+        topic = state.groupTopic
     }
 
+    if (!settings.fullTopic.endsWith("/")) settings.fullTopic += "/"
     settings.fullTopic
         .replaceFirst("%prefix%", prefix)
         .replaceFirst("%topic%", topic)
@@ -662,8 +674,8 @@ private boolean mqttConnect() {
         mqtt.connect(
             settings.mqttBroker,
             clientId,
-            settings?.username,
-            settings?.password
+            settings?.mqttUsername,
+            settings?.mqttPassword
         )
 
         pauseExecution(1000)
@@ -724,7 +736,7 @@ private void mqttReceive(Map message) {
         parseTasmota(topic, parseJson(payload))
     } else {
         state.mqttReceiveTime = now()
-        def key = topic.substring(topic.lastIndexOf("/")+1)
+        String key = topic.split('/')[-1]
         parseTasmota(topic, [ (key): payload ])
     }
 }

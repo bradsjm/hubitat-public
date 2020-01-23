@@ -27,12 +27,13 @@ import java.security.MessageDigest;
 
 metadata {
     definition (name: "Tasmota MQTT ${deviceType()}", namespace: "tasmota-mqtt", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/Drivers/Tasmota-Mqtt-RGBWCT.groovy") {
+        capability "Refresh"
         attribute "connection", "String"
     }
 
     preferences() {
         section("MQTT Device Topics") {
-            input name: "teleTopic", type: "text", title: "Topic to monitor", description: "Topic to monitor for Tasmota devices", required: true, defaultValue: "tele/+/LWT"
+            input name: "fullTopic", type: "text", title: "Topic to monitor", description: "For new Tasmota devices", required: true, defaultValue: "%prefix%/%topic%/"
         }
 
         section("MQTT Broker") {
@@ -42,7 +43,7 @@ metadata {
         }
 
         section("Misc") {
-            input name: "driverType", type: "text", title: "MQTT Driver", description: "Driver for discovered devices", required: true, defaultValue: "Tasmota Mqtt Sensor"
+            input name: "driverType", type: "enum", title: "MQTT Driver", description: "Driver for discovered devices", options: ["Tasmota MQTT Sensor", "Tasmota MQTT Switch", "Tasmota MQTT RGBW/CT"], required: true, defaultValue: "Tasmota MQTT Sensor"
             input name: "logEnable", type: "bool", title: "Enable Debug logging", description: "Automatically disabled after 30 minutes", required: true, defaultValue: true
         }
     }
@@ -79,8 +80,21 @@ void parse(data) {
     String payload = message.get("payload")
     if (logEnable) log.debug "MQTT RECEIVE <--- ${topic} = ${payload}"
     state.mqttReceiveCount = (state?.mqttReceiveCount ?: 0) + 1
-    if (payload == "online")
+    if (payload == "Online")
         createChildDevice(topic.toLowerCase())
+}
+
+void refresh() {
+    log.info "Refreshing state of ${device.name}"
+    state.clear()
+    mqttDisconnect()
+    unschedule()
+
+    if (settings.mqttBroker) {
+        mqttConnect()
+    } else {
+        log.warn "${device.displayName} requires a broker configured to connect"
+    }
 }
 
 // Called when the device is removed.
@@ -93,15 +107,7 @@ void uninstalled() {
 void updated() {
     log.info "${device.displayName} driver v${version()} configuration updated"
     log.debug settings
-
-    mqttDisconnect()
-    unschedule()
-
-    if (settings.mqttBroker) {
-        mqttConnect()
-    } else {
-        log.warn "${device.displayName} requires a broker configured to connect"
-    }
+    refresh()
 
     if (logEnable) runIn(1800, "logsOff")
 }
@@ -114,14 +120,14 @@ void createChildDevice(String topic) {
     String deviceNetworkId = generateMD5(topic)
     String deviceTopic = topic.split('/')[-2]
 
-    def childDevice = device.getChildDevice(deviceNetworkId)
+    def childDevice = getChildDevice(deviceNetworkId)
     if (childDevice) {
         if (logEnable) log.debug "Tasmota device: ${deviceTopic} is owned by ${childDevice.label ?: childDevice.name}"
         return
     }
 
     log.info "Creating new Tasmota device: ${deviceTopic}"
-    addChildDevice(
+    childDevice = addChildDevice(
         "tasmota-mqtt",
         settings.driverType,
         deviceNetworkId,
@@ -129,6 +135,15 @@ void createChildDevice(String topic) {
             "name": "mqtt-".plus(deviceTopic)
         ]
     )
+
+    childDevice.updateSetting("deviceTopic", deviceTopic)
+    childDevice.updateSetting("fullTopic", settings.fullTopic)
+    childDevice.updateSetting("mqttBroker", settings.mqttBroker)
+    if (settings?.mqttUsername)
+        childDevice.updateSetting("mqttUsername", settings.mqttUsername)
+    if (settings?.mqttPassword)
+    childDevice.updateSetting("mqttPassword", settings.mqttPassword)
+    childDevice.refresh()
 }
 
 String generateMD5(String s){
@@ -147,6 +162,15 @@ private int getRetrySeconds() {
     int jitter = new Random().nextInt(minimumRetrySec.intdiv(2))
     state.mqttRetryCount = count + 1
     return Math.min(minimumRetrySec * Math.pow(2, count) + jitter, maximumRetrySec)
+}
+
+private String getTopic(String prefix, String postfix = "")
+{
+    if (!settings.fullTopic.endsWith("/")) settings.fullTopic += "/"
+    settings.fullTopic
+        .replaceFirst("%prefix%", prefix)
+        .replaceFirst("%topic%", "+")
+        .plus(postfix)
 }
 
 private Map newEvent(String name, value, unit = null) {
@@ -192,12 +216,13 @@ private boolean mqttConnect() {
         mqtt.connect(
             settings.mqttBroker,
             clientId,
-            settings?.username,
-            settings?.password
+            settings?.mqttUsername,
+            settings?.mqttPassword
         )
 
         pauseExecution(1000)
         connected()
+        sendEvent (name: "connection", value: "online", descriptionText: "${device.displayName} connection now online")
         return true
     } catch(e) {
         log.error "MQTT connect error: ${e}"
@@ -223,6 +248,7 @@ private void mqttDisconnect() {
 
 private void mqttSubscribeTopics() {
     int qos = 1 // at least once delivery
-    if (logEnable) log.debug "Subscribing to Tasmota telemetry topic: ${settings.teleTopic}"
-    interfaces.mqtt.subscribe(settings.teleTopic, qos)
+    def topic = getTopic("tele", "LWT")
+    if (logEnable) log.debug "Subscribing to Tasmota telemetry topic: ${topic}"
+    interfaces.mqtt.subscribe(topic, qos)
 }

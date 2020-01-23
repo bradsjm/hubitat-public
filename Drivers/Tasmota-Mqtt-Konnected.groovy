@@ -128,8 +128,6 @@ void updated() {
     log.info "${device.displayName} driver v${version()} configuration updated"
     log.debug settings
 
-    device.setName("mqtt-${settings.deviceTopic}")
-
     mqttDisconnect()
     unschedule()
 
@@ -190,46 +188,60 @@ void updateChildContact(zone, isOpen) {
 
 // Parses Tasmota JSON content and send driver events
 void parseTasmota(String topic, Map json) {
-    if (json.containsKey("statussns")) {
-        if (logEnable) log.debug "Parsing [ StatusSNS: ${json.statussns} ]"
-        json = json.statussns
+    if (json.containsKey("StatusSNS")) {
+        if (logEnable) log.debug "Parsing [ StatusSNS: ${json.StatusSNS} ]"
+        json = json.StatusSNS
     }
 
-    if (json.containsKey("wifi")) {
-        if (logEnable) log.debug "Parsing [ Wifi: ${json.wifi} ]"
-        updateDataValue("BSSId", json.wifi.bssid)
-        updateDataValue("Channel", json.wifi.channel.toString())
-        updateDataValue("LinkCount", json.wifi.linkcount.toString())
-        updateDataValue("RSSI", json.wifi.rssi.toString())
-        updateDataValue("Signal", json.wifi.signal.toString())
-        updateDataValue("SSId", json.wifi.ssid)
-        sendEvent(newEvent("wifiSignal", getWifiSignalName(json.wifi.rssi)))
+    if (json.containsKey("Status")) {
+        if (logEnable) log.debug "Parsing [ Status: ${json.Status} ]"
+        int relayNumber = Math.max(1, settings.relayNumber)
+        String friendlyName = json.Status.FriendlyName instanceof String 
+            ? json.Status.FriendlyName 
+            : json.Status.FriendlyName[relayNumber-1]
+        if (!device.label) device.setLabel(friendlyName)
     }
 
-    if (json.containsKey("statusnet")) {
-        if (logEnable) log.debug "Parsing [ StatusNET: ${json.statusnet} ]"
-        updateDataValue("Hostname", json.statusnet.hostname)
-        updateDataValue("IPAddress", json.statusnet.ipaddress)
+    if (json.containsKey("Wifi")) {
+        if (logEnable) log.debug "Parsing [ Wifi: ${json.Wifi} ]"
+        updateDataValue("bssId", json.Wifi.BSSId)
+        updateDataValue("channel", json.Wifi.Channel.toString())
+        updateDataValue("linkCount", json.Wifi.LinkCount.toString())
+        updateDataValue("rssi", json.Wifi.RSSI.toString())
+        updateDataValue("signal", json.Wifi.Signal.toString())
+        updateDataValue("ssId", json.Wifi.SSId)
     }
 
-    if (json.containsKey("uptime")) {
-        if (logEnable) log.debug "Parsing [ Uptime: ${json.uptime} ]"
-        state.uptime = json.uptime
+    if (json.containsKey("StatusNET")) {
+        if (logEnable) log.debug "Parsing [ StatusNET: ${json.StatusNET} ]"
+        updateDataValue("hostname", json.StatusNET.Hostname)
+        updateDataValue("ipAddress", json.StatusNET.IPAddress)
     }
 
-    if (json.containsKey("statusprm")) {
-        if (logEnable) log.debug "Parsing [ StatusPRM: ${json.statusprm} ]"
-        state.restartReason = json.statusprm.restartreason
+    if (json.containsKey("Uptime")) {
+        if (logEnable) log.debug "Parsing [ Uptime: ${json.Uptime} ]"
+        updateDataValue("uptime", json.Uptime)
     }
 
-    if (json.containsKey("statusfwr")) {
-        if (logEnable) log.debug "Parsing [ StatusFWR: ${json.statusfwr} ]"
-        state.version = json.statusfwr.version
+    if (json.containsKey("StatusPRM")) {
+        if (logEnable) log.debug "Parsing [ StatusPRM: ${json.StatusPRM} ]"
+        updateDataValue("restartReason", json.StatusPRM.RestartReason)
+        state.groupTopic = json.StatusPRM.GroupTopic
+    }
+
+    if (json.containsKey("StatusFWR")) {
+        if (logEnable) log.debug "Parsing [ StatusFWR: ${json.StatusFWR} ]"
+        updateDataValue("firmwareVersion", json.StatusFWR.Version)
     }
 
     // Check each zone (this code should go last)
     1.upto(settings.zoneCount) {
-        String key = "switch".plus(it)
+        String key = "SWITCH".plus(it)
+        if (json.containsKey(key)) {
+            def isOpen = json[key] == "1" || json[key] == "on"
+            updateChildContact(it, isOpen)
+        }
+        key = "Switch".plus(it)
         if (json.containsKey(key)) {
             def isOpen = json[key] == "1" || json[key] == "on"
             updateChildContact(it, isOpen)
@@ -255,6 +267,7 @@ private int getRetrySeconds() {
 private String getTopic(String prefix, String postfix = "")
 {
     String topic = settings.deviceTopic
+    if (!settings.fullTopic.endsWith("/")) settings.fullTopic += "/"
     settings.fullTopic
         .replaceFirst("%prefix%", prefix)
         .replaceFirst("%topic%", topic)
@@ -339,8 +352,8 @@ private boolean mqttConnect() {
         mqtt.connect(
             settings.mqttBroker,
             clientId,
-            settings?.username,
-            settings?.password
+            settings?.mqttUsername,
+            settings?.mqttPassword
         )
 
         pauseExecution(1000)
@@ -398,11 +411,11 @@ private void mqttReceive(Map message) {
         log.info event.descriptionText
     } else if (payload[0] == "{") {
         state.mqttReceiveTime = now()
-        parseTasmota(topic, parseJson(payload.toLowerCase()))
+        parseTasmota(topic, parseJson(payload))
     } else {
         state.mqttReceiveTime = now()
-        def key = topic.substring(topic.lastIndexOf("/")+1).toLowerCase()
-        parseTasmota(topic, [ (key): payload.toLowerCase() ])
+        String key = topic.split('/')[-1]
+        parseTasmota(topic, [ (key): payload ])
     }
 }
 

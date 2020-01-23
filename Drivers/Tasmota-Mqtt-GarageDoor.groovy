@@ -144,8 +144,6 @@ void updated() {
     log.info "${device.displayName} driver v${version()} configuration updated"
     log.debug settings
 
-    device.setName("mqtt-${settings.deviceTopic}")
-
     mqttDisconnect()
     unschedule()
 
@@ -271,37 +269,45 @@ void parseTasmota(String topic, Map json) {
         }
     }
 
+    if (json.containsKey("Status")) {
+        if (logEnable) log.debug "Parsing [ Status: ${json.Status} ]"
+        int relayNumber = Math.max(1, settings.relayNumber)
+        String friendlyName = json.Status.FriendlyName instanceof String 
+            ? json.Status.FriendlyName 
+            : json.Status.FriendlyName[relayNumber-1]
+        if (!device.label) device.setLabel(friendlyName)
+    }
+
     if (json.containsKey("Wifi")) {
         if (logEnable) log.debug "Parsing [ Wifi: ${json.Wifi} ]"
-        updateDataValue("BSSId", json.Wifi.BSSId)
-        updateDataValue("Channel", json.Wifi.Channel.toString())
-        updateDataValue("LinkCount", json.Wifi.LinkCount.toString())
-        updateDataValue("RSSI", json.Wifi.RSSI.toString())
-        updateDataValue("Signal", json.Wifi.Signal.toString())
-        updateDataValue("SSId", json.Wifi.SSId)
-
-        sendEvent(newEvent("wifiSignal", getWifiSignalName(json.Wifi.RSSI)))
+        updateDataValue("bssId", json.Wifi.BSSId)
+        updateDataValue("channel", json.Wifi.Channel.toString())
+        updateDataValue("linkCount", json.Wifi.LinkCount.toString())
+        updateDataValue("rssi", json.Wifi.RSSI.toString())
+        updateDataValue("signal", json.Wifi.Signal.toString())
+        updateDataValue("ssId", json.Wifi.SSId)
     }
 
     if (json.containsKey("StatusNET")) {
         if (logEnable) log.debug "Parsing [ StatusNET: ${json.StatusNET} ]"
-        updateDataValue("Hostname", json.StatusNET.Hostname)
-        updateDataValue("IPAddress", json.StatusNET.IPAddress)
+        updateDataValue("hostname", json.StatusNET.Hostname)
+        updateDataValue("ipAddress", json.StatusNET.IPAddress)
     }
 
     if (json.containsKey("Uptime")) {
         if (logEnable) log.debug "Parsing [ Uptime: ${json.Uptime} ]"
-        state.uptime = json.Uptime
+        updateDataValue("uptime", json.Uptime)
     }
 
     if (json.containsKey("StatusPRM")) {
         if (logEnable) log.debug "Parsing [ StatusPRM: ${json.StatusPRM} ]"
-        state.restartReason = json.StatusPRM.RestartReason
+        updateDataValue("restartReason", json.StatusPRM.RestartReason)
+        state.groupTopic = json.StatusPRM.GroupTopic
     }
 
     if (json.containsKey("StatusFWR")) {
         if (logEnable) log.debug "Parsing [ StatusFWR: ${json.StatusFWR} ]"
-        state.version = json.StatusFWR.Version
+        updateDataValue("firmwareVersion", json.StatusFWR.Version)
     }
 
     state.lastResult = json
@@ -365,6 +371,7 @@ private int getRetrySeconds() {
 
 private String getTopic(String prefix, String postfix = "")
 {
+    if (!settings.fullTopic.endsWith("/")) settings.fullTopic += "/"
     settings.fullTopic
         .replaceFirst("%prefix%", prefix)
         .replaceFirst("%topic%", settings.deviceTopic)
@@ -462,8 +469,8 @@ private boolean mqttConnect() {
         mqtt.connect(
             settings.mqttBroker,
             clientId,
-            settings?.username,
-            settings?.password
+            settings?.mqttUsername,
+            settings?.mqttPassword
         )
 
         pauseExecution(1000)
@@ -524,7 +531,7 @@ private void mqttReceive(Map message) {
         parseTasmota(topic, parseJson(payload))
     } else {
         state.mqttReceiveTime = now()
-        def key = topic.substring(topic.lastIndexOf("/")+1)
+        String key = topic.split('/')[-1]
         parseTasmota(topic, [ (key): payload ])
     }
 }
