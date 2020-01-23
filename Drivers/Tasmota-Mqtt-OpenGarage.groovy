@@ -381,7 +381,7 @@ private String getTopic(String postfix)
     getTopic("cmnd", postfix)
 }
 
-private String getTopic(String prefix, String postfix = "")
+private String getTopic(String prefix, String postfix)
 {
     if (!settings.fullTopic.endsWith("/")) settings.fullTopic += "/"
     settings.fullTopic

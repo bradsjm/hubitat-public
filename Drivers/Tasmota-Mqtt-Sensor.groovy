@@ -228,7 +228,7 @@ private String getTopic(String postfix)
     getTopic("cmnd", postfix)
 }
 
-private String getTopic(String prefix, String postfix = "")
+private String getTopic(String prefix, String postfix)
 {
     String topic = settings.deviceTopic
     if (!forceSingle && device.currentValue("groupMode") == "grouped" && settings.groupTopic) {

@@ -182,7 +182,6 @@ void updateChildContact(zone, isOpen) {
  *  Tasmota Device Specific
  */
 
-
 void setGroupTopic(name) {
     if (name != state.groupTopic) {
         mqttPublish(getTopic("GroupTopic"), name)
@@ -276,7 +275,7 @@ private String getTopic(String postfix)
     getTopic("cmnd", postfix)
 }
 
-private String getTopic(String prefix, String postfix = "")
+private String getTopic(String prefix, String postfix)
 {
     String topic = settings.deviceTopic
     if (!settings.fullTopic.endsWith("/")) settings.fullTopic += "/"
