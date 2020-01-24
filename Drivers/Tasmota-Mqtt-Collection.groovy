@@ -73,7 +73,8 @@ metadata {
 void configure() {
     // Update group topic for all devices
     if (settings.groupTopic) {
-        getChildDevices().each {
+        def devices = getChildDevices().findAll { it.hasCommand("setGroupTopic") }
+        devices.each {
             log.info "Setting group topic for ${it.name} to ${settings.groupTopic}"
             it.setGroupTopic(settings.groupTopic)
         }
@@ -134,10 +135,16 @@ void uninstalled() {
 void updated() {
     log.info "${device.displayName} driver v${version()} configuration updated"
     log.debug settings
-    configure()
     refresh()
+    configure()
 
     if (logEnable) runIn(1800, "logsOff")
+}
+
+// Called by children to update the state
+void updateGroup() {
+    def devices = getChildDevices()
+    sendEvent(newEvent("switch", devices.every { it.currentValue("switch") == "on" } ? "on" : "off"))
 }
 
 /**

@@ -372,13 +372,14 @@ void startWakeup(level, duration) {
  */
 
 private void parseTasmota(String topic, Map json) {
-    String powerKey = "POWER".plus(settings.relayNumber)
+    String relay = settings.relayNumber > 1 ? settings.relayNumber.toString() : ""
+    String powerKey = "POWER".plus(relay)
     if (json.containsKey(powerKey)) {
         if (logEnable) log.debug "Parsing [ ${powerKey}: ${json[powerKey]} ]"
         sendEvent(newEvent("switch", json[powerKey].toLowerCase()))
     }
 
-    powerKey = "Power".plus(settings.relayNumber)
+    powerKey = "Power".plus(relay)
     if (json.containsKey(powerKey)) {
         if (logEnable) log.debug "Parsing [ ${powerKey}: ${json[powerKey]} ]"
         sendEvent(newEvent("switch", json[powerKey].toLowerCase()))
@@ -629,11 +630,8 @@ private void mqttCheckReceiveTime() {
 
         if (elapsedMinutes > timeout) {
             log.warn "No messages received from ${device.displayName} in ${elapsedMinutes} minutes"
-            sendEvent (name: "connection", value: "offline", descriptionText: "${device.displayName} silent for ${elapsedMinutes} minutes")
+            mqttDisconnect()
             mqttCheckConnected()
-        } else
-        {
-            sendEvent (name: "connection", value: "online", descriptionText: "${device.displayName} last message was ${elapsedMinutes} minutes ago")
         }
     }
 }
