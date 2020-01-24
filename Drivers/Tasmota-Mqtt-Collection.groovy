@@ -28,7 +28,7 @@ import java.security.MessageDigest;
 metadata {
     definition (name: "Tasmota MQTT ${deviceType()}", namespace: "tasmota-mqtt", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/Drivers/Tasmota-Mqtt-RGBWCT.groovy") {
         capability "Refresh"
-        capability "Configure"
+        capability "Configuration"
         attribute "connection", "String"
     }
 
@@ -119,6 +119,7 @@ void uninstalled() {
 void updated() {
     log.info "${device.displayName} driver v${version()} configuration updated"
     log.debug settings
+    configure()
     refresh()
 
     if (logEnable) runIn(1800, "logsOff")
@@ -173,7 +174,7 @@ private int getRetrySeconds() {
     int count = state.mqttRetryCount ?: 0
     int jitter = new Random().nextInt(minimumRetrySec.intdiv(2))
     state.mqttRetryCount = count + 1
-    return Math.min(minimumRetrySec * Math.pow(2, count) + jitter, maximumRetrySec)
+    return Math.min(minimumRetrySec * Math.pow(2, count) + jitter, maximumRetrySec + jitter)
 }
 
 private String getTopic(String postfix)

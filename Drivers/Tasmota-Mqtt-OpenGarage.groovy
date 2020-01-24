@@ -278,7 +278,7 @@ void parseTasmota(String topic, Map json) {
 
     if (json.containsKey("Status")) {
         if (logEnable) log.debug "Parsing [ Status: ${json.Status} ]"
-        int relayNumber = Math.max(1, settings.relayNumber)
+        int relayNumber = settings?.relayNumber ?: 1
         String friendlyName = json.Status.FriendlyName instanceof String 
             ? json.Status.FriendlyName 
             : json.Status.FriendlyName[relayNumber-1]
@@ -373,7 +373,7 @@ private int getRetrySeconds() {
     int count = state.mqttRetryCount ?: 0
     int jitter = new Random().nextInt(minimumRetrySec.intdiv(2))
     state.mqttRetryCount = count + 1
-    return Math.min(minimumRetrySec * Math.pow(2, count) + jitter, maximumRetrySec)
+    return Math.min(minimumRetrySec * Math.pow(2, count) + jitter, maximumRetrySec + jitter)
 }
 
 private String getTopic(String postfix)
