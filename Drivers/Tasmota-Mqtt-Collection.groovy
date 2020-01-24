@@ -27,15 +27,30 @@ import java.security.MessageDigest;
 
 metadata {
     definition (name: "Tasmota MQTT ${deviceType()}", namespace: "tasmota-mqtt", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/Drivers/Tasmota-Mqtt-RGBWCT.groovy") {
-        capability "Refresh"
+        capability "Actuator"
+        capability "ColorControl"
+        capability "ColorTemperature"
         capability "Configuration"
+        capability "Light"
+        capability "Refresh"
+        capability "Switch"
+        capability "SwitchLevel"
+
+        command "setFadeSpeed", [
+            [
+                name:"Fade Speed*",
+                type: "NUMBER",
+                description: "Seconds (0 to 20) where 0 is off"
+            ]
+        ]
+
         attribute "connection", "String"
     }
 
     preferences() {
         section("MQTT Device Topics") {
             input name: "fullTopic", type: "text", title: "Topic to monitor", description: "For new Tasmota devices", required: true, defaultValue: "%prefix%/%topic%/"
-            input name: "groupTopic", type: "text", title: "Group Topic to use", description: "If set, will update devices", required: false
+            input name: "groupTopic", type: "text", title: "Group topic to use", description: "If set, will update devices", required: false
         }
 
         section("MQTT Broker") {
@@ -126,6 +141,90 @@ void updated() {
 }
 
 /**
+ *  Capability: Switch/Light
+ */
+
+// Turn on
+void on() {
+    def devices = getChildDevices().findAll { it.hasCommand("on") }
+    devices.each { 
+        log.info "Turning on ${it.label ?: it.name}"
+        it.on()
+    }
+}
+
+// Turn off
+void off() {
+    def devices = getChildDevices().findAll { it.hasCommand("off") }
+    devices.each { 
+        log.info "Turning off ${it.label ?: it.name}"
+        it.off() 
+    }
+}
+
+/**
+ *  Capability: SwitchLevel
+ */
+
+// Set the brightness level and optional duration
+void setLevel(level, duration = 0) {
+    def devices = getChildDevices().findAll { it.hasCommand("setLevel") }
+    devices.each { 
+        log.info "Setting ${it.label ?: it.name} to ${level}%"
+        it.setLevel(level, duration)
+    }
+}
+
+/**
+ *  Capability: ColorControl
+ */
+
+// Set the HSB color [hue:(0-100), saturation:(0-100), level:(0-100)]
+void setColor(colormap) {
+    def devices = getChildDevices().findAll { it.hasCommand("setColor") }
+    devices.each { 
+        log.info "Setting ${it.label ?: it.name} color to ${colormap}"
+        it.setColor(colormap)
+    }
+}
+
+// Set the hue (0-100)
+void setHue(hue) {
+    def devices = getChildDevices().findAll { it.hasCommand("setHue") }
+    devices.each { 
+        log.info "Setting ${it.label ?: it.name} hue to ${hue}"
+        it.setHue(hue)
+    }
+}
+
+// Set the saturation (0-100)
+void setSaturation(saturation) {
+    def devices = getChildDevices().findAll { it.hasCommand("setSaturation") }
+    devices.each { 
+        log.info "Setting ${it.label ?: it.name} saturation to ${saturation}%"
+        it.setSaturation(saturation)
+    }
+}
+
+// Set the color temperature (2000-6536)
+void setColorTemperature(kelvin) {
+    def devices = getChildDevices().findAll { it.hasCommand("setColorTemperature") }
+    devices.each { 
+        log.info "Setting ${it.label ?: it.name} color temperature to ${kelvin}"
+        it.setColorTemperature(kelvin)
+    }
+}
+
+// Set the Tasmota fade speed
+void setFadeSpeed(seconds) {
+    def devices = getChildDevices().findAll { it.hasCommand("setFadeSpeed") }
+    devices.each { 
+        log.info "Setting ${it.label ?: it.name} fade speed to ${seconds} seconds"
+        it.setFadeSpeed(seconds)
+    }
+}
+
+/**
  *  Child Device Management
  */
 
@@ -135,11 +234,11 @@ void createChildDevice(String topic) {
 
     def childDevice = getChildDevice(deviceNetworkId)
     if (childDevice) {
-        if (logEnable) log.debug "Tasmota device: ${deviceTopic} is connected to ${childDevice.label ?: childDevice.name}"
+        if (logEnable) log.debug "Tasmota topic [ ${deviceTopic} ] is connected to [ ${childDevice.label ?: childDevice.name} ]"
         return
     }
 
-    log.info "Creating new Tasmota device: ${deviceTopic}"
+    log.info "Creating new ${settings.driverType} for ${deviceTopic}"
     childDevice = addChildDevice(
         "tasmota-mqtt",
         settings.driverType,
