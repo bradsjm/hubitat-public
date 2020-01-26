@@ -26,6 +26,7 @@ static final String deviceType() { "Konnected" }
 metadata {
     definition (name: "Tasmota MQTT ${deviceType()}", namespace: "tasmota-mqtt", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/Drivers/Tasmota-Mqtt-RGBWCT.groovy") {
         capability "Configuration"
+        capability "ContactSensor"
         capability "Refresh"
 
         attribute "connection", "String"
@@ -241,18 +242,23 @@ void parseTasmota(String topic, Map json) {
     }
 
     // Check each zone (this code should go last)
+    boolean allSecure = true
     1.upto(settings.zoneCount) {
         String key = "SWITCH".plus(it)
         if (json.containsKey(key)) {
-            def isOpen = json[key] == "1" || json[key].toLowerCase() == "on"
+            boolean isOpen = (json[key] == "1" || json[key].toLowerCase() == "on")
             updateChildContact(it, isOpen)
+            if (isOpen) allSecure = false
         }
         key = "Switch".plus(it)
         if (json.containsKey(key)) {
-            def isOpen = json[key] == "1" || json[key].toLowerCase() == "on"
+            boolean isOpen = (json[key] == "1" || json[key].toLowerCase() == "on")
             updateChildContact(it, isOpen)
+            if (isOpen) allSecure = false
         }
     }
+
+    sendEvent(newEvent("contact", allSecure ? "closed" : "open"))
 
     state.lastResult = json
 }

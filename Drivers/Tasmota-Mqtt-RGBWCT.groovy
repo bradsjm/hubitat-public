@@ -24,6 +24,7 @@ static final String version() { "0.1" }
 static final String deviceType() { "RGBW/CT" }
 
 import groovy.transform.Field
+import groovy.json.JsonBuilder
 
 metadata {
     definition (name: "Tasmota MQTT ${deviceType()}", namespace: "tasmota-mqtt", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/Drivers/Tasmota-Mqtt-RGBWCT.groovy") {
@@ -39,7 +40,7 @@ metadata {
         capability "Switch"
         capability "SwitchLevel"
 
-        attribute "colorTemperatureName", "String"
+        attribute "colorName", "String"
         attribute "connection", "String"
         attribute "fadeMode", "String"
         attribute "fadeSpeed", "Number"
@@ -47,6 +48,8 @@ metadata {
         attribute "hueName", "String"
 
         command "restart"
+        command "nextColor"
+        command "previousColor"
 
         command "setFadeSpeed", [
             [
@@ -102,6 +105,8 @@ metadata {
     5: "Random Cycle"
 ]
 
+@Field List<Map> colorNames = getColorNames()
+
 /**
  *  Hubitat Driver Event Handlers
  */
@@ -121,18 +126,17 @@ void configure()
 {
     // Set option 20 (Update of Dimmer/Color/CT without turning power on)
     mqttPublish(getTopic("SetOption20"), preStaging ? "1" : "0")
+    sendEvent(name: "lightEffects", value: new groovy.json.JsonBuilder(lightEffects))
 }
 
 // Called when the device is first created.
 void installed() {
     log.info "${device.displayName} driver v${version()} installed"
-    sendEvent(name: "lightEffects", value: new groovy.json.JsonBuilder(lightEffects))
 }
 
 // Called to parse received MQTT data
 void parse(data) {
-    Map message = interfaces.mqtt.parseMessage(data)
-    mqttReceive(message)
+    mqttReceive(interfaces.mqtt.parseMessage(data))
 }
 
 // Called when the user requests a refresh (from Refresh capability)
@@ -140,8 +144,7 @@ void refresh() {
     log.info "Refreshing state of ${device.name}"
     state.clear()
 
-    String commandTopic = getTopic("Backlog")
-    mqttPublish(commandTopic, "State;Status 1;Status 2;Status 5")
+    mqttPublish(getTopic("Backlog"), "State;Status;Status 1;Status 2;Status 5")
 }
 
 // Called with MQTT client status messages
@@ -247,6 +250,7 @@ void setColor(colormap) {
     int level = limit(colormap.level).toInteger()
 
     mqttPublish(getTopic("HsbColor"), "${hue},${saturation},${level}")
+    sendEvent(newEvent("colorName", colormap.name ?: ""))
 }
 
 // Set the hue (0-100)
@@ -254,12 +258,14 @@ void setHue(hue) {
     // Hubitat hue is 0-100 to be converted to Tasmota 0-360
     hue = limit(Math.round(hue * 3.6), 0, 360).toInteger()
     mqttPublish(getTopic("HsbColor1"), hue.toString())
+    sendEvent(newEvent("colorName", ""))
 }
 
 // Set the saturation (0-100)
 void setSaturation(saturation) {
     saturation = limit(saturation).toInteger()
     mqttPublish(getTopic("HsbColor2"), saturation.toString())
+    sendEvent(newEvent("colorName", ""))
 }
 
 // Set the color temperature (2000-6536)
@@ -275,6 +281,29 @@ void setColorTemperature(kelvin) {
     }
 }
 
+void nextColor() {
+    state.currentColorIndex = (state.currentColorIndex ?: 0) + 1
+    if (state.currentColorIndex >= colorNames.size()) state.currentColorIndex = 0
+    Map color = colorNames[state.currentColorIndex]
+    setColor([
+        name: color.name,
+        hue: color.hue / 3.6,
+        saturation: color.saturation,
+        level: color.level
+    ])
+}
+
+void previousColor() {
+    state.currentColorIndex = (state.currentColorIndex ?: 0) - 1
+    if (state.currentColorIndex < 0) state.currentColorIndex = colorNames.size() - 1
+    Map color = colorNames[state.currentColorIndex]
+    setColor([
+        hue: color.hue / 3.6,
+        saturation: color.saturation,
+        level: color.level
+    ])
+}
+
 /**
  *  Capability: Light Effects
  */
@@ -288,8 +317,8 @@ void setEffect(id) {
     if (logEnable) log.debug "Setting effect $id"
     switch (id) {
         case 0:
-            setEffectsScheme(0)
             blinkOff()
+            setEffectsScheme(0)
             break
         case 1: blinkOn()
             break
@@ -363,38 +392,40 @@ void startWakeup(level, duration) {
     mqttPublish(getTopic("Backlog"), "WakeupDuration ${duration};Wakeup ${level}")
 }
 
- void restart() {
+void restart() {
     mqttPublish(getTopic("Restart"), "1")
- }
+}
 
 /**
  *  Tasmota MQTT Message Parsing
  */
 
 private void parseTasmota(String topic, Map json) {
+    List<Map> events = []
     String relay = settings.relayNumber > 1 ? settings.relayNumber.toString() : ""
+
     String powerKey = "POWER".plus(relay)
     if (json.containsKey(powerKey)) {
         if (logEnable) log.debug "Parsing [ ${powerKey}: ${json[powerKey]} ]"
-        sendEvent(newEvent("switch", json[powerKey].toLowerCase()))
+        events << newEvent("switch", json[powerKey].toLowerCase())
     }
 
     powerKey = "Power".plus(relay)
     if (json.containsKey(powerKey)) {
         if (logEnable) log.debug "Parsing [ ${powerKey}: ${json[powerKey]} ]"
-        sendEvent(newEvent("switch", json[powerKey].toLowerCase()))
+        events << newEvent("switch", json[powerKey].toLowerCase())
     }
 
     if (json.containsKey("Fade")) {
         if (logEnable) log.debug "Parsing [ Fade: ${json.Fade} ]"
         if (json.Fade == "OFF") json.Speed = 0
-        sendEvent(newEvent("fadeMode", json.Fade.toLowerCase()))
+        events << newEvent("fadeMode", json.Fade.toLowerCase())
     }
 
     if (json.containsKey("Speed")) {
         if (logEnable) log.debug "Parsing [ Speed: ${json.Speed} ]"
         def value = sprintf("%.1f", json.Speed.toInteger().div(2))
-        sendEvent(newEvent("fadeSpeed", value, "s"))
+        events << newEvent("fadeSpeed", value, "s")
     }
 
     if (json.containsKey("Channel")) {
@@ -407,12 +438,12 @@ private void parseTasmota(String topic, Map json) {
         } else if (channelCount == 5 && (json.Channel[3] > 0 || json.Channel[4] > 0)) {
             value = "CT"
         }
-        sendEvent(newEvent("colorMode", value))
+        events << newEvent("colorMode", value)
 
         if (channelCount == 4 && json.Channel[3] > 0) {
             int fakeKelvin = 6500
-            sendEvent(newEvent("colorTemperature", fakeKelvin, "K"))
-            sendEvent(newEvent("colorTemperatureName", getTemperatureName(fakeKelvin)))
+            events << newEvent("colorTemperature", fakeKelvin, "K")
+            events << newEvent("colorName", getTemperatureName(fakeKelvin))
         }
     }
 
@@ -420,13 +451,13 @@ private void parseTasmota(String topic, Map json) {
         if (logEnable) log.debug "Parsing [ CT: ${json.CT} ]"
         int kelvin = Math.round(1000000f / json.CT).toInteger()
         if (logEnable) log.debug "Converted ${json.CT} CT to ${kelvin} kelvin"
-        sendEvent(newEvent("colorTemperature", kelvin, "K"))
-        sendEvent(newEvent("colorTemperatureName", getTemperatureName(kelvin)))
+        events << newEvent("colorTemperature", kelvin, "K")
+        events << newEvent("colorName", getTemperatureName(kelvin))
     }
 
     if (json.containsKey("Dimmer")) {
         if (logEnable) log.debug "Parsing [ Dimmer: ${json.Dimmer} ]"
-        sendEvent(newEvent("level", json.Dimmer, "%"))
+        events << newEvent("level", json.Dimmer, "%")
     }
 
     if (json.containsKey("HSBColor")) {
@@ -436,9 +467,9 @@ private void parseTasmota(String topic, Map json) {
         int saturation = hsbColor[1].toInteger()
 
         // Hubitat hue is 0-100 to be converted from Tasmota 0-360
-        sendEvent(newEvent("hue", Math.round(hue / 3.6) as int))
-        sendEvent(newEvent("hueName", getHueName(hue)))
-        sendEvent(newEvent("saturation", saturation))
+        events << newEvent("hue", Math.round(hue / 3.6) as int)
+        events << newEvent("hueName", getHueName(hue))
+        events << newEvent("saturation", saturation)
     }
 
     if (json.containsKey("Status")) {
@@ -465,12 +496,6 @@ private void parseTasmota(String topic, Map json) {
         updateDataValue("ssId", json.Wifi.SSId)
     }
 
-    if (json.containsKey("StatusNET")) { // Status 5
-        if (logEnable) log.debug "Parsing [ StatusNET: ${json.StatusNET} ]"
-        updateDataValue("hostname", json.StatusNET.Hostname)
-        updateDataValue("ipAddress", json.StatusNET.IPAddress)
-    }
-
     if (json.containsKey("StatusPRM")) { // Status 1
         if (logEnable) log.debug "Parsing [ StatusPRM: ${json.StatusPRM} ]"
         updateDataValue("restartReason", json.StatusPRM.RestartReason)
@@ -482,7 +507,15 @@ private void parseTasmota(String topic, Map json) {
         updateDataValue("firmwareVersion", json.StatusFWR.Version)
     }
 
+    if (json.containsKey("StatusNET")) { // Status 5
+        if (logEnable) log.debug "Parsing [ StatusNET: ${json.StatusNET} ]"
+        updateDataValue("hostname", json.StatusNET.Hostname)
+        updateDataValue("ipAddress", json.StatusNET.IPAddress)
+    }
+
     state.lastResult = json
+
+    events.each { sendEvent(it) }
 }
 
 private String getTemperatureName(int kelvin) {
@@ -639,7 +672,7 @@ private void mqttCheckReceiveTime() {
 private boolean mqttCheckConnected() {
     if (interfaces.mqtt.isConnected() == false) {
         log.warn "MQTT is not connected"
-        sendEvent (name: "connection", value: "offline", descriptionText: "${device.displayName} connection now offline")
+        sendEvent(name: "connection", value: "offline", descriptionText: "${device?.displayName} connection now offline")
         if (!mqttConnect()) {
             int waitSeconds = getRetrySeconds()
             log.info "Retrying MQTT connection in ${waitSeconds} seconds"
@@ -687,7 +720,7 @@ private void mqttDisconnect() {
 
     try {
         interfaces.mqtt.disconnect()
-        sendEvent (name: "connection", value: "offline", descriptionText: "${device.displayName} connection now offline")
+        sendEvent(name: "connection", value: "offline", descriptionText: "${device.displayName} connection now offline")
     }
     catch (any)
     {
@@ -697,7 +730,7 @@ private void mqttDisconnect() {
 
 private void mqttPublish(String topic, String payload = "") {
     final int qos = 1 // at least once delivery
-    if (logEnable) log.debug "MQTT PUBLISH ---> ${topic} = ${payload}"
+    if (logEnable) log.debug "MQTT Publish > ${topic} = ${payload}"
 
     if (mqttCheckConnected()) {
         interfaces.mqtt.publish(topic, payload, qos, false)
@@ -710,7 +743,7 @@ private void mqttPublish(String topic, String payload = "") {
 private void mqttReceive(Map message) {
     String topic = message.get("topic")
     String payload = message.get("payload")
-    if (logEnable) log.debug "MQTT RECEIVE <--- ${topic} = ${payload}"
+    if (logEnable) log.debug "MQTT Receive < ${topic} = ${payload}"
     state.mqttReceiveCount = (state?.mqttReceiveCount ?: 0) + 1
 
     String availabilityTopic = getTopic("tele", "LWT")
@@ -720,7 +753,7 @@ private void mqttReceive(Map message) {
             value: payload.toLowerCase()
         ]
         event.descriptionText = "${device.displayName} ${event.name} now ${event.value}"
-        sendEvent (event)
+        sendEvent(event)
         log.info event.descriptionText
     } else if (payload[0] == "{") {
         state.mqttReceiveTime = now()
@@ -743,149 +776,148 @@ private void mqttSubscribeTopics() {
     interfaces.mqtt.subscribe(statTopic, qos)
 }
 
-private Map colorList() {
-    [
-        [name:"Alice Blue", rgb:"#F0F8FF", hue:208, sat:100, lvl:97],
-        [name:"Antique White", rgb:"#FAEBD7", hue:34, sat:78, lvl:91],
-        [name:"Aqua", rgb:"#00FFFF", hue:180, sat:100, lvl:50],
-        [name:"Aquamarine", rgb:"#7FFFD4", hue:160, sat:100, lvl:75],
-        [name:"Azure", rgb:"#F0FFFF", hue:180, sat:100, lvl:97],
-        [name:"Beige", rgb:"#F5F5DC", hue:60, sat:56, lvl:91],
-        [name:"Bisque", rgb:"#FFE4C4", hue:33, sat:100, lvl:88],
-        [name:"Blanched Almond", rgb:"#FFEBCD", hue:36, sat:100, lvl:90],
-        [name:"Blue", rgb:"#0000FF", hue:240, sat:100, lvl:50],
-        [name:"Blue Violet", rgb:"#8A2BE2", hue:271, sat:76, lvl:53],
-        [name:"Brown", rgb:"#A52A2A", hue:0, sat:59, lvl:41],
-        [name:"Burly Wood", rgb:"#DEB887", hue:34, sat:57, lvl:70],
-        [name:"Cadet Blue", rgb:"#5F9EA0", hue:182, sat:25, lvl:50],
-        [name:"Chartreuse", rgb:"#7FFF00", hue:90, sat:100, lvl:50],
-        [name:"Chocolate", rgb:"#D2691E", hue:25, sat:75, lvl:47],
-        [name:"Cool White", rgb:"#F3F6F7", hue:187, sat:19, lvl:96],
-        [name:"Coral", rgb:"#FF7F50", hue:16, sat:100, lvl:66],
-        [name:"Corn Flower Blue", rgb:"#6495ED", hue:219, sat:79, lvl:66],
-        [name:"Corn Silk", rgb:"#FFF8DC", hue:48, sat:100, lvl:93],
-        [name:"Crimson", rgb:"#DC143C", hue:348, sat:83, lvl:58],
-        [name:"Cyan", rgb:"#00FFFF", hue:180, sat:100, lvl:50],
-        [name:"Dark Blue", rgb:"#00008B", hue:240, sat:100, lvl:27],
-        [name:"Dark Cyan", rgb:"#008B8B", hue:180, sat:100, lvl:27],
-        [name:"Dark Golden Rod", rgb:"#B8860B", hue:43, sat:89, lvl:38],
-        [name:"Dark Gray", rgb:"#A9A9A9", hue:0, sat:0, lvl:66],
-        [name:"Dark Green", rgb:"#006400", hue:120, sat:100, lvl:20],
-        [name:"Dark Khaki", rgb:"#BDB76B", hue:56, sat:38, lvl:58],
-        [name:"Dark Magenta", rgb:"#8B008B", hue:300, sat:100, lvl:27],
-        [name:"Dark Olive Green", rgb:"#556B2F", hue:82, sat:39, lvl:30],
-        [name:"Dark Orange", rgb:"#FF8C00", hue:33, sat:100, lvl:50],
-        [name:"Dark Orchid", rgb:"#9932CC", hue:280, sat:61, lvl:50],
-        [name:"Dark Red", rgb:"#8B0000", hue:0, sat:100, lvl:27],
-        [name:"Dark Salmon", rgb:"#E9967A", hue:15, sat:72, lvl:70],
-        [name:"Dark Sea Green", rgb:"#8FBC8F", hue:120, sat:25, lvl:65],
-        [name:"Dark Slate Blue", rgb:"#483D8B", hue:248, sat:39, lvl:39],
-        [name:"Dark Slate Gray", rgb:"#2F4F4F", hue:180, sat:25, lvl:25],
-        [name:"Dark Turquoise", rgb:"#00CED1", hue:181, sat:100, lvl:41],
-        [name:"Dark Violet", rgb:"#9400D3", hue:282, sat:100, lvl:41],
-        [name:"Daylight White", rgb:"#CEF4FD", hue:191, sat:9, lvl:90],
-        [name:"Deep Pink", rgb:"#FF1493", hue:328, sat:100, lvl:54],
-        [name:"Deep Sky Blue", rgb:"#00BFFF", hue:195, sat:100, lvl:50],
-        [name:"Dim Gray", rgb:"#696969", hue:0, sat:0, lvl:41],
-        [name:"Dodger Blue", rgb:"#1E90FF", hue:210, sat:100, lvl:56],
-        [name:"Fire Brick", rgb:"#B22222", hue:0, sat:68, lvl:42],
-        [name:"Floral White", rgb:"#FFFAF0", hue:40, sat:100, lvl:97],
-        [name:"Forest Green", rgb:"#228B22", hue:120, sat:61, lvl:34],
-        [name:"Fuchsia", rgb:"#FF00FF", hue:300, sat:100, lvl:50],
-        [name:"Gainsboro", rgb:"#DCDCDC", hue:0, sat:0, lvl:86],
-        [name:"Ghost White", rgb:"#F8F8FF", hue:240, sat:100, lvl:99],
-        [name:"Gold", rgb:"#FFD700", hue:51, sat:100, lvl:50],
-        [name:"Golden Rod", rgb:"#DAA520", hue:43, sat:74, lvl:49],
-        [name:"Gray", rgb:"#808080", hue:0, sat:0, lvl:50],
-        [name:"Green", rgb:"#008000", hue:120, sat:100, lvl:25],
-        [name:"Green Yellow", rgb:"#ADFF2F", hue:84, sat:100, lvl:59],
-        [name:"Honeydew", rgb:"#F0FFF0", hue:120, sat:100, lvl:97],
-        [name:"Hot Pink", rgb:"#FF69B4", hue:330, sat:100, lvl:71],
-        [name:"Indian Red", rgb:"#CD5C5C", hue:0, sat:53, lvl:58],
-        [name:"Indigo", rgb:"#4B0082", hue:275, sat:100, lvl:25],
-        [name:"Ivory", rgb:"#FFFFF0", hue:60, sat:100, lvl:97],
-        [name:"Khaki", rgb:"#F0E68C", hue:54, sat:77, lvl:75],
-        [name:"Lavender", rgb:"#E6E6FA", hue:240, sat:67, lvl:94],
-        [name:"Lavender Blush", rgb:"#FFF0F5", hue:340, sat:100, lvl:97],
-        [name:"Lawn Green", rgb:"#7CFC00", hue:90, sat:100, lvl:49],
-        [name:"Lemon Chiffon", rgb:"#FFFACD", hue:54, sat:100, lvl:90],
-        [name:"Light Blue", rgb:"#ADD8E6", hue:195, sat:53, lvl:79],
-        [name:"Light Coral", rgb:"#F08080", hue:0, sat:79, lvl:72],
-        [name:"Light Cyan", rgb:"#E0FFFF", hue:180, sat:100, lvl:94],
-        [name:"Light Golden Rod Yellow", rgb:"#FAFAD2", hue:60, sat:80, lvl:90],
-        [name:"Light Gray", rgb:"#D3D3D3", hue:0, sat:0, lvl:83],
-        [name:"Light Green", rgb:"#90EE90", hue:120, sat:73, lvl:75],
-        [name:"Light Pink", rgb:"#FFB6C1", hue:351, sat:100, lvl:86],
-        [name:"Light Salmon", rgb:"#FFA07A", hue:17, sat:100, lvl:74],
-        [name:"Light Sea Green", rgb:"#20B2AA", hue:177, sat:70, lvl:41],
-        [name:"Light Sky Blue", rgb:"#87CEFA", hue:203, sat:92, lvl:75],
-        [name:"Light Slate Gray", rgb:"#778899", hue:210, sat:14, lvl:53],
-        [name:"Light Steel Blue", rgb:"#B0C4DE", hue:214, sat:41, lvl:78],
-        [name:"Light Yellow", rgb:"#FFFFE0", hue:60, sat:100, lvl:94],
-        [name:"Lime", rgb:"#00FF00", hue:120, sat:100, lvl:50],
-        [name:"Lime Green", rgb:"#32CD32", hue:120, sat:61, lvl:50],
-        [name:"Linen", rgb:"#FAF0E6", hue:30, sat:67, lvl:94],
-        [name:"Maroon", rgb:"#800000", hue:0, sat:100, lvl:25],
-        [name:"Medium Aquamarine", rgb:"#66CDAA", hue:160, sat:51, lvl:60],
-        [name:"Medium Blue", rgb:"#0000CD", hue:240, sat:100, lvl:40],
-        [name:"Medium Orchid", rgb:"#BA55D3", hue:288, sat:59, lvl:58],
-        [name:"Medium Purple", rgb:"#9370DB", hue:260, sat:60, lvl:65],
-        [name:"Medium Sea Green", rgb:"#3CB371", hue:147, sat:50, lvl:47],
-        [name:"Medium Slate Blue", rgb:"#7B68EE", hue:249, sat:80, lvl:67],
-        [name:"Medium Spring Green", rgb:"#00FA9A", hue:157, sat:100, lvl:49],
-        [name:"Medium Turquoise", rgb:"#48D1CC", hue:178, sat:60, lvl:55],
-        [name:"Medium Violet Red", rgb:"#C71585", hue:322, sat:81, lvl:43],
-        [name:"Midnight Blue", rgb:"#191970", hue:240, sat:64, lvl:27],
-        [name:"Mint Cream", rgb:"#F5FFFA", hue:150, sat:100, lvl:98],
-        [name:"Misty Rose", rgb:"#FFE4E1", hue:6, sat:100, lvl:94],
-        [name:"Moccasin", rgb:"#FFE4B5", hue:38, sat:100, lvl:85],
-        [name:"Navajo White", rgb:"#FFDEAD", hue:36, sat:100, lvl:84],
-        [name:"Navy", rgb:"#000080", hue:240, sat:100, lvl:25],
-        [name:"Old Lace", rgb:"#FDF5E6", hue:39, sat:85, lvl:95],
-        [name:"Olive", rgb:"#808000", hue:60, sat:100, lvl:25],
-        [name:"Olive Drab", rgb:"#6B8E23", hue:80, sat:60, lvl:35],
-        [name:"Orange", rgb:"#FFA500", hue:39, sat:100, lvl:50],
-        [name:"Orange Red", rgb:"#FF4500", hue:16, sat:100, lvl:50],
-        [name:"Orchid", rgb:"#DA70D6", hue:302, sat:59, lvl:65],
-        [name:"Pale Golden Rod", rgb:"#EEE8AA", hue:55, sat:67, lvl:80],
-        [name:"Pale Green", rgb:"#98FB98", hue:120, sat:93, lvl:79],
-        [name:"Pale Turquoise", rgb:"#AFEEEE", hue:180, sat:65, lvl:81],
-        [name:"Pale Violet Red", rgb:"#DB7093", hue:340, sat:60, lvl:65],
-        [name:"Papaya Whip", rgb:"#FFEFD5", hue:37, sat:100, lvl:92],
-        [name:"Peach Puff", rgb:"#FFDAB9", hue:28, sat:100, lvl:86],
-        [name:"Peru", rgb:"#CD853F", hue:30, sat:59, lvl:53],
-        [name:"Pink", rgb:"#FFC0CB", hue:350, sat:100, lvl:88],
-        [name:"Plum", rgb:"#DDA0DD", hue:300, sat:47, lvl:75],
-        [name:"Powder Blue", rgb:"#B0E0E6", hue:187, sat:52, lvl:80],
-        [name:"Purple", rgb:"#800080", hue:300, sat:100, lvl:25],
-        [name:"Red", rgb:"#FF0000", hue:0, sat:100, lvl:50],
-        [name:"Rosy Brown", rgb:"#BC8F8F", hue:0, sat:25, lvl:65],
-        [name:"Royal Blue", rgb:"#4169E1", hue:225, sat:73, lvl:57],
-        [name:"Saddle Brown", rgb:"#8B4513", hue:25, sat:76, lvl:31],
-        [name:"Salmon", rgb:"#FA8072", hue:6, sat:93, lvl:71],
-        [name:"Sandy Brown", rgb:"#F4A460", hue:28, sat:87, lvl:67],
-        [name:"Sea Green", rgb:"#2E8B57", hue:146, sat:50, lvl:36],
-        [name:"Sea Shell", rgb:"#FFF5EE", hue:25, sat:100, lvl:97],
-        [name:"Sienna", rgb:"#A0522D", hue:19, sat:56, lvl:40],
-        [name:"Silver", rgb:"#C0C0C0", hue:0, sat:0, lvl:75],
-        [name:"Sky Blue", rgb:"#87CEEB", hue:197, sat:71, lvl:73],
-        [name:"Slate Blue", rgb:"#6A5ACD", hue:248, sat:53, lvl:58],
-        [name:"Slate Gray", rgb:"#708090", hue:210, sat:13, lvl:50],
-        [name:"Snow", rgb:"#FFFAFA", hue:0, sat:100, lvl:99],
-        [name:"Soft White", rgb:"#B6DA7C", hue:83, sat:44, lvl:67],
-        [name:"Spring Green", rgb:"#00FF7F", hue:150, sat:100, lvl:50],
-        [name:"Steel Blue", rgb:"#4682B4", hue:207, sat:44, lvl:49],
-        [name:"Tan", rgb:"#D2B48C", hue:34, sat:44, lvl:69],
-        [name:"Teal", rgb:"#008080", hue:180, sat:100, lvl:25],
-        [name:"Thistle", rgb:"#D8BFD8", hue:300, sat:24, lvl:80],
-        [name:"Tomato", rgb:"#FF6347", hue:9, sat:100, lvl:64],
-        [name:"Turquoise", rgb:"#40E0D0", hue:174, sat:72, lvl:56],
-        [name:"Violet", rgb:"#EE82EE", hue:300, sat:76, lvl:72],
-        [name:"Warm White", rgb:"#DAF17E", hue:72, sat:20, lvl:72],
-        [name:"Wheat", rgb:"#F5DEB3", hue:39, sat:77, lvl:83],
-        [name:"White", rgb:"#FFFFFF", hue:0, sat:0, lvl:100],
-        [name:"White Smoke", rgb:"#F5F5F5", hue:0, sat:0, lvl:96],
-        [name:"Yellow", rgb:"#FFFF00", hue:60, sat:100, lvl:50],
-        [name:"Yellow Green", rgb:"#9ACD32", hue:80, sat:61, lvl:50],
-	]
-}
+private List<Map> getColorNames() {
+[
+    [name:"Alice Blue", rgb:"#F0F8FF", hue:208, saturation:100, level:97],
+    [name:"Antique White", rgb:"#FAEBD7", hue:34, saturation:78, level:91],
+    [name:"Aqua", rgb:"#00FFFF", hue:180, saturation:100, level:50],
+    [name:"Aquamarine", rgb:"#7FFFD4", hue:160, saturation:100, level:75],
+    [name:"Azure", rgb:"#F0FFFF", hue:180, saturation:100, level:97],
+    [name:"Beige", rgb:"#F5F5DC", hue:60, saturation:56, level:91],
+    [name:"Bisque", rgb:"#FFE4C4", hue:33, saturation:100, level:88],
+    [name:"Blanched Almond", rgb:"#FFEBCD", hue:36, saturation:100, level:90],
+    [name:"Blue", rgb:"#0000FF", hue:240, saturation:100, level:50],
+    [name:"Blue Violet", rgb:"#8A2BE2", hue:271, saturation:76, level:53],
+    [name:"Brown", rgb:"#A52A2A", hue:0, saturation:59, level:41],
+    [name:"Burly Wood", rgb:"#DEB887", hue:34, saturation:57, level:70],
+    [name:"Cadet Blue", rgb:"#5F9EA0", hue:182, saturation:25, level:50],
+    [name:"Chartreuse", rgb:"#7FFF00", hue:90, saturation:100, level:50],
+    [name:"Chocolate", rgb:"#D2691E", hue:25, saturation:75, level:47],
+    [name:"Cool White", rgb:"#F3F6F7", hue:187, saturation:19, level:96],
+    [name:"Coral", rgb:"#FF7F50", hue:16, saturation:100, level:66],
+    [name:"Corn Flower Blue", rgb:"#6495ED", hue:219, saturation:79, level:66],
+    [name:"Corn Silk", rgb:"#FFF8DC", hue:48, saturation:100, level:93],
+    [name:"Crimson", rgb:"#DC143C", hue:348, saturation:83, level:58],
+    [name:"Cyan", rgb:"#00FFFF", hue:180, saturation:100, level:50],
+    [name:"Dark Blue", rgb:"#00008B", hue:240, saturation:100, level:27],
+    [name:"Dark Cyan", rgb:"#008B8B", hue:180, saturation:100, level:27],
+    [name:"Dark Golden Rod", rgb:"#B8860B", hue:43, saturation:89, level:38],
+    [name:"Dark Gray", rgb:"#A9A9A9", hue:0, saturation:0, level:66],
+    [name:"Dark Green", rgb:"#006400", hue:120, saturation:100, level:20],
+    [name:"Dark Khaki", rgb:"#BDB76B", hue:56, saturation:38, level:58],
+    [name:"Dark Magenta", rgb:"#8B008B", hue:300, saturation:100, level:27],
+    [name:"Dark Olive Green", rgb:"#556B2F", hue:82, saturation:39, level:30],
+    [name:"Dark Orange", rgb:"#FF8C00", hue:33, saturation:100, level:50],
+    [name:"Dark Orchid", rgb:"#9932CC", hue:280, saturation:61, level:50],
+    [name:"Dark Red", rgb:"#8B0000", hue:0, saturation:100, level:27],
+    [name:"Dark Salmon", rgb:"#E9967A", hue:15, saturation:72, level:70],
+    [name:"Dark Sea Green", rgb:"#8FBC8F", hue:120, saturation:25, level:65],
+    [name:"Dark Slate Blue", rgb:"#483D8B", hue:248, saturation:39, level:39],
+    [name:"Dark Slate Gray", rgb:"#2F4F4F", hue:180, saturation:25, level:25],
+    [name:"Dark Turquoise", rgb:"#00CED1", hue:181, saturation:100, level:41],
+    [name:"Dark Violet", rgb:"#9400D3", hue:282, saturation:100, level:41],
+    [name:"Daylight White", rgb:"#CEF4FD", hue:191, saturation:9, level:90],
+    [name:"Deep Pink", rgb:"#FF1493", hue:328, saturation:100, level:54],
+    [name:"Deep Sky Blue", rgb:"#00BFFF", hue:195, saturation:100, level:50],
+    [name:"Dim Gray", rgb:"#696969", hue:0, saturation:0, level:41],
+    [name:"Dodger Blue", rgb:"#1E90FF", hue:210, saturation:100, level:56],
+    [name:"Fire Brick", rgb:"#B22222", hue:0, saturation:68, level:42],
+    [name:"Floral White", rgb:"#FFFAF0", hue:40, saturation:100, level:97],
+    [name:"Forest Green", rgb:"#228B22", hue:120, saturation:61, level:34],
+    [name:"Fuchsia", rgb:"#FF00FF", hue:300, saturation:100, level:50],
+    [name:"Gainsboro", rgb:"#DCDCDC", hue:0, saturation:0, level:86],
+    [name:"Ghost White", rgb:"#F8F8FF", hue:240, saturation:100, level:99],
+    [name:"Gold", rgb:"#FFD700", hue:51, saturation:100, level:50],
+    [name:"Golden Rod", rgb:"#DAA520", hue:43, saturation:74, level:49],
+    [name:"Gray", rgb:"#808080", hue:0, saturation:0, level:50],
+    [name:"Green", rgb:"#008000", hue:120, saturation:100, level:25],
+    [name:"Green Yellow", rgb:"#ADFF2F", hue:84, saturation:100, level:59],
+    [name:"Honeydew", rgb:"#F0FFF0", hue:120, saturation:100, level:97],
+    [name:"Hot Pink", rgb:"#FF69B4", hue:330, saturation:100, level:71],
+    [name:"Indian Red", rgb:"#CD5C5C", hue:0, saturation:53, level:58],
+    [name:"Indigo", rgb:"#4B0082", hue:275, saturation:100, level:25],
+    [name:"Ivory", rgb:"#FFFFF0", hue:60, saturation:100, level:97],
+    [name:"Khaki", rgb:"#F0E68C", hue:54, saturation:77, level:75],
+    [name:"Lavender", rgb:"#E6E6FA", hue:240, saturation:67, level:94],
+    [name:"Lavender Blush", rgb:"#FFF0F5", hue:340, saturation:100, level:97],
+    [name:"Lawn Green", rgb:"#7CFC00", hue:90, saturation:100, level:49],
+    [name:"Lemon Chiffon", rgb:"#FFFACD", hue:54, saturation:100, level:90],
+    [name:"Light Blue", rgb:"#ADD8E6", hue:195, saturation:53, level:79],
+    [name:"Light Coral", rgb:"#F08080", hue:0, saturation:79, level:72],
+    [name:"Light Cyan", rgb:"#E0FFFF", hue:180, saturation:100, level:94],
+    [name:"Light Golden Rod Yellow", rgb:"#FAFAD2", hue:60, saturation:80, level:90],
+    [name:"Light Gray", rgb:"#D3D3D3", hue:0, saturation:0, level:83],
+    [name:"Light Green", rgb:"#90EE90", hue:120, saturation:73, level:75],
+    [name:"Light Pink", rgb:"#FFB6C1", hue:351, saturation:100, level:86],
+    [name:"Light Salmon", rgb:"#FFA07A", hue:17, saturation:100, level:74],
+    [name:"Light Sea Green", rgb:"#20B2AA", hue:177, saturation:70, level:41],
+    [name:"Light Sky Blue", rgb:"#87CEFA", hue:203, saturation:92, level:75],
+    [name:"Light Slate Gray", rgb:"#778899", hue:210, saturation:14, level:53],
+    [name:"Light Steel Blue", rgb:"#B0C4DE", hue:214, saturation:41, level:78],
+    [name:"Light Yellow", rgb:"#FFFFE0", hue:60, saturation:100, level:94],
+    [name:"Lime", rgb:"#00FF00", hue:120, saturation:100, level:50],
+    [name:"Lime Green", rgb:"#32CD32", hue:120, saturation:61, level:50],
+    [name:"Linen", rgb:"#FAF0E6", hue:30, saturation:67, level:94],
+    [name:"Maroon", rgb:"#800000", hue:0, saturation:100, level:25],
+    [name:"Medium Aquamarine", rgb:"#66CDAA", hue:160, saturation:51, level:60],
+    [name:"Medium Blue", rgb:"#0000CD", hue:240, saturation:100, level:40],
+    [name:"Medium Orchid", rgb:"#BA55D3", hue:288, saturation:59, level:58],
+    [name:"Medium Purple", rgb:"#9370DB", hue:260, saturation:60, level:65],
+    [name:"Medium Sea Green", rgb:"#3CB371", hue:147, saturation:50, level:47],
+    [name:"Medium Slate Blue", rgb:"#7B68EE", hue:249, saturation:80, level:67],
+    [name:"Medium Spring Green", rgb:"#00FA9A", hue:157, saturation:100, level:49],
+    [name:"Medium Turquoise", rgb:"#48D1CC", hue:178, saturation:60, level:55],
+    [name:"Medium Violet Red", rgb:"#C71585", hue:322, saturation:81, level:43],
+    [name:"Midnight Blue", rgb:"#191970", hue:240, saturation:64, level:27],
+    [name:"Mint Cream", rgb:"#F5FFFA", hue:150, saturation:100, level:98],
+    [name:"Misty Rose", rgb:"#FFE4E1", hue:6, saturation:100, level:94],
+    [name:"Moccasin", rgb:"#FFE4B5", hue:38, saturation:100, level:85],
+    [name:"Navajo White", rgb:"#FFDEAD", hue:36, saturation:100, level:84],
+    [name:"Navy", rgb:"#000080", hue:240, saturation:100, level:25],
+    [name:"Old Lace", rgb:"#FDF5E6", hue:39, saturation:85, level:95],
+    [name:"Olive", rgb:"#808000", hue:60, saturation:100, level:25],
+    [name:"Olive Drab", rgb:"#6B8E23", hue:80, saturation:60, level:35],
+    [name:"Orange", rgb:"#FFA500", hue:39, saturation:100, level:50],
+    [name:"Orange Red", rgb:"#FF4500", hue:16, saturation:100, level:50],
+    [name:"Orchid", rgb:"#DA70D6", hue:302, saturation:59, level:65],
+    [name:"Pale Golden Rod", rgb:"#EEE8AA", hue:55, saturation:67, level:80],
+    [name:"Pale Green", rgb:"#98FB98", hue:120, saturation:93, level:79],
+    [name:"Pale Turquoise", rgb:"#AFEEEE", hue:180, saturation:65, level:81],
+    [name:"Pale Violet Red", rgb:"#DB7093", hue:340, saturation:60, level:65],
+    [name:"Papaya Whip", rgb:"#FFEFD5", hue:37, saturation:100, level:92],
+    [name:"Peach Puff", rgb:"#FFDAB9", hue:28, saturation:100, level:86],
+    [name:"Peru", rgb:"#CD853F", hue:30, saturation:59, level:53],
+    [name:"Pink", rgb:"#FFC0CB", hue:350, saturation:100, level:88],
+    [name:"Plum", rgb:"#DDA0DD", hue:300, saturation:47, level:75],
+    [name:"Powder Blue", rgb:"#B0E0E6", hue:187, saturation:52, level:80],
+    [name:"Purple", rgb:"#800080", hue:300, saturation:100, level:25],
+    [name:"Red", rgb:"#FF0000", hue:0, saturation:100, level:50],
+    [name:"Rosy Brown", rgb:"#BC8F8F", hue:0, saturation:25, level:65],
+    [name:"Royal Blue", rgb:"#4169E1", hue:225, saturation:73, level:57],
+    [name:"Saddle Brown", rgb:"#8B4513", hue:25, saturation:76, level:31],
+    [name:"Salmon", rgb:"#FA8072", hue:6, saturation:93, level:71],
+    [name:"Sandy Brown", rgb:"#F4A460", hue:28, saturation:87, level:67],
+    [name:"Sea Green", rgb:"#2E8B57", hue:146, saturation:50, level:36],
+    [name:"Sea Shell", rgb:"#FFF5EE", hue:25, saturation:100, level:97],
+    [name:"Sienna", rgb:"#A0522D", hue:19, saturation:56, level:40],
+    [name:"Silver", rgb:"#C0C0C0", hue:0, saturation:0, level:75],
+    [name:"Sky Blue", rgb:"#87CEEB", hue:197, saturation:71, level:73],
+    [name:"Slate Blue", rgb:"#6A5ACD", hue:248, saturation:53, level:58],
+    [name:"Slate Gray", rgb:"#708090", hue:210, saturation:13, level:50],
+    [name:"Snow", rgb:"#FFFAFA", hue:0, saturation:100, level:99],
+    [name:"Soft White", rgb:"#B6DA7C", hue:83, saturation:44, level:67],
+    [name:"Spring Green", rgb:"#00FF7F", hue:150, saturation:100, level:50],
+    [name:"Steel Blue", rgb:"#4682B4", hue:207, saturation:44, level:49],
+    [name:"Tan", rgb:"#D2B48C", hue:34, saturation:44, level:69],
+    [name:"Teal", rgb:"#008080", hue:180, saturation:100, level:25],
+    [name:"Thistle", rgb:"#D8BFD8", hue:300, saturation:24, level:80],
+    [name:"Tomato", rgb:"#FF6347", hue:9, saturation:100, level:64],
+    [name:"Turquoise", rgb:"#40E0D0", hue:174, saturation:72, level:56],
+    [name:"Violet", rgb:"#EE82EE", hue:300, saturation:76, level:72],
+    [name:"Warm White", rgb:"#DAF17E", hue:72, saturation:20, level:72],
+    [name:"Wheat", rgb:"#F5DEB3", hue:39, saturation:77, level:83],
+    [name:"White", rgb:"#FFFFFF", hue:0, saturation:0, level:100],
+    [name:"White Smoke", rgb:"#F5F5F5", hue:0, saturation:0, level:96],
+    [name:"Yellow", rgb:"#FFFF00", hue:60, saturation:100, level:50],
+    [name:"Yellow Green", rgb:"#9ACD32", hue:80, saturation:61, level:50],
+]}
