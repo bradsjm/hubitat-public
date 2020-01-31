@@ -62,11 +62,10 @@ metadata {
 // Called after MQTT successfully connects
 void connected() {
     mqttSubscribeTopics()
-    configure()
 
     if (settings.watchdogEnable) {
     	int randomSeconds = new Random(now()).nextInt(60)
-        schedule("${randomSeconds} 0/5 * * * ?", "mqttCheckReceiveTime")
+        schedule("${randomSeconds} * * * * ?", "mqttCheckReceiveTime")
     }
 }
 
@@ -243,16 +242,13 @@ void parseTasmota(String topic, Map json) {
 
     // Check each zone (this code should go last)
     boolean allSecure = true
-    1.upto(settings.zoneCount) {
-        String key = "SWITCH".plus(it)
-        if (json.containsKey(key)) {
-            boolean isOpen = (json[key] == "1" || json[key].toLowerCase() == "on")
-            updateChildContact(it, isOpen)
-            if (isOpen) allSecure = false
+    1.upto(settings.zoneCount) { zone ->
+        def state = json.find { 
+            it.key.equalsIgnoreCase("Power".plus(zone))
         }
-        key = "Switch".plus(it)
-        if (json.containsKey(key)) {
-            boolean isOpen = (json[key] == "1" || json[key].toLowerCase() == "on")
+
+        if (state) {
+            boolean isOpen = (state.value == "1" || state.value.equalsIgnoreCase("on"))
             updateChildContact(it, isOpen)
             if (isOpen) allSecure = false
         }
@@ -266,15 +262,6 @@ void parseTasmota(String topic, Map json) {
 /**
  *  Common Tasmota MQTT communication methods
  */
-
-private int getRetrySeconds() {
-    final minimumRetrySec = 20
-    final maximumRetrySec = minimumRetrySec * 6
-    int count = state.mqttRetryCount ?: 0
-    int jitter = new Random().nextInt(minimumRetrySec.intdiv(2))
-    state.mqttRetryCount = count + 1
-    return Math.min(minimumRetrySec * Math.pow(2, count) + jitter, maximumRetrySec + jitter)
-}
 
 private String getTopic(String postfix)
 {
@@ -324,35 +311,22 @@ private void logsOff() {
     device.updateSetting("logEnable", [value: "false", type: "bool"] )
 }
 
-private void mqttCheckReceiveTime() {
-    int timeout = 5
+private void mqttWatchdog() {
+    final int timeout = 5 // minutes
     if (state.mqttReceiveTime) {
         int elapsedMinutes = (now() - state.mqttReceiveTime).intdiv(60000)
 
         if (elapsedMinutes > timeout) {
             log.warn "No messages received from ${device.displayName} in ${elapsedMinutes} minutes"
-            mqttDisconnect()
-            mqttCheckConnected()
+            sendEvent(name: "deviceState", value: "offline", descriptionText: "${device?.displayName} deviceState now offline")
         }
     }
-}
 
-private boolean mqttCheckConnected() {
     if (interfaces.mqtt.isConnected() == false) {
-        log.warn "MQTT is not connected"
-        sendEvent (name: "connection", value: "offline", descriptionText: "${device.displayName} connection now offline")
-        if (!mqttConnect()) {
-            int waitSeconds = getRetrySeconds()
-            log.info "Retrying MQTT connection in ${waitSeconds} seconds"
-            unschedule("mqttCheckConnected")
-            runIn(waitSeconds, "mqttCheckConnected")
-            return false
-        }
+        sendEvent(name: "deviceState", value: "offline", descriptionText: "${device?.displayName} deviceState now offline")
+        log.warn "MQTT broker not connected"
+        mqttConnect()
     }
-
-    unschedule("mqttCheckConnected")
-    state.remove("mqttRetryCount")
-    return true
 }
 
 private boolean mqttConnect() {
@@ -372,7 +346,6 @@ private boolean mqttConnect() {
 
         pauseExecution(1000)
         connected()
-        refresh()
         return true
     } catch(e) {
         log.error "MQTT connect error: ${e}"
@@ -397,37 +370,40 @@ private void mqttDisconnect() {
 }
 
 private void mqttPublish(String topic, String payload = "") {
-    int qos = 1 // at least once delivery
-    if (logEnable) log.debug "MQTT PUBLISH ---> ${topic} = ${payload}"
+    final int qos = 1 // at least once delivery
 
-    if (mqttCheckConnected()) {
+    if (interfaces.mqtt.isConnected()) {
+        if (logEnable) log.debug "MQTT Publish > ${topic} = ${payload}"
         interfaces.mqtt.publish(topic, payload, qos, false)
         state.mqttTransmitCount = (state?.mqttTransmitCount ?: 0) + 1
     } else {
-        log.warn "Unable to publish topic (MQTT not connected)"
+        log.warn "MQTT not connected, unable to publish ${topic} = ${payload}"
     }
 }
 
 private void mqttReceive(Map message) {
     String topic = message.get("topic")
     String payload = message.get("payload")
-    if (logEnable) log.debug "MQTT RECEIVE <--- ${topic} = ${payload}"
+    if (logEnable) log.debug "MQTT Receive < ${topic} = ${payload}"
     state.mqttReceiveCount = (state?.mqttReceiveCount ?: 0) + 1
+    state.mqttReceiveTime = now()
 
     String availabilityTopic = getTopic("tele", "LWT")
     if (topic == availabilityTopic) {
         def event = [
-            name: "connection",
+            name: "deviceState",
             value: payload.toLowerCase()
         ]
         event.descriptionText = "${device.displayName} ${event.name} now ${event.value}"
-        sendEvent (event)
+        sendEvent(event)
         log.info event.descriptionText
+        if (payload.equalsIgnoreCase("Online")) {
+            configure()
+            refresh()
+        }
     } else if (payload[0] == "{") {
-        state.mqttReceiveTime = now()
         parseTasmota(topic, parseJson(payload))
     } else {
-        state.mqttReceiveTime = now()
         String key = topic.split('/')[-1]
         parseTasmota(topic, [ (key): payload ])
     }

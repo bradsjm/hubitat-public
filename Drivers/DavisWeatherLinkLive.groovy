@@ -33,13 +33,13 @@ metadata {
         capability "Sensor"
         capability "Temperature Measurement"
  		capability "Ultraviolet Index"
-        capability "Water Sensor"
 
         // Wind
         attribute "windDirection", "number"
         attribute "windSpeed", "number"
         attribute "windGust", "number"
         // Rain
+        attribute "raining", "boolean"
         attribute "rainRate", "number"
         attribute "rainDaily", "number"
         attribute "rain24h", "number"
@@ -139,7 +139,7 @@ private void parseWeatherData(Map json) {
             sendEvent(name: "windSpeed", value: it.wind_speed_avg_last_1_min, unit: "MPH")
             sendEvent(name: "windDirection", value: it.wind_dir_scalar_avg_last_1_min, unit: "DEGREE")
             sendEvent(name: "windGust", value: it.wind_speed_hi_last_2_min, unit: "MPH")
-            sendEvent(name: "water", value: it.rainfall_last_60_min > 0 ? "wet" : "dry")
+            sendEvent(name: "raining", value: it.rainfall_last_15_min > 0 ? "true" : "false")
             sendEvent(name: "rainRate", value: (it.rain_rate_hi * rainMultiplier), unit: rainUnit)
             sendEvent(name: "rainDaily", value: (it.rainfall_daily * rainMultiplier), unit: rainUnit)
             sendEvent(name: "rain24h", value: (it.rainfall_last_24_hr * rainMultiplier), unit: rainUnit)
