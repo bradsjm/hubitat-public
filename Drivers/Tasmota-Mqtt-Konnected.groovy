@@ -245,12 +245,12 @@ void parseTasmota(String topic, Map json) {
     boolean allSecure = true
     1.upto(settings.zoneCount) { zone ->
         def state = json.find { 
-            it.key.equalsIgnoreCase("Power".plus(zone))
+            it.key.equalsIgnoreCase("Switch".plus(zone))
         }
 
         if (state) {
             boolean isOpen = (state.value == "1" || state.value.equalsIgnoreCase("on"))
-            updateChildContact(it, isOpen)
+            updateChildContact(zone, isOpen)
             if (isOpen) allSecure = false
         }
     }
@@ -344,7 +344,7 @@ private void mqttDisconnect() {
         log.info "Disconnecting from MQTT broker at ${settings?.mqttBroker}"
     }
 
-    sendEvent(name: "deviceState", value: "offline", descriptionText: "${device.displayName} deviceState now offline")
+    sendEvent(name: "deviceState", value: "offline", descriptionText: "${device.displayName} broker connection closed by driver")
     try {
         interfaces.mqtt.disconnect()
     }
@@ -379,7 +379,7 @@ private void mqttReceive(Map message) {
             name: "deviceState",
             value: payload.toLowerCase()
         ]
-        event.descriptionText = "${device.displayName} ${event.name} now ${event.value}"
+        event.descriptionText = "${device.displayName} ${event.name} LWT now ${event.value}"
         sendEvent(event)
         log.info event.descriptionText
         if (payload.equalsIgnoreCase("Online")) {

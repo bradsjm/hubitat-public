@@ -462,7 +462,7 @@ private void mqttDisconnect() {
         log.info "Disconnecting from MQTT broker at ${settings?.mqttBroker}"
     }
 
-    sendEvent(name: "deviceState", value: "offline", descriptionText: "${device.displayName} deviceState now offline")
+    sendEvent(name: "deviceState", value: "offline", descriptionText: "${device.displayName} broker connection closed by driver")
     try {
         interfaces.mqtt.disconnect()
     }
@@ -497,7 +497,7 @@ private void mqttReceive(Map message) {
             name: "deviceState",
             value: payload.toLowerCase()
         ]
-        event.descriptionText = "${device.displayName} ${event.name} now ${event.value}"
+        event.descriptionText = "${device.displayName} ${event.name} LWT now ${event.value}"
         sendEvent(event)
         log.info event.descriptionText
         if (payload.equalsIgnoreCase("Online")) {
