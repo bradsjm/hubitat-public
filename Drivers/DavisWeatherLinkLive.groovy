@@ -23,13 +23,14 @@
   *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
   *  SOFTWARE.
  */
-static final String version() {  return "0.1"  }
+static final String version() { "0.1" }
 
 metadata {
     definition (name: "Davis WeatherLink Live", namespace: "jbradshaw", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/DavisWeatherLinkLive.groovy") {
         capability "Polling"
         capability "Relative Humidity Measurement"
         capability "Pressure Measurement"
+        capability "Refresh"
         capability "Sensor"
         capability "Temperature Measurement"
  		capability "Ultraviolet Index"
@@ -46,19 +47,30 @@ metadata {
     }
 
     preferences() {
-        input "autoPoll", "bool", required: true, title: "Enable Auto Poll", defaultValue: false
-        input "pollInterval", "enum", title: "Auto Poll Interval:", required: true, defaultValue: "1 Minute", options: [1:"1 Minute", 5:"5 Minutes", 10:"10 Minutes", 15:"15 Minutes", 30:"30 Minutes", 60:"60 Minutes"]
+        input "pollInterval", "enum", title: "Polling Interval", required: true, defaultValue: "1 Minute", options: [1:"1 Minute", 5:"5 Minutes", 10:"10 Minutes", 15:"15 Minutes", 30:"30 Minutes", 60:"60 Minutes"]
         input "weatherLinkHost", "string", required: true, title: "WeatherLink Live IP Address"
         input "weatherLinkPort", "number", required: true, title: "WeatherLink Live Port Number", defaultValue: 80
         input "transmitterId", "number", required: true, title: "Davis Transmitter ID", defaultValue: 1
-        input name: "logEnable", type: "bool", title: "Enable debug logging", defaultValue: true
+        input name: "logEnable", type: "bool", title: "Enable Debug logging", description: "Automatically disabled after 30 minutes", required: true, defaultValue: true
     }
 }
 
+// Called when the device is first created.
+void installed() {
+    log.info "${device.displayName} driver v${version()} installed"
+}
+
+// Called when the device is removed.
+void uninstalled() {
+    mqttDisconnect()
+    log.info "${device.displayName} driver v${version()} uninstalled"
+}
+
+// Called when the preferences of a device are updated.
 void updated() {
     unschedule()
 
-    if (settings.autoPoll && settings.pollInterval > 0) {
+    if (settings.pollInterval > 0) {
     	int randomSeconds = new Random(now()).nextInt(60)
         String sched = "${randomSeconds} 0/${pollInterval} * * * ?"
         schedule("${sched}", "poll")
@@ -66,34 +78,38 @@ void updated() {
 
     if (logEnable) runIn(1800, logsOff)
 
+    refresh()
+}
+
+// Called when the user requests a refresh (from Refresh capability)
+void refresh() {
     poll()
 }
 
+// Poll Weatherlink for latest conditions
 void poll() {
-    log.info "${device.displayName} Polling current conditions ..."
     def params = [
         uri: "http://${weatherLinkHost}:${weatherLinkPort}",
         path: "/v1/current_conditions",
         requestContentType: "application/json"
     ]
-    if (logEnable) log.debug "Requesting ${params.uri}/${params.path}"
-    asynchttpGet("pollHandler", params)
+    if (logEnable) log.debug "Requesting ${params.uri}${params.path}"
+    asynchttpGet("handler", params)
 }
 
-private void pollHandler(response, data) {
+// Handle response from web request
+private void handler(response, data) {
     def status = response.status
     if (status == 200) {
-        if (logEnable) log.debug "Device returned: ${response.data}"
+        if (logEnable) log.debug "WeatherLink returned: ${response.data}"
         def json = response.json
         if (json?.data) {
     		parseWeatherData(json.data)
         } else if (json?.error) {
-            log.error "JSON parsing error: ${json.error.code} ${json.error.message}"
-        } else {
-            log.error "Unable to parse response (valid Json?)"
+            log.error "WeatherLink JSON parsing error: ${json.error.code} ${json.error.message}"
         }
 	} else {
-		log.error "Device returned HTTP status ${status}"
+		log.error "WeatherLink returned HTTP status ${status}"
 	}
 }
 

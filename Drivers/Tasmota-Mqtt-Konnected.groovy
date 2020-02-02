@@ -27,9 +27,10 @@ metadata {
     definition (name: "Tasmota MQTT ${deviceType()}", namespace: "tasmota-mqtt", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/Drivers/Tasmota-Mqtt-RGBWCT.groovy") {
         capability "Configuration"
         capability "ContactSensor"
+        capability "Initialize"
         capability "Refresh"
 
-        attribute "connection", "String"
+        attribute "deviceState", "String"
         attribute "wifiSignal", "String"
 
         command "restart"
@@ -50,7 +51,6 @@ metadata {
         section("Misc") {
             input name: "zoneCount", type: "number", title: "Zone count", description: "Number of active zones", required: true, defaultValue: 6
             input name: "logEnable", type: "bool", title: "Enable Debug logging", description: "Automatically disabled after 30 minutes", required: true, defaultValue: true
-            input name: "watchdogEnable", type: "bool", title: "Enable Watchdog logging", description: "Checks for mqtt activity every 5 minutes", required: true, defaultValue: true
         }
     }
 }
@@ -62,11 +62,6 @@ metadata {
 // Called after MQTT successfully connects
 void connected() {
     mqttSubscribeTopics()
-
-    if (settings.watchdogEnable) {
-    	int randomSeconds = new Random(now()).nextInt(60)
-        schedule("${randomSeconds} * * * * ?", "mqttCheckReceiveTime")
-    }
 }
 
 // Called when the device connects to mqtt or when configure action is invoked.
@@ -86,15 +81,39 @@ void configure()
     mqttPublish(commandTopic, "1") // enable the rule
 }
 
+// Called when the device is started.
+void initialize() {
+    log.info "${device.displayName} driver v${version()} initializing"
+    unschedule()
+
+    if (!settings.mqttBroker) {
+        log.error "Unable to connect because Broker setting not configured"
+        return
+    }
+
+    mqttDisconnect()    
+    mqttConnect()
+}
+
 // Called when the device is first created.
 void installed() {
     log.info "${device.displayName} driver v${version()} installed"
 }
 
+// Called with MQTT client status messages
+void mqttClientStatus(String message) 
+{
+    if (message.startsWith("Error")) {
+    	log.error "MQTT: ${message}"
+        initialize()
+    } else {
+    	if (logEnable) log.debug "MQTT: ${message}"
+    }
+}
+
 // Called to parse received MQTT data
 void parse(data) {
-    Map message = interfaces.mqtt.parseMessage(data)
-    mqttReceive(message)
+    mqttReceive(interfaces.mqtt.parseMessage(data))
 }
 
 // Called when the user requests a refresh (from Refresh capability)
@@ -107,16 +126,6 @@ void refresh() {
     mqttPublish(commandTopic, "State;Status 0")
 }
 
-// Called with MQTT client status messages
-void mqttClientStatus(String message) {
-	if (logEnable) log.debug "MQTT ${message}"
-
-    if (message.startsWith("Error")) {
-        mqttDisconnect()
-        mqttCheckConnected()
-    }
-}
-
 // Called when the device is removed.
 void uninstalled() {
     mqttDisconnect()
@@ -127,15 +136,7 @@ void uninstalled() {
 void updated() {
     log.info "${device.displayName} driver v${version()} configuration updated"
     log.debug settings
-
-    mqttDisconnect()
-    unschedule()
-
-    if (settings.mqttBroker) {
-        mqttConnect()
-    } else {
-        log.warn "${device.displayName} requires a broker configured to connect"
-    }
+    initialize()
 
     if (logEnable) runIn(1800, "logsOff")
 }
@@ -311,25 +312,8 @@ private void logsOff() {
     device.updateSetting("logEnable", [value: "false", type: "bool"] )
 }
 
-private void mqttWatchdog() {
-    final int timeout = 5 // minutes
-    if (state.mqttReceiveTime) {
-        int elapsedMinutes = (now() - state.mqttReceiveTime).intdiv(60000)
-
-        if (elapsedMinutes > timeout) {
-            log.warn "No messages received from ${device.displayName} in ${elapsedMinutes} minutes"
-            sendEvent(name: "deviceState", value: "offline", descriptionText: "${device?.displayName} deviceState now offline")
-        }
-    }
-
-    if (interfaces.mqtt.isConnected() == false) {
-        sendEvent(name: "deviceState", value: "offline", descriptionText: "${device?.displayName} deviceState now offline")
-        log.warn "MQTT broker not connected"
-        mqttConnect()
-    }
-}
-
 private boolean mqttConnect() {
+    unschedule("mqttConnect")
     try {
         def hub = device.getHub()
         def mqtt = interfaces.mqtt
@@ -349,6 +333,7 @@ private boolean mqttConnect() {
         return true
     } catch(e) {
         log.error "MQTT connect error: ${e}"
+        runInMillis(new Random(now()).nextInt(90000), "mqttConnect")
     }
 
     return false
@@ -359,9 +344,9 @@ private void mqttDisconnect() {
         log.info "Disconnecting from MQTT broker at ${settings?.mqttBroker}"
     }
 
+    sendEvent(name: "deviceState", value: "offline", descriptionText: "${device.displayName} deviceState now offline")
     try {
         interfaces.mqtt.disconnect()
-        sendEvent (name: "connection", value: "offline", descriptionText: "${device.displayName} connection now offline")
     }
     catch (any)
     {
