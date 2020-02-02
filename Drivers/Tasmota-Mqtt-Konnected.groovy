@@ -167,10 +167,10 @@ def getZoneDevice(zone) {
 void updateChildContact(zone, isOpen) {
     def child = getZoneDevice(zone)
     if (child) {
-        if (isOpen && child.currentValue("contact") != "open") {
+        if (isOpen) {
             if (logEnable) log.debug "Setting zone ${zone} to OPEN"
             child.open()
-        } else if (child.currentValue("contact") != "closed") {
+        } else {
             if (logEnable) log.debug "Setting zone ${zone} to closed"
             child.close()
         }
@@ -242,6 +242,7 @@ void parseTasmota(String topic, Map json) {
     }
 
     // Check each zone (this code should go last)
+    boolean foundZones = false
     boolean allSecure = true
     1.upto(settings.zoneCount) { zone ->
         def state = json.find { 
@@ -249,13 +250,14 @@ void parseTasmota(String topic, Map json) {
         }
 
         if (state) {
+            foundZones = true
             boolean isOpen = (state.value == "1" || state.value.equalsIgnoreCase("on"))
             updateChildContact(zone, isOpen)
             if (isOpen) allSecure = false
         }
     }
 
-    sendEvent(newEvent("contact", allSecure ? "closed" : "open"))
+    if (foundZones) sendEvent(newEvent("contact", allSecure ? "closed" : "open"))
 
     state.lastResult = json
 }
