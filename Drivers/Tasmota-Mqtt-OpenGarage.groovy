@@ -31,10 +31,7 @@ metadata {
         capability "Refresh"
         capability "Initialize"
         capability "Sensor"
-        capability "DoorControl"
         capability "GarageDoorControl"
-        capability "PresenceSensor"
-        capability "ContactSensor"
 
         command "soundWarning"
         command "restart"
@@ -58,8 +55,7 @@ metadata {
 
         section("Opener") {
             input name: "doorThreshold", type: "number", title: "Max Door Distance", description: "Measured to top of garage door (cm)", required: true, defaultValue: 50
-            input name: "vehicleThreshold", type: "number", title: "Max Vehicle Distance", description: "Measured to top of car (cm)", required: true, defaultValue: 150
-            input name: "debounceTime", type: "number", title: "Sensor Debounce", description: "Time to wait for measurement to settle (seconds)", required: true, defaultValue: 5
+            input name: "debounceTime", type: "number", title: "Sensor Debounce", description: "Time to wait for measurement to settle (seconds)", required: true, defaultValue: 2
             input name: "pulseTime", type: "number", title: "Relay Pulse", description: "In tenths of a second (ms)", required: true, defaultValue: 7
             input name: "travelTime", type: "number", title: "Door Travel", description: "Time to fully open/close (seconds)", required: true, defaultValue: 30
             input name: "warnOnClose", type: "bool", title: "Warning Beeper on Closing", description: "Beeps 3 times before closing", required: true, defaultValue: true
@@ -239,7 +235,6 @@ private void setOpen() {
  *  Tasmota Device Specific
  */
 
-
 void setGroupTopic(name) {
     if (name != state.groupTopic) {
         mqttPublish(getTopic("GroupTopic"), name)
@@ -256,24 +251,22 @@ void parseTasmota(String topic, Map json) {
         json = json.StatusSNS
     }
 
-    if (json.containsKey("SR04")) {
-        if (logEnable) log.debug "Parsing [ SR04: ${json.SR04} ]"
-        int distance = limit(Math.round(json.SR04.Distance), 0, 400)
+    // Realtime updates
+    if (json.containsKey("Distance")) {
+        if (logEnable) log.debug "Parsing [ Distance: ${json.Distance} ]"
+        int distance = limit(Math.round(json.Distance as float), 0, 400)
         state.minDistance = Math.min(distance, state.minDistance ?: 400)
         state.maxDistance = Math.max(distance, state.maxDistance ?: 0)
+        runIn(settings.debounceTime, "updateDistance", [ data: distance ])
+    }
 
-        def oldDistance = device.currentValue("distance")
-        def delta = oldDistance ? Math.abs(oldDistance - distance) : 0
-
-        if (delta > 10) {
-            def deBounceTime = settings.debounceTime
-            // Rudimentary debounce for reading spikes
-            if (logEnable) log.debug "waiting ${deBounceTime}s to process value (${distance})"
-            unschedule("updateDistance")
-            runIn(settings.debounceTime, "updateDistance", [ data: distance ])
-        } else {
-            updateDistance(distance)
-        }
+    // Telemetry updates
+    if (json.containsKey("SR04")) {
+        if (logEnable) log.debug "Parsing [ SR04: ${json.SR04} ]"
+        int distance = limit(Math.round(json.SR04.Distance as float), 0, 400)
+        state.minDistance = Math.min(distance, state.minDistance ?: 400)
+        state.maxDistance = Math.max(distance, state.maxDistance ?: 0)
+        runIn(settings.debounceTime, "updateDistance", [ data: distance ])
     }
 
     if (json.containsKey("Status")) {
@@ -323,29 +316,25 @@ void parseTasmota(String topic, Map json) {
 private void updateDistance(int distance) {
     if (!distance) return
 
+    if (logEnable) log.debug "updating distance value (${distance})"
+
     // Publish distance value (optionally converted to inches)
     sendEvent(newEvent("distance", conversion(distance), settings.useMetric ? "cm" : "in"))
 
     // Check if distance is less than the open door threshold
-    def newState = distance < settings.doorThreshold ? "open" : "closed"
-
-    // Publish open/close contact status based on distance to door threshold
-    sendEvent(newEvent("contact", newState))
+    def newState = distance <= settings.doorThreshold ? "open" : "closed"
 
     // Publish door status based on distance to door threshold
     def oldState = device.currentValue("door")
     switch (oldState) {
         case "open":
+        case "opening":
         case "closed":
         case "unknown":
             if (logEnable && newState != oldState) log.debug "setting door state to ${newState} from ${oldState} (distance ${distance}, threshold ${settings.doorThreshold})"
             sendEvent(newEvent("door", newState))
             break
     }
-
-    // If distance is greater than the door but less than the vehicle then a car is present
-    boolean presence = distance > settings.doorThreshold && distance < settings.vehicleThreshold
-    sendEvent(newEvent("presence", presence ? "present" : "not present"))
 }
 
 private Map newEvent(String name, value, unit = null) {
