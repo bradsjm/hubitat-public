@@ -215,7 +215,7 @@ void off() {
 void startLevelChange(direction) {
     if (settings.changeLevelStep && settings.changeLevelEvery) {
         int delta = (direction == "down") ? -settings.changeLevelStep : settings.changeLevelStep
-        doLevelChange(limit(delta, 1, 10))
+        doLevelChange(limit(delta, -10, 10))
     }
 }
 

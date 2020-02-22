@@ -6,12 +6,7 @@ metadata {
         capability "Actuator"
         capability "Configuration"
         capability "TemperatureMeasurement"
-        capability "ThermostatCoolingSetpoint"
-        capability "ThermostatFanMode"
-        capability "ThermostatHeatingSetpoint"
-        capability "ThermostatMode"
-        capability "ThermostatOperatingState"
-        capability "ThermostatSetpoint"
+        capability "Thermostat"
         capability "Refresh"
         capability "Sensor"
         capability "Battery"
@@ -104,6 +99,11 @@ def parse(String description) {
             map.name = "temperature"
             map.unit = getTemperatureScale()
             map.value = getTemperature(descMap.value)
+            def offset = 4
+            if (currentValue("temperature") > currentValue("heatingSetpoint") + offset)
+                cool()
+            else if (currentValue("temperature") < currentValue("coolingSetpoint") - offset)
+                heat()
         } else if (descMap.cluster == "0201" && descMap.attrId == "0011") {
             log.debug "COOLING SETPOINT"
             map.name = "coolingSetpoint"

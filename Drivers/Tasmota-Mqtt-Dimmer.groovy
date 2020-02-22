@@ -34,18 +34,8 @@ metadata {
         capability "SwitchLevel"
 
         attribute "deviceState", "String"
-        attribute "fadeMode", "String"
-        attribute "fadeSpeed", "Number"
 
         command "restart"
-
-        command "setFadeSpeed", [
-            [
-                name:"Fade Speed*",
-                type: "NUMBER",
-                description: "Seconds (0 to 20) where 0 is off"
-            ]
-        ]
 
         command "startWakeup", [
             [
@@ -77,7 +67,7 @@ metadata {
             input name: "relayNumber", type: "number", title: "Relay Number", description: "For Power commands", required: true, defaultValue: 1
             input name: "changeLevelStep", type: "decimal", title: "Change level step %", description: "1% to 10%", required: true, defaultValue: 2
             input name: "changeLevelEvery", type: "number", title: "Change level interval", description: "100ms to 1000ms", required: true, defaultValue: 100
-            input name: "preStaging", type: "bool", title: "Enable pre-staging", description: "Color and level changes while off", required: true, defaultValue: false
+            input name: "preStaging", type: "bool", title: "Enable pre-staging", description: "Level changes while off", required: true, defaultValue: false
             input name: "logEnable", type: "bool", title: "Enable debug logging", description: "Automatically disabled after 30 minutes", required: true, defaultValue: true
         }
     }
@@ -191,7 +181,7 @@ void off() {
 void startLevelChange(direction) {
     if (settings.changeLevelStep && settings.changeLevelEvery) {
         int delta = (direction == "down") ? -settings.changeLevelStep : settings.changeLevelStep
-        doLevelChange(limit(delta, 1, 10))
+        doLevelChange(limit(delta, -10, 10))
     }
 }
 
@@ -216,15 +206,7 @@ private void doLevelChange(delta) {
 // Set the brightness level and optional duration
 void setLevel(level, duration = 0) {
     level = limit(level, 0, 100).toInteger()
-
-    int oldSpeed = device.currentValue("fadeSpeed").toInteger() * 2
-    int oldFade = device.currentValue("fadeMode") == "on" ? 1 : 0
-    int speed = Math.min(40f, duration * 2).toInteger()
-    if (speed > 0) {
-        mqttPublish(getTopic("Backlog"), "Speed ${speed};Fade 1;Dimmer${settings.relayNumber} ${level};Delay ${duration * 10};Speed ${oldSpeed};Fade ${oldFade}")
-    } else {
-        mqttPublish(getTopic("Dimmer${settings.relayNumber}"), level.toString())
-    }
+    mqttPublish(getTopic("Dimmer${settings.relayNumber}"), level.toString())
 }
 
 /**
@@ -234,16 +216,6 @@ void setLevel(level, duration = 0) {
 // Get the group topic (from the state command)
 def getGroupTopic() {
     return state.groupTopic 
-}
-
-// Set the Tasmota fade speed
-void setFadeSpeed(seconds) {
-    int speed = Math.min(40f, seconds * 2).toInteger()
-    if (speed > 0) {
-        mqttPublish(getTopic("Backlog"), "Speed ${speed};Fade 1")
-    } else {
-        mqttPublish(getTopic("Fade"), "0")
-    }
 }
 
 // Set the group topic
@@ -279,18 +251,6 @@ private void parseTasmota(String topic, Map json) {
     if (power) {
         if (logEnable) log.debug "Parsing [ ${power.key}: ${power.value} ]"
         events << newEvent("switch", power.value.toLowerCase())
-    }
-
-    if (json.containsKey("Fade")) {
-        if (logEnable) log.debug "Parsing [ Fade: ${json.Fade} ]"
-        if (json.Fade.equalsIgnoreCase("OFF")) json.Speed = 0
-        events << newEvent("fadeMode", json.Fade.toLowerCase())
-    }
-
-    if (json.containsKey("Speed")) {
-        if (logEnable) log.debug "Parsing [ Speed: ${json.Speed} ]"
-        def value = sprintf("%.1f", json.Speed.toInteger().div(2))
-        events << newEvent("fadeSpeed", value, "s")
     }
 
     if (json.containsKey("Dimmer")) {
