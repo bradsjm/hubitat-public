@@ -45,7 +45,6 @@ metadata {
         attribute "deviceState", "String"
         attribute "fadeMode", "String"
         attribute "fadeSpeed", "Number"
-        attribute "groupMode", "String"
         attribute "hueName", "String"
 
         command "restart"
@@ -119,6 +118,18 @@ void connected() {
 
 void configure()
 {
+    // set timezone offset
+    int offsetInMillis = location.timeZone.getOffset(now())
+    String offset = String.format("%s%02d:%02d", 
+        offsetInMillis >= 0 ? "+" : "-", 
+        Math.abs(offsetInMillis).intdiv(3600000),
+        (Math.abs(offsetInMillis) / 60000).remainder(60) as int
+    )
+    mqttPublish(getTopic("Timezone"), offset)
+    // set latitude and longitude
+    mqttPublish(getTopic("Latitude"), location.latitude.toString())
+    mqttPublish(getTopic("Longitude"), location.longitude.toString())
+
     // Set option 20 (Update of Dimmer/Color/CT without turning power on)
     mqttPublish(getTopic("SetOption20"), preStaging ? "1" : "0")
     sendEvent(name: "lightEffects", value: new JsonBuilder(lightEffects))
