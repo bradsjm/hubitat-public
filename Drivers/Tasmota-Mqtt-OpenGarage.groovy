@@ -32,6 +32,7 @@ metadata {
         capability "Initialize"
         capability "Sensor"
         capability "GarageDoorControl"
+        capability "Lock"
 
         command "soundWarning"
         command "restart"
@@ -164,6 +165,11 @@ void open() {
         return
 	}
 
+    if (isLocked()) {
+		log.info "${device.displayName} ignoring open request as door is soft-locked"
+        return
+    }
+
     sendEvent(newEvent("door", "opening"))
 
     String commandTopic = getTopic("Backlog")
@@ -229,6 +235,23 @@ private void setOpen() {
 
     log.info "${device.displayName} setting door state to 'open' (${settings.travelTime} second timer)"
     sendEvent(newEvent("door", "open"))
+}
+
+/**
+ *  Capability: Lock
+ */
+
+// soft lock door
+void lock() {
+    sendEvent(newEvent("lock", "locked"))
+}
+
+void unlock() {
+    sendEvent(newEvent("lock", "unlocked"))
+}
+
+boolean isLocked() {
+    currentValue("lock") == "locked"
 }
 
 /**
