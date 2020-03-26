@@ -251,7 +251,7 @@ void unlock() {
 }
 
 boolean isLocked() {
-    currentValue("lock") == "locked"
+    return device.currentValue("lock") == "locked"
 }
 
 /**

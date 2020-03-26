@@ -100,9 +100,9 @@ def parse(String description) {
             map.unit = getTemperatureScale()
             map.value = getTemperature(descMap.value)
             def offset = 4
-            if (currentValue("temperature") > currentValue("heatingSetpoint") + offset)
+            if (device.currentValue("thermostatMode") == "heat" && device.currentValue("temperature") > device.currentValue("heatingSetpoint") + offset)
                 cool()
-            else if (currentValue("temperature") < currentValue("coolingSetpoint") - offset)
+            else if (device.currentValue("thermostatMode") == "cool" && device.currentValue("temperature") < device.currentValue("coolingSetpoint") - offset)
                 heat()
         } else if (descMap.cluster == "0201" && descMap.attrId == "0011") {
             log.debug "COOLING SETPOINT"
