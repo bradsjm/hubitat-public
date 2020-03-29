@@ -540,7 +540,7 @@ private String getTemperatureName(int kelvin) {
             break
         case 3000..3199: temperatureName = "Warm White"
             break
-        case 3200..3350: temperatureName = "Studio White"
+        case 3200..3999: temperatureName = "Studio White"
             break
         case 4000..4300: temperatureName = "Cool White"
             break

@@ -27,11 +27,12 @@ metadata {
     definition (name: "Tasmota MQTT ${deviceType()}", namespace: "tasmota-mqtt", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/Drivers/Tasmota-Mqtt-RGBWCT.groovy") {
         capability "Actuator"
         capability "Configuration"
-        capability "Energy Meter"
+        capability "EnergyMeter"
         capability "Initialize"
         capability "Outlet"
         capability "PowerMeter"
         capability "Refresh"
+        capability "Sensor"
         capability "VoltageMeasurement"
 
         attribute "deviceState", "String"
