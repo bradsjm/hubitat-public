@@ -21,6 +21,10 @@ metadata {
 
         fingerprint profileId: "0104", inClusters: "0000,0001,0003,0020,0201,0202,0204,0B05", outClusters: "000A, 0019"
     }
+
+    preferences() {
+        input name: "logEnable", type: "bool", title: "Enable Debug logging", description: "Automatically disabled after 30 minutes", required: true, defaultValue: true
+    }
 }
 
 def installed() {
@@ -28,10 +32,21 @@ def installed() {
     configure()
 }
 
+def uninstalled() {
+    log.info "${device.displayName} driver uninstalled"
+}
+
 def updated() {
     log.info "${device.displayName} driver updated"
     state.clear()
     configure()
+
+    if (logEnable) runIn(1800, logsOff)
+}
+
+private void logsOff() {
+    log.warn "${device.displayName} debug logging disabled"
+    device.updateSetting("logEnable", [value:"false", type:"bool"])
 }
 
 def configure() {
@@ -88,14 +103,14 @@ def refresh() {
 }
 
 def parse(String description) {
-    log.debug "Parse description $description"
+    if (logEnable) log.debug "Parse description $description"
     def map = [:]
 
     if (description?.startsWith("read attr -")) {
         def descMap = zigbee.parseDescriptionAsMap(description)
 
         if (descMap.cluster == "0201" && descMap.attrId == "0000") {
-            log.debug "TEMPERATURE"
+            if (logEnable) log.debug "TEMPERATURE"
             map.name = "temperature"
             map.unit = getTemperatureScale()
             map.value = getTemperature(descMap.value)
@@ -105,7 +120,7 @@ def parse(String description) {
             else if (device.currentValue("thermostatMode") == "cool" && device.currentValue("temperature") < device.currentValue("coolingSetpoint") - offset)
                 heat()
         } else if (descMap.cluster == "0201" && descMap.attrId == "0011") {
-            log.debug "COOLING SETPOINT"
+            if (logEnable) log.debug "COOLING SETPOINT"
             map.name = "coolingSetpoint"
             map.unit = getTemperatureScale()
             map.value = getTemperature(descMap.value)
@@ -116,7 +131,7 @@ def parse(String description) {
                 )
             }
         } else if (descMap.cluster == "0201" && descMap.attrId == "0012") {
-            log.debug "HEATING SETPOINT"
+            if (logEnable) log.debug "HEATING SETPOINT"
             map.name = "heatingSetpoint"
             map.unit = getTemperatureScale()
             map.value = getTemperature(descMap.value)
@@ -127,7 +142,7 @@ def parse(String description) {
                 )
             }
         } else if (descMap.cluster == "0201" && descMap.attrId == "001C") {
-            log.debug "MODE"
+            if (logEnable) log.debug "MODE"
             map.name = "thermostatMode"
             map.value = getModeMap()[descMap.value]
             switch (map.value) {
@@ -146,23 +161,23 @@ def parse(String description) {
                 break
             }
         } else if (descMap.cluster == "0202" && descMap.attrId == "0000") {
-            log.debug "FAN MODE"
+            if (logEnable) log.debug "FAN MODE"
             map.name = "thermostatFanMode"
             map.value = getFanModeMap()[descMap.value]
         } else if (descMap.cluster == "0001" && descMap.attrId == "0020") {
-            log.debug "BATTERY"
+            if (logEnable) log.debug "BATTERY"
             map.name = "battery"
             map.value = getBatteryLevel(descMap.value)
         } else if (descMap.cluster == "0201" && descMap.attrId == "001E") {
-            log.debug "RUN MODE"
+            if (logEnable) log.debug "RUN MODE"
             map.name = "thermostatRunMode"
             map.value = getModeMap()[descMap.value]
         } else if (descMap.cluster == "0201" && descMap.attrId == "0023") {
-            log.debug "HOLD MODE"
+            if (logEnable) log.debug "HOLD MODE"
             map.name = "thermostatHoldMode"
             map.value = getHoldModeMap()[descMap.value]
         } else if (descMap.cluster == "0201" && descMap.attrId == "0029") {
-            log.debug "OPERATING MODE"
+            if (logEnable) log.debug "OPERATING MODE"
             map.name = "thermostatOperatingState"
             map.value = getThermostatOperatingStateMap()[descMap.value]
             sendEvent(
@@ -170,7 +185,7 @@ def parse(String description) {
                 value: map.value == "idle" ? "auto" : "on"
             )
         } else if (descMap.cluster == "0000" && descMap.attrId == "0007") {
-            log.debug "POWER SOURCE"
+            if (logEnable) log.debug "POWER SOURCE"
             map.name = "powerSource"
             map.value = getPowerSource()[descMap.value]
         }
@@ -182,7 +197,7 @@ def parse(String description) {
         result = createEvent(map)
     }
 
-    log.debug "Parse returned $map"
+    if (logEnable) log.debug "Parse returned $map"
     return result
 }
 
@@ -268,13 +283,13 @@ def getTemperature(value) {
 }
 
 def off() {
-    log.debug "off"
+    if (logEnable) log.debug "off"
     sendEvent("name":"thermostatMode", "value":"off")
     zigbee.writeAttribute(0x0201, 0x1C, 0x30, 0)
 }
 
 def setThermostatFanMode(String value) {
-    log.debug "setThermostatFanMode ${value}"
+    if (logEnable) log.debug "setThermostatFanMode ${value}"
     switch (value) {
         case "on": fanOn()
             break
@@ -286,7 +301,7 @@ def setThermostatFanMode(String value) {
 }
 
 def setThermostatMode(String value) {
-    log.debug "setThermostatMode ${value}"
+    if (logEnable) log.debug "setThermostatMode ${value}"
     switch (value) {
         case "heat": heat()
             break
@@ -309,19 +324,19 @@ def auto() {
 }
 
 def cool() {
-    log.debug "cool"
+    if (logEnable) log.debug "cool"
     sendEvent("name":"thermostatMode", "value":"cool")
     zigbee.writeAttribute(0x0201, 0x1C, 0x30, 3)
 }
 
 def heat() {
-    log.debug "heat"
+    if (logEnable) log.debug "heat"
     sendEvent("name":"thermostatMode", "value":"heat")
     zigbee.writeAttribute(0x0201, 0x1C, 0x30, 4)
 }
 
 def emergencyHeat() {
-    log.debug "emergencyHeat"
+    if (logEnable) log.debug "emergencyHeat"
     sendEvent("name":"thermostatMode", "value":"emergencyHeat")
     zigbee.writeAttribute(0x0201, 0x1C, 0x30, 5)
 }
@@ -331,25 +346,25 @@ def fanCirculate() {
 }
 
 def fanOn() {
-    log.debug "fanOn"
+    if (logEnable) log.debug "fanOn"
     sendEvent("name":"thermostatFanMode", "value":"fanOn")
     zigbee.writeAttribute(0x0202, 0x00, 0x30, 4)
 }
 
 def fanAuto() {
-    log.debug "fanAuto"
+    if (logEnable) log.debug "fanAuto"
     sendEvent("name":"thermostatFanMode", "value":"fanAuto")
     zigbee.writeAttribute(0x0202, 0x00, 0x30, 5)
 }
 
 def holdOn() {
-    log.debug "holdOn"
+    if (logEnable) log.debug "holdOn"
     sendEvent("name":"thermostatHoldMode", "value":"holdOn")
     zigbee.writeAttribute(0x0201, 0x23, 0x30, 1)
 }
 
 def holdOff() {
-    log.debug "Set Hold Off for thermostat"
+    if (logEnable) log.debug "Set Hold Off for thermostat"
     sendEvent("name":"thermostatHoldMode", "value":"holdOff")
     zigbee.writeAttribute(0x0201, 0x23, 0x30, 0)
 }
@@ -371,7 +386,7 @@ private isHoldOn() {
 }
 
 def setHeatingSetpoint(degrees) {
-    log.debug "setHeatingSetpoint to $degrees"
+    if (logEnable) log.debug "setHeatingSetpoint to $degrees"
 
     if (isHoldOn()) return
 
@@ -384,24 +399,24 @@ def setHeatingSetpoint(degrees) {
         if (temperatureScale == "C") {
             maxTemp = 44
             minTemp = 7
-            log.debug "Location is in Celsius, maxTemp: $maxTemp, minTemp: $minTemp"
+            if (logEnable) log.debug "Location is in Celsius, maxTemp: $maxTemp, minTemp: $minTemp"
         } else {
             maxTemp = 86
             minTemp = 30
-            log.debug "Location is in Farenheit, maxTemp: $maxTemp, minTemp: $minTemp"
-                }
+            if (logEnable)log.debug "Location is in Farenheit, maxTemp: $maxTemp, minTemp: $minTemp"
+        }
 
         if (degreesInteger > maxTemp) degreesInteger = maxTemp
         if (degreesInteger < minTemp) degreesInteger = minTemp
 
-        log.debug "setHeatingSetpoint degrees $degreesInteger $temperatureScale"
+        if (logEnable) log.debug "setHeatingSetpoint degrees $degreesInteger $temperatureScale"
         def celsius = (temperatureScale == "C") ? degreesInteger : (fahrenheitToCelsius(degreesInteger) as Double).round(2)
         zigbee.writeAttribute(0x0201, 0x12, 0x29, cvtTemp(celsius * 100))
     }
 }
 
 def setCoolingSetpoint(degrees) {
-    log.debug "setCoolingSetpoint to $degrees"
+    if (logEnable) log.debug "setCoolingSetpoint to $degrees"
 
     if (isHoldOn()) return
 
@@ -414,17 +429,17 @@ def setCoolingSetpoint(degrees) {
         if (temperatureScale == "C") {
             maxTemp = 44
             minTemp = 7
-            log.debug "Location is in Celsius, maxTemp: $maxTemp, minTemp: $minTemp"
+            if (logEnable) log.debug "Location is in Celsius, maxTemp: $maxTemp, minTemp: $minTemp"
         } else {
             maxTemp = 86
             minTemp = 30
-            log.debug "Location is in Farenheit, maxTemp: $maxTemp, minTemp: $minTemp"
+            if (logEnable) log.debug "Location is in Farenheit, maxTemp: $maxTemp, minTemp: $minTemp"
         }
 
         if (degreesInteger > maxTemp) degreesInteger = maxTemp
         if (degreesInteger < minTemp) degreesInteger = minTemp
 
-        log.debug "setCoolingSetpoint degrees $degreesInteger $temperatureScale"
+        if (logEnable) log.debug "setCoolingSetpoint degrees $degreesInteger $temperatureScale"
         def celsius = (temperatureScale == "C") ? degreesInteger : (fahrenheitToCelsius(degreesInteger) as Double).round(2)
         zigbee.writeAttribute(0x0201, 0x11, 0x29, cvtTemp(celsius * 100))
     }

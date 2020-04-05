@@ -105,7 +105,7 @@ void mqttClientStatus(String message)
 {
     if (message.startsWith("Error")) {
     	log.error "MQTT: ${message}"
-        initialize()
+        runInMillis(new Random(now()).nextInt(90000), "initialize")
     } else {
     	if (logEnable) log.debug "MQTT: ${message}"
     }
@@ -319,7 +319,7 @@ private boolean mqttConnect() {
     try {
         def hub = device.getHub()
         def mqtt = interfaces.mqtt
-        String clientId = device.getDeviceNetworkId()
+        String clientId = hub.hardwareID + "-" + device.id
         log.info "Connecting to MQTT broker at ${settings.mqttBroker}"
         state.mqttConnectCount = (state?.mqttConnectCount ?: 0) + 1
 

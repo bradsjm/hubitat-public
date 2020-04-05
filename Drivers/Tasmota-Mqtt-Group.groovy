@@ -373,7 +373,7 @@ private boolean mqttConnect() {
     try {
         def hub = device.getHub()
         def mqtt = interfaces.mqtt
-        String clientId = device.getDeviceNetworkId()
+        String clientId = hub.hardwareID + "-" + device.id
         log.info "Connecting to MQTT broker at ${settings.mqttBroker}"
         state.mqttConnectCount = (state?.mqttConnectCount ?: 0) + 1
 
