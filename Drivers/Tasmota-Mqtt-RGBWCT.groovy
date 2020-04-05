@@ -376,11 +376,6 @@ void setEffectsScheme(scheme) {
  *  Tasmota Custom Commands
  */
 
-// Get the group topic (from the state command)
-def getGroupTopic() {
-    return state.groupTopic 
-}
-
 // Set the Tasmota fade speed
 void setFadeSpeed(seconds) {
     int speed = Math.min(40f, seconds * 2).toInteger()
@@ -388,13 +383,6 @@ void setFadeSpeed(seconds) {
         mqttPublish(getTopic("Backlog"), "Speed ${speed};Fade 1")
     } else {
         mqttPublish(getTopic("Fade"), "0")
-    }
-}
-
-// Set the group topic
-void setGroupTopic(name) {
-    if (name != state.groupTopic) {
-        mqttPublish(getTopic("GroupTopic"), name)
     }
 }
 
@@ -525,7 +513,11 @@ private void parseTasmota(String topic, Map json) {
 
     state.lastResult = json
 
-    events.each { sendEvent(it) }
+    if (events) {
+        events.each { sendEvent(it) }
+        parent?.stateChanged(device)
+    }
+
 }
 
 private String getTemperatureName(int kelvin) {

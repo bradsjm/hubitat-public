@@ -258,12 +258,6 @@ boolean isLocked() {
  *  Tasmota Device Specific
  */
 
-void setGroupTopic(name) {
-    if (name != state.groupTopic) {
-        mqttPublish(getTopic("GroupTopic"), name)
-    }
-}
-
 void restart() {
     mqttPublish(getTopic("Restart"), "1")
 }

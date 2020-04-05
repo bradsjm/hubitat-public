@@ -213,18 +213,6 @@ void setLevel(level, duration = 0) {
  *  Tasmota Custom Commands
  */
 
-// Get the group topic (from the state command)
-def getGroupTopic() {
-    return state.groupTopic 
-}
-
-// Set the group topic
-void setGroupTopic(name) {
-    if (name != state.groupTopic) {
-        mqttPublish(getTopic("GroupTopic"), name)
-    }
-}
-
 // Perform Tasmota wakeup function
 void startWakeup(level, duration) {
     level = limit(level).toInteger()

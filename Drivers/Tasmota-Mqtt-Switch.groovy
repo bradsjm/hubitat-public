@@ -157,18 +157,6 @@ void off() {
  *  Tasmota Custom Commands
  */
 
-// Get the group topic (from the state command)
-def getGroupTopic() {
-    return state.groupTopic 
-}
-
-// Set the group topic
-void setGroupTopic(name) {
-    if (name != state.groupTopic) {
-        mqttPublish(getTopic("GroupTopic"), name)
-    }
-}
-
 void restart() {
     mqttPublish(getTopic("Restart"), "1")
 }
