@@ -365,6 +365,7 @@ private void mqttPublish(String topic, String payload = "") {
         state.mqttTransmitCount = (state?.mqttTransmitCount ?: 0) + 1
     } else {
         log.warn "MQTT not connected, unable to publish ${topic} = ${payload}"
+        runInMillis(new Random(now()).nextInt(30000), "initialize")
     }
 }
 
