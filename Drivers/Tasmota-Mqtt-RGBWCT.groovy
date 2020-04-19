@@ -580,25 +580,6 @@ private String getHueName(int hue) {
     return colorName
 }
 
-private String getWifiSignalName(int rssi) {
-    String signalName
-    switch(rssi) {
-        case 75..100: signalName = "high"
-            break
-
-        case 45..74: signalName = "medium"
-            break
-
-        case 1..44: signalName = "low"
-            break
-
-        case 0: signalName = "none"
-            break;
-    }
-
-    return signalName
-}
-
 /**
  *  Common Tasmota MQTT communication methods
  */

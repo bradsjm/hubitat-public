@@ -38,7 +38,6 @@ metadata {
         command "restart"
 
         attribute "deviceState", "string"
-        attribute "wifiSignal", "string"
         attribute "distance", "number"
     }
 
@@ -103,6 +102,7 @@ void initialize() {
         return
     }
 
+    sendEvent(newEvent("door", "unknown"))
     mqttDisconnect()    
     mqttConnect()
 }
@@ -110,6 +110,7 @@ void initialize() {
 // Called when the device is first created.
 void installed() {
     log.info "${device.displayName} driver v${version()} installed"
+    sendEvent(newEvent("lock", "unlocked"))
 }
 
 // Called with MQTT client status messages
@@ -388,25 +389,6 @@ private String getTopic(String prefix, String postfix)
         .replaceFirst("%prefix%", prefix)
         .replaceFirst("%topic%", deviceTopic)
         .plus(postfix)
-}
-
-private String getWifiSignalName(int rssi) {
-    String signalName
-    switch(rssi) {
-        case 75..100: signalName = "high"
-            break
-
-        case 45..74: signalName = "medium"
-            break
-
-        case 1..44: signalName = "low"
-            break
-
-        case 0: signalName = "none"
-            break;
-    }
-
-    return signalName
 }
 
 private int conversion(cm) {
