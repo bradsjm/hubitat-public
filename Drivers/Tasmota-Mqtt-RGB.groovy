@@ -21,7 +21,7 @@
  *  SOFTWARE.
 */
 static final String version() { "1.0" }
-static final String deviceType() { "RGBW/CT" }
+static final String deviceType() { "RGB" }
 
 import groovy.transform.Field
 import groovy.json.JsonBuilder
@@ -31,8 +31,6 @@ metadata {
         capability "Actuator"
         capability "ChangeLevel"
         capability "ColorControl"
-        capability "ColorMode"
-        capability "ColorTemperature"
         capability "Configuration"
         capability "Initialize"
         capability "Light"
@@ -281,19 +279,6 @@ void setSaturation(saturation) {
     sendEvent(newEvent("colorName", ""))
 }
 
-// Set the color temperature (2000-6536)
-void setColorTemperature(kelvin) {
-    kelvin = limit(kelvin, 2000, 6536)
-    int channelCount = state.channelCount
-    if (channelCount == 5) {
-        int mired = limit(Math.round(1000000f / kelvin), 153, 500).toInteger()
-        if (logEnable) log.debug "Converted ${kelvin} kelvin to ${mired} mired"
-        mqttPublish(getTopic("CT"), mired.toString())
-    } else if (channelCount == 4) {
-        mqttPublish(getTopic("White"), device.currentValue("level").toString())
-    }
-}
-
 void nextColor() {
     state.currentColorIndex = (state.currentColorIndex ?: 0) + 1
     if (state.currentColorIndex >= colorNames.size()) state.currentColorIndex = 0
@@ -424,33 +409,6 @@ private void parseTasmota(String topic, Map json) {
         if (logEnable) log.debug "Parsing [ Speed: ${json.Speed} ]"
         def value = sprintf("%.1f", json.Speed.toInteger().div(2))
         events << newEvent("fadeSpeed", value, "s")
-    }
-
-    if (json.containsKey("Channel")) {
-        if (logEnable) log.debug "Parsing [ Channel: ${json.Channel} ]"
-        int channelCount = json.Channel.size()
-        state.channelCount = channelCount
-        def value = "RGB"
-        if (channelCount == 4 && json.Channel[3] > 0) {
-            value = "White"
-        } else if (channelCount == 5 && (json.Channel[3] > 0 || json.Channel[4] > 0)) {
-            value = "CT"
-        }
-        events << newEvent("colorMode", value)
-
-        if (channelCount == 4 && json.Channel[3] > 0) {
-            int fakeKelvin = 6500
-            events << newEvent("colorTemperature", fakeKelvin, "K")
-            events << newEvent("colorName", getTemperatureName(fakeKelvin))
-        }
-    }
-
-    if (json.containsKey("CT")) {
-        if (logEnable) log.debug "Parsing [ CT: ${json.CT} ]"
-        int kelvin = Math.round(1000000f / json.CT).toInteger()
-        if (logEnable) log.debug "Converted ${json.CT} CT to ${kelvin} kelvin"
-        events << newEvent("colorTemperature", kelvin, "K")
-        events << newEvent("colorName", getTemperatureName(kelvin))
     }
 
     if (json.containsKey("Dimmer")) {

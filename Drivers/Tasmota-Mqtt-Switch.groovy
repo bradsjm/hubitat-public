@@ -20,7 +20,7 @@
  *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  *  SOFTWARE.
 */
-static final String version() { "0.2" }
+static final String version() { "1.0" }
 static final String deviceType() { "Switch" }
 
 metadata {

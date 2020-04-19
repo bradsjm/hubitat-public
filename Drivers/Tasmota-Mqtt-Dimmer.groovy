@@ -20,7 +20,7 @@
  *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  *  SOFTWARE.
 */
-static final String version() { "0.2" }
+static final String version() { "1.0" }
 static final String deviceType() { "Dimmer" }
 
 metadata {
@@ -193,7 +193,7 @@ void stopLevelChange() {
 private void doLevelChange(delta) {
     int newLevel = limit(device.currentValue("level").toInteger() + delta)
     setLevel(newLevel)
-    if (newLevel > 0 && newLevel < 100) {
+    if (newLevel > 0 && newLevel < 99) {
         int delay = limit(settings.changeLevelEvery, 100, 1000)
         runInMillis(delay, "doLevelChange", [ data: delta ])
     }
@@ -205,7 +205,7 @@ private void doLevelChange(delta) {
 
 // Set the brightness level and optional duration
 void setLevel(level, duration = 0) {
-    level = limit(level, 0, 100).toInteger()
+    level = limit(level).toInteger()
     mqttPublish(getTopic("Dimmer${settings.relayNumber}"), level.toString())
 }
 
@@ -243,7 +243,7 @@ private void parseTasmota(String topic, Map json) {
 
     if (json.containsKey("Dimmer")) {
         if (logEnable) log.debug "Parsing [ Dimmer: ${json.Dimmer} ]"
-        events << newEvent("level", json.Dimmer, "%")
+        events << newEvent("level", limit(json.Dimmer), "%")
     }
 
     if (json.containsKey("Status")) {
