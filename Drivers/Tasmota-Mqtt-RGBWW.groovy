@@ -21,7 +21,7 @@
  *  SOFTWARE.
 */
 static final String version() { "1.0" }
-static final String deviceType() { "RGBW/CT" }
+static final String deviceType() { "RGBWW" }
 
 import groovy.transform.Field
 import groovy.json.JsonBuilder
@@ -156,7 +156,6 @@ void installed() {
 
 // Called with MQTT client status messages
 void mqttClientStatus(String message) {
-
     if (message.startsWith("Error")) {
     	log.error "MQTT: ${message}"
         runInMillis(new Random(now()).nextInt(90000), "initialize")
@@ -200,11 +199,13 @@ void updated() {
 // Turn on
 void on() {
     mqttPublish(getTopic("Power${settings.relayNumber}"), "1")
+    log.info "Switching ${device.displayName} on"
 }
 
 // Turn off
 void off() {
     mqttPublish(getTopic("Power${settings.relayNumber}"), "0")
+    log.info "Switching ${device.displayName} off"
 }
 
 /**
@@ -216,12 +217,14 @@ void startLevelChange(direction) {
     if (settings.changeLevelStep && settings.changeLevelEvery) {
         int delta = (direction == "down") ? -settings.changeLevelStep : settings.changeLevelStep
         doLevelChange(limit(delta, -10, 10))
+        log.info "${device.displayName} Starting level change ${direction}"
     }
 }
 
 // Stop level change (up or down)
 void stopLevelChange() {
     unschedule("doLevelChange")
+    log.info "${device.displayName} Stopping level change"
 }
 
 private void doLevelChange(delta) {
@@ -249,6 +252,7 @@ void setLevel(level, duration = 0) {
     } else {
         mqttPublish(getTopic("Dimmer${settings.relayNumber}"), level.toString())
     }
+    log.info "Setting ${device.displayName} brightness to ${level}"
 }
 
 /**
@@ -264,6 +268,7 @@ void setColor(colormap) {
 
     mqttPublish(getTopic("HsbColor"), "${hue},${saturation},${level}")
     sendEvent(newEvent("colorName", colormap.name ?: ""))
+    log.info "Setting ${device.displayName} color (HSB) to ${hue},${saturation},${level}"
 }
 
 // Set the hue (0-100)
@@ -272,6 +277,7 @@ void setHue(hue) {
     hue = limit(Math.round(hue * 3.6), 0, 360).toInteger()
     mqttPublish(getTopic("HsbColor1"), hue.toString())
     sendEvent(newEvent("colorName", ""))
+    log.info "Setting ${device.displayName} hue to ${hue}"
 }
 
 // Set the saturation (0-100)
@@ -279,6 +285,7 @@ void setSaturation(saturation) {
     saturation = limit(saturation).toInteger()
     mqttPublish(getTopic("HsbColor2"), saturation.toString())
     sendEvent(newEvent("colorName", ""))
+    log.info "Setting ${device.displayName} saturation to ${saturation}"
 }
 
 // Set the color temperature (2000-6536)
@@ -292,6 +299,7 @@ void setColorTemperature(kelvin) {
     } else if (channelCount == 4) {
         mqttPublish(getTopic("White"), device.currentValue("level").toString())
     }
+    log.info "Setting ${device.displayName} temperature to ${kelvin}K"
 }
 
 void nextColor() {
@@ -333,15 +341,20 @@ void setEffect(id) {
             blinkOff()
             setEffectsScheme(0)
             break
-        case 1: blinkOn()
+        case 1: 
+            blinkOn()
             break
-        case 2: setEffectsScheme(1)
+        case 2: 
+            setEffectsScheme(1)
             break
-        case 3: setEffectsScheme(2)
+        case 3: 
+            setEffectsScheme(2)
             break
-        case 4: setEffectsScheme(3)
+        case 4:
+            setEffectsScheme(3)
             break
-        case 5: setEffectsScheme(4)
+        case 5:
+            setEffectsScheme(4)
             break
     }
 }
@@ -362,14 +375,17 @@ void setPreviousEffect() {
 
 void blinkOn() {
     mqttPublish(getTopic("Power${settings.relayNumber}"), "blink")
+    log.info "Start ${device.displayName} blinking"
 }
 
 void blinkOff() {
     mqttPublish(getTopic("Power${settings.relayNumber}"), "blinkoff")
+    log.info "Stop ${device.displayName} blinking"
 }
 
 void setEffectsScheme(scheme) {
     mqttPublish(getTopic("Scheme"), scheme.toString())
+    log.info "Setting ${device.displayName} to effects scheme ${scheme}"
 }
 
 /**
@@ -384,6 +400,7 @@ void setFadeSpeed(seconds) {
     } else {
         mqttPublish(getTopic("Fade"), "0")
     }
+    log.info "Setting ${device.displayName} fade speed to ${speed}"
 }
 
 // Perform Tasmota wakeup function
@@ -391,10 +408,12 @@ void startWakeup(level, duration) {
     level = limit(level).toInteger()
     duration = limit(duration, 1, 3000).toInteger()
     mqttPublish(getTopic("Backlog"), "WakeupDuration ${duration};Wakeup ${level}")
+    log.info "Starting ${device.displayName} wake up to ${level} (duration ${duration})"
 }
 
 void restart() {
     mqttPublish(getTopic("Restart"), "1")
+    log.info "Restarting ${device.displayName}"
 }
 
 /**

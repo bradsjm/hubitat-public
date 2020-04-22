@@ -154,7 +154,7 @@ void illuminanceHandler(evt) {
     updateDimmers()
 }
 
-int getDimVal(illum, maxIllum) {
+private int getDimVal(illum, maxIllum) {
     def xa = 0            // min illuminance
     def ya = maxDimValue  // corresponding dimmer level
 
@@ -168,9 +168,10 @@ int getDimVal(illum, maxIllum) {
     return dimVal.toInteger()
 }
 
-void updateDimmers() {
-    def updated = false
+private void updateDimmers() {
+    if (state.paused || location.mode in restrictedModes) return
     
+    boolean updated = false
     dimmers?.each {
         if (it.currentValue("switch") == "on" && it.currentValue("level") != state.targetDimLevel) {
             setDimmer(it, state.targetDimLevel)
@@ -178,7 +179,7 @@ void updateDimmers() {
         }
     }
 
-    if (!state.paused && updated) {
+    if (updated) {
         runIn(delayTime, "updateDimmers")
         if (logEnable) log.debug "Delaying ${delayTime}s for next incremental adjustment"
     } else {
@@ -186,7 +187,7 @@ void updateDimmers() {
     }
 }
 
-void setDimmer(def dimmer, int target) {
+private void setDimmer(def dimmer, int target) {
     int dimLevel = dimmer.currentValue("level")
 
     if (dimLevel > target)

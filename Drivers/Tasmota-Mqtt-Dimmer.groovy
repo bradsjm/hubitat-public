@@ -37,6 +37,14 @@ metadata {
 
         command "restart"
 
+        command "setFadeSpeed", [
+            [
+                name:"Fade Speed*",
+                type: "NUMBER",
+                description: "Seconds (0 to 20) where 0 is off"
+            ]
+        ]
+
         command "startWakeup", [
             [
                 name:"Dimmer Level*",
@@ -122,7 +130,6 @@ void installed() {
 
 // Called with MQTT client status messages
 void mqttClientStatus(String message) {
-
     if (message.startsWith("Error")) {
     	log.error "MQTT: ${message}"
         runInMillis(new Random(now()).nextInt(90000), "initialize")
@@ -159,18 +166,16 @@ void updated() {
     if (logEnable) runIn(1800, "logsOff")
 }
 
-/**
- *  Capability: Switch or Bulb
- */
-
 // Turn on
 void on() {
     mqttPublish(getTopic("Power${settings.relayNumber}"), "1")
+    log.info "Switching ${device.displayName} on"
 }
 
 // Turn off
 void off() {
     mqttPublish(getTopic("Power${settings.relayNumber}"), "0")
+    log.info "Switching ${device.displayName} off"
 }
 
 /**
@@ -182,12 +187,14 @@ void startLevelChange(direction) {
     if (settings.changeLevelStep && settings.changeLevelEvery) {
         int delta = (direction == "down") ? -settings.changeLevelStep : settings.changeLevelStep
         doLevelChange(limit(delta, -10, 10))
+        log.info "${device.displayName} Starting level change ${direction}"
     }
 }
 
 // Stop level change (up or down)
 void stopLevelChange() {
     unschedule("doLevelChange")
+    log.info "${device.displayName} Stopping level change"
 }
 
 private void doLevelChange(delta) {
@@ -206,22 +213,45 @@ private void doLevelChange(delta) {
 // Set the brightness level and optional duration
 void setLevel(level, duration = 0) {
     level = limit(level).toInteger()
-    mqttPublish(getTopic("Dimmer${settings.relayNumber}"), level.toString())
+
+    int oldSpeed = device.currentValue("fadeSpeed").toInteger() * 2
+    int oldFade = device.currentValue("fadeMode") == "on" ? 1 : 0
+    int speed = Math.min(40f, duration * 2).toInteger()
+    if (speed > 0) {
+        mqttPublish(getTopic("Backlog"), "Speed ${speed};Fade 1;Dimmer${settings.relayNumber} ${level};Delay ${duration * 10};Speed ${oldSpeed};Fade ${oldFade}")
+    } else {
+        mqttPublish(getTopic("Dimmer${settings.relayNumber}"), level.toString())
+    }
+    log.info "Setting ${device.displayName} brightness to ${level}"
 }
+
 
 /**
  *  Tasmota Custom Commands
  */
+
+// Set the Tasmota fade speed
+void setFadeSpeed(seconds) {
+    int speed = Math.min(40f, seconds * 2).toInteger()
+    if (speed > 0) {
+        mqttPublish(getTopic("Backlog"), "Speed ${speed};Fade 1")
+    } else {
+        mqttPublish(getTopic("Fade"), "0")
+    }
+    log.info "Setting ${device.displayName} fade speed to ${speed}"
+}
 
 // Perform Tasmota wakeup function
 void startWakeup(level, duration) {
     level = limit(level).toInteger()
     duration = limit(duration, 1, 3000).toInteger()
     mqttPublish(getTopic("Backlog"), "WakeupDuration ${duration};Wakeup ${level}")
+    log.info "Starting ${device.displayName} wake up to ${level} (duration ${duration})"
 }
 
 void restart() {
     mqttPublish(getTopic("Restart"), "1")
+    log.info "Restarting ${device.displayName}"
 }
 
 /**

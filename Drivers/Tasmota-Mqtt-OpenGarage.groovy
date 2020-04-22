@@ -175,6 +175,7 @@ void open() {
 
     String commandTopic = getTopic("Backlog")
     mqttPublish(commandTopic, "PulseTime ${settings.pulseTime};Power 1")
+    log.info "Opening ${device.displayName}"
 
     runIn(settings.travelTime, "setOpen")
 }
@@ -196,6 +197,7 @@ void close() {
 
     String commandTopic = getTopic("Backlog")
     mqttPublish(commandTopic, "PulseTime ${settings.pulseTime};Power 1")
+    log.info "Closing ${device.displayName}"
 
     runIn(settings.travelTime, "setClosed")
 }
@@ -204,6 +206,7 @@ void soundWarning(count = 3, freq = 750) {
     String commandTopic = getTopic("Backlog")
     String beep = "Pwm2 512;Delay 2;Pwm2 0;Delay 3;"
     mqttPublish(commandTopic, "PwmFrequency ${freq};" + beep * count)
+    log.info "Sounding alert on ${device.displayName}"
 }
 
 private void setClosed() {
@@ -245,10 +248,12 @@ private void setOpen() {
 // soft lock door
 void lock() {
     sendEvent(newEvent("lock", "locked"))
+    log.info "Locking ${device.displayName}"
 }
 
 void unlock() {
     sendEvent(newEvent("lock", "unlocked"))
+    log.info "Unlocking ${device.displayName}"
 }
 
 boolean isLocked() {

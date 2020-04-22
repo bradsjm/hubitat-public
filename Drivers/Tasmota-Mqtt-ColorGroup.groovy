@@ -156,7 +156,7 @@ void updated() {
 void on() {
     def devices = getChildDevices().findAll { it.hasCommand("on") }
     devices.each { 
-        if (logEnable) log.debug "Turning on ${it.displayName}"
+        log.info "Turning on ${it.displayName}"
         it.on()
     }
 }
@@ -165,7 +165,7 @@ void on() {
 void off() {
     def devices = getChildDevices().findAll { it.hasCommand("off") }
     devices.each { 
-        if (logEnable) log.debug "Turning off ${it.displayName}"
+        log.info "Turning off ${it.displayName}"
         it.off() 
     }
 }
@@ -178,7 +178,7 @@ void off() {
 void setLevel(level, duration = 0) {
     def devices = getChildDevices().findAll { it.hasCommand("setLevel") }
     devices.each { 
-        if (logEnable) log.debug "Setting ${it.displayName} to ${level}%"
+        log.info "Setting ${it.displayName} to ${level}%"
         it.setLevel(level, duration)
     }
 }
@@ -192,7 +192,7 @@ void setColor(colormap) {
     def devices = getChildDevices().findAll { it.hasCommand("setColor") }
     if (settings.schemeType == "single") {
         devices.each { 
-            if (logEnable) log.debug "Setting ${it.displayName} color to ${colormap}"
+            log.info "Setting ${it.displayName} color to ${colormap}"
             it.setColor(colormap)
         }
     } else {
@@ -234,7 +234,7 @@ private void colorApiHandler(response, data) {
             saturation: color.hsv.s,
             level: color.hsv.v
         ]
-        if (logEnable) log.debug "Setting ${devices[index].label} to ${colormap}"
+        log.info "Setting ${devices[index].label} to ${colormap}"
         devices[index].setColor(colormap)
     }
 }
@@ -243,7 +243,7 @@ private void colorApiHandler(response, data) {
 void setHue(hue) {
     def devices = getChildDevices().findAll { it.hasCommand("setHue") }
     devices.each { 
-        if (logEnable) log.debug "Setting ${it.displayName} hue to ${hue}"
+        log.info "Setting ${it.displayName} hue to ${hue}"
         it.setHue(hue)
     }
 }
@@ -252,7 +252,7 @@ void setHue(hue) {
 void setSaturation(saturation) {
     def devices = getChildDevices().findAll { it.hasCommand("setSaturation") }
     devices.each { 
-        if (logEnable) log.debug "Setting ${it.displayName} saturation to ${saturation}%"
+        log.info "Setting ${it.displayName} saturation to ${saturation}%"
         it.setSaturation(saturation)
     }
 }
@@ -261,7 +261,7 @@ void setSaturation(saturation) {
 void setColorTemperature(kelvin) {
     def devices = getChildDevices().findAll { it.hasCommand("setColorTemperature") }
     devices.each { 
-        if (logEnable) log.debug "Setting ${it.displayName} color temperature to ${kelvin}"
+        log.info "Setting ${it.displayName} color temperature to ${kelvin}"
         it.setColorTemperature(kelvin)
     }
 }
@@ -270,7 +270,7 @@ void setColorTemperature(kelvin) {
 void setFadeSpeed(seconds) {
     def devices = getChildDevices().findAll { it.hasCommand("setFadeSpeed") }
     devices.each { 
-        if (logEnable) log.debug "Setting ${it.displayName} fade speed to ${seconds} seconds"
+        log.info "Setting ${it.displayName} fade speed to ${seconds} seconds"
         it.setFadeSpeed(seconds)
     }
 }

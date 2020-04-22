@@ -183,14 +183,9 @@ void updateChildContact(zone, isOpen) {
  *  Tasmota Device Specific
  */
 
-void setGroupTopic(name) {
-    if (name != state.groupTopic) {
-        mqttPublish(getTopic("GroupTopic"), name)
-    }
-}
-
 void restart() {
     mqttPublish(getTopic("Restart"), "1")
+    log.info "Restarting ${device.displayName}"
 }
 
 // Parses Tasmota JSON content and send driver events

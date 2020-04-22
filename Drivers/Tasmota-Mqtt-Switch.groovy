@@ -146,11 +146,13 @@ void updated() {
 // Turn on
 void on() {
     mqttPublish(getTopic("Power${settings.relayNumber}"), "1")
+    log.info "Switching ${device.displayName} on"
 }
 
 // Turn off
 void off() {
     mqttPublish(getTopic("Power${settings.relayNumber}"), "0")
+    log.info "Switching ${device.displayName} off"
 }
 
 /**

@@ -117,7 +117,6 @@ void installed() {
 
 // Called with MQTT client status messages
 void mqttClientStatus(String message) {
-
     if (message.startsWith("Error")) {
     	log.error "MQTT: ${message}"
         runInMillis(new Random(now()).nextInt(90000), "initialize")
@@ -161,11 +160,13 @@ void updated() {
 // Turn on
 void on() {
     mqttPublish(getTopic("Power${settings.relayNumber}"), "1")
+    log.info "Switching ${device.displayName} on"
 }
 
 // Turn off
 void off() {
     mqttPublish(getTopic("Power${settings.relayNumber}"), "0")
+    log.info "Switching ${device.displayName} off"
 }
 
 /**
@@ -174,14 +175,17 @@ void off() {
 
 void restart() {
     mqttPublish(getTopic("Restart"), "1")
+    log.info "Restarting ${device.displayName}"
 }
 
 void setTelePeriod(interval) {
     mqttPublish(getTopic("TelePeriod"), interval.toString())
+    log.info "Setting ${device.displayName} reporting period to ${interval}"
 }
 
 void setPowerDelta(value) {
     mqttPublish(getTopic("PowerDelta"), value.toString())
+    log.info "Setting ${device.displayName} power delta reporting to ${value}"
 }
 
 /**
