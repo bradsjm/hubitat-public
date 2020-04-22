@@ -34,6 +34,8 @@ metadata {
         capability "SwitchLevel"
 
         attribute "deviceState", "String"
+        attribute "fadeMode", "String"
+        attribute "fadeSpeed", "Number"
 
         command "restart"
 
