@@ -273,6 +273,18 @@ private void parseTasmota(String topic, Map json) {
         events << newEvent("switch", power.value.toLowerCase())
     }
 
+    if (json.containsKey("Fade")) {
+        if (logEnable) log.debug "Parsing [ Fade: ${json.Fade} ]"
+        if (json.Fade.equalsIgnoreCase("OFF")) json.Speed = 0
+        events << newEvent("fadeMode", json.Fade.toLowerCase())
+    }
+
+    if (json.containsKey("Speed")) {
+        if (logEnable) log.debug "Parsing [ Speed: ${json.Speed} ]"
+        def value = sprintf("%.1f", json.Speed.toInteger().div(2))
+        events << newEvent("fadeSpeed", value, "s")
+    }
+
     if (json.containsKey("Dimmer")) {
         if (logEnable) log.debug "Parsing [ Dimmer: ${json.Dimmer} ]"
         events << newEvent("level", limit(json.Dimmer), "%")
