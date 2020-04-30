@@ -110,14 +110,15 @@ void initialize() {
     state.maxValue = 1000
     state.paused = false
 
-    if (!idk)
-        state.maxValue = maxValue.toInteger()
+    if (!settings.idk)
+        state.maxValue = settings.maxValue.toInteger()
 
     if (logEnable) runIn(1800, logsOff)
 
     if (sensor && dimmers) {
         illuminanceHandler([name: "illuminance", value: sensor.currentValue("illuminance")])
         subscribe(sensor, "illuminance", illuminanceHandler)
+        subscribe(location, "mode", modeEventHandler)
     }
 }
 
@@ -126,6 +127,17 @@ void appButtonHandler(btn) {
         case "pause":
             state.paused = !state.paused
     }
+}
+
+void modeEventHandler(evt) {
+    if (state.paused || evt.value in restrictedModes)
+    {
+        if (logEnable) log.debug "Mode event ignored due to restrictions"
+        return
+    }
+
+    setTargetLevel()
+    updateDimmers()
 }
 
 void illuminanceHandler(evt) {
@@ -138,20 +150,26 @@ void illuminanceHandler(evt) {
     int illum = evt.value.toInteger()
 
     // learn max value if required
-    if (idk && illum > state.maxValue)
+    if (settings.idk && illum > state.maxValue)
     {
         state.maxValue = illum
-        log.info "New maximum lux value now ${state.maxValue}"
+        log.info "New maximum lux value set to ${state.maxValue}"
     }
     else 
     {
-        state.maxValue = maxValue
+        state.maxValue = settings.maxValue
     }
 
-    state.targetDimLevel = getDimVal(illum, state.maxValue)
-    log.info "Lux now ${illum}, new dimmer target is ${state.targetDimLevel}"
-
+    setTargetLevel()
     updateDimmers()
+}
+
+private void setTargetLevel() {
+    if (sensor && state.maxValue) {
+        int illum = sensor.currentValue("illuminance").toInteger()
+        state.targetDimLevel = getDimVal(illum, state.maxValue)
+        log.info "Lux now ${illum}, new dimmer target is ${state.targetDimLevel}"
+    }
 }
 
 private int getDimVal(illum, maxIllum) {
@@ -165,7 +183,7 @@ private int getDimVal(illum, maxIllum) {
     def b = ya - slope * xa
 
     def dimVal = slope * illum + b
-    return dimVal.toInteger()
+    return ((double)dimVal).round().toInteger()
 }
 
 private void updateDimmers() {

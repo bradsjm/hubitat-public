@@ -178,7 +178,7 @@ void off() {
 void setLevel(level, duration = 0) {
     def devices = getChildDevices().findAll { it.hasCommand("setLevel") }
     devices.each { 
-        log.info "Setting ${it.displayName} to ${level}%"
+        log.info "Setting ${it.displayName} brightness to ${level}%"
         it.setLevel(level, duration)
     }
 }

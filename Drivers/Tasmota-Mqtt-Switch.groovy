@@ -51,6 +51,7 @@ metadata {
 
         section("Misc") {
             input name: "relayNumber", type: "number", title: "Relay Number", description: "For Power commands", required: true, defaultValue: 1
+            input name: "enforceState", type: "bool", title: "Enforce State", description: "Force device power state from Hubitat", required: true, defaultValue: false
             input name: "logEnable", type: "bool", title: "Enable debug logging", description: "Automatically disabled after 30 minutes", required: true, defaultValue: true
         }
     }
@@ -119,7 +120,6 @@ void parse(data) {
 // Called when the user requests a refresh (from Refresh capability)
 void refresh() {
     log.info "Refreshing state of ${device.name}"
-    state.clear()
 
     mqttPublish(getTopic("Backlog"), "State;Status;Status 1;Status 2;Status 5")
 }
@@ -134,6 +134,7 @@ void uninstalled() {
 void updated() {
     log.info "${device.displayName} driver v${version()} configuration updated"
     log.debug settings
+    state.clear()
     initialize()
 
     if (logEnable) runIn(1800, "logsOff")
@@ -145,14 +146,16 @@ void updated() {
 
 // Turn on
 void on() {
-    mqttPublish(getTopic("Power${settings.relayNumber}"), "1")
     log.info "Switching ${device.displayName} on"
+    if (settings.enforceState) state.desiredPowerState = "on"
+    mqttPublish(getTopic("Power${settings.relayNumber}"), "1")
 }
 
 // Turn off
 void off() {
-    mqttPublish(getTopic("Power${settings.relayNumber}"), "0")
     log.info "Switching ${device.displayName} off"
+    if (settings.enforceState) state.desiredPowerState = "off"
+    mqttPublish(getTopic("Power${settings.relayNumber}"), "0")
 }
 
 /**
@@ -176,8 +179,14 @@ private void parseTasmota(String topic, Map json) {
     }
 
     if (power) {
-        if (logEnable) log.debug "Parsing [ ${power.key}: ${power.value} ]"
-        events << newEvent("switch", power.value.toLowerCase())
+        def value = power.value.toLowerCase()
+        if (logEnable) log.debug "Parsing [ ${power.key}: ${value} ]"
+        events << newEvent("switch", value)
+
+        if (settings.enforceState && state.desiredPowerState && value != state.desiredPowerState) {
+            log.warn "Enforce State is enabled: Setting to ${state.desiredPowerState} (from ${value})"
+            if (state.desiredPowerState == "on") on() else off()
+        }
     }
 
     if (json.containsKey("Status")) {

@@ -90,6 +90,7 @@ metadata {
             input name: "changeLevelStep", type: "decimal", title: "Change level step %", description: "1% to 10%", required: true, defaultValue: 2
             input name: "changeLevelEvery", type: "number", title: "Change level interval", description: "100ms to 1000ms", required: true, defaultValue: 100
             input name: "preStaging", type: "bool", title: "Enable pre-staging", description: "Color and level changes while off", required: true, defaultValue: false
+            input name: "enforceState", type: "bool", title: "Enforce State", description: "Force device power state from Hubitat", required: true, defaultValue: false
             input name: "logEnable", type: "bool", title: "Enable debug logging", description: "Automatically disabled after 30 minutes", required: true, defaultValue: true
         }
     }
@@ -172,7 +173,6 @@ void parse(data) {
 // Called when the user requests a refresh (from Refresh capability)
 void refresh() {
     log.info "Refreshing state of ${device.name}"
-    state.clear()
 
     mqttPublish(getTopic("Backlog"), "State;Status;Status 1;Status 2;Status 5")
 }
@@ -187,6 +187,7 @@ void uninstalled() {
 void updated() {
     log.info "${device.displayName} driver v${version()} configuration updated"
     log.debug settings
+    state.clear()
     initialize()
 
     if (logEnable) runIn(1800, "logsOff")
@@ -198,14 +199,16 @@ void updated() {
 
 // Turn on
 void on() {
-    mqttPublish(getTopic("Power${settings.relayNumber}"), "1")
     log.info "Switching ${device.displayName} on"
+    if (settings.enforceState) state.desiredPowerState = "on"
+    mqttPublish(getTopic("Power${settings.relayNumber}"), "1")
 }
 
 // Turn off
 void off() {
-    mqttPublish(getTopic("Power${settings.relayNumber}"), "0")
     log.info "Switching ${device.displayName} off"
+    if (settings.enforceState) state.desiredPowerState = "off"
+    mqttPublish(getTopic("Power${settings.relayNumber}"), "0")
 }
 
 /**
@@ -243,10 +246,11 @@ private void doLevelChange(delta) {
 // Set the brightness level and optional duration
 void setLevel(level, duration = 0) {
     level = limit(level).toInteger()
-
     int oldSpeed = device.currentValue("fadeSpeed").toInteger() * 2
     int oldFade = device.currentValue("fadeMode") == "on" ? 1 : 0
     int speed = Math.min(40f, duration * 2).toInteger()
+
+    if (settings.enforceState && !settings.preStaging) state.desiredPowerState = "on"
     if (speed > 0) {
         mqttPublish(getTopic("Backlog"), "Speed ${speed};Fade 1;Dimmer${settings.relayNumber} ${level};Delay ${duration * 10};Speed ${oldSpeed};Fade ${oldFade}")
     } else {
@@ -266,6 +270,7 @@ void setColor(colormap) {
     int saturation = limit(colormap.saturation).toInteger()
     int level = limit(colormap.level).toInteger() // brightness
 
+    if (settings.enforceState && !settings.preStaging) state.desiredPowerState = "on"
     mqttPublish(getTopic("HsbColor"), "${hue},${saturation},${level}")
     sendEvent(newEvent("colorName", colormap.name ?: ""))
     log.info "Setting ${device.displayName} color (HSB) to ${hue},${saturation},${level}"
@@ -275,6 +280,8 @@ void setColor(colormap) {
 void setHue(hue) {
     // Hubitat hue is 0-100 to be converted to Tasmota 0-360
     hue = limit(Math.round(hue * 3.6), 0, 360).toInteger()
+
+    if (settings.enforceState && !settings.preStaging) state.desiredPowerState = "on"
     mqttPublish(getTopic("HsbColor1"), hue.toString())
     sendEvent(newEvent("colorName", ""))
     log.info "Setting ${device.displayName} hue to ${hue}"
@@ -283,6 +290,8 @@ void setHue(hue) {
 // Set the saturation (0-100)
 void setSaturation(saturation) {
     saturation = limit(saturation).toInteger()
+
+    if (settings.enforceState && !settings.preStaging) state.desiredPowerState = "on"
     mqttPublish(getTopic("HsbColor2"), saturation.toString())
     sendEvent(newEvent("colorName", ""))
     log.info "Setting ${device.displayName} saturation to ${saturation}"
@@ -292,6 +301,8 @@ void setSaturation(saturation) {
 void setColorTemperature(kelvin) {
     kelvin = limit(kelvin, 2000, 6536)
     int channelCount = state.channelCount
+
+    if (settings.enforceState && !settings.preStaging) state.desiredPowerState = "on"
     if (channelCount == 5) {
         int mired = limit(Math.round(1000000f / kelvin), 153, 500).toInteger()
         if (logEnable) log.debug "Converted ${kelvin} kelvin to ${mired} mired"
@@ -374,16 +385,19 @@ void setPreviousEffect() {
 }
 
 void blinkOn() {
+    if (settings.enforceState && !settings.preStaging) state.desiredPowerState = "blink"
     mqttPublish(getTopic("Power${settings.relayNumber}"), "blink")
     log.info "Start ${device.displayName} blinking"
 }
 
 void blinkOff() {
+    if (settings.enforceState && !settings.preStaging) state.desiredPowerState = "off"
     mqttPublish(getTopic("Power${settings.relayNumber}"), "blinkoff")
     log.info "Stop ${device.displayName} blinking"
 }
 
 void setEffectsScheme(scheme) {
+    if (settings.enforceState && !settings.preStaging) state.desiredPowerState = "on"
     mqttPublish(getTopic("Scheme"), scheme.toString())
     log.info "Setting ${device.displayName} to effects scheme ${scheme}"
 }
@@ -429,8 +443,14 @@ private void parseTasmota(String topic, Map json) {
     }
 
     if (power) {
-        if (logEnable) log.debug "Parsing [ ${power.key}: ${power.value} ]"
-        events << newEvent("switch", power.value.toLowerCase())
+        def value = power.value.toLowerCase()
+        if (logEnable) log.debug "Parsing [ ${power.key}: ${value} ]"
+        events << newEvent("switch", value)
+
+        if (settings.enforceState && state.desiredPowerState && value != state.desiredPowerState) {
+            log.warn "Enforce State is enabled: Setting to ${state.desiredPowerState} (from ${value})"
+            if (state.desiredPowerState == "on") on() else off()
+        }
     }
 
     if (json.containsKey("Fade")) {

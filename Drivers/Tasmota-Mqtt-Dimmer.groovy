@@ -78,6 +78,7 @@ metadata {
             input name: "changeLevelStep", type: "decimal", title: "Change level step %", description: "1% to 10%", required: true, defaultValue: 2
             input name: "changeLevelEvery", type: "number", title: "Change level interval", description: "100ms to 1000ms", required: true, defaultValue: 100
             input name: "preStaging", type: "bool", title: "Enable pre-staging", description: "Level changes while off", required: true, defaultValue: false
+            input name: "enforceState", type: "bool", title: "Enforce State", description: "Force device power state from Hubitat", required: true, defaultValue: false
             input name: "logEnable", type: "bool", title: "Enable debug logging", description: "Automatically disabled after 30 minutes", required: true, defaultValue: true
         }
     }
@@ -148,7 +149,6 @@ void parse(data) {
 // Called when the user requests a refresh (from Refresh capability)
 void refresh() {
     log.info "Refreshing state of ${device.name}"
-    state.clear()
 
     mqttPublish(getTopic("Backlog"), "State;Status;Status 1;Status 2;Status 5")
 }
@@ -163,22 +163,30 @@ void uninstalled() {
 void updated() {
     log.info "${device.displayName} driver v${version()} configuration updated"
     log.debug settings
+    state.clear()
     initialize()
 
     if (logEnable) runIn(1800, "logsOff")
 }
 
+/**
+ *  Capability: Switch or Bulb
+ */
+
 // Turn on
 void on() {
-    mqttPublish(getTopic("Power${settings.relayNumber}"), "1")
     log.info "Switching ${device.displayName} on"
+    if (settings.enforceState) state.desiredPowerState = "on"
+    mqttPublish(getTopic("Power${settings.relayNumber}"), "1")
 }
 
 // Turn off
 void off() {
-    mqttPublish(getTopic("Power${settings.relayNumber}"), "0")
     log.info "Switching ${device.displayName} off"
+    if (settings.enforceState) state.desiredPowerState = "off"
+    mqttPublish(getTopic("Power${settings.relayNumber}"), "0")
 }
+
 
 /**
  *  Capability: ChangeLevel
@@ -215,6 +223,8 @@ private void doLevelChange(delta) {
 // Set the brightness level and optional duration
 void setLevel(level, duration = 0) {
     level = limit(level).toInteger()
+    if (settings.enforceState && !settings.preStaging) 
+        state.desiredPowerState = "on"
 
     int oldSpeed = device.currentValue("fadeSpeed").toInteger() * 2
     int oldFade = device.currentValue("fadeMode") == "on" ? 1 : 0
@@ -269,8 +279,14 @@ private void parseTasmota(String topic, Map json) {
     }
 
     if (power) {
-        if (logEnable) log.debug "Parsing [ ${power.key}: ${power.value} ]"
-        events << newEvent("switch", power.value.toLowerCase())
+        def value = power.value.toLowerCase()
+        if (logEnable) log.debug "Parsing [ ${power.key}: ${value} ]"
+        events << newEvent("switch", value)
+
+        if (settings.enforceState && state.desiredPowerState && value != state.desiredPowerState) {
+            log.warn "Enforce State is enabled: Setting to ${state.desiredPowerState} (from ${value})"
+            if (state.desiredPowerState == "on") on() else off()
+        }
     }
 
     if (json.containsKey("Fade")) {
