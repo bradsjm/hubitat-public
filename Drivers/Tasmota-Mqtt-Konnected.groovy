@@ -79,6 +79,18 @@ void configure()
     commandTopic = getTopic("Rule1")
     mqttPublish(commandTopic, rule) // send the rule content
     mqttPublish(commandTopic, "1") // enable the rule
+
+    // set timezone offset
+    int offsetInMillis = location.timeZone.getOffset(now())
+    String offset = String.format("%s%02d:%02d", 
+        offsetInMillis >= 0 ? "+" : "-", 
+        Math.abs(offsetInMillis).intdiv(3600000),
+        (Math.abs(offsetInMillis) / 60000).remainder(60) as int
+    )
+    mqttPublish(getTopic("Timezone"), offset)
+    // set latitude and longitude
+    mqttPublish(getTopic("Latitude"), location.latitude.toString())
+    mqttPublish(getTopic("Longitude"), location.longitude.toString())
 }
 
 // Called when the device is started.
@@ -112,7 +124,7 @@ void mqttClientStatus(String message)
 }
 
 // Called to parse received MQTT data
-void parse(data) {
+def parse(data) {
     mqttReceive(interfaces.mqtt.parseMessage(data))
 }
 

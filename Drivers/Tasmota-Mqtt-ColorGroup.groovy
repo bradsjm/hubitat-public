@@ -109,7 +109,7 @@ void mqttClientStatus(String message) {
 }
 
 // Called to parse received MQTT data
-void parse(data) {
+def parse(data) {
     Map message = interfaces.mqtt.parseMessage(data)
     String topic = message.get("topic")
     String payload = message.get("payload")

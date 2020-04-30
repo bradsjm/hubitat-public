@@ -164,7 +164,7 @@ void mqttClientStatus(String message) {
 }
 
 // Called to parse received MQTT data
-void parse(data) {
+def parse(data) {
     mqttReceive(interfaces.mqtt.parseMessage(data))
 }
 
