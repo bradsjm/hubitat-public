@@ -154,7 +154,7 @@ void installed() {
 }
 
 // Called with MQTT client status messages
-void mqttClientStatus(String message) {
+void mqttClientStatus(String status) {
     // The string that is passed to this method with start with "Error" if an error occurred or "Status" if this is just a status message.
     def parts = status.split(': ')
     switch (parts[0]) {

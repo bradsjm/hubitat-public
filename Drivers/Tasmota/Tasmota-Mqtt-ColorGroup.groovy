@@ -100,11 +100,32 @@ void installed() {
 }
 
 // Called with MQTT client status messages
-void mqttClientStatus(String message) {
-	if (logEnable) log.debug "MQTT ${message}"
-
-    if (message.startsWith("Error")) {
-        mqttDisconnect()
+void mqttClientStatus(String status) {
+    // The string that is passed to this method with start with "Error" if an error occurred or "Status" if this is just a status message.
+    def parts = status.split(': ')
+    switch (parts[0]) {
+        case 'Error':
+            log.warn "MQTT ${status}"
+            switch (parts[1]) {
+                case 'Connection lost':
+                case 'send error':
+                    runInMillis(new Random(now()).nextInt(90000), "initialize")
+                    break
+            }
+            break
+        case 'Status':
+            log.info "MQTT ${status}"
+            switch (parts[1]) {
+                case 'Connection succeeded':
+                    // without this delay the `parse` method is never called
+                    // (it seems that there needs to be some delay after connection to subscribe)
+                    runInMillis(1000, connected)
+                    break
+            }
+            break
+        default:
+        	if (logEnable) log.debug "MQTT: ${message}"
+            break
     }
 }
 
