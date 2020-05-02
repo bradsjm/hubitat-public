@@ -63,7 +63,7 @@ metadata {
 
 // Called after MQTT successfully connects
 void connected() {
-    log.info "Connected to MQTT broker at ${settings.mqttBroker}"
+    log.trace "Connected to MQTT broker at ${settings.mqttBroker}"
     mqttSubscribeTopics()
 }
 
@@ -138,7 +138,7 @@ def parse(data) {
 
 // Called when the user requests a refresh (from Refresh capability)
 void refresh() {
-    log.info "Refreshing state of ${device.name}"
+    log.trace "Refreshing state of ${device.name}"
     mqttPublish(getTopic("Backlog"), "State;Status;Status 1;Status 2;Status 5")
 }
 
@@ -181,6 +181,7 @@ void off() {
  */
 
 void restart() {
+    log.info "Restarting ${device.displayName}"
     mqttPublish(getTopic("Restart"), "1")
 }
 
@@ -198,7 +199,7 @@ private void parseTasmota(String topic, Map json) {
 
     if (power) {
         def value = power.value.toLowerCase()
-        if (logEnable) log.debug "Parsing [ ${power.key}: ${value} ]"
+        if (logEnable) log.trace "Parsing [ ${power.key}: ${value} ]"
         events << newEvent("switch", value)
 
         if (settings.enforceState && state.desiredPowerState && value != state.desiredPowerState) {
@@ -208,7 +209,7 @@ private void parseTasmota(String topic, Map json) {
     }
 
     if (json.containsKey("Status")) {
-        if (logEnable) log.debug "Parsing [ Status: ${json.Status} ]"
+        if (logEnable) log.trace "Parsing [ Status: ${json.Status} ]"
         int relayNumber = settings?.relayNumber ?: 1
         String friendlyName = json.Status.FriendlyName instanceof String 
             ? json.Status.FriendlyName 
@@ -217,12 +218,12 @@ private void parseTasmota(String topic, Map json) {
     }
 
     if (json.containsKey("Uptime")) {
-        if (logEnable) log.debug "Parsing [ Uptime: ${json.Uptime} ]"
+        if (logEnable) log.trace "Parsing [ Uptime: ${json.Uptime} ]"
         updateDataValue("uptime", json.Uptime)
     }
 
     if (json.containsKey("Wifi")) {
-        if (logEnable) log.debug "Parsing [ Wifi: ${json.Wifi} ]"
+        if (logEnable) log.trace "Parsing [ Wifi: ${json.Wifi} ]"
         updateDataValue("bssId", json.Wifi.BSSId)
         updateDataValue("channel", json.Wifi.Channel.toString())
         updateDataValue("linkCount", json.Wifi.LinkCount.toString())
@@ -232,18 +233,18 @@ private void parseTasmota(String topic, Map json) {
     }
 
     if (json.containsKey("StatusPRM")) { // Status 1
-        if (logEnable) log.debug "Parsing [ StatusPRM: ${json.StatusPRM} ]"
+        if (logEnable) log.trace "Parsing [ StatusPRM: ${json.StatusPRM} ]"
         updateDataValue("restartReason", json.StatusPRM.RestartReason)
         state.groupTopic = json.StatusPRM.GroupTopic
     }
 
     if (json.containsKey("StatusFWR")) { // Status 2
-        if (logEnable) log.debug "Parsing [ StatusFWR: ${json.StatusFWR} ]"
+        if (logEnable) log.trace "Parsing [ StatusFWR: ${json.StatusFWR} ]"
         updateDataValue("firmwareVersion", json.StatusFWR.Version)
     }
 
     if (json.containsKey("StatusNET")) { // Status 5
-        if (logEnable) log.debug "Parsing [ StatusNET: ${json.StatusNET} ]"
+        if (logEnable) log.trace "Parsing [ StatusNET: ${json.StatusNET} ]"
         updateDataValue("hostname", json.StatusNET.Hostname)
         updateDataValue("ipAddress", json.StatusNET.IPAddress)
     }
@@ -294,7 +295,7 @@ private boolean mqttConnect() {
         def hub = device.getHub()
         def mqtt = interfaces.mqtt
         String clientId = hub.hardwareID + "-" + device.id
-        log.info "Connecting to MQTT broker at ${settings.mqttBroker}"
+        log.trace "Connecting to MQTT broker at ${settings.mqttBroker}"
         state.mqttConnectCount = (state?.mqttConnectCount ?: 0) + 1
         mqtt.connect(
             settings.mqttBroker,
@@ -313,7 +314,7 @@ private boolean mqttConnect() {
 
 private void mqttDisconnect() {
     if (interfaces.mqtt.isConnected()) {
-        log.info "Disconnecting from MQTT broker at ${settings?.mqttBroker}"
+        log.trace "Disconnecting from MQTT broker at ${settings?.mqttBroker}"
     }
 
     sendEvent(name: "deviceState", value: "offline", descriptionText: "${device.displayName} connection closed by driver")
@@ -370,10 +371,10 @@ private void mqttReceive(Map message) {
 private void mqttSubscribeTopics() {
     int qos = 1 // at least once delivery
     String teleTopic = getTopic("tele", "+")
-    if (logEnable) log.debug "Subscribing to Tasmota telemetry topic: ${teleTopic}"
+    if (logEnable) log.trace "Subscribing to Tasmota telemetry topic: ${teleTopic}"
     interfaces.mqtt.subscribe(teleTopic, qos)
 
     String statTopic = getTopic("stat", "+")
-    if (logEnable) log.debug "Subscribing to Tasmota stat topic: ${statTopic}"
+    if (logEnable) log.trace "Subscribing to Tasmota stat topic: ${statTopic}"
     interfaces.mqtt.subscribe(statTopic, qos)
 }
