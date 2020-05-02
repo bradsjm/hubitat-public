@@ -20,14 +20,14 @@
  *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  *  SOFTWARE.
 */
-static final String version() { "0.1" }
+static final String version() { "0.2" }
 static final String deviceType() { "Color Group" }
 
 import java.security.MessageDigest
 import groovy.transform.Field
 
 metadata {
-    definition (name: "Tasmota MQTT ${deviceType()}", namespace: "tasmota-mqtt", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/Drivers/Tasmota-Mqtt-RGBWCT.groovy") {
+    definition (name: "Tasmota ${deviceType()} (MQTT)", namespace: "tasmota-mqtt", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/Drivers/Tasmota-Mqtt-RGBWCT.groovy") {
         capability "Actuator"
         capability "ColorControl"
         capability "ColorTemperature"
@@ -130,6 +130,29 @@ void refresh() {
     } else {
         log.warn "${device.displayName} requires a broker configured to connect"
     }
+}
+
+void stateChanged(child) {
+    if (logEnable) log.debug "State change notification from ${device.displayName}"
+
+    updateSwitch()
+    updateSwitchLevel()
+}
+
+void updateSwitch() {
+    // Update switch state (if all off then off)
+    def devices = getChildDevices().findAll { it.hasCapability("Switch") }
+    sendEvent(newEvent("switch", 
+        devices.every { it.currentValue("switch") == "off" } ? "off" : "on"
+    ))
+}
+
+void updateSwitchLevel () {
+    // Update dimmer level to maximum value
+    def devices = getChildDevices().findAll { it.hasCapability("SwitchLevel") }
+    sendEvent(newEvent("level", 
+        devices.collect { it.currentValue("level") }.max(), "%"
+    ))
 }
 
 // Called when the device is removed.

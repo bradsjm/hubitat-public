@@ -26,7 +26,7 @@ static final String deviceType() { "Group" }
 import java.security.MessageDigest
 
 metadata {
-    definition (name: "Tasmota MQTT ${deviceType()}", namespace: "tasmota-mqtt", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/Drivers/Tasmota-Mqtt-RGBWCT.groovy") {
+    definition (name: "Tasmota ${deviceType()} (MQTT)", namespace: "tasmota-mqtt", author: "Jonathan Bradshaw", importUrl: "https://raw.githubusercontent.com/bradsjm/hubitat/master/Drivers/Tasmota-Mqtt-RGBWCT.groovy") {
         capability "Actuator"
         capability "Light"
         capability "Refresh"
@@ -48,7 +48,6 @@ metadata {
         }
 
         section("Misc") {
-            input name: "schemeType", type: "enum", title: "Color Scheme Type", description: "For multiple lights", options: ["single", "monochrome", "monochrome-dark", "monochrome-light", "analogic", "complement", "analogic-complement", "triad", "quad"], required: true, defaultValue: "single"
             input name: "driverType", type: "enum", title: "MQTT Driver", description: "Driver for discovered devices", options: ["Tasmota MQTT Switch", "Tasmota MQTT Dimmer"], required: true, defaultValue: "Tasmota MQTT Switch"
             input name: "logEnable", type: "bool", title: "Enable Debug logging", description: "Automatically disabled after 30 minutes", required: true, defaultValue: true
         }
@@ -85,11 +84,31 @@ void installed() {
 
 // Called with MQTT client status messages
 void mqttClientStatus(String message) {
-    if (message.startsWith("Error")) {
-    	log.error "MQTT: ${message}"
-        runInMillis(new Random(now()).nextInt(90000), "initialize")
-    } else {
-    	if (logEnable) log.debug "MQTT: ${message}"
+    // The string that is passed to this method with start with "Error" if an error occurred or "Status" if this is just a status message.
+    def parts = status.split(': ')
+    switch (parts[0]) {
+        case 'Error':
+            log.warn "MQTT ${status}"
+            switch (parts[1]) {
+                case 'Connection lost':
+                case 'send error':
+                    runInMillis(new Random(now()).nextInt(90000), "initialize")
+                    break
+            }
+            break
+        case 'Status':
+            log.info "MQTT ${status}"
+            switch (parts[1]) {
+                case 'Connection succeeded':
+                    // without this delay the `parse` method is never called
+                    // (it seems that there needs to be some delay after connection to subscribe)
+                    runInMillis(1000, connected)
+                    break
+            }
+            break
+        default:
+        	if (logEnable) log.debug "MQTT: ${message}"
+            break
     }
 }
 
@@ -264,17 +283,12 @@ private boolean mqttConnect() {
         String clientId = hub.hardwareID + "-" + device.id
         log.info "Connecting to MQTT broker at ${settings.mqttBroker}"
         state.mqttConnectCount = (state?.mqttConnectCount ?: 0) + 1
-
         mqtt.connect(
             settings.mqttBroker,
             clientId,
             settings?.mqttUsername,
             settings?.mqttPassword
         )
-
-        pauseExecution(1000)
-        connected()
-        sendEvent (name: "connection", value: "online", descriptionText: "${device.displayName} connection now online")
         return true
     } catch(e) {
         log.error "MQTT connect error: ${e}"

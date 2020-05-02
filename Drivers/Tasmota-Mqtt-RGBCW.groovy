@@ -21,7 +21,7 @@
  *  SOFTWARE.
 */
 static final String version() { "1.0" }
-static final String deviceType() { "RGB" }
+static final String deviceType() { "RGBCW" }
 
 import groovy.transform.Field
 import groovy.json.JsonBuilder
@@ -31,6 +31,8 @@ metadata {
         capability "Actuator"
         capability "ChangeLevel"
         capability "ColorControl"
+        capability "ColorMode"
+        capability "ColorTemperature"
         capability "Configuration"
         capability "Initialize"
         capability "Light"
@@ -315,6 +317,22 @@ void setSaturation(saturation) {
     log.info "Setting ${device.displayName} saturation to ${saturation}"
 }
 
+// Set the color temperature (2000-6536)
+void setColorTemperature(kelvin) {
+    kelvin = limit(kelvin, 2000, 6536)
+    int channelCount = state.channelCount
+
+    if (settings.enforceState && !settings.preStaging) state.desiredPowerState = "on"
+    if (channelCount == 5) {
+        int mired = limit(Math.round(1000000f / kelvin), 153, 500).toInteger()
+        if (logEnable) log.debug "Converted ${kelvin} kelvin to ${mired} mired"
+        mqttPublish(getTopic("CT"), mired.toString())
+    } else if (channelCount == 4) {
+        mqttPublish(getTopic("White"), device.currentValue("level").toString())
+    }
+    log.info "Setting ${device.displayName} temperature to ${kelvin}K"
+}
+
 void nextColor() {
     state.currentColorIndex = (state.currentColorIndex ?: 0) + 1
     if (state.currentColorIndex >= colorNames.size()) state.currentColorIndex = 0
@@ -341,6 +359,7 @@ void previousColor() {
 /**
  *  Capability: Light Effects
  */
+
 void setEffect(String effect) {
     def id = lightEffects.find { it.value == effect }
     if (id != null) setEffect(id.key)
@@ -466,6 +485,33 @@ private void parseTasmota(String topic, Map json) {
         events << newEvent("fadeSpeed", value, "s")
     }
 
+    if (json.containsKey("Channel")) {
+        if (logEnable) log.debug "Parsing [ Channel: ${json.Channel} ]"
+        int channelCount = json.Channel.size()
+        state.channelCount = channelCount
+        def value = "RGB"
+        if (channelCount == 4 && json.Channel[3] > 0) {
+            value = "White"
+        } else if (channelCount == 5 && (json.Channel[3] > 0 || json.Channel[4] > 0)) {
+            value = "CT"
+        }
+        events << newEvent("colorMode", value)
+
+        if (channelCount == 4 && json.Channel[3] > 0) {
+            int fakeKelvin = 6500
+            events << newEvent("colorTemperature", fakeKelvin, "K")
+            events << newEvent("colorName", getTemperatureName(fakeKelvin))
+        }
+    }
+
+    if (json.containsKey("CT")) {
+        if (logEnable) log.debug "Parsing [ CT: ${json.CT} ]"
+        int kelvin = Math.round(1000000f / json.CT).toInteger()
+        if (logEnable) log.debug "Converted ${json.CT} CT to ${kelvin} kelvin"
+        events << newEvent("colorTemperature", kelvin, "K")
+        events << newEvent("colorName", getTemperatureName(kelvin))
+    }
+
     if (json.containsKey("Dimmer")) {
         if (logEnable) log.debug "Parsing [ Dimmer: ${json.Dimmer} ]"
         events << newEvent("level", limit(json.Dimmer), "%")
@@ -531,6 +577,31 @@ private void parseTasmota(String topic, Map json) {
         parent?.stateChanged(device)
     }
 
+}
+
+private String getTemperatureName(int kelvin) {
+    if (!kelvin) return ""
+    String temperatureName
+    switch (limit(kelvin, 1000, 6500)) {
+        case 1000..1999: temperatureName = "Candlelight"
+            break
+        case 2000..2399: temperatureName = "Sunrise"
+            break
+        case 2400..2999: temperatureName = "Soft White"
+            break
+        case 3000..3199: temperatureName = "Warm White"
+            break
+        case 3200..3999: temperatureName = "Studio White"
+            break
+        case 4000..4300: temperatureName = "Cool White"
+            break
+        case 5000..5765: temperatureName = "Full Spectrum"
+            break
+        case 5766..6500: temperatureName = "Daylight"
+            break
+    }
+
+    return temperatureName
 }
 
 private String getHueName(int hue) {

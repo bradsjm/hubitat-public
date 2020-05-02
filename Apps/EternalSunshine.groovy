@@ -41,11 +41,16 @@ preferences {
 def pageMain() {
     def pageProperties = [
         name:       "pageMain",
-        title:      "${app.label}" + (state.paused ? " <font color='red'>(paused)</font>" : ""),
+        title:      settings.name ?: app.name,
         nextPage:   null,
         install:    true,
         uninstall:  true
     ]
+
+	if (state.paused)
+		app.updateLabel((settings.name ?: app.name) + " <span style=\"color:red\"> (Paused)</span>")
+    else
+        app.updateLabel(settings.name ?: app.name)
 
     return dynamicPage(pageProperties) {
         section {
@@ -86,11 +91,11 @@ def pageMain() {
         section {
             input "incrementStep", "number", title: "Increment step for dimmer adjustment", required: true, defaultValue: 1
             input "delayTime", "number", title: "Delay (in seconds) between each dimmer step", required: true, defaultValue: 20
-            input "logEnable", "bool", title: "Enable logging", value:false, submitOnChange:true
+            input "logEnable", "bool", title: "Enable logging", value:false, submitOnChange: true
         }
 
         section {
-            label title: "Edit Name for Application", required: false
+            input "name", "string", title: "Edit Name for Application", required: false, submitOnChange: true
         }
     }
 }
