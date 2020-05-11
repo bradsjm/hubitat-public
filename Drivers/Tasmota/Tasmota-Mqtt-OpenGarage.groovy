@@ -33,8 +33,8 @@ metadata {
         capability "Sensor"
         capability "GarageDoorControl"
         capability "Lock"
+        capability "Tone"
 
-        command "soundWarning"
         command "restart"
 
         attribute "deviceState", "string"
@@ -222,7 +222,7 @@ void close() {
     sendEvent(newEvent("door", "closing"))
 
     if (settings.warnOnClose) {
-        soundWarning()
+        beep()
         pauseExecution(3000)
     }
 
@@ -233,7 +233,7 @@ void close() {
     runIn(settings.travelTime, "setClosed")
 }
 
-void soundWarning(count = 3, freq = 750) {
+void beep(count = 3, freq = 750) {
     String commandTopic = getTopic("Backlog")
     String beep = "Pwm2 512;Delay 2;Pwm2 0;Delay 3;"
     mqttPublish(commandTopic, "PwmFrequency ${freq};" + beep * count)

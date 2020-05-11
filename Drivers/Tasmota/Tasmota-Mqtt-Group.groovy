@@ -48,7 +48,7 @@ metadata {
         }
 
         section("Misc") {
-            input name: "driverType", type: "enum", title: "MQTT Driver", description: "Driver for discovered devices", options: ["Tasmota MQTT Switch", "Tasmota MQTT Dimmer"], required: true, defaultValue: "Tasmota MQTT Switch"
+            input name: "driverType", type: "enum", title: "MQTT Driver", description: "Driver for discovered devices", options: ["Tasmota Switch (MQTT)", "Tasmota Dimmer (MQTT)"], required: true, defaultValue: "Tasmota Switch (MQTT)"
             input name: "logEnable", type: "bool", title: "Enable Debug logging", description: "Automatically disabled after 30 minutes", required: true, defaultValue: true
         }
     }

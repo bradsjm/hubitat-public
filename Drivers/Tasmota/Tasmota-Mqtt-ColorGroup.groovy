@@ -66,7 +66,7 @@ metadata {
 
         section("Misc") {
             input name: "schemeType", type: "enum", title: "Color Scheme Type", description: "For multiple lights", options: ["single", "monochrome", "monochrome-dark", "monochrome-light", "analogic", "complement", "analogic-complement", "triad", "quad"], required: true, defaultValue: "single"
-            input name: "driverType", type: "enum", title: "MQTT Driver", description: "Driver for discovered devices", options: ["Tasmota MQTT Sensor", "Tasmota MQTT Switch", "Tasmota MQTT RGBW/CT"], required: true, defaultValue: "Tasmota MQTT Sensor"
+            input name: "driverType", type: "enum", title: "MQTT Driver", description: "Driver for discovered devices", options: ["Tasmota Switch (MQTT)", "Tasmota Dimmer (MQTT)"], required: true, defaultValue: "Tasmota Switch (MQTT)"
             input name: "logEnable", type: "bool", title: "Enable Debug logging", description: "Automatically disabled after 30 minutes", required: true, defaultValue: true
         }
     }

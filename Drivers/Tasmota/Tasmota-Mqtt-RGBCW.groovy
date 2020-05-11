@@ -139,6 +139,7 @@ void configure()
 // Called when the device is started.
 void initialize() {
     log.info "${device.displayName} driver v${version()} initializing"
+    sendEvent(name: "lightEffects", value: new groovy.json.JsonBuilder(lightEffects))
     unschedule()
 
     if (!settings.mqttBroker) {
@@ -581,7 +582,8 @@ private void parseTasmota(String topic, Map json) {
 
 private String getTemperatureName(int kelvin) {
     if (!kelvin) return ""
-    String temperatureName
+    String temperatureName = ""
+
     switch (limit(kelvin, 1000, 6500)) {
         case 1000..1999: temperatureName = "Candlelight"
             break
