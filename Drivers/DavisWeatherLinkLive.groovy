@@ -76,7 +76,7 @@ void updated() {
         schedule("${sched}", "poll")
     }
 
-    if (logEnable) runIn(1800, logsOff)
+    if (logEnable) runIn(1800, "logsOff")
 
     refresh()
 }
@@ -93,7 +93,7 @@ void poll() {
         path: "/v1/current_conditions",
         requestContentType: "application/json"
     ]
-    if (logEnable) log.debug "Requesting ${params.uri}${params.path}"
+    if (logEnable) log.trace "Requesting ${params.uri}${params.path}"
     asynchttpGet("handler", params)
 }
 
@@ -101,7 +101,7 @@ void poll() {
 private void handler(response, data) {
     def status = response.status
     if (status == 200) {
-        if (logEnable) log.debug "WeatherLink returned: ${response.data}"
+        if (logEnable) log.trace "WeatherLink returned: ${response.data}"
         def json = response.json
         if (json?.data) {
     		parseWeatherData(json.data)
@@ -152,9 +152,9 @@ private void parseWeatherData(Map json) {
             sendEvent(name: "temperature", value: it.temp, unit: "F")
             sendEvent(name: "humidity", value: it.hum, unit: "%")
             sendEvent(name: "ultravioletIndex", value: it.uv_index, unit: 'uvi')
-            sendEvent(name: "windSpeed", value: it.wind_speed_avg_last_1_min, unit: "MPH")
-            sendEvent(name: "windDirection", value: it.wind_dir_scalar_avg_last_1_min, unit: "DEGREE")
-            sendEvent(name: "windGust", value: it.wind_speed_hi_last_2_min, unit: "MPH")
+            sendEvent(name: "windSpeed", value: it.wind_speed_avg_last_1_min, unit: "mph")
+            sendEvent(name: "windDirection", value: it.wind_dir_scalar_avg_last_1_min, unit: "degrees")
+            sendEvent(name: "windGust", value: it.wind_speed_hi_last_2_min, unit: "mph")
             sendEvent(name: "raining", value: it.rainfall_last_15_min > 0 ? "true" : "false")
             sendEvent(name: "rainRate", value: (it.rain_rate_hi * rainMultiplier), unit: rainUnit)
             sendEvent(name: "rainDaily", value: (it.rainfall_daily * rainMultiplier), unit: rainUnit)
