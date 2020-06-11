@@ -265,7 +265,7 @@ void setLevel(level, duration = 0) {
     } else {
         mqttPublish(getTopic("Dimmer${settings.relayNumber}"), level.toString())
     }
-    log.info "Setting ${device.displayName} brightness to ${level}"
+    log.info "Setting ${device.displayName} brightness to ${level}%"
 }
 
 /**
@@ -484,41 +484,6 @@ private String getTemperatureName(int kelvin) {
     }
 
     return temperatureName
-}
-
-private String getHueName(int hue) {
-    if (!hue) return ""
-    String colorName
-    switch (limit(hue, 1, 360)){
-        case 1..15: colorName = "Red"
-            break
-        case 16..45: colorName = "Orange"
-            break
-        case 46..75: colorName = "Yellow"
-            break
-        case 76..105: colorName = "Chartreuse"
-            break
-        case 106..135: colorName = "Green"
-            break
-        case 136..165: colorName = "Spring"
-            break
-        case 166..195: colorName = "Cyan"
-            break
-        case 196..225: colorName = "Azure"
-            break
-        case 226..255: colorName = "Blue"
-            break
-        case 256..285: colorName = "Violet"
-            break
-        case 286..315: colorName = "Magenta"
-            break
-        case 316..345: colorName = "Rose"
-            break
-        case 346..360: colorName = "Red"
-            break
-    }
-
-    return colorName
 }
 
 /**

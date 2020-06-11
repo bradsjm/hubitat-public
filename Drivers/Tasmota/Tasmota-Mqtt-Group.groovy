@@ -178,7 +178,7 @@ void updated() {
 void on() {
     def devices = getChildDevices().findAll { it.hasCommand("on") }
     devices.each { 
-        log.info "Turning on ${it.displayName}"
+        if (logenable) log.debug "Turning on ${it.displayName}"
         it.on()
     }
 }
@@ -187,7 +187,7 @@ void on() {
 void off() {
     def devices = getChildDevices().findAll { it.hasCommand("off") }
     devices.each { 
-        log.info "Turning off ${it.displayName}"
+        if (logenable) log.debug "Turning off ${it.displayName}"
         it.off() 
     }
 }
@@ -200,7 +200,7 @@ void off() {
 void setLevel(level, duration = 0) {
     def devices = getChildDevices().findAll { it.hasCommand("setLevel") }
     devices.each { 
-        log.info "Setting ${it.displayName} brightness to ${level}%"
+        if (logenable) log.debug "Setting ${it.displayName} brightness to ${level}%"
         it.setLevel(level, duration)
     }
 }

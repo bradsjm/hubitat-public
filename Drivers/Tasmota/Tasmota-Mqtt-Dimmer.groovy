@@ -254,7 +254,7 @@ void setLevel(level, duration = 0) {
     } else {
         mqttPublish(getTopic("Dimmer${settings.relayNumber}"), level.toString())
     }
-    log.info "Setting ${device.displayName} brightness to ${level}"
+    log.info "Setting ${device.displayName} brightness to ${level}%"
 }
 
 
