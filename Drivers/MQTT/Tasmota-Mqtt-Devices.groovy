@@ -32,6 +32,7 @@ metadata {
     definition (name: "Tasmota MQTT Devices", namespace: "tasmota-mqtt", author: "Jonathan Bradshaw") {
         capability "Initialize"
         capability "PresenceSensor"
+        capability "Switch"
 
         attribute "foundDevices", "Number"
         attribute "offlineDevices", "Number"
@@ -274,12 +275,12 @@ private void parseTopicPayload(def device, String topic, String payload) {
         device.parse(events)
 
         // count unique ids of devices
-        sendEvent(name: "foundDevices", value: state.DeviceState.size())
+        //sendEvent(name: "foundDevices", value: state.DeviceState.size())
 
         // Count offline devices
-        sendEvent(name: "offlineDevices", value: state.DeviceState.findAll{
-            it.value == config["payload_not_available"] || it.value == config["pl_not_avail"]
-        }.size())
+        //sendEvent(name: "offlineDevices", value: state.DeviceState.findAll{
+        //    it.value == config["payload_not_available"] || it.value == config["pl_not_avail"]
+        //}.size())
     }
 }
 
@@ -307,6 +308,22 @@ private def parseTemplate(String template, String value, Map value_json) {
     }
 
     return result
+}
+
+// Turn on
+void on() {
+    def devices = getChildDevices().findAll { it.hasCommand("on") }
+    devices.each { device ->
+        componentOn(device)
+    }
+}
+
+// Turn off
+void off() {
+    def devices = getChildDevices().findAll { it.hasCommand("off") }
+    devices.each { device ->
+        componentOff(device)
+    }
 }
 
 /**
