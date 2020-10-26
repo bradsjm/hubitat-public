@@ -1,6 +1,6 @@
 /**
  *  MIT License
- *  Copyright 2019 Jonathan Bradshaw (jb@nrgup.net)
+ *  Copyright 2020 Jonathan Bradshaw (jb@nrgup.net)
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy
  *  of this software and associated documentation files (the "Software"), to deal
@@ -23,15 +23,10 @@
 static final String version() { "0.1" }
 
 metadata {
-    definition (name: "MQTT Notification", namespace: "mqtt", author: "Jonathan Bradshaw") {
-        capability "Notification"
+    definition (name: "MQTT Bridge", namespace: "mqtt", author: "Jonathan Bradshaw") {
     }
 
     preferences() {
-        section("MQTT Device Topics") {
-            input name: "fullTopic", type: "text", title: "Topic to monitor", description: "For new Tasmota devices", required: true, defaultValue: "%prefix%/%topic%/"
-        }
-
         section("MQTT Broker") {
             input name: "mqttBroker", type: "text", title: "MQTT Broker Host/IP", description: "ex: tcp://hostnameorip:1883", required: true, defaultValue: "tcp://mqtt:1883"
             input name: "mqttUsername", type: "text", title: "MQTT Username", description: "(blank if none)", required: false
@@ -71,16 +66,6 @@ void installed() {
     log.info "${device.displayName} driver v${version()} installed"
 }
 
-// Called with MQTT client status messages
-void mqttClientStatus(String message) {
-    if (message.startsWith("Error")) {
-    	log.error "MQTT: ${message}"
-        runInMillis(new Random(now()).nextInt(90000), "initialize")
-    } else {
-    	if (logEnable) log.debug "MQTT: ${message}"
-    }
-}
-
 // Called when the device is removed.
 void uninstalled() {
     mqttDisconnect()
@@ -96,12 +81,40 @@ void updated() {
     if (logEnable) runIn(1800, "logsOff")
 }
 
-/**
- *  Capability: Notification
- */
+// Publish mqtt payload to specified topic
+void publish(String topic, String payload = "", int qos = 0, boolean retain = false) {
+    if (interfaces.mqtt.isConnected()) {
+        if (logEnable) log.debug "PUB: ${topic} = ${payload}"
+        interfaces.mqtt.publish(topic, payload, qos, retain)
+        state.TransmitCount = (state?.TransmitCount ?: 0) + 1
+    } else {
+        log.warn "MQTT not connected, unable to publish ${topic} = ${payload}"
+        runInMillis(new Random(now()).nextInt(30000), "initialize")
+    }
+}
 
-void deviceNotification(text) {
-    mqttPublish(settings.fullTopic, text)
+void subscribe(String topic, int qos = 0) {
+    if (interfaces.mqtt.isConnected()) {
+        if (logEnable) log.debug "SUB: ${topic}"
+        interfaces.mqtt.subscribe(topic, qos)
+    } else {
+        log.warn "MQTT not connected, unable to subscribe ${topic}"
+        runInMillis(new Random(now()).nextInt(30000), "initialize")
+    }
+}
+
+// Called to parse received MQTT data
+def parse(data) {
+    def message = interfaces.mqtt.parseMessage(data)
+    String topic = message.get("topic")
+    String payload = message.get("payload")
+    if (logEnable) log.debug "RCV: ${topic} = ${payload}"
+    state.ReceiveCount = (state?.mqttReceiveCount ?: 0) + 1
+
+    // Ignore empty payloads
+    if (!payload) return
+
+    parent.parseMessage(topic, payload)
 }
 
 private void logsOff() {
@@ -109,28 +122,28 @@ private void logsOff() {
     device.updateSetting("logEnable", [value: "false", type: "bool"] )
 }
 
+/**
+ *  Common Tasmota MQTT communication methods
+ */
+
 private boolean mqttConnect() {
+    unschedule("mqttConnect")
     try {
         def hub = device.getHub()
         def mqtt = interfaces.mqtt
         String clientId = hub.hardwareID + "-" + device.id
         log.info "Connecting to MQTT broker at ${settings.mqttBroker}"
-        state.mqttConnectCount = (state?.mqttConnectCount ?: 0) + 1
-
+        state.ConnectCount = (state?.ConnectCount ?: 0) + 1
         mqtt.connect(
             settings.mqttBroker,
             clientId,
             settings?.mqttUsername,
             settings?.mqttPassword
         )
-
-        pauseExecution(1000)
-        connected()
-        sendEvent (name: "connection", value: "online", descriptionText: "${device.displayName} connection now online")
         return true
     } catch(e) {
         log.error "MQTT connect error: ${e}"
-        runInMillis(new Random(now()).nextInt(90000), "mqttConnect")
+        runInMillis(new Random(now()).nextInt(30000), "mqttConnect")
     }
 
     return false
@@ -143,7 +156,6 @@ private void mqttDisconnect() {
 
     try {
         interfaces.mqtt.disconnect()
-        sendEvent (name: "connection", value: "offline", descriptionText: "${device.displayName} connection now offline")
     }
     catch (any)
     {
@@ -151,15 +163,34 @@ private void mqttDisconnect() {
     }
 }
 
-private void mqttPublish(String topic, String payload = "") {
-    final int qos = 1 // at least once delivery
-
-    if (interfaces.mqtt.isConnected()) {
-        if (logEnable) log.debug "MQTT Publish > ${topic} = ${payload}"
-        interfaces.mqtt.publish(topic, payload, qos, false)
-        state.mqttTransmitCount = (state?.mqttTransmitCount ?: 0) + 1
-    } else {
-        log.warn "MQTT not connected, unable to publish ${topic} = ${payload}"
-        runInMillis(new Random(now()).nextInt(30000), "initialize")
+// Called with MQTT client status messages
+void mqttClientStatus(String status) {
+    // The string that is passed to this method with start with "Error" if an error occurred or "Status" if this is just a status message.
+    def parts = status.split(": ")
+    switch (parts[0]) {
+        case "Error":
+            log.warn "MQTT ${status}"
+            switch (parts[1]) {
+                case "Connection lost":
+                case "send error":
+                    sendEvent(name: "presence", value: "not present", descriptionText: "${device.displayName} {$parts[1]}")
+                    runInMillis(new Random(now()).nextInt(30000), "initialize")
+                    break
+            }
+            break
+        case "Status":
+            log.info "MQTT ${status}"
+            switch (parts[1]) {
+                case "Connection succeeded":
+                    sendEvent(name: "presence", value: "present", descriptionText: "${device.displayName} is connected")
+                    // without this delay the `parse` method is never called
+                    // (it seems that there needs to be some delay after connection to subscribe)
+                    //runInMillis(1000, "mqttSubscribeDiscovery")
+                    break
+            }
+            break
+        default:
+        	if (logEnable) log.debug "MQTT ${status}"
+            break
     }
 }
