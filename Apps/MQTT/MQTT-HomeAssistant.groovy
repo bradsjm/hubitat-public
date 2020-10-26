@@ -20,6 +20,10 @@
  *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  *  SOFTWARE.
 */
+import groovy.transform.Field
+
+@Field final Random _random = new Random()
+
 static final String version() { "0.1" }
 definition (
     name: "Home Assistant Publisher", 
@@ -77,14 +81,15 @@ void initialize() {
     subscribeDevices()
     subscribeMqtt("homeassistant/status")
     subscribeMqtt("hubitat/cmnd/#")
-    runIn(5, "publishAutoDiscovery")
+    runIn(_random.nextInt(4) + 1, "publishAutoDiscovery")
 }
 
 void parseMessage(topic, payload) {
     if (logEnable) log.debug "Receive ${topic} = ${payload}"
     if (topic == "homeassistant/status" && payload.toLowerCase() == "online") {
-        // may need to adjust delay?
-        runIn(15, "publishAutoDiscovery")
+        // wait for home assistant to be ready after being online
+        runIn(_random.nextInt(14) + 1, "publishAutoDiscovery")
+        return
     }
 
     def topicParts = topic.tokenize("/")
@@ -96,14 +101,18 @@ void parseMessage(topic, payload) {
         if (device) {
             // Thermostats are unique beasts and require special handling
             if (cmd == "setThermostatSetpoint") {
-                switch (device.currentState("thermostatMode")) {
+                def mode = device.currentValue("thermostatMode")
+                switch (mode) {
                     case "cool":
                         log.info "Executing setCoolingSetpoint to ${payload} on ${device.displayName}"
-                        device.setCoolingSetpoint(payload)
+                        device.setCoolingSetpoint(payload as double)
                         break
                     case "heat":
                         log.info "Executing setHeatingSetpoint to ${payload} on ${device.displayName}"
-                        device.setHeatingSetPoint(payload)
+                        device.setHeatingSetPoint(payload as double)
+                        break
+                    default:
+                        log.error "Thermostat not set to cool or heat (mode is ${mode})"
                 }
             } else if (device.hasCommand(cmd)) {
                 log.info "Executing ${device.displayName}: ${cmd} to ${payload}"
@@ -249,8 +258,8 @@ private void publishAutoDiscovery() {
         }
     })
 
-    // Send device current state
-    publishCurrentState()
+    // Schedule sending device current state
+    runIn(_random.nextInt(4) + 1, "publishCurrentState")
 }
 
 private void subscribeDevices() {
@@ -284,6 +293,7 @@ private void publishCurrentState() {
     })
 
     if (telePeriod > 0) {
+        if (logEnable) log.debug "Scheduling publish in ${telePeriod} minutes"
         runIn(telePeriod * 60, "publishCurrentState")
     }
 }
