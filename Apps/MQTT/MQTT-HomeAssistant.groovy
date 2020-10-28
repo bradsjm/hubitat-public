@@ -45,6 +45,11 @@ preferences {
         section () {
             input "devices", "capability.*", hideWhenEmpty: true, title: "Devices to Publish:", multiple: true, required: false
         }
+        section("MQTT Broker") {
+            input name: "mqttBroker", type: "text", title: "MQTT Broker Host/IP", description: "ex: tcp://hostnameorip:1883", required: true, defaultValue: "tcp://mqtt:1883"
+            input name: "mqttUsername", type: "text", title: "MQTT Username", description: "(blank if none)", required: false
+            input name: "mqttPassword", type: "password", title: "MQTT Password", description: "(blank if none)", required: false
+        }
         section() {
             input name: "telePeriod", type: "number", title: "Periodic state refresh publish interval (minutes)", description: "Number of minutes (default 15)", required: false, defaultValue: 15
             input name: "logEnable", type: "bool", title: "Enable Debug logging", description: "Automatically disabled after 30 minutes", required: true, defaultValue: true
@@ -126,17 +131,16 @@ void parseMessage(topic, payload) {
  * Implementation
  */
 private def getDriver() {
-    def dni = "mqtt-bridge-${app.id}"
-    return getChildDevice(dni)
+    return getChildDevice("mqtt-bridge-${app.id}")
 }
 
 private void createDriver () {
-    def name = "MQTT Bridge Device"
     def dni = "mqtt-bridge-${app.id}"
     def childDev = getChildDevice(dni)
 
-	if (childDev == null) 
-        addChildDevice(
+	if (childDev == null) {
+        def name = "MQTT Bridge Device"
+        childDev = addChildDevice(
             "mqtt",
             "MQTT Bridge", 
             dni,
@@ -145,11 +149,19 @@ private void createDriver () {
                 label: name, 
             ]
         )
-
-	if (getDriver() == null) 
+    }
+    
+	if (childDev == null) {
         log.error ("MQTT Bridge Device was not created")
-}
+        return
+    }
 
+    childDev.updateSetting("mqttBroker", mqttBroker)
+    childDev.updateSetting("mqttUsername", mqttUsername)
+    childDev.updateSetting("mqttPassword", mqttPassword)
+    childDev.updated()
+}
+ 
 private void publishAutoDiscovery() {
     log.info "Publishing Auto Discovery"
     def mqtt = getDriver()
@@ -171,6 +183,7 @@ private void publishAutoDiscovery() {
             def cmnd = "hubitat/cmnd/${dni}"
             config["name"] = device.getDisplayName()
             config["unique_id"] = dni + "::thermostat"
+            config["expire_after"] = telePeriod * 120
             config["current_temperature_topic"] = tele + "/temperature"
             config["fan_mode_command_topic"] = cmnd + "/setThermostatFanMode"
             config["fan_mode_state_topic"] = tele + "/thermostatFanMode"
@@ -195,7 +208,8 @@ private void publishAutoDiscovery() {
                 def path = "homeassistant"
                 config["name"] = device.getDisplayName() + " " + state.name
                 config["unique_id"] = dni + "::" + state.name
-                config["state_topic"] = "hubitat/tele/${dni}/${state.name}"            
+                config["state_topic"] = "hubitat/tele/${dni}/${state.name}"
+                config["expire_after"] = telePeriod * 120
                 switch (state.name) {
                     case "acceleration":
                         path += "/binary_sensor"
@@ -277,7 +291,7 @@ private void publishEvent(event) {
     def mqtt = getDriver()
     def dni = event.getDevice().getDeviceNetworkId()
     def path = "hubitat/tele/${dni}/${event.name}"
-    if (logEnable) log.debug "Publishing (${event.displayName}) ${path}=${event.value}"
+    log.info "Publishing (${event.displayName}) ${path}=${event.value}"
     mqtt.publish(path, event.value)
 }
 
@@ -285,6 +299,7 @@ private void publishCurrentState() {
     def mqtt = getDriver()
     devices.each({ device ->
         def dni = device.getDeviceNetworkId()
+        log.info "Publishing ${device.displayName} current state"
         device.getCurrentStates().each( { state ->
             def path = "hubitat/tele/${dni}/${state.name}"
             if (logEnable) log.debug "Publishing (${device.displayName}) ${path}=${state.value}"
@@ -302,5 +317,3 @@ private void logsOff() {
     log.warn "debug logging disabled for ${app.name}"
     device.updateSetting("logEnable", [value: "false", type: "bool"] )
 }
-
-
