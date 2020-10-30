@@ -52,6 +52,7 @@ preferences {
         }
         section() {
             input name: "telePeriod", type: "number", title: "Periodic state refresh publish interval (minutes)", description: "Number of minutes (default 15)", required: false, defaultValue: 15
+            input name: "hsmEnable", type: "bool", title: "Enable Hubitat Security Manager", required: true, defaultValue: true
             input name: "logEnable", type: "bool", title: "Enable Debug logging", description: "Automatically disabled after 30 minutes", required: true, defaultValue: true
         }
     }
@@ -99,31 +100,54 @@ void parseMessage(topic, payload) {
 
     def topicParts = topic.tokenize("/")
     def idx = topicParts.indexOf("cmnd")
-    if (idx >= 0) {
-        def dni = topicParts[idx+1]
-        def cmd = topicParts[idx+2]
-        def device = devices.find { dni == it.getDeviceNetworkId() }
-        if (device) {
-            // Thermostats are unique beasts and require special handling
-            if (cmd == "setThermostatSetpoint") {
-                def mode = device.currentValue("thermostatMode")
-                switch (mode) {
-                    case "cool":
-                        log.info "Executing setCoolingSetpoint to ${payload} on ${device.displayName}"
-                        device.setCoolingSetpoint(payload as double)
-                        break
-                    case "heat":
-                        log.info "Executing setHeatingSetpoint to ${payload} on ${device.displayName}"
-                        device.setHeatingSetPoint(payload as double)
-                        break
-                    default:
-                        log.error "Thermostat not set to cool or heat (mode is ${mode})"
-                }
-            } else if (device.hasCommand(cmd)) {
+    if (!idx) return
+
+    def dni = topicParts[idx+1]
+    def cmd = topicParts[idx+2]
+
+    // Handle HUB commands
+    if (dni == location.hub.hardwareID) {
+        switch (cmd) {
+            case "hsmSetArm":
+                if (!hsmEnable) return
+                log.info "Sending location even ${cmd} of ${payload}"
+                sendLocationEvent(name: cmd, value: payload)
+                return
+            default:
+                log.error "Unknown command ${cmd} for hub received"
+                return
+        }
+    }
+
+    // Handle device commands
+    def device = devices.find { dni == it.getDeviceNetworkId() }
+    if (!device) {
+        log.error "Unknown device id ${dni} received"
+        return
+    }
+
+    switch (cmd) {
+        case "setThermostatSetpoint":
+            def mode = device.currentValue("thermostatMode")
+            switch (mode) {
+                case "cool":
+                    log.info "Executing setCoolingSetpoint to ${payload} on ${device.displayName}"
+                    device.setCoolingSetpoint(payload as double)
+                    break
+                case "heat":
+                    log.info "Executing setHeatingSetpoint to ${payload} on ${device.displayName}"
+                    device.setHeatingSetPoint(payload as double)
+                    break
+                default:
+                    log.error "Thermostat not set to cool or heat (mode is ${mode})"
+            }
+            break
+        default:
+            if (device.hasCommand(cmd)) {
                 log.info "Executing ${device.displayName}: ${cmd} to ${payload}"
                 device."$cmd"(payload)
             }
-        }
+            break
     }
 }
 
@@ -161,10 +185,63 @@ private void createDriver () {
     childDev.updateSetting("mqttPassword", mqttPassword)
     childDev.updated()
 }
- 
+
 private void publishAutoDiscovery() {
-    log.info "Publishing Auto Discovery"
     def mqtt = getDriver()
+    log.info "Publishing Auto Discovery"
+    publishHubDiscovery(mqtt)
+    publishDeviceDiscovery(mqtt)
+}
+
+private void publishHubDiscovery(def mqtt) {
+    def dni = location.hub.hardwareID
+    def deviceConfig = [
+        "ids": [ dni, location.hub.zigbeeId ],
+        "manufacturer": "Hubitat",
+        "name": location.hub.name,
+        "model": "Elevation",
+        "sw_version": location.hub.firmwareVersionString
+    ]
+
+    if (hsmEnable) {
+        // Publish HSM
+        def config = [ "device": deviceConfig ]
+        config["name"] = location.hub.name + " alarm"
+        config["unique_id"] = dni + "::hsm"
+        config["state_topic"]= "hubitat/tele/${dni}/hsmStatus"
+        config["command_topic"] = "hubitat/cmnd/${dni}/hsmSetArm"
+        config["payload_arm_away"] = "armAway"
+        config["payload_arm_home"] = "armHome"
+        config["payload_arm_night"] = "armNight"
+        config["payload_disarm"] = "disarm"
+        def json = new groovy.json.JsonBuilder(config).toString()
+        def path = "homeassistant/alarm_control_panel/${dni}_hsm/config"
+        log.info "Publishing discovery for ${config.name} to: ${path}"
+        if (logEnable) log.debug json
+        mqtt.publish(path, json, 0, true)
+    }
+
+    // Publish sensors
+    [ "mode" ].each({ name ->
+        def config = [ "device": deviceConfig ]
+        config["name"] = location.hub.name + " " + name
+        config["unique_id"] = dni + "::" + name
+        config["state_topic"] = "hubitat/tele/${dni}/${name}"
+        config["expire_after"] = telePeriod * 120
+        switch (name) {
+            case "mode":
+                config["icon"] = "mdi:tag"
+                break
+        }
+        def json = new groovy.json.JsonBuilder(config).toString()
+        def path = "homeassistant/sensor/${dni}_${name}/config"
+        log.info "Publishing discovery for ${config.name} to: ${path}"
+        if (logEnable) log.debug json
+        mqtt.publish(path, json, 0, true)
+    })
+}
+
+private void publishDeviceDiscovery(def mqtt) {
     devices.each({ device ->
         if (device == null) return
         def dni = device.getDeviceNetworkId()
@@ -183,7 +260,6 @@ private void publishAutoDiscovery() {
             def cmnd = "hubitat/cmnd/${dni}"
             config["name"] = device.getDisplayName()
             config["unique_id"] = dni + "::thermostat"
-            config["expire_after"] = telePeriod * 120
             config["current_temperature_topic"] = tele + "/temperature"
             config["fan_mode_command_topic"] = cmnd + "/setThermostatFanMode"
             config["fan_mode_state_topic"] = tele + "/thermostatFanMode"
@@ -191,8 +267,8 @@ private void publishAutoDiscovery() {
             config["mode_command_topic"] = cmnd + "/setThermostatMode"
             config["mode_state_topic"] = tele + "/thermostatMode"
             config["modes"] = ["auto", "off", "heat", "emergency heat", "cool"]
-            config["min_temp"] = "60"
-            config["max_temp"] = "90"
+            config["min_temp"] = "60" //TODO: Change for C vs. F
+            config["max_temp"] = "90" //TODO: Change for C vs. F
             config["temperature_command_topic"] = cmnd + "/setThermostatSetpoint"
             config["temperature_state_topic"] = tele + "/thermostatSetpoint"
             config["temperature_unit"] = getTemperatureScale()
@@ -279,12 +355,39 @@ private void publishAutoDiscovery() {
 private void subscribeDevices() {
     if (logEnable) log.debug "Subscribing to device events"
     subscribe(devices, "publishEvent", [ filterEvents: true ])
+    subscribe(location, "locationEvent", [ filterEvents: true ])
 }
 
 private void subscribeMqtt(topic) {
     if (logEnable) log.debug "MQTT Subscribing to ${topic}"
     def mqtt = getDriver()
     mqtt.subscribe(topic)
+}
+
+private void locationEvent(event) {
+    def mqtt = getDriver()
+    def dni = location.hub.hardwareID
+    def path = "hubitat/tele/${dni}/"
+    def payload
+    switch (event.name) {
+        case "mode":
+            path += "mode"
+            payload = event.value
+            break
+        case "hsmStatus":
+            path += "hsmStatus"
+            payload = getHsmState(event.value)
+            break
+        case "hsmAlert":
+            path += "hsmStatus"
+            payload = getHsmState(event.value)
+            break
+        default:
+            log.info "Unknown location event ${event.name} of ${event.value}"
+            return
+    }
+    log.info "Publishing (${location.hub.name}) ${path}=${payload}"
+    mqtt.publish(path, payload)
 }
 
 private void publishEvent(event) {
@@ -297,6 +400,36 @@ private void publishEvent(event) {
 
 private void publishCurrentState() {
     def mqtt = getDriver()
+    publishHubState(mqtt)
+    publishDeviceState(mqtt)
+
+    if (telePeriod > 0) {
+        if (logEnable) log.debug "Scheduling publish in ${telePeriod} minutes"
+        runIn(telePeriod * 60, "publishCurrentState")
+    }
+}
+
+private void publishHubState(def mqtt) {
+    log.info "Publishing ${location.hub.name} current state"
+    def prefix = "hubitat/tele/${location.hub.hardwareID}"
+    mqtt.publish("${prefix}/mode", location.getMode())
+    mqtt.publish("${prefix}/timeZone", location.timeZone.ID)
+    mqtt.publish("${prefix}/zipCode", location.zipCode)
+    mqtt.publish("${prefix}/sunrise", location.sunrise.toString())
+    mqtt.publish("${prefix}/sunset", location.sunset.toString())
+    mqtt.publish("${prefix}/hsmStatus", getHsmState(location.hsmStatus))
+    mqtt.publish("${prefix}/latitude", location.getFormattedLatitude())
+    mqtt.publish("${prefix}/longitude", location.getFormattedLongitude())
+    mqtt.publish("${prefix}/temperatureScale", location.temperatureScale)
+
+    mqtt.publish("${prefix}/name", location.hub.name)
+    mqtt.publish("${prefix}/zigbeeId", location.hub.zigbeeId)
+    mqtt.publish("${prefix}/hardwareID", location.hub.hardwareID)
+    mqtt.publish("${prefix}/localIP", location.hub.localIP)
+    mqtt.publish("${prefix}/firmwareVersion", location.hub.firmwareVersionString)
+}
+
+private void publishDeviceState(def mqtt) {
     devices.each({ device ->
         def dni = device.getDeviceNetworkId()
         log.info "Publishing ${device.displayName} current state"
@@ -306,10 +439,21 @@ private void publishCurrentState() {
             mqtt.publish(path, state.value)
         })
     })
+}
 
-    if (telePeriod > 0) {
-        if (logEnable) log.debug "Scheduling publish in ${telePeriod} minutes"
-        runIn(telePeriod * 60, "publishCurrentState")
+private String getHsmState(value) {
+    switch (value) {
+        case "armingAway": return "arming"
+        case "armedAway": return "armed_away"
+        case "armingHome": return "arming"
+        case "armedHome": return "armed_home"
+        case "armingNight": return "arming"
+        case "armedNight": return "armed_night"
+        case "disarmed": return "disarmed"
+        case "allDisarmed": return"disarmed"
+        case "intrusion": return "triggered"
+        case "intrusion-home": return "triggered"
+        case "intrusion-night": return "triggered"
     }
 }
 
