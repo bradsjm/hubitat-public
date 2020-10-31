@@ -206,7 +206,7 @@ private void publishHubDiscovery(def mqtt) {
     if (hsmEnable) {
         // Publish HSM
         def config = [ "device": deviceConfig ]
-        config["name"] = location.hub.name + " alarm"
+        config["name"] = location.hub.name + " Alarm"
         config["unique_id"] = dni + "::hsm"
         config["state_topic"]= "hubitat/tele/${dni}/hsmStatus"
         config["command_topic"] = "hubitat/cmnd/${dni}/hsmSetArm"
@@ -224,7 +224,7 @@ private void publishHubDiscovery(def mqtt) {
     // Publish sensors
     [ "mode" ].each({ name ->
         def config = [ "device": deviceConfig ]
-        config["name"] = location.hub.name + " " + name
+        config["name"] = location.hub.name + " " + name.capitalize()
         config["unique_id"] = dni + "::" + name
         config["state_topic"] = "hubitat/tele/${dni}/${name}"
         config["expire_after"] = telePeriod * 120
@@ -282,7 +282,7 @@ private void publishDeviceDiscovery(def mqtt) {
             device.getCurrentStates().each({ state ->
                 def config = [ "device": deviceConfig ]
                 def path = "homeassistant"
-                config["name"] = device.getDisplayName() + " " + state.name
+                config["name"] = device.getDisplayName() + " " + state.name.capitalize()
                 config["unique_id"] = dni + "::" + state.name
                 config["state_topic"] = "hubitat/tele/${dni}/${state.name}"
                 config["expire_after"] = telePeriod * 120
@@ -299,11 +299,10 @@ private void publishDeviceDiscovery(def mqtt) {
                         break
                     case "contact":
                         path += "/binary_sensor"
-                        if ( (config.name.toLowerCase().contains("garage") 
-                            || config.name.toLowerCase().contains("overhead"))
-                            && config.name.toLowerCase().contains("door") )
+                        def name = config.name.toLowerCase()
+                        if (name.contains("garage door") || name.contains("overhead"))
                             config["device_class"] = "garage_door"
-                        else if (config.name.toLowerCase().contains("door"))
+                        else if (name.contains("door"))
                             config["device_class"] = "door"
                         else
                             config["device_class"] = "window"
