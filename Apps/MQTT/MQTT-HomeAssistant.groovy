@@ -267,8 +267,8 @@ private void publishDeviceDiscovery(def mqtt) {
             config["mode_command_topic"] = cmnd + "/setThermostatMode"
             config["mode_state_topic"] = tele + "/thermostatMode"
             config["modes"] = ["auto", "off", "heat", "emergency heat", "cool"]
-            config["min_temp"] = "60" //TODO: Change for C vs. F
-            config["max_temp"] = "90" //TODO: Change for C vs. F
+            config["min_temp"] = getTemperatureScale() == "F" ? "60" : "15"
+            config["max_temp"] = getTemperatureScale() == "F" ? "90" : "32"
             config["temperature_command_topic"] = cmnd + "/setThermostatSetpoint"
             config["temperature_state_topic"] = tele + "/thermostatSetpoint"
             config["temperature_unit"] = getTemperatureScale()
@@ -282,7 +282,8 @@ private void publishDeviceDiscovery(def mqtt) {
             device.getCurrentStates().each({ state ->
                 def config = [ "device": deviceConfig ]
                 def path = "homeassistant"
-                config["name"] = device.getDisplayName() + " " + state.name.capitalize()
+                def stateName = splitCamelCase(state.name)
+                config["name"] = device.getDisplayName() + " " + stateName.capitalize()
                 config["unique_id"] = dni + "::" + state.name
                 config["state_topic"] = "hubitat/tele/${dni}/${state.name}"
                 config["expire_after"] = telePeriod * 120
@@ -296,6 +297,13 @@ private void publishDeviceDiscovery(def mqtt) {
                     case "battery":
                         path += "/sensor"
                         config["device_class"] = "battery"
+                        config["unit_of_measurement"] = "%"
+                        break
+                    case "carbonMonoxide":
+                        path += "/binary_sensor"
+                        config["device_class"] = "gas"
+                        config["payload_on"] = "detected"
+                        config["payload_off"] = "clear"
                         break
                     case "contact":
                         path += "/binary_sensor"
@@ -309,6 +317,20 @@ private void publishDeviceDiscovery(def mqtt) {
                         config["payload_on"] = "open"
                         config["payload_off"] = "closed"
                         break
+                    case "door":
+                        path += "/cover"
+                        config["command_topic"] = "hubitat/cmnd/${dni}/${state.name}"
+                        config["device_class"] = "door"
+                        config["payload_close"] = "close"
+                        config["payload_open"] = "open"
+                        config["state_closed"] = "closed"
+                        config["state_open"] = "open"
+                        break
+                    case "humidity":
+                        path += "/sensor"
+                        config["device_class"] = "humidity"
+                        config["unit_of_measurement"] = "%"
+                        break
                     case "motion":
                         path += "/binary_sensor"
                         config["device_class"] = "motion"
@@ -318,12 +340,39 @@ private void publishDeviceDiscovery(def mqtt) {
                     case "illuminance":
                         path += "/sensor"
                         config["device_class"] = "illuminance"
+                        config["unit_of_measurement"] = "lx"
+                        break
+                    case "power":
+                        path += "/sensor"
+                        config["device_class"] = "power"
+                        config["unit_of_measurement"] = "W"
                         break
                     case "presence":
                         path += "/binary_sensor"
                         config["device_class"] = "occupancy"
                         config["payload_on"] = "present"
                         config["payload_off"] = "not present"
+                        break
+                    case "pressure":
+                        path += "/sensor"
+                        config["device_class"] = "pressure"
+                        config["unit_of_measurement"] = "mbar"
+                        break
+                    case "switch":
+                        path += "/binary_sensor"
+                        def name = config.name.toLowerCase()
+                        if (name.contains("light") || name.contains("lamp"))
+                            config["device_class"] = "light"
+                        else
+                            config["device_class"] = "power"
+                        config["payload_on"] = "on"
+                        config["payload_off"] = "off"
+                        break
+                    case "smoke":
+                        path += "/binary_sensor"
+                        config["device_class"] = "smoke"
+                        config["payload_on"] = "detected"
+                        config["payload_off"] = "clear"
                         break
                     case "temperature":
                         path += "/sensor"
@@ -333,6 +382,26 @@ private void publishDeviceDiscovery(def mqtt) {
                     case "threeAxis":
                         path += "/sensor"
                         config["icon"] = "mdi:axis-arrow"
+                        break
+                    case "voltage":
+                        path += "/sensor"
+                        config["device_class"] = "voltage"
+                        config["unit_of_measurement"] = "V"
+                        break
+                    case "water":
+                        path += "/binary_sensor"
+                        config["device_class"] = "moisture"
+                        config["payload_on"] = "wet"
+                        config["payload_off"] = "dry"
+                        break
+                    case "windowShade":
+                        path += "/cover"
+                        config["command_topic"] = "hubitat/cmnd/${dni}/${state.name}"
+                        config["device_class"] = "shade"
+                        config["payload_close"] = "close"
+                        config["payload_open"] = "open"
+                        config["state_closed"] = "closed"
+                        config["state_open"] = "open"
                         break
                     default:
                         path += "/sensor"
@@ -440,7 +509,7 @@ private void publishDeviceState(def mqtt) {
     })
 }
 
-private String getHsmState(value) {
+private String getHsmState(String value) {
     switch (value) {
         case "armingAway": return "arming"
         case "armedAway": return "armed_away"
@@ -454,6 +523,17 @@ private String getHsmState(value) {
         case "intrusion-home": return "triggered"
         case "intrusion-night": return "triggered"
     }
+}
+
+private String splitCamelCase(String s) {
+   return s.replaceAll(
+      String.format("%s|%s|%s",
+         "(?<=[A-Z])(?=[A-Z][a-z])",
+         "(?<=[^A-Z])(?=[A-Z])",
+         "(?<=[A-Za-z])(?=[^A-Za-z])"
+      ),
+      " "
+   );
 }
 
 private void logsOff() {
