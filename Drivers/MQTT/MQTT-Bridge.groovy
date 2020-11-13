@@ -20,10 +20,19 @@
  *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  *  SOFTWARE.
 */
-static final String version() { "0.1" }
+static final String version() { "1.0" }
 
 metadata {
-    definition (name: "MQTT Bridge", namespace: "mqtt", author: "Jonathan Bradshaw") {
+    definition (name: "MQTT Bridge", namespace: "mqtt", author: "Jonathan Bradshaw") {  
+        capability "Initialize"
+        capability "PresenceSensor"
+         
+        command "publish", [
+            [ name:"topic", type: "STRING", description: "Topic"],
+            [ name:"message", type: "STRING", description: "Message"
+        ]]
+		command "subscribe", [[ name:"topic", type: "STRING", description: "Topic"]]
+		command "unsubscribe", [[ name:"topic", type: "STRING", description: "Topic"]]
     }
 
     preferences() {
@@ -42,11 +51,6 @@ metadata {
 /**
  *  Hubitat Driver Event Handlers
  */
-
-// Called after MQTT successfully connects
-void connected() {
-    log.info "Connected to MQTT broker at ${settings.mqttBroker}"
-}
 
 void initialize() {
     log.info "${device.displayName} driver v${version()} initializing"
@@ -103,6 +107,15 @@ void subscribe(String topic, int qos = 0) {
     }
 }
 
+void unsubscribe(String topic) {
+    if (interfaces.mqtt.isConnected()) {
+        if (logEnable) log.debug "UNSUB: ${topic}"
+        interfaces.mqtt.unsubscribe(topic)
+    } else {
+        log.warn "MQTT not connected, unable to unsubscribe ${topic}"
+    }
+}
+
 // Called to parse received MQTT data
 def parse(data) {
     def message = interfaces.mqtt.parseMessage(data)
@@ -126,7 +139,7 @@ private void logsOff() {
  *  Common Tasmota MQTT communication methods
  */
 
-private boolean mqttConnect() {
+private void mqttConnect() {
     unschedule("mqttConnect")
     try {
         def hub = device.getHub()
@@ -138,15 +151,16 @@ private boolean mqttConnect() {
             settings.mqttBroker,
             clientId,
             settings?.mqttUsername,
-            settings?.mqttPassword
+            settings?.mqttPassword,
+            lastWillTopic: "hubitat/LWT",
+            lastWillQos: 0, 
+            lastWillMessage: "offline", 
+            lastWillRetain: true
         )
-        return true
     } catch(e) {
         log.error "MQTT connect error: ${e}"
         runInMillis(new Random(now()).nextInt(30000), "mqttConnect")
     }
-
-    return false
 }
 
 private void mqttDisconnect() {
@@ -161,6 +175,13 @@ private void mqttDisconnect() {
     {
         // Ignore any exceptions since we are disconnecting
     }
+}
+
+void connected() {
+    log.info "Connected to MQTT broker at ${settings.mqttBroker}"
+    sendEvent(name: "presence", value: "present", descriptionText: "${device.displayName} is connected")
+    publish("hubitat/LWT", "online", 0, true)
+    parent.connected()
 }
 
 // Called with MQTT client status messages
@@ -182,10 +203,9 @@ void mqttClientStatus(String status) {
             log.info "MQTT ${status}"
             switch (parts[1]) {
                 case "Connection succeeded":
-                    sendEvent(name: "presence", value: "present", descriptionText: "${device.displayName} is connected")
                     // without this delay the `parse` method is never called
                     // (it seems that there needs to be some delay after connection to subscribe)
-                    //runInMillis(1000, "mqttSubscribeDiscovery")
+                    runInMillis(1000, "connected")
                     break
             }
             break
