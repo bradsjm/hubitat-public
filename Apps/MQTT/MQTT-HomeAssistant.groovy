@@ -21,6 +21,7 @@
  *  SOFTWARE.
 */
 import groovy.transform.Field
+import groovy.time.*
 
 @Field final Random _random = new Random()
 
@@ -52,6 +53,7 @@ preferences {
         }
         section() {
             input name: "telePeriod", type: "number", title: "Periodic state refresh publish interval (minutes)", description: "Number of minutes (default 15)", required: false, defaultValue: 15
+            input name: "maxIdleHours", type: "number", title: "Maximum hours since last activity to publish", description: "Number of hours (default 24)", required: false, defaultValue: 24
             input name: "hsmEnable", type: "bool", title: "Enable Hubitat Security Manager", required: true, defaultValue: true
             input name: "logEnable", type: "bool", title: "Enable Debug logging", description: "Automatically disabled after 30 minutes", required: true, defaultValue: true
         }
@@ -85,15 +87,13 @@ void initialize() {
     unsubscribe()
     createDriver()
     subscribeDevices()
-    subscribeMqtt("homeassistant/status")
-    subscribeMqtt("hubitat/cmnd/#")
-    runIn(_random.nextInt(4) + 1, "publishAutoDiscovery")
 }
 
 void parseMessage(topic, payload) {
     if (logEnable) log.debug "Receive ${topic} = ${payload}"
     if (topic == "homeassistant/status" && payload.toLowerCase() == "online") {
         // wait for home assistant to be ready after being online
+        log.info "Detected Home Assistant online, scheduling publish"
         runIn(_random.nextInt(14) + 1, "publishAutoDiscovery")
         return
     }
@@ -149,6 +149,13 @@ void parseMessage(topic, payload) {
             }
             break
     }
+}
+
+void connected() {
+    log.info "MQTT Connected"
+    subscribeMqtt("homeassistant/status")
+    subscribeMqtt("hubitat/cmnd/#")
+    runIn(_random.nextInt(4) + 1, "publishAutoDiscovery")
 }
 
 /**
@@ -208,6 +215,7 @@ private void publishHubDiscovery(def mqtt) {
         def config = [ "device": deviceConfig ]
         config["name"] = location.hub.name + " Alarm"
         config["unique_id"] = dni + "::hsm"
+        config["availability_topic"] = "hubitat/LWT"
         config["state_topic"]= "hubitat/tele/${dni}/hsmStatus"
         config["command_topic"] = "hubitat/cmnd/${dni}/hsmSetArm"
         config["payload_arm_away"] = "armAway"
@@ -228,6 +236,7 @@ private void publishHubDiscovery(def mqtt) {
         config["unique_id"] = dni + "::" + name
         config["state_topic"] = "hubitat/tele/${dni}/${name}"
         config["expire_after"] = telePeriod * 120
+        config["availability_topic"] = "hubitat/LWT"
         switch (name) {
             case "mode":
                 config["icon"] = "mdi:tag"
@@ -259,6 +268,7 @@ private void publishDeviceDiscovery(def mqtt) {
             def tele = "hubitat/tele/${dni}"
             def cmnd = "hubitat/cmnd/${dni}"
             config["name"] = device.getDisplayName()
+            config["availability_topic"] = "hubitat/LWT"
             config["unique_id"] = dni + "::thermostat"
             config["current_temperature_topic"] = tele + "/temperature"
             config["fan_mode_command_topic"] = cmnd + "/setThermostatFanMode"
@@ -287,6 +297,7 @@ private void publishDeviceDiscovery(def mqtt) {
                 config["unique_id"] = dni + "::" + state.name
                 config["state_topic"] = "hubitat/tele/${dni}/${state.name}"
                 config["expire_after"] = telePeriod * 120
+                config["availability_topic"] = "hubitat/LWT"
                 switch (state.name) {
                     case "acceleration":
                         path += "/binary_sensor"
@@ -499,14 +510,25 @@ private void publishHubState(def mqtt) {
 
 private void publishDeviceState(def mqtt) {
     devices.each({ device ->
-        def dni = device.getDeviceNetworkId()
-        log.info "Publishing ${device.displayName} current state"
-        device.getCurrentStates().each( { state ->
-            def path = "hubitat/tele/${dni}/${state.name}"
-            if (logEnable) log.debug "Publishing (${device.displayName}) ${path}=${state.value}"
-            mqtt.publish(path, state.value)
-        })
+        int idleHours = getIdleHours(device)
+        if (idleHours > maxIdleHours) {
+            log.warn "Skipping ${device.displayName} as last updated ${idleHours} hours ago"
+        } else {
+            def dni = device.getDeviceNetworkId()
+            log.info "Publishing ${device.displayName} current state"
+            device.getCurrentStates().each( { state ->
+                def path = "hubitat/tele/${dni}/${state.name}"
+                if (logEnable) log.debug "Publishing (${device.displayName}) ${path}=${state.value}"
+                mqtt.publish(path, state.value)
+            })
+        }
     })
+}
+
+// Returns number of hours since activity
+private int getIdleHours(device) {
+    long difference = new Date().getTime() - device.getLastActivity().getTime()
+    return Math.round( difference / 3600000 )
 }
 
 private String getHsmState(String value) {
