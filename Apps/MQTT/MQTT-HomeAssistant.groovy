@@ -22,6 +22,7 @@
 */
 import groovy.transform.Field
 import groovy.time.*
+import groovy.json.JsonBuilder
 
 @Field final Random _random = new Random()
 
@@ -83,12 +84,14 @@ void updated() {
     if (logEnable) runIn(1800, "logsOff")
 }
 
+// Called when the driver is initialized.
 void initialize() {
     unsubscribe()
     createDriver()
     subscribeDevices()
 }
 
+// Called when MQTT message is received
 void parseMessage(topic, payload) {
     if (logEnable) log.debug "Receive ${topic} = ${payload}"
     if (topic == "homeassistant/status" && payload.toLowerCase() == "online") {
@@ -98,13 +101,295 @@ void parseMessage(topic, payload) {
         return
     }
 
+    // Parse topic path for dni and command
     def topicParts = topic.tokenize("/")
     def idx = topicParts.indexOf("cmnd")
     if (!idx) return
 
     def dni = topicParts[idx+1]
     def cmd = topicParts[idx+2]
+    parseCommand(dni, cmd, payload)
+}
 
+// Called when MQTT is connected
+void connected() {
+    log.info "MQTT Connected"
+    subscribeMqtt("homeassistant/status")
+    subscribeMqtt("hubitat/cmnd/#")
+    runIn(_random.nextInt(4) + 1, "publishAutoDiscovery")
+}
+
+/**
+ * Home Assistant Device Discovery
+ */
+private void publishAutoDiscovery() {
+    def mqtt = getDriver()
+    log.info "Publishing Auto Discovery"
+    publishHubDiscovery(mqtt)
+    publishDeviceDiscovery(mqtt)
+}
+
+private void publishHubDiscovery(def mqtt) {
+    def dni = location.hub.hardwareID
+    def deviceConfig = [
+        "ids": [ dni, location.hub.zigbeeId ],
+        "manufacturer": "Hubitat",
+        "name": location.hub.name,
+        "model": "Elevation",
+        "sw_version": location.hub.firmwareVersionString
+    ]
+
+    if (hsmEnable) {
+        // Publish HSM
+        def config = [ "device": deviceConfig ]
+        config["name"] = location.hub.name + " Alarm"
+        config["unique_id"] = dni + "::hsm"
+        config["availability_topic"] = "hubitat/LWT"
+        config["state_topic"]= "hubitat/tele/${dni}/hsmStatus"
+        config["command_topic"] = "hubitat/cmnd/${dni}/hsmSetArm"
+        config["payload_arm_away"] = "armAway"
+        config["payload_arm_home"] = "armHome"
+        config["payload_arm_night"] = "armNight"
+        config["payload_disarm"] = "disarm"
+        def path = "homeassistant/alarm_control_panel/${dni}_hsm/config"
+        publishDeviceConfig(mqtt, path, config)
+    }
+
+    // Publish sensors
+    [ "mode" ].each({ name ->
+        def config = [ "device": deviceConfig ]
+        config["name"] = location.hub.name + " " + name.capitalize()
+        config["unique_id"] = dni + "::" + name
+        config["state_topic"] = "hubitat/tele/${dni}/${name}"
+        config["expire_after"] = telePeriod * 120
+        config["availability_topic"] = "hubitat/LWT"
+        switch (name) {
+            case "mode":
+                config["icon"] = "mdi:tag"
+                break
+        }
+        def path = "homeassistant/sensor/${dni}_${name}/config"
+        publishDeviceConfig(mqtt, path, config)
+    })
+}
+
+private void publishDeviceDiscovery(def mqtt) {
+    devices.each({ device ->
+        if (device == null) return
+        def dni = device.getDeviceNetworkId()
+        def deviceConfig = [
+            "ids": [ dni ],
+            "manufacturer": device.getDataValue("manufacturer") ?: "",
+            "name": device.getDisplayName(),
+            "model": device.getDataValue("model") ?: ""
+        ]
+        if (device.getZigbeeId()) deviceConfig.ids << device.getZigbeeId()
+
+        // Thermostats are unique beasts and require special handling
+        if (device.hasCapability("Thermostat")) {
+            def config = [ "device": deviceConfig ]
+            def tele = "hubitat/tele/${dni}"
+            def cmnd = "hubitat/cmnd/${dni}"
+            config["name"] = device.getDisplayName()
+            config["availability_topic"] = "hubitat/LWT"
+            config["payload_available"] = "Online"
+            config["payload_not_available"] = "Offline"
+            config["unique_id"] = dni + "::thermostat"
+            config["current_temperature_topic"] = tele + "/temperature"
+            config["fan_mode_command_topic"] = cmnd + "/setThermostatFanMode"
+            config["fan_mode_state_topic"] = tele + "/thermostatFanMode"
+            config["fan_modes"] = ["auto", "circulate", "on"]
+            config["mode_command_topic"] = cmnd + "/setThermostatMode"
+            config["mode_state_topic"] = tele + "/thermostatMode"
+            config["modes"] = ["auto", "off", "heat", "emergency heat", "cool"]
+            config["min_temp"] = getTemperatureScale() == "F" ? "60" : "15"
+            config["max_temp"] = getTemperatureScale() == "F" ? "90" : "32"
+            config["temperature_command_topic"] = cmnd + "/setThermostatSetpoint"
+            config["temperature_state_topic"] = tele + "/thermostatSetpoint"
+            config["temperature_unit"] = getTemperatureScale()
+            config["temp_step"] = "1"
+            def path = "homeassistant/climate/${dni}_thermostat/config"
+            publishDeviceConfig(mqtt, path, config)
+        } else {
+            device.getCurrentStates().each({ state ->
+                def config = [ "device": deviceConfig ]
+                def path = "homeassistant"
+                def stateName = splitCamelCase(state.name)
+                def cmndTopic = "hubitat/cmnd/${dni}/${state.name}"
+                def expireAfter = settings.telePeriod * 120
+                config["name"] = device.getDisplayName() + " " + stateName.capitalize()
+                config["unique_id"] = dni + "::" + state.name
+                config["state_topic"] = "hubitat/tele/${dni}/${state.name}"
+                config["availability_topic"] = "hubitat/LWT"
+                config["payload_available"] = "Online"
+                config["payload_not_available"] = "Offline"
+                switch (state.name) {
+                    case "acceleration":
+                        path += "/binary_sensor"
+                        config["expire_after"] = expireAfter
+                        config["device_class"] = "moving"
+                        config["payload_on"] = "active"
+                        config["payload_off"] = "inactive"
+                        break
+                    case "battery":
+                        path += "/sensor"
+                        config["expire_after"] = expireAfter
+                        config["device_class"] = "battery"
+                        config["unit_of_measurement"] = "%"
+                        break
+                    case "carbonMonoxide":
+                        path += "/binary_sensor"
+                        config["expire_after"] = expireAfter
+                        config["device_class"] = "gas"
+                        config["payload_on"] = "detected"
+                        config["payload_off"] = "clear"
+                        break
+                    case "contact":
+                        path += "/binary_sensor"
+                        def name = config.name.toLowerCase()
+                        if (name.contains("garage door") || name.contains("overhead"))
+                            config["device_class"] = "garage_door"
+                        else if (name.contains("door"))
+                            config["device_class"] = "door"
+                        else
+                            config["device_class"] = "window"
+                        config["expire_after"] = expireAfter
+                        config["payload_on"] = "open"
+                        config["payload_off"] = "closed"
+                        break
+                    case "door":
+                        path += "/cover"
+                        config["command_topic"] = cmndTopic
+                        config["device_class"] = "door"
+                        config["payload_close"] = "close"
+                        config["payload_open"] = "open"
+                        config["state_closed"] = "closed"
+                        config["state_open"] = "open"
+                        break
+                    case "humidity":
+                        path += "/sensor"
+                        config["expire_after"] = expireAfter
+                        config["device_class"] = "humidity"
+                        config["unit_of_measurement"] = "%"
+                        break
+                    case "motion":
+                        path += "/binary_sensor"
+                        config["expire_after"] = expireAfter
+                        config["device_class"] = "motion"
+                        config["payload_on"] = "active"
+                        config["payload_off"] = "inactive"
+                        break
+                    case "illuminance":
+                        path += "/sensor"
+                        config["expire_after"] = expireAfter
+                        config["device_class"] = "illuminance"
+                        config["unit_of_measurement"] = "lx"
+                        break
+                    case "mute":
+                        path += "/sensor"
+                        config["expire_after"] = expireAfter
+                        config["icon"] = "mdi:volume-off"
+                        break
+                    case "power":
+                        path += "/sensor"
+                        config["expire_after"] = expireAfter
+                        config["device_class"] = "power"
+                        config["unit_of_measurement"] = "W"
+                        break
+                    case "presence":
+                        path += "/binary_sensor"
+                        config["expire_after"] = expireAfter
+                        config["device_class"] = "occupancy"
+                        config["payload_on"] = "present"
+                        config["payload_off"] = "not present"
+                        break
+                    case "pressure":
+                        path += "/sensor"
+                        config["expire_after"] = expireAfter
+                        config["device_class"] = "pressure"
+                        config["unit_of_measurement"] = "mbar"
+                        break
+                    case "switch":
+                        def name = config.name.toLowerCase()
+                        if (name.contains("light") || name.contains("lamp"))
+                            path += "/light"
+                        else
+                            path += "/switch"
+                        config["payload_on"] = "on"
+                        config["payload_off"] = "off"
+                        config["command_topic"] = cmndTopic
+                        break
+                    case "smoke":
+                        path += "/binary_sensor"
+                        config["expire_after"] = expireAfter
+                        config["device_class"] = "smoke"
+                        config["payload_on"] = "detected"
+                        config["payload_off"] = "clear"
+                        break
+                    case "temperature":
+                        path += "/sensor"
+                        config["expire_after"] = expireAfter
+                        config["device_class"] = "temperature"
+                        config["unit_of_measurement"] = getTemperatureScale()
+                        break
+                    case "threeAxis":
+                        path += "/sensor"
+                        config["expire_after"] = expireAfter
+                        config["icon"] = "mdi:axis-arrow"
+                        break
+                    case "voltage":
+                        path += "/sensor"
+                        config["expire_after"] = expireAfter
+                        config["device_class"] = "voltage"
+                        config["unit_of_measurement"] = "V"
+                        break
+                    case "volume":
+                        path += "/sensor"
+                        config["expire_after"] = expireAfter
+                        config["icon"] = "mdi:volume-medium"
+                        break
+                    case "water":
+                        path += "/binary_sensor"
+                        config["expire_after"] = expireAfter
+                        config["device_class"] = "moisture"
+                        config["payload_on"] = "wet"
+                        config["payload_off"] = "dry"
+                        break
+                    case "windowShade":
+                        path += "/cover"
+                        config["command_topic"] = cmndTopic
+                        config["device_class"] = "shade"
+                        config["payload_close"] = "close"
+                        config["payload_open"] = "open"
+                        config["state_closed"] = "closed"
+                        config["state_open"] = "open"
+                        break
+                    default:
+                        path += "/sensor"
+                        config["expire_after"] = expireAfter
+                        break
+                }
+                path += "/${dni}_${state.name}/config"
+                publishDeviceConfig(mqtt, path, config)
+            })
+        }
+    })
+
+    // Schedule sending device current state
+    runIn(_random.nextInt(4) + 1, "publishCurrentState")
+}
+
+private void publishDeviceConfig(def mqtt, String path, Map config) {
+    def json = new JsonBuilder(config).toString()
+    log.info "Publishing discovery for ${config.name} to: ${path}"
+    if (logEnable) log.debug "Publish ${json}"
+    mqtt.publish(path, json, 0, true)
+}
+
+/**
+ * Parse Received MQTT Commands
+ */
+private void parseCommand(dni, cmd, payload) {
     // Handle HUB commands
     if (dni == location.hub.hardwareID) {
         switch (cmd) {
@@ -142,308 +427,55 @@ void parseMessage(topic, payload) {
                     log.error "Thermostat not set to cool or heat (mode is ${mode})"
             }
             break
+        case "switch":
+            if (payload == "on") {
+                log.info "Executing ${device.displayName}: Switch on"
+                device.on()
+            } else {
+                log.info "Executing ${device.displayName}: Switch off"
+                device.off()
+            }
+            break
         default:
             if (device.hasCommand(cmd)) {
                 log.info "Executing ${device.displayName}: ${cmd} to ${payload}"
                 device."$cmd"(payload)
+            } else {
+                log.warn "Executing ${device.displayName}: ${cmd} does not exist"
             }
             break
     }
 }
 
-void connected() {
-    log.info "MQTT Connected"
-    subscribeMqtt("homeassistant/status")
-    subscribeMqtt("hubitat/cmnd/#")
-    runIn(_random.nextInt(4) + 1, "publishAutoDiscovery")
-}
-
 /**
- * Implementation
+ * Event Handlers
  */
-private def getDriver() {
-    return getChildDevice("mqtt-bridge-${app.id}")
-}
-
-private void createDriver () {
-    def dni = "mqtt-bridge-${app.id}"
-    def childDev = getChildDevice(dni)
-
-	if (childDev == null) {
-        def name = "MQTT Bridge Device"
-        childDev = addChildDevice(
-            "mqtt",
-            "MQTT Bridge", 
-            dni,
-            [
-                name: name,
-                label: name, 
-            ]
-        )
-    }
-    
-	if (childDev == null) {
-        log.error ("MQTT Bridge Device was not created")
-        return
-    }
-
-    childDev.updateSetting("mqttBroker", mqttBroker)
-    childDev.updateSetting("mqttUsername", mqttUsername)
-    childDev.updateSetting("mqttPassword", mqttPassword)
-    childDev.updated()
-}
-
-private void publishAutoDiscovery() {
+private void publishCurrentState() {
     def mqtt = getDriver()
-    log.info "Publishing Auto Discovery"
-    publishHubDiscovery(mqtt)
-    publishDeviceDiscovery(mqtt)
-}
+    publishHubState(mqtt)
+    publishDeviceState(mqtt)
 
-private void publishHubDiscovery(def mqtt) {
-    def dni = location.hub.hardwareID
-    def deviceConfig = [
-        "ids": [ dni, location.hub.zigbeeId ],
-        "manufacturer": "Hubitat",
-        "name": location.hub.name,
-        "model": "Elevation",
-        "sw_version": location.hub.firmwareVersionString
-    ]
-
-    if (hsmEnable) {
-        // Publish HSM
-        def config = [ "device": deviceConfig ]
-        config["name"] = location.hub.name + " Alarm"
-        config["unique_id"] = dni + "::hsm"
-        config["availability_topic"] = "hubitat/LWT"
-        config["state_topic"]= "hubitat/tele/${dni}/hsmStatus"
-        config["command_topic"] = "hubitat/cmnd/${dni}/hsmSetArm"
-        config["payload_arm_away"] = "armAway"
-        config["payload_arm_home"] = "armHome"
-        config["payload_arm_night"] = "armNight"
-        config["payload_disarm"] = "disarm"
-        def json = new groovy.json.JsonBuilder(config).toString()
-        def path = "homeassistant/alarm_control_panel/${dni}_hsm/config"
-        log.info "Publishing discovery for ${config.name} to: ${path}"
-        if (logEnable) log.debug json
-        mqtt.publish(path, json, 0, true)
+    if (telePeriod > 0) {
+        if (logEnable) log.debug "Scheduling publish in ${telePeriod} minutes"
+        runIn(telePeriod * 60, "publishCurrentState")
     }
-
-    // Publish sensors
-    [ "mode" ].each({ name ->
-        def config = [ "device": deviceConfig ]
-        config["name"] = location.hub.name + " " + name.capitalize()
-        config["unique_id"] = dni + "::" + name
-        config["state_topic"] = "hubitat/tele/${dni}/${name}"
-        config["expire_after"] = telePeriod * 120
-        config["availability_topic"] = "hubitat/LWT"
-        switch (name) {
-            case "mode":
-                config["icon"] = "mdi:tag"
-                break
-        }
-        def json = new groovy.json.JsonBuilder(config).toString()
-        def path = "homeassistant/sensor/${dni}_${name}/config"
-        log.info "Publishing discovery for ${config.name} to: ${path}"
-        if (logEnable) log.debug json
-        mqtt.publish(path, json, 0, true)
-    })
-}
-
-private void publishDeviceDiscovery(def mqtt) {
-    devices.each({ device ->
-        if (device == null) return
-        def dni = device.getDeviceNetworkId()
-        def deviceConfig = [
-            "ids": [ dni ],
-            "manufacturer": device.getDataValue("manufacturer") ?: "",
-            "name": device.getDisplayName(),
-            "model": device.getDataValue("model") ?: ""
-        ]
-        if (device.getZigbeeId()) deviceConfig.ids << device.getZigbeeId()
-
-        // Thermostats are unique beasts and require special handling
-        if (device.hasCapability("Thermostat")) {
-            def config = [ "device": deviceConfig ]
-            def tele = "hubitat/tele/${dni}"
-            def cmnd = "hubitat/cmnd/${dni}"
-            config["name"] = device.getDisplayName()
-            config["availability_topic"] = "hubitat/LWT"
-            config["unique_id"] = dni + "::thermostat"
-            config["current_temperature_topic"] = tele + "/temperature"
-            config["fan_mode_command_topic"] = cmnd + "/setThermostatFanMode"
-            config["fan_mode_state_topic"] = tele + "/thermostatFanMode"
-            config["fan_modes"] = ["auto", "circulate", "on"]
-            config["mode_command_topic"] = cmnd + "/setThermostatMode"
-            config["mode_state_topic"] = tele + "/thermostatMode"
-            config["modes"] = ["auto", "off", "heat", "emergency heat", "cool"]
-            config["min_temp"] = getTemperatureScale() == "F" ? "60" : "15"
-            config["max_temp"] = getTemperatureScale() == "F" ? "90" : "32"
-            config["temperature_command_topic"] = cmnd + "/setThermostatSetpoint"
-            config["temperature_state_topic"] = tele + "/thermostatSetpoint"
-            config["temperature_unit"] = getTemperatureScale()
-            config["temp_step"] = "1"
-            def path = "homeassistant/climate/${dni}_thermostat/config"
-            def json = new groovy.json.JsonBuilder(config).toString()
-            if (logEnable) log.debug json
-            log.info "Publishing discovery for ${config.name} to: ${path}"
-            mqtt.publish(path, json, 0, true)
-        } else {
-            device.getCurrentStates().each({ state ->
-                def config = [ "device": deviceConfig ]
-                def path = "homeassistant"
-                def stateName = splitCamelCase(state.name)
-                config["name"] = device.getDisplayName() + " " + stateName.capitalize()
-                config["unique_id"] = dni + "::" + state.name
-                config["state_topic"] = "hubitat/tele/${dni}/${state.name}"
-                config["expire_after"] = telePeriod * 120
-                config["availability_topic"] = "hubitat/LWT"
-                switch (state.name) {
-                    case "acceleration":
-                        path += "/binary_sensor"
-                        config["device_class"] = "moving"
-                        config["payload_on"] = "active"
-                        config["payload_off"] = "inactive"
-                        break
-                    case "battery":
-                        path += "/sensor"
-                        config["device_class"] = "battery"
-                        config["unit_of_measurement"] = "%"
-                        break
-                    case "carbonMonoxide":
-                        path += "/binary_sensor"
-                        config["device_class"] = "gas"
-                        config["payload_on"] = "detected"
-                        config["payload_off"] = "clear"
-                        break
-                    case "contact":
-                        path += "/binary_sensor"
-                        def name = config.name.toLowerCase()
-                        if (name.contains("garage door") || name.contains("overhead"))
-                            config["device_class"] = "garage_door"
-                        else if (name.contains("door"))
-                            config["device_class"] = "door"
-                        else
-                            config["device_class"] = "window"
-                        config["payload_on"] = "open"
-                        config["payload_off"] = "closed"
-                        break
-                    case "door":
-                        path += "/cover"
-                        config["command_topic"] = "hubitat/cmnd/${dni}/${state.name}"
-                        config["device_class"] = "door"
-                        config["payload_close"] = "close"
-                        config["payload_open"] = "open"
-                        config["state_closed"] = "closed"
-                        config["state_open"] = "open"
-                        break
-                    case "humidity":
-                        path += "/sensor"
-                        config["device_class"] = "humidity"
-                        config["unit_of_measurement"] = "%"
-                        break
-                    case "motion":
-                        path += "/binary_sensor"
-                        config["device_class"] = "motion"
-                        config["payload_on"] = "active"
-                        config["payload_off"] = "inactive"
-                        break
-                    case "illuminance":
-                        path += "/sensor"
-                        config["device_class"] = "illuminance"
-                        config["unit_of_measurement"] = "lx"
-                        break
-                    case "power":
-                        path += "/sensor"
-                        config["device_class"] = "power"
-                        config["unit_of_measurement"] = "W"
-                        break
-                    case "presence":
-                        path += "/binary_sensor"
-                        config["device_class"] = "occupancy"
-                        config["payload_on"] = "present"
-                        config["payload_off"] = "not present"
-                        break
-                    case "pressure":
-                        path += "/sensor"
-                        config["device_class"] = "pressure"
-                        config["unit_of_measurement"] = "mbar"
-                        break
-                    case "switch":
-                        path += "/binary_sensor"
-                        def name = config.name.toLowerCase()
-                        if (name.contains("light") || name.contains("lamp"))
-                            config["device_class"] = "light"
-                        else
-                            config["device_class"] = "power"
-                        config["payload_on"] = "on"
-                        config["payload_off"] = "off"
-                        break
-                    case "smoke":
-                        path += "/binary_sensor"
-                        config["device_class"] = "smoke"
-                        config["payload_on"] = "detected"
-                        config["payload_off"] = "clear"
-                        break
-                    case "temperature":
-                        path += "/sensor"
-                        config["device_class"] = "temperature"
-                        config["unit_of_measurement"] = getTemperatureScale()
-                        break
-                    case "threeAxis":
-                        path += "/sensor"
-                        config["icon"] = "mdi:axis-arrow"
-                        break
-                    case "voltage":
-                        path += "/sensor"
-                        config["device_class"] = "voltage"
-                        config["unit_of_measurement"] = "V"
-                        break
-                    case "water":
-                        path += "/binary_sensor"
-                        config["device_class"] = "moisture"
-                        config["payload_on"] = "wet"
-                        config["payload_off"] = "dry"
-                        break
-                    case "windowShade":
-                        path += "/cover"
-                        config["command_topic"] = "hubitat/cmnd/${dni}/${state.name}"
-                        config["device_class"] = "shade"
-                        config["payload_close"] = "close"
-                        config["payload_open"] = "open"
-                        config["state_closed"] = "closed"
-                        config["state_open"] = "open"
-                        break
-                    default:
-                        path += "/sensor"
-                        break
-                }
-                path += "/${dni}_${state.name}/config"
-                def json = new groovy.json.JsonBuilder(config).toString()
-                log.info "Publishing discovery for ${config.name} to: ${path}"
-                if (logEnable) log.debug json
-                mqtt.publish(path, json, 0, true)
-            })
-        }
-    })
-
-    // Schedule sending device current state
-    runIn(_random.nextInt(4) + 1, "publishCurrentState")
 }
 
 private void subscribeDevices() {
     if (logEnable) log.debug "Subscribing to device events"
-    subscribe(devices, "publishEvent", [ filterEvents: true ])
-    subscribe(location, "locationEvent", [ filterEvents: true ])
+    subscribe(devices, "publishDeviceEvent", [ filterEvents: true ])
+    subscribe(location, "publishLocationEvent", [ filterEvents: true ])
 }
 
-private void subscribeMqtt(topic) {
-    if (logEnable) log.debug "MQTT Subscribing to ${topic}"
+private void publishDeviceEvent(event) {
     def mqtt = getDriver()
-    mqtt.subscribe(topic)
+    def dni = event.getDevice().getDeviceNetworkId()
+    def path = "hubitat/tele/${dni}/${event.name}"
+    log.info "Publishing (${event.displayName}) ${path}=${event.value}"
+    mqtt.publish(path, event.value)
 }
 
-private void locationEvent(event) {
+private void publishLocationEvent(event) {
     def mqtt = getDriver()
     def dni = location.hub.hardwareID
     def path = "hubitat/tele/${dni}/"
@@ -467,25 +499,6 @@ private void locationEvent(event) {
     }
     log.info "Publishing (${location.hub.name}) ${path}=${payload}"
     mqtt.publish(path, payload)
-}
-
-private void publishEvent(event) {
-    def mqtt = getDriver()
-    def dni = event.getDevice().getDeviceNetworkId()
-    def path = "hubitat/tele/${dni}/${event.name}"
-    log.info "Publishing (${event.displayName}) ${path}=${event.value}"
-    mqtt.publish(path, event.value)
-}
-
-private void publishCurrentState() {
-    def mqtt = getDriver()
-    publishHubState(mqtt)
-    publishDeviceState(mqtt)
-
-    if (telePeriod > 0) {
-        if (logEnable) log.debug "Scheduling publish in ${telePeriod} minutes"
-        runIn(telePeriod * 60, "publishCurrentState")
-    }
 }
 
 private void publishHubState(def mqtt) {
@@ -525,12 +538,59 @@ private void publishDeviceState(def mqtt) {
     })
 }
 
+/**
+ * MQTT Child Device
+ */
+private def getDriver() {
+    return getChildDevice("mqtt-bridge-${app.id}")
+}
+
+private void createDriver () {
+    def dni = "mqtt-bridge-${app.id}"
+    def childDev = getChildDevice(dni)
+
+	if (childDev == null) {
+        def name = "MQTT Bridge Device"
+        childDev = addChildDevice(
+            "mqtt",
+            "MQTT Bridge", 
+            dni,
+            [
+                name: name,
+                label: name, 
+            ]
+        )
+    }
+    
+	if (childDev == null) {
+        log.error ("MQTT Bridge Device was not created")
+        return
+    }
+
+    childDev.updateSetting("mqttBroker", mqttBroker)
+    childDev.updateSetting("mqttUsername", mqttUsername)
+    childDev.updateSetting("mqttPassword", mqttPassword)
+    childDev.updated()
+}
+
+// Subscribe to MQTT topic
+private void subscribeMqtt(topic) {
+    if (logEnable) log.debug "MQTT Subscribing to ${topic}"
+    def mqtt = getDriver()
+    mqtt.subscribe(topic)
+}
+
+/**
+ * Utility Methods
+ */
+
 // Returns number of hours since activity
 private int getIdleHours(device) {
     long difference = new Date().getTime() - device.getLastActivity().getTime()
     return Math.round( difference / 3600000 )
 }
 
+// Translate HSM states to Home Assistant values
 private String getHsmState(String value) {
     switch (value) {
         case "armingAway": return "arming"
@@ -547,6 +607,7 @@ private String getHsmState(String value) {
     }
 }
 
+// Translate camel case name to normal text
 private String splitCamelCase(String s) {
    return s.replaceAll(
       String.format("%s|%s|%s",
@@ -558,6 +619,7 @@ private String splitCamelCase(String s) {
    );
 }
 
+// Disable debug logging
 private void logsOff() {
     log.warn "debug logging disabled for ${app.name}"
     device.updateSetting("logEnable", [value: "false", type: "bool"] )

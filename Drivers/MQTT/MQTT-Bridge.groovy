@@ -154,7 +154,7 @@ private void mqttConnect() {
             settings?.mqttPassword,
             lastWillTopic: "hubitat/LWT",
             lastWillQos: 0, 
-            lastWillMessage: "offline", 
+            lastWillMessage: "Offline", 
             lastWillRetain: true
         )
     } catch(e) {
@@ -180,7 +180,7 @@ private void mqttDisconnect() {
 void connected() {
     log.info "Connected to MQTT broker at ${settings.mqttBroker}"
     sendEvent(name: "presence", value: "present", descriptionText: "${device.displayName} is connected")
-    publish("hubitat/LWT", "online", 0, true)
+    publish("hubitat/LWT", "Online", 0, true)
     parent.connected()
 }
 
