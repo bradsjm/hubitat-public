@@ -93,7 +93,6 @@ void publish(String topic, String payload = "", int qos = 0, boolean retain = fa
         state.TransmitCount = (state?.TransmitCount ?: 0) + 1
     } else {
         log.warn "MQTT not connected, unable to publish ${topic} = ${payload}"
-        runInMillis(new Random(now()).nextInt(30000), "initialize")
     }
 }
 
@@ -103,7 +102,6 @@ void subscribe(String topic, int qos = 0) {
         interfaces.mqtt.subscribe(topic, qos)
     } else {
         log.warn "MQTT not connected, unable to subscribe ${topic}"
-        runInMillis(new Random(now()).nextInt(30000), "initialize")
     }
 }
 
@@ -195,7 +193,7 @@ void mqttClientStatus(String status) {
                 case "Connection lost":
                 case "send error":
                     sendEvent(name: "presence", value: "not present", descriptionText: "${device.displayName} {$parts[1]}")
-                    runInMillis(new Random(now()).nextInt(30000), "initialize")
+                    runInMillis(new Random(now()).nextInt(30000), "mqttConnect")
                     break
             }
             break
