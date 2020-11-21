@@ -187,189 +187,21 @@ private void publishDeviceDiscovery(def mqtt) {
 
         // Thermostats are unique beasts and require special handling
         if (device.hasCapability("Thermostat")) {
-            def config = [ "device": deviceConfig ]
-            def tele = "hubitat/tele/${dni}"
-            def cmnd = "hubitat/cmnd/${dni}"
-            config["name"] = device.getDisplayName()
-            config["availability_topic"] = "hubitat/LWT"
-            config["payload_available"] = "Online"
-            config["payload_not_available"] = "Offline"
-            config["unique_id"] = dni + "::thermostat"
-            config["current_temperature_topic"] = tele + "/temperature"
-            config["fan_mode_command_topic"] = cmnd + "/setThermostatFanMode"
-            config["fan_mode_state_topic"] = tele + "/thermostatFanMode"
-            config["fan_modes"] = ["auto", "circulate", "on"]
-            config["mode_command_topic"] = cmnd + "/setThermostatMode"
-            config["mode_state_topic"] = tele + "/thermostatMode"
-            config["modes"] = ["auto", "off", "heat", "emergency heat", "cool"]
-            config["min_temp"] = getTemperatureScale() == "F" ? "60" : "15"
-            config["max_temp"] = getTemperatureScale() == "F" ? "90" : "32"
-            config["temperature_command_topic"] = cmnd + "/setThermostatSetpoint"
-            config["temperature_state_topic"] = tele + "/thermostatSetpoint"
-            config["temperature_unit"] = getTemperatureScale()
-            config["temp_step"] = "1"
+            Map config = [
+                "device": deviceConfig,
+                "name": device.getDisplayName()
+            ]
+            getThermostatConfig(device, config)
             def path = "homeassistant/climate/${dni}_thermostat/config"
             publishDeviceConfig(mqtt, path, config)
         } else {
             device.getCurrentStates().each({ state ->
-                def config = [ "device": deviceConfig ]
-                def path = "homeassistant"
-                def stateName = splitCamelCase(state.name)
-                def cmndTopic = "hubitat/cmnd/${dni}/${state.name}"
-                def expireAfter = settings.telePeriod * 120
-                config["name"] = device.getDisplayName() + " " + stateName.capitalize()
-                config["unique_id"] = dni + "::" + state.name
-                config["state_topic"] = "hubitat/tele/${dni}/${state.name}"
-                config["availability_topic"] = "hubitat/LWT"
-                config["payload_available"] = "Online"
-                config["payload_not_available"] = "Offline"
-                switch (state.name) {
-                    case "acceleration":
-                        path += "/binary_sensor"
-                        config["expire_after"] = expireAfter
-                        config["device_class"] = "moving"
-                        config["payload_on"] = "active"
-                        config["payload_off"] = "inactive"
-                        break
-                    case "battery":
-                        path += "/sensor"
-                        config["expire_after"] = expireAfter
-                        config["device_class"] = "battery"
-                        config["unit_of_measurement"] = "%"
-                        break
-                    case "carbonMonoxide":
-                        path += "/binary_sensor"
-                        config["expire_after"] = expireAfter
-                        config["device_class"] = "gas"
-                        config["payload_on"] = "detected"
-                        config["payload_off"] = "clear"
-                        break
-                    case "contact":
-                        path += "/binary_sensor"
-                        def name = config.name.toLowerCase()
-                        if (name.contains("garage door") || name.contains("overhead"))
-                            config["device_class"] = "garage_door"
-                        else if (name.contains("door"))
-                            config["device_class"] = "door"
-                        else
-                            config["device_class"] = "window"
-                        config["expire_after"] = expireAfter
-                        config["payload_on"] = "open"
-                        config["payload_off"] = "closed"
-                        break
-                    case "door":
-                        path += "/cover"
-                        config["command_topic"] = cmndTopic
-                        config["device_class"] = "door"
-                        config["payload_close"] = "close"
-                        config["payload_open"] = "open"
-                        config["state_closed"] = "closed"
-                        config["state_open"] = "open"
-                        break
-                    case "humidity":
-                        path += "/sensor"
-                        config["expire_after"] = expireAfter
-                        config["device_class"] = "humidity"
-                        config["unit_of_measurement"] = "%"
-                        break
-                    case "motion":
-                        path += "/binary_sensor"
-                        config["expire_after"] = expireAfter
-                        config["device_class"] = "motion"
-                        config["payload_on"] = "active"
-                        config["payload_off"] = "inactive"
-                        break
-                    case "illuminance":
-                        path += "/sensor"
-                        config["expire_after"] = expireAfter
-                        config["device_class"] = "illuminance"
-                        config["unit_of_measurement"] = "lx"
-                        break
-                    case "mute":
-                        path += "/sensor"
-                        config["expire_after"] = expireAfter
-                        config["icon"] = "mdi:volume-off"
-                        break
-                    case "power":
-                        path += "/sensor"
-                        config["expire_after"] = expireAfter
-                        config["device_class"] = "power"
-                        config["unit_of_measurement"] = "W"
-                        break
-                    case "presence":
-                        path += "/binary_sensor"
-                        config["expire_after"] = expireAfter
-                        config["device_class"] = "occupancy"
-                        config["payload_on"] = "present"
-                        config["payload_off"] = "not present"
-                        break
-                    case "pressure":
-                        path += "/sensor"
-                        config["expire_after"] = expireAfter
-                        config["device_class"] = "pressure"
-                        config["unit_of_measurement"] = "mbar"
-                        break
-                    case "switch":
-                        def name = config.name.toLowerCase()
-                        if (name.contains("light") || name.contains("lamp"))
-                            path += "/light"
-                        else
-                            path += "/switch"
-                        config["payload_on"] = "on"
-                        config["payload_off"] = "off"
-                        config["command_topic"] = cmndTopic
-                        break
-                    case "smoke":
-                        path += "/binary_sensor"
-                        config["expire_after"] = expireAfter
-                        config["device_class"] = "smoke"
-                        config["payload_on"] = "detected"
-                        config["payload_off"] = "clear"
-                        break
-                    case "temperature":
-                        path += "/sensor"
-                        config["expire_after"] = expireAfter
-                        config["device_class"] = "temperature"
-                        config["unit_of_measurement"] = getTemperatureScale()
-                        break
-                    case "threeAxis":
-                        path += "/sensor"
-                        config["expire_after"] = expireAfter
-                        config["icon"] = "mdi:axis-arrow"
-                        break
-                    case "voltage":
-                        path += "/sensor"
-                        config["expire_after"] = expireAfter
-                        config["device_class"] = "voltage"
-                        config["unit_of_measurement"] = "V"
-                        break
-                    case "volume":
-                        path += "/sensor"
-                        config["expire_after"] = expireAfter
-                        config["icon"] = "mdi:volume-medium"
-                        break
-                    case "water":
-                        path += "/binary_sensor"
-                        config["expire_after"] = expireAfter
-                        config["device_class"] = "moisture"
-                        config["payload_on"] = "wet"
-                        config["payload_off"] = "dry"
-                        break
-                    case "windowShade":
-                        path += "/cover"
-                        config["command_topic"] = cmndTopic
-                        config["device_class"] = "shade"
-                        config["payload_close"] = "close"
-                        config["payload_open"] = "open"
-                        config["state_closed"] = "closed"
-                        config["state_open"] = "open"
-                        break
-                    default:
-                        path += "/sensor"
-                        config["expire_after"] = expireAfter
-                        break
-                }
-                path += "/${dni}_${state.name}/config"
+                Map config = [
+                    "device": deviceConfig,
+                    "name": device.getDisplayName() + " " + splitCamelCase(state.name).capitalize()
+                ]
+                def type = getStateConfig(device, state, config)
+                def path = "homeassistant/${type}/${dni}_${state.name}/config"
                 publishDeviceConfig(mqtt, path, config)
             })
         }
@@ -377,6 +209,191 @@ private void publishDeviceDiscovery(def mqtt) {
 
     // Schedule sending device current state
     runIn(_random.nextInt(4) + 1, "publishCurrentState")
+}
+
+private void getThermostatConfig(device, config) {
+    def dni = device.getDeviceNetworkId()
+    def tele = "hubitat/tele/${dni}"
+    def cmnd = "hubitat/cmnd/${dni}"
+    config["availability_topic"] = "hubitat/LWT"
+    config["current_temperature_topic"] = tele + "/temperature"
+    config["fan_mode_command_topic"] = cmnd + "/setThermostatFanMode"
+    config["fan_mode_state_topic"] = tele + "/thermostatFanMode"
+    config["fan_modes"] = ["auto", "circulate", "on"]
+    config["max_temp"] = getTemperatureScale() == "F" ? "90" : "32"
+    config["min_temp"] = getTemperatureScale() == "F" ? "50" : "10"
+    config["mode_command_topic"] = cmnd + "/setThermostatMode"
+    config["mode_state_topic"] = tele + "/thermostatMode"
+    config["modes"] = device.currentValue("supportedThermostatModes")[1..-2].replace("control","auto").split(",")
+    config["payload_available"] = "Online"
+    config["payload_not_available"] = "Offline"
+    config["temp_step"] = "1"
+    config["temperature_high_command_topic"] = cmnd + "/setCoolingSetpoint"
+    config["temperature_high_state_topic"] = tele + "/coolingSetpoint"
+    config["temperature_low_command_topic"] = cmnd + "/setHeatingSetpoint"
+    config["temperature_low_state_topic"] = tele + "/heatingSetpoint"
+    config["temperature_unit"] = getTemperatureScale()
+    config["unique_id"] = "${dni}::thermostat"
+}
+
+private String getStateConfig(def device, def state, Map config) {
+    String type
+    def dni = device.getDeviceNetworkId()
+    def cmndTopic = "hubitat/cmnd/${dni}/${state.name}"
+    def expireAfter = settings.telePeriod * 120
+    config["unique_id"] = "${dni}::${state.name}"
+    config["state_topic"] = "hubitat/tele/${dni}/${state.name}"
+    config["availability_topic"] = "hubitat/LWT"
+    config["payload_available"] = "Online"
+    config["payload_not_available"] = "Offline"
+    switch (state.name) {
+        case "acceleration":
+            type = "binary_sensor"
+            config["expire_after"] = expireAfter
+            config["device_class"] = "moving"
+            config["payload_on"] = "active"
+            config["payload_off"] = "inactive"
+            break
+        case "battery":
+            type = "sensor"
+            config["expire_after"] = expireAfter
+            config["device_class"] = "battery"
+            config["unit_of_measurement"] = "%"
+            break
+        case "carbonMonoxide":
+            type = "binary_sensor"
+            config["expire_after"] = expireAfter
+            config["device_class"] = "gas"
+            config["payload_on"] = "detected"
+            config["payload_off"] = "clear"
+            break
+        case "contact":
+            type = "binary_sensor"
+            def name = device.getDisplayName().toLowerCase()
+            if (name.contains("garage door") || name.contains("overhead"))
+                config["device_class"] = "garage_door"
+            else if (name.contains("door"))
+                config["device_class"] = "door"
+            else
+                config["device_class"] = "window"
+            config["expire_after"] = expireAfter
+            config["payload_on"] = "open"
+            config["payload_off"] = "closed"
+            break
+        case "door":
+            type = "cover"
+            config["command_topic"] = cmndTopic
+            config["device_class"] = "door"
+            config["payload_close"] = "close"
+            config["payload_open"] = "open"
+            config["state_closed"] = "closed"
+            config["state_open"] = "open"
+            break
+        case "humidity":
+            type = "sensor"
+            config["expire_after"] = expireAfter
+            config["device_class"] = "humidity"
+            config["unit_of_measurement"] = "%"
+            break
+        case "motion":
+            type = "binary_sensor"
+            config["expire_after"] = expireAfter
+            config["device_class"] = "motion"
+            config["payload_on"] = "active"
+            config["payload_off"] = "inactive"
+            break
+        case "illuminance":
+            type = "sensor"
+            config["expire_after"] = expireAfter
+            config["device_class"] = "illuminance"
+            config["unit_of_measurement"] = "lx"
+            break
+        case "mute":
+            type = "sensor"
+            config["expire_after"] = expireAfter
+            config["icon"] = "mdi:volume-off"
+            break
+        case "power":
+            type = "sensor"
+            config["expire_after"] = expireAfter
+            config["device_class"] = "power"
+            config["unit_of_measurement"] = "W"
+            break
+        case "presence":
+            type = "binary_sensor"
+            config["expire_after"] = expireAfter
+            config["device_class"] = "occupancy"
+            config["payload_on"] = "present"
+            config["payload_off"] = "not present"
+            break
+        case "pressure":
+            type = "sensor"
+            config["expire_after"] = expireAfter
+            config["device_class"] = "pressure"
+            config["unit_of_measurement"] = "mbar"
+            break
+        case "switch":
+            def name = device.getDisplayName().toLowerCase()
+            if (name.contains("light") || name.contains("lamp"))
+                type = "light"
+            else
+                type = "switch"
+            config["payload_on"] = "on"
+            config["payload_off"] = "off"
+            config["command_topic"] = cmndTopic
+            break
+        case "smoke":
+            type = "binary_sensor"
+            config["expire_after"] = expireAfter
+            config["device_class"] = "smoke"
+            config["payload_on"] = "detected"
+            config["payload_off"] = "clear"
+            break
+        case "temperature":
+            type = "sensor"
+            config["expire_after"] = expireAfter
+            config["device_class"] = "temperature"
+            config["unit_of_measurement"] = getTemperatureScale()
+            break
+        case "threeAxis":
+            type = "sensor"
+            config["expire_after"] = expireAfter
+            config["icon"] = "mdi:axis-arrow"
+            break
+        case "voltage":
+            type = "sensor"
+            config["expire_after"] = expireAfter
+            config["device_class"] = "voltage"
+            config["unit_of_measurement"] = "V"
+            break
+        case "volume":
+            type = "sensor"
+            config["expire_after"] = expireAfter
+            config["icon"] = "mdi:volume-medium"
+            break
+        case "water":
+            type = "binary_sensor"
+            config["expire_after"] = expireAfter
+            config["device_class"] = "moisture"
+            config["payload_on"] = "wet"
+            config["payload_off"] = "dry"
+            break
+        case "windowShade":
+            type = "cover"
+            config["command_topic"] = cmndTopic
+            config["device_class"] = "shade"
+            config["payload_close"] = "close"
+            config["payload_open"] = "open"
+            config["state_closed"] = "closed"
+            config["state_open"] = "open"
+            break
+        default:
+            type = "sensor"
+            config["expire_after"] = expireAfter
+            break
+    }
+
+    return type
 }
 
 private void publishDeviceConfig(def mqtt, String path, Map config) {
@@ -392,16 +409,8 @@ private void publishDeviceConfig(def mqtt, String path, Map config) {
 private void parseCommand(dni, cmd, payload) {
     // Handle HUB commands
     if (dni == location.hub.hardwareID) {
-        switch (cmd) {
-            case "hsmSetArm":
-                if (!hsmEnable) return
-                log.info "Sending location even ${cmd} of ${payload}"
-                sendLocationEvent(name: cmd, value: payload)
-                return
-            default:
-                log.error "Unknown command ${cmd} for hub received"
-                return
-        }
+        hubCommand(cmd, payload)
+        return
     }
 
     // Handle device commands
@@ -412,29 +421,11 @@ private void parseCommand(dni, cmd, payload) {
     }
 
     switch (cmd) {
-        case "setThermostatSetpoint":
-            def mode = device.currentValue("thermostatMode")
-            switch (mode) {
-                case "cool":
-                    log.info "Executing setCoolingSetpoint to ${payload} on ${device.displayName}"
-                    device.setCoolingSetpoint(payload as double)
-                    break
-                case "heat":
-                    log.info "Executing setHeatingSetpoint to ${payload} on ${device.displayName}"
-                    device.setHeatingSetPoint(payload as double)
-                    break
-                default:
-                    log.error "Thermostat not set to cool or heat (mode is ${mode})"
-            }
-            break
+        //case "setThermostatSetpoint":
+        //    setThermostatSetpoint(device, payload)
+        //    break
         case "switch":
-            if (payload == "on") {
-                log.info "Executing ${device.displayName}: Switch on"
-                device.on()
-            } else {
-                log.info "Executing ${device.displayName}: Switch off"
-                device.off()
-            }
+            setSwitch(device, payload)
             break
         default:
             if (device.hasCommand(cmd)) {
@@ -444,6 +435,49 @@ private void parseCommand(dni, cmd, payload) {
                 log.warn "Executing ${device.displayName}: ${cmd} does not exist"
             }
             break
+    }
+}
+
+/**
+ * MQTT command actions
+ */
+
+private void hubCommand(String cmd, String payload) {
+    switch (cmd) {
+        case "hsmSetArm":
+            if (!hsmEnable) return
+            log.info "Sending location even ${cmd} of ${payload}"
+            sendLocationEvent(name: cmd, value: payload)
+            return
+        default:
+            log.error "Unknown command ${cmd} for hub received"
+            return
+    }
+}
+
+private void setSwitch(device, String payload) {
+    if (payload == "on") {
+        log.info "Executing ${device.displayName}: Switch on"
+        device.on()
+    } else {
+        log.info "Executing ${device.displayName}: Switch off"
+        device.off()
+    }
+}
+
+private void setThermostatSetpoint(device, String payload) {
+    def mode = device.currentValue("thermostatOperatingState")
+    switch (mode) {
+        case "cooling":
+            log.info "Executing setCoolingSetpoint to ${payload} on ${device.displayName}"
+            device.setCoolingSetpoint(payload as double)
+            break
+        case "heating":
+            log.info "Executing setHeatingSetpoint to ${payload} on ${device.displayName}"
+            device.setHeatingSetPoint(payload as double)
+            break
+        default:
+            log.error "Thermostat not set to cooling or heating (mode is ${mode})"
     }
 }
 
@@ -531,8 +565,14 @@ private void publishDeviceState(def mqtt) {
             log.info "Publishing ${device.displayName} current state"
             device.getCurrentStates().each( { state ->
                 def path = "hubitat/tele/${dni}/${state.name}"
-                if (logEnable) log.debug "Publishing (${device.displayName}) ${path}=${state.value}"
-                mqtt.publish(path, state.value)
+                def value = state.value
+                switch (state.name) {
+                    case "thermostatMode":
+                        value = value.replace("control", "auto")
+                        break
+                }
+                if (logEnable) log.debug "Publishing (${device.displayName}) ${path}=${value}"
+                mqtt.publish(path, value)
             })
         }
     })
