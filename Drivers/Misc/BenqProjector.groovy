@@ -30,7 +30,6 @@ metadata {
         capability "Polling"
         capability "PresenceSensor"
         capability "Switch"
-        capability "AudioVolume"
 
         attribute "3dMode", "string"
         attribute "aspectRatio", "string"
@@ -52,7 +51,7 @@ metadata {
             section("Connection") {
                 input name: "networkHost", type: "text", title: "Hostname/IP", description: "", required: true, defaultValue: ""
                 input name: "networkPort", type: "number", title: "Port", description: "", required: true, defaultValue: 5000
-                input name: "pollingInterval", type: "number", title: "Poll Interval", description: "Seconds", required: true, defaultValue: 5
+//                input name: "pollingInterval", type: "number", title: "Poll Interval", description: "Seconds", required: true, defaultValue: 15
             }
 
             section("Misc") {
@@ -83,25 +82,29 @@ void initialize() {
 // Called when the device is first created.
 void installed() {
     log.info "${device.displayName} driver v${version()} installed"
-
 }
 
 // Called with socket status messages
 void socketStatus(String status) {
-    if (logEnable) log.debug status
-    if (status.startsWith("receive error")) {
+    if (status.contains("error")) {
+        log.error status
         sendEvent(name: "presence", value: "not present", descriptionText: "${device.displayName} {$parts[1]}")
         state.connected = false
+        runInMillis(new Random(now()).nextInt(90000), "connect")
+    } else {
+        if (logEnable) log.debug status
     }
 }
 
 void connected() {
-    log.info "Connected to server at ${settings.networkHost}:${settings.networkPort}"
+    log.info "Connected to serial bridge at ${settings.networkHost}:${settings.networkPort}"
     sendEvent(name: "presence", value: "present", descriptionText: "${device.displayName} is connected")
     state.connected = true
+    // get model name
     send("modelname", "?")
     // response takes around 500ms
     pauseExecution(1000)
+    // do a single poll for values
     poll()
 }
 
@@ -109,11 +112,12 @@ void connected() {
 def parse(data) {
     // rawSocket and socket interfaces return Hex encoded string data
     def response = new String(hubitat.helper.HexUtils.hexStringToByteArray(data))
-    def match = response =~ /\n\*([A-Z]+)=(.+)#/
-    if (match.find()) {
-        String cmd = match.group(1)
-        String value = match.group(2)
-        if (logEnable) log.debug "Received: ${cmd}=${value}"
+    def match = response =~ /(?m)^\*(.+)#/
+    if (!match.find()) return
+    def payload = match.group(1)
+    if (logEnable) log.debug "Receive: ${payload}"
+    if (payload.contains("=")) {
+        def (cmd, value) = match.group(1).split("=")
         updateState(cmd, value)
     }
 }
@@ -136,41 +140,19 @@ void updated() {
 void on() {
     log.info "${device.displayName} Switching On"
     send("pow", "on")
+    runIn(20, "poll")
 }
 
 void off() {
     log.info "${device.displayName} Switching Off"
     send("pow", "off")
+    sendEvent(newEvent("switch", "off"))
+    runIn(20, "poll")
 }
 
 void setSource(String name) {
     log.info "${device.displayName} Setting source to ${name}"
     send("sour", name)
-}
-
-void setVolume(Integer value) {
-    log.info "${device.displayName} Setting volume to ${value}"
-    send("vol", value.toString())
-}
-
-void mute() {
-    log.info "${device.displayName} Setting to mute"
-    send("mute", "on")
-}
-
-void unmute() {
-    log.info "${device.displayName} Setting to unmute"
-    send("mute", "off")
-}
-
-void volumeDown() {
-    log.info "${device.displayName} Volume down"
-    send("vol", "-")
-}
-
-void volumeUp() {
-    log.info "${device.displayName} Volume up"
-    send("vol", "+")
 }
 
 void poll() {
@@ -179,7 +161,7 @@ void poll() {
 
     def cmds = ["pow"]
     if (device.currentValue("switch") == "on")
-        cmds += ["sour", "mute", "vol", "ltim", "lampm", "blank", "appmod", "asp", "3d"]
+        cmds += ["sour", "ltim", "lampm", "blank", "appmod", "asp", "3d"]
 
     if (logEnable) log.info "Polling ${device.displayName} for ${cmds}"
     cmds.each({
@@ -188,9 +170,9 @@ void poll() {
         pauseExecution(1000)
     })
 
-    if (pollingInterval > 0) {
-        runIn(pollingInterval, "poll")
-    }
+    //if (pollingInterval > 0) {
+    //    runIn(pollingInterval, "poll")
+    //}
 }
 
 private updateState(String cmd, String value) {
@@ -214,20 +196,15 @@ private updateState(String cmd, String value) {
             sendEvent(newEvent("lampHours", value as Integer))
             break
         case "MODELNAME":
+            log.info "Setting BenQ model to ${value}"
             updateDataValue("model", value)
             updateDataValue("manufacturer", "BenQ")
-            break
-        case "MUTE":
-            sendEvent(newEvent("mute", value == "ON" ? "muted" : "unmuted"))
             break
         case "POW":
             sendEvent(newEvent("switch", value.toLowerCase()))
             break
         case "SOUR":
             sendEvent(newEvent("source", value.toLowerCase()))
-            break
-        case "VOL":
-            sendEvent(newEvent("volume", value as Integer))
             break
         default:
             log.error "Unknown command: ${cmd}"
@@ -236,12 +213,13 @@ private updateState(String cmd, String value) {
 
 private Map newEvent(String name, value, unit = null) {
     String splitName = splitCamelCase(name)
+    String description = "${device.displayName} ${splitName} is ${value}${unit ?: ''}"
+    if (logEnable) log.info description
     return [
         name: name,
         value: value,
         unit: unit,
-        descriptionText: settings.logTextEnable ? 
-            "${device.displayName} ${splitName} is ${value}${unit ?: ''}" : ""
+        descriptionText: settings.logTextEnable ? description : ""
     ]
 }
 
@@ -251,11 +229,12 @@ private void logsOff() {
 }
 
 private boolean connect() {
+    disconnect()
     unschedule("connect")
     try {
         def hub = device.getHub()
         def socket = interfaces.rawSocket
-        log.info "Connecting to Hyperion server at ${settings.networkHost}:${settings.networkPort}"
+        log.info "Connecting to serial bridge at ${settings.networkHost}:${settings.networkPort}"
         state.connectCount = (state?.connectCount ?: 0) + 1
         socket.connect(
             settings.networkHost,
@@ -273,23 +252,16 @@ private boolean connect() {
 
 private void disconnect() {
     log.info "Disconnecting from ${settings?.networkHost}"
-
-    try {
-        interfaces.rawSocket.close()
-    }
-    catch (any)
-    {
-        // Ignore any exceptions since we are disconnecting
-    }
+    interfaces.rawSocket.close()
+    state.connected = false
 }
 
 private void send(String cmd, String value) {
-    if (logEnable) log.debug "Sending: ${cmd}=${value}"
-    try {
+    if (state.connected) {
+        if (logEnable) log.debug "Sending: ${cmd}=${value}"
         interfaces.rawSocket.sendMessage("\r*${cmd}=${value}#\r")    
-    } catch(e) {
-        log.error "send error: ${e}"
-        runInMillis(new Random(now()).nextInt(90000), "connect")
+    } else {
+        if (logEnable) log.warn "Not Sending: ${cmd}=${value} (not connected)"
     }
 }
 
