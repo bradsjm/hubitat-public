@@ -94,10 +94,14 @@ void initialize() {
 // Called when MQTT message is received
 void parseMessage(topic, payload) {
     if (logEnable) log.debug "Receive ${topic} = ${payload}"
-    if (topic == "homeassistant/status" && payload.toLowerCase() == "online") {
-        // wait for home assistant to be ready after being online
-        log.info "Detected Home Assistant online, scheduling publish"
-        runIn(_random.nextInt(14) + 1, "publishAutoDiscovery")
+    if (topic == "homeassistant/status") {
+        switch (payload) {
+            case "online":
+                // wait for home assistant to be ready after being online
+                log.info "Detected Home Assistant online, scheduling publish"
+                runIn(_random.nextInt(14) + 1, "publishAutoDiscovery")
+                break
+        }
         return
     }
 
@@ -145,7 +149,9 @@ private void publishHubDiscovery(def mqtt) {
         config["name"] = location.hub.name + " Alarm"
         config["unique_id"] = dni + "::hsm"
         config["availability_topic"] = "hubitat/LWT"
-        config["state_topic"]= "hubitat/tele/${dni}/hsmStatus"
+        config["payload_available"] = "Online"
+        config["payload_not_available"] = "Offline"
+        config["state_topic"]= "hubitat/tele/${dni}/hsmArmState"
         config["command_topic"] = "hubitat/cmnd/${dni}/hsmSetArm"
         config["payload_arm_away"] = "armAway"
         config["payload_arm_home"] = "armHome"
@@ -163,6 +169,8 @@ private void publishHubDiscovery(def mqtt) {
         config["state_topic"] = "hubitat/tele/${dni}/${name}"
         config["expire_after"] = telePeriod * 120
         config["availability_topic"] = "hubitat/LWT"
+        config["payload_available"] = "Online"
+        config["payload_not_available"] = "Offline"
         switch (name) {
             case "mode":
                 config["icon"] = "mdi:tag"
@@ -421,9 +429,6 @@ private void parseCommand(dni, cmd, payload) {
     }
 
     switch (cmd) {
-        //case "setThermostatSetpoint":
-        //    setThermostatSetpoint(device, payload)
-        //    break
         case "switch":
             setSwitch(device, payload)
             break
@@ -446,7 +451,7 @@ private void hubCommand(String cmd, String payload) {
     switch (cmd) {
         case "hsmSetArm":
             if (!hsmEnable) return
-            log.info "Sending location even ${cmd} of ${payload}"
+            log.info "Sending location event ${cmd} of ${payload}"
             sendLocationEvent(name: cmd, value: payload)
             return
         default:
@@ -462,22 +467,6 @@ private void setSwitch(device, String payload) {
     } else {
         log.info "Executing ${device.displayName}: Switch off"
         device.off()
-    }
-}
-
-private void setThermostatSetpoint(device, String payload) {
-    def mode = device.currentValue("thermostatOperatingState")
-    switch (mode) {
-        case "cooling":
-            log.info "Executing setCoolingSetpoint to ${payload} on ${device.displayName}"
-            device.setCoolingSetpoint(payload as double)
-            break
-        case "heating":
-            log.info "Executing setHeatingSetpoint to ${payload} on ${device.displayName}"
-            device.setHeatingSetPoint(payload as double)
-            break
-        default:
-            log.error "Thermostat not set to cooling or heating (mode is ${mode})"
     }
 }
 
@@ -512,27 +501,18 @@ private void publishDeviceEvent(event) {
 private void publishLocationEvent(event) {
     def mqtt = getDriver()
     def dni = location.hub.hardwareID
-    def path = "hubitat/tele/${dni}/"
-    def payload
+    def path = "hubitat/tele/${dni}"
+    log.info "Publishing (${location.hub.name}) ${path}/${event.name}=${event.value}"
+    mqtt.publish("${path}/${event.name}", event.value)
+
     switch (event.name) {
-        case "mode":
-            path += "mode"
-            payload = event.value
-            break
         case "hsmStatus":
-            path += "hsmStatus"
-            payload = getHsmState(event.value)
-            break
         case "hsmAlert":
-            path += "hsmStatus"
-            payload = getHsmState(event.value)
+            def payload = getHsmState(event.value)
+            log.info "Publishing (${location.hub.name}) ${path}/hsmArmState=${payload}"
+            mqtt.publish("${path}/hsmArmState", payload)
             break
-        default:
-            log.info "Unknown location event ${event.name} of ${event.value}"
-            return
     }
-    log.info "Publishing (${location.hub.name}) ${path}=${payload}"
-    mqtt.publish(path, payload)
 }
 
 private void publishHubState(def mqtt) {
@@ -543,7 +523,7 @@ private void publishHubState(def mqtt) {
     mqtt.publish("${prefix}/zipCode", location.zipCode)
     mqtt.publish("${prefix}/sunrise", location.sunrise.toString())
     mqtt.publish("${prefix}/sunset", location.sunset.toString())
-    mqtt.publish("${prefix}/hsmStatus", getHsmState(location.hsmStatus))
+    mqtt.publish("${prefix}/hsmArmState", getHsmState(location.hsmStatus))
     mqtt.publish("${prefix}/latitude", location.getFormattedLatitude())
     mqtt.publish("${prefix}/longitude", location.getFormattedLongitude())
     mqtt.publish("${prefix}/temperatureScale", location.temperatureScale)
@@ -645,6 +625,7 @@ private String getHsmState(String value) {
         case "intrusion-home": return "triggered"
         case "intrusion-night": return "triggered"
     }
+    return value
 }
 
 // Translate camel case name to normal text
