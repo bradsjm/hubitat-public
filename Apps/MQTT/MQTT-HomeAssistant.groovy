@@ -55,8 +55,8 @@ preferences {
         section() {
             input name: "telePeriod", type: "number", title: "Periodic state refresh publish interval (minutes)", description: "Number of minutes (default 15)", required: false, defaultValue: 15
             input name: "maxIdleHours", type: "number", title: "Maximum hours since last activity to publish", description: "Number of hours (default 24)", required: false, defaultValue: 24
-            input name: "hsmEnable", type: "bool", title: "Enable Hubitat Security Manager", required: true, defaultValue: true
-            input name: "logEnable", type: "bool", title: "Enable Debug logging", description: "Automatically disabled after 30 minutes", required: true, defaultValue: true
+            input name: "hsmEnable", type: "bool", title: "Enable Hubitat Security Manager", required: false, defaultValue: true
+            input name: "logEnable", type: "bool", title: "Enable Debug logging", required: false, defaultValue: true
         }
     }
 }
@@ -80,73 +80,135 @@ void updated() {
     log.debug settings
     app.updateLabel(settings.name)
     initialize()
-
-    if (logEnable) runIn(1800, "logsOff")
 }
 
 // Called when the driver is initialized.
 void initialize() {
     unsubscribe()
     createDriver()
-    subscribeDevices()
+    log.info "Subscribing to device and location events"
+    subscribe(devices, "publishDeviceEvent", [ filterEvents: true ])
+    subscribe(location, "publishLocationEvent", [ filterEvents: true ])
 }
 
-// Called when MQTT message is received
+// Called when MQTT is connected
+void connected() {
+    log.info "MQTT is connected"
+    subscribeMqtt("homeassistant/status")
+    subscribeMqtt("hubitat/cmnd/#")
+    runIn(_random.nextInt(4) + 1, "publishDiscovery")
+}
+
+/**
+ * MQTT topic and command parsing
+ */
 void parseMessage(topic, payload) {
     if (logEnable) log.debug "Receive ${topic} = ${payload}"
+
     if (topic == "homeassistant/status") {
         switch (payload) {
             case "online":
                 // wait for home assistant to be ready after being online
                 log.info "Detected Home Assistant online, scheduling publish"
-                runIn(_random.nextInt(14) + 1, "publishAutoDiscovery")
+                runIn(_random.nextInt(4) + 1, "publishDiscovery")
                 break
         }
         return
     }
 
     // Parse topic path for dni and command
-    def topicParts = topic.tokenize("/")
-    def idx = topicParts.indexOf("cmnd")
-    if (!idx) return
+    if (topic.startsWith("hubitat/cmnd")) {
+        def topicParts = topic.tokenize("/")
+        def idx = topicParts.indexOf("cmnd")
+        if (!idx) return
 
-    def dni = topicParts[idx+1]
-    def cmd = topicParts[idx+2]
-    parseCommand(dni, cmd, payload)
+        def dni = topicParts[idx+1]
+        def cmd = topicParts[idx+2]
+        if (dni == location.hub.hardwareID)
+            parseHubCommand(cmd, payload)
+        else 
+            parseDeviceCommand(dni, cmd, payload)
+        return
+    }
+
+    log.warn "Received unknown topic: ${topic}"
 }
 
-// Called when MQTT is connected
-void connected() {
-    log.info "MQTT Connected"
-    subscribeMqtt("homeassistant/status")
-    subscribeMqtt("hubitat/cmnd/#")
-    runIn(_random.nextInt(4) + 1, "publishAutoDiscovery")
+private void parseHubCommand(String cmd, String payload) {
+    switch (cmd) {
+        case "hsmSetArm":
+            if (!hsmEnable) return
+            log.info "Sending location event ${cmd} of ${payload}"
+            sendLocationEvent(name: cmd, value: payload)
+            return
+        default:
+            log.error "Unknown command ${cmd} for hub received"
+            return
+    }
+}
+
+private void parseDeviceCommand(dni, cmd, payload) {
+    // Handle device commands
+    def device = devices.find { dni == it.getDeviceNetworkId() }
+    if (!device) {
+        log.error "Unknown device id ${dni} received"
+        return
+    }
+
+    switch (cmd) {
+        case "switch":
+            parseDeviceSwitchCommand(device, payload)
+            break
+        default:
+            if (device.hasCommand(cmd)) {
+                log.info "Executing ${device.displayName}: ${cmd} to ${payload}"
+                device."$cmd"(payload)
+            } else {
+                log.warn "Executing ${device.displayName}: ${cmd} does not exist"
+            }
+            break
+    }
+}
+
+private void parseDeviceSwitchCommand(device, String payload) {
+    if (payload == "on") {
+        log.info "Executing ${device.displayName}: Switch on"
+        device.on()
+    } else {
+        log.info "Executing ${device.displayName}: Switch off"
+        device.off()
+    }
 }
 
 /**
- * Home Assistant Device Discovery
+ * Home Assistant Device Discovery Publication
  */
-private void publishAutoDiscovery() {
+private void publishDiscovery() {
     def mqtt = getDriver()
-    log.info "Publishing Auto Discovery"
-    publishHubDiscovery(mqtt)
-    publishDeviceDiscovery(mqtt)
+    log.info "Publishing Hub Auto Discovery"
+    publishDiscoveryHub(mqtt, location.hub)
+
+    log.info "Publishing Device Auto Discovery"
+    devices.each({ device -> publishDiscoveryDevice(mqtt, device)})
+
+    // Schedule sending device current state
+    runIn(_random.nextInt(4) + 1, "publishCurrentState")
 }
 
-private void publishHubDiscovery(def mqtt) {
-    def dni = location.hub.hardwareID
+private void publishDiscoveryHub(def mqtt, def hub) {
+    def dni = hub.hardwareID
     def deviceConfig = [
-        "ids": [ dni, location.hub.zigbeeId ],
+        "ids": [ dni, hub.zigbeeId ],
         "manufacturer": "Hubitat",
-        "name": location.hub.name,
+        "name": hub.name,
         "model": "Elevation",
-        "sw_version": location.hub.firmwareVersionString
+        "sw_version": hub.firmwareVersionString
     ]
 
     if (hsmEnable) {
         // Publish HSM
         def config = [ "device": deviceConfig ]
-        config["name"] = location.hub.name + " Alarm"
+        config["name"] = hub.name + " Alarm"
         config["unique_id"] = dni + "::hsm"
         config["availability_topic"] = "hubitat/LWT"
         config["payload_available"] = "Online"
@@ -161,10 +223,10 @@ private void publishHubDiscovery(def mqtt) {
         publishDeviceConfig(mqtt, path, config)
     }
 
-    // Publish sensors
+    // Publish hub sensors
     [ "mode" ].each({ name ->
         def config = [ "device": deviceConfig ]
-        config["name"] = location.hub.name + " " + name.capitalize()
+        config["name"] = hub.name + " " + name.capitalize()
         config["unique_id"] = dni + "::" + name
         config["state_topic"] = "hubitat/tele/${dni}/${name}"
         config["expire_after"] = telePeriod * 120
@@ -181,45 +243,40 @@ private void publishHubDiscovery(def mqtt) {
     })
 }
 
-private void publishDeviceDiscovery(def mqtt) {
-    devices.each({ device ->
-        if (device == null) return
-        def dni = device.getDeviceNetworkId()
-        def deviceConfig = [
-            "ids": [ dni ],
-            "manufacturer": device.getDataValue("manufacturer") ?: "",
-            "name": device.getDisplayName(),
-            "model": device.getDataValue("model") ?: ""
-        ]
-        if (device.getZigbeeId()) deviceConfig.ids << device.getZigbeeId()
+private void publishDiscoveryDevice(def mqtt, def device) {
+    if (device == null) return
+    def dni = device.getDeviceNetworkId()
+    def deviceConfig = [
+        "ids": [ dni ],
+        "manufacturer": device.getDataValue("manufacturer") ?: "",
+        "name": device.getDisplayName(),
+        "model": device.getDataValue("model") ?: ""
+    ]
+    if (device.getZigbeeId()) deviceConfig.ids << device.getZigbeeId()
 
-        // Thermostats are unique beasts and require special handling
-        if (device.hasCapability("Thermostat")) {
+    // Thermostats are unique beasts and require special handling
+    if (device.hasCapability("Thermostat")) {
+        Map config = [
+            "device": deviceConfig,
+            "name": device.getDisplayName()
+        ]
+        buildThermostatConfig(device, config)
+        def path = "homeassistant/climate/${dni}_thermostat/config"
+        publishDeviceConfig(mqtt, path, config)
+    } else {
+        device.getCurrentStates().each({ state ->
             Map config = [
                 "device": deviceConfig,
-                "name": device.getDisplayName()
+                "name": device.getDisplayName() + " " + splitCamelCase(state.name).capitalize()
             ]
-            getThermostatConfig(device, config)
-            def path = "homeassistant/climate/${dni}_thermostat/config"
+            def type = buildStateConfig(device, state, config)
+            def path = "homeassistant/${type}/${dni}_${state.name}/config"
             publishDeviceConfig(mqtt, path, config)
-        } else {
-            device.getCurrentStates().each({ state ->
-                Map config = [
-                    "device": deviceConfig,
-                    "name": device.getDisplayName() + " " + splitCamelCase(state.name).capitalize()
-                ]
-                def type = getStateConfig(device, state, config)
-                def path = "homeassistant/${type}/${dni}_${state.name}/config"
-                publishDeviceConfig(mqtt, path, config)
-            })
-        }
-    })
-
-    // Schedule sending device current state
-    runIn(_random.nextInt(4) + 1, "publishCurrentState")
+        })
+    }
 }
 
-private void getThermostatConfig(device, config) {
+private void buildThermostatConfig(device, config) {
     def dni = device.getDeviceNetworkId()
     def tele = "hubitat/tele/${dni}"
     def cmnd = "hubitat/cmnd/${dni}"
@@ -244,7 +301,7 @@ private void getThermostatConfig(device, config) {
     config["unique_id"] = "${dni}::thermostat"
 }
 
-private String getStateConfig(def device, def state, Map config) {
+private String buildStateConfig(def device, def state, Map config) {
     String type
     def dni = device.getDeviceNetworkId()
     def cmndTopic = "hubitat/cmnd/${dni}/${state.name}"
@@ -404,74 +461,8 @@ private String getStateConfig(def device, def state, Map config) {
     return type
 }
 
-private void publishDeviceConfig(def mqtt, String path, Map config) {
-    def json = new JsonBuilder(config).toString()
-    log.info "Publishing discovery for ${config.name} to: ${path}"
-    if (logEnable) log.debug "Publish ${json}"
-    mqtt.publish(path, json, 0, true)
-}
-
 /**
- * Parse Received MQTT Commands
- */
-private void parseCommand(dni, cmd, payload) {
-    // Handle HUB commands
-    if (dni == location.hub.hardwareID) {
-        hubCommand(cmd, payload)
-        return
-    }
-
-    // Handle device commands
-    def device = devices.find { dni == it.getDeviceNetworkId() }
-    if (!device) {
-        log.error "Unknown device id ${dni} received"
-        return
-    }
-
-    switch (cmd) {
-        case "switch":
-            setSwitch(device, payload)
-            break
-        default:
-            if (device.hasCommand(cmd)) {
-                log.info "Executing ${device.displayName}: ${cmd} to ${payload}"
-                device."$cmd"(payload)
-            } else {
-                log.warn "Executing ${device.displayName}: ${cmd} does not exist"
-            }
-            break
-    }
-}
-
-/**
- * MQTT command actions
- */
-
-private void hubCommand(String cmd, String payload) {
-    switch (cmd) {
-        case "hsmSetArm":
-            if (!hsmEnable) return
-            log.info "Sending location event ${cmd} of ${payload}"
-            sendLocationEvent(name: cmd, value: payload)
-            return
-        default:
-            log.error "Unknown command ${cmd} for hub received"
-            return
-    }
-}
-
-private void setSwitch(device, String payload) {
-    if (payload == "on") {
-        log.info "Executing ${device.displayName}: Switch on"
-        device.on()
-    } else {
-        log.info "Executing ${device.displayName}: Switch off"
-        device.off()
-    }
-}
-
-/**
- * Event Handlers
+ * MQTT Publishing Helpers
  */
 private void publishCurrentState() {
     def mqtt = getDriver()
@@ -484,10 +475,11 @@ private void publishCurrentState() {
     }
 }
 
-private void subscribeDevices() {
-    if (logEnable) log.debug "Subscribing to device events"
-    subscribe(devices, "publishDeviceEvent", [ filterEvents: true ])
-    subscribe(location, "publishLocationEvent", [ filterEvents: true ])
+private void publishDeviceConfig(def mqtt, String path, Map config) {
+    def json = new JsonBuilder(config).toString()
+    log.info "Publishing discovery for ${config.name} to: ${path}"
+    if (logEnable) log.debug "Publish ${json}"
+    mqtt.publish(path, json, 0, true)
 }
 
 private void publishDeviceEvent(event) {
@@ -638,10 +630,4 @@ private String splitCamelCase(String s) {
       ),
       " "
    );
-}
-
-// Disable debug logging
-private void logsOff() {
-    log.warn "debug logging disabled for ${app.name}"
-    device.updateSetting("logEnable", [value: "false", type: "bool"] )
 }
