@@ -1,3 +1,4 @@
+/* groovylint-disable MethodCount, CompileStatic, DuplicateNumberLiteral, DuplicateStringLiteral */
 /**
  *  MIT License
  *  Copyright 2020 Jonathan Bradshaw (jb@nrgup.net)
@@ -23,48 +24,81 @@
 import groovy.transform.Field
 import groovy.json.JsonOutput
 import hubitat.helper.ColorUtils
+import com.hubitat.app.ChildDeviceWrapper
 
-static final String version() { "2.0" }
-
-@Field final Map Mappings = [
-    "POWER": [
-        [ event: "switch", func: { it.value.toLowerCase() } ]
+@Field static Map mappings = [
+    'POWER': [
+        [ event: 'switch', func: { c -> c.value.toLowerCase() } ]
     ],
-    "Dimmer": [
-        [ event: "level", unit: "%" ]
+    'Dimmer': [
+        [ event: 'level', unit: '%' ]
     ],
-    "CT": [
-        [ event: "colorTemperature", unit: "K", func: { toKelvin(it.value) } ],
+    'CT': [
+        [ event: 'colorTemperature', unit: 'K', func: { c -> toKelvin(c.value) } ],
     ],
-    "Color": [
-        [ event: "hue", func: { rgbToHSV(it.value)[0] as int } ],
-        [ event: "saturation", func: { rgbToHSV(it.value)[1] as int } ],
-        [ event: "color", func: { rgbToHEX(it.value) } ],
-        [ event: "colorMode", func: { it.value.startsWith("0,0,0") ? "CT" : "RGB" } ],
-        [ event: "colorName", func: { getGenericName(rgbToHSV(it.value)) } ],
+    'Color': [
+        [ event: 'hue', func: { c -> rgbToHSV(c.value)[0] as int } ],
+        [ event: 'saturation', func: { c -> rgbToHSV(c.value)[1] as int } ],
+        [ event: 'color', func: { c -> rgbToHEX(c.value) } ],
+        [ event: 'colorMode', func: { c -> c.value.startsWith('0,0,0') ? 'CT' : 'RGB' } ],
+        [ event: 'colorName', func: { c -> getGenericName(rgbToHSV(c.value)) } ],
     ]
 ]
 
+@Field static Map lightEffects = [
+    0: 'None',
+    1: 'Blink',
+    2: 'Wakeup',
+    3: 'Cycle Up',
+    4: 'Cycle Down',
+    5: 'Random Cycle'
+]
+
 metadata {
-    definition (name: "Tasmota", namespace: "tasmota-mqtt", author: "Jonathan Bradshaw") {
-        capability "Initialize"
-        capability "PresenceSensor"
-        capability "Switch"
+    definition (name: 'MQTT - Tasmota', namespace: 'bradsjm', author: 'Jonathan Bradshaw') {
+        capability 'Initialize'
+        capability 'PresenceSensor'
+        capability 'Refresh'
+        capability 'Switch'
+
+        command 'removeDevices'
     }
 
-    preferences() {
-        section("MQTT Device Topics") {
-            input name: "discoveryPrefix", type: "text", title: "Discovery Prefix", description: "Discovery Topic Prefix", required: true, defaultValue: "tasmota/discovery"
+    preferences {
+        section('MQTT Device Topics') {
+            input name: 'discoveryPrefix',
+                  type: 'text',
+                  title: 'Discovery Prefix',
+                  description: 'Discovery Topic Prefix',
+                  required: true,
+                  defaultValue: 'tasmota/discovery'
         }
 
-        section("MQTT Broker") {
-            input name: "mqttBroker", type: "text", title: "MQTT Broker Host/IP", description: "ex: tcp://hostnameorip:1883", required: true, defaultValue: "tcp://mqtt:1883"
-            input name: "mqttUsername", type: "text", title: "MQTT Username", description: "(blank if none)", required: false
-            input name: "mqttPassword", type: "password", title: "MQTT Password", description: "(blank if none)", required: false
+        section('MQTT Broker') {
+            input name: 'mqttBroker',
+                  type: 'text',
+                  title: 'MQTT Broker Host/IP',
+                  description: 'ex: tcp://hostnameorip:1883',
+                  required: true,
+                  defaultValue: 'tcp://mqtt:1883'
+            input name: 'mqttUsername',
+                  type: 'text',
+                  title: 'MQTT Username',
+                  description: '(blank if none)',
+                  required: false
+            input name: 'mqttPassword',
+                  type: 'password',
+                  title: 'MQTT Password',
+                  description: '(blank if none)',
+                  required: false
         }
 
-        section("Misc") {
-            input name: "logEnable", type: "bool", title: "Enable debug logging", description: "Automatically disabled after 30 minutes", required: true, defaultValue: true
+        section('Misc') {
+            input name: 'logEnable',
+                  type: 'bool',
+                  title: 'Enable debug logging',
+                  required: false,
+                  defaultValue: true
         }
     }
 }
@@ -75,162 +109,73 @@ metadata {
 
 // Called when the device is started.
 void initialize() {
-    log.info "${device.displayName} driver v${version()} initializing"
+    log.info "${device.displayName} driver initializing"
     unschedule()
     state.clear()
 
     state.Subscriptions = [:]
 
     if (!settings.mqttBroker) {
-        log.error "Unable to connect because Broker setting not configured"
+        log.error 'Unable to connect because Broker setting not configured'
         return
     }
 
-    mqttDisconnect()    
+    mqttDisconnect()
     mqttConnect()
 }
 
 // Called when the device is first created.
 void installed() {
-    log.info "${device.displayName} driver v${version()} installed"
+    log.info "${device.displayName} driver installed"
 }
 
 // Called to parse received MQTT data
-def parse(data) {
+void parse(String data) {
     mqttReceive(interfaces.mqtt.parseMessage(data))
+}
+
+// Called when refresh command is used
+void refresh() {
+    log.info "${device.displayName} refreshing devices"
+    childDevices.each { device -> componentRefresh(device) }
 }
 
 // Called when the device is removed.
 void uninstalled() {
     mqttDisconnect()
-    log.info "${device.displayName} driver v${version()} uninstalled"
+    log.info "${device.displayName} driver uninstalled"
 }
 
 // Called when the settings are updated.
 void updated() {
-    log.info "${device.displayName} driver v${version()} configuration updated"
+    log.info "${device.displayName} driver configuration updated"
     log.debug settings
     initialize()
 
-    if (logEnable) runIn(1800, "logsOff")
+    if (logEnable) { runIn(1800, 'logsOff') }
 }
 
-/**
- * Discovery logic
- */
-private void parseAutoDiscovery(String topic, Map config) {
-    if (logEnable) log.debug "Autodiscovery: ${topic}=${config}"
-    if (!config) {
-        log.warn "Autodiscovery: Config empty or missing ${topic}"
-        return
-    }
-
-    def conf_hostname = config["hn"]
-    def conf_device_name = config["dn"]
-    def conf_relay = config["rl"]
-    conf_relay.eachWithIndex({ relay_type, idx -> 
-        if (relay_type > 0 && relay_type <= 3) {
-            def conf_friendly_name = config["fn"][idx]
-            log.info "Autodiscovery ${conf_hostname}: Configuring ${conf_friendly_name}"
-            parseAutoDiscoveryDevice(idx as int, relay_type as int, config)
-        } else if (relay_type) {
-            log.warn "Autodiscovery ${conf_hostname}: Relay ${idx+1} has unknown type ${relay_type}"
-        }
-    })
-}
-
-private void parseAutoDiscoveryDevice(int idx, int relay_type, Map config) {
-    String conf_friendly_name = config["fn"][idx]
-    String conf_device_name = config["dn"]
-    String conf_hostname = config["hn"]
-    String dni = "${conf_hostname}-${idx}"
-
-    String driver = getDeviceDriver(relay_type, config)
-    if (!driver) {
-        log.error "Autodiscovery ${dni}: Missing driver for ${conf_friendly_name}"
-        return
-    }
-
-    def device = getOrCreateDevice(driver, dni, conf_device_name, conf_friendly_name)
-    if (!device) {
-        log.error "Autodiscovery: Unable to create driver ${driver} for ${conf_friendly_name}"
-        return
-    }
-
-    // Persist configuration to device data fields
-    device.updateDataValue("config", JsonOutput.toJson(config))
-    device.updateDataValue("index", (idx+1).toString())
-
-    log.info "Autodiscovery: ${device} (${dni}) using ${driver} driver"
-
-    def subscriptions = [ 
-        getStatTopic(config).plus("RESULT"),
-        getTeleTopic(config).plus("STATE")
-    ]
-
-    // Add topic subscriptions
-    subscriptions.each {
-        if (logEnable) log.trace "Autodiscovery: Subscribing to topic ${it} for ${device}"
-        interfaces.mqtt.subscribe(it, config.qos ?: 0)
-        state.Subscriptions[it] = dni
-    }
-
-    // Force refresh of state
-    componentRefresh(device)
-}
-
-/**
- *  Message Parsing logic
- */
-private void parseTopicPayload(def device, String topic, String payload) {
-    List<Map> events = []
-
-    // Detect json payload
-    if (!payload.startsWith("{") || !payload.endsWith("}")) {
-        log.warn "${device} ${topic}: Payload not JSON (${payload})"
-        return
-    }
-
-    // Get the configuration from the device
-    def config = device.getData()
-    def json = parseJson(payload)
-
-    // Iterate the json
-    json.each({
-        def key = it.key
-        // Get the action mappings for this variable
-        Mappings[key].each({ action ->
-            def value = it.value
-            if (action.func) {
-                value = action.func.call([ device: device, config: config, value: value ])
-                if (logEnable) log.trace "${device} ${action.event ?: ""}: Converted ${it.value} to ${value}"
-            }
-
-            if (value != null && action.event && device.currentValue(action.event) != value) {
-                events << newEvent(device, action.event, value, action?.unit)
-            }
-        })
-    })
-
-    if (events) device.parse(events)
+// command to remove all the child devices
+void removeDevices() {
+    log.info "${device.displayName} removing all child devices"
+    state.Subscriptions = [:]
+    childDevices.each { device -> deleteChildDevice(device.deviceNetworkId) }
 }
 
 /**
  *  Switch Capability
  */
 
-// Turn on
+// Turn on all devices
 void on() {
-    def devices = getChildDevices().findAll { it.hasCommand("on") }
-    devices.each { device ->
+    childDevices.findAll { device -> device.hasCommand('on') }.each { device ->
         componentOn(device)
     }
 }
 
-// Turn off
+// Turn off all devices
 void off() {
-    def devices = getChildDevices().findAll { it.hasCommand("off") }
-    devices.each { device ->
+    childDevices.findAll { device -> device.hasCommand('off') }.each { device ->
         componentOff(device)
     }
 }
@@ -239,28 +184,28 @@ void off() {
  *  Component child device callbacks
  */
 
-void componentOn(device) {
-    Map config = parseJson(device.getDataValue("config"))
-    String topic = getCommandTopic(config).plus("POWER")
-    int index = device.getDataValue("index") as int
-    if (index > 1) topic += index.toString()
+void componentOn(ChildDeviceWrapper device) {
+    Map config = parseJson(device.getDataValue('config'))
+    String topic = getCommandTopic(config) + 'POWER'
+    int index = device.getDataValue('index') as int
+    if (index > 1) { topic += index.toString() }
     log.info "Turning ${device} on"
-    mqttPublish(topic, "1")
+    mqttPublish(topic, '1')
 }
 
-void componentOff(device) {
-    Map config = parseJson(device.getDataValue("config"))
-    String topic = getCommandTopic(config).plus("POWER")
-    int index = device.getDataValue("index") as int
-    if (index > 1) topic += index.toString()
+void componentOff(ChildDeviceWrapper device) {
+    Map config = parseJson(device.getDataValue('config'))
+    String topic = getCommandTopic(config) + 'POWER'
+    int index = device.getDataValue('index') as int
+    if (index > 1) { topic += index.toString() }
     log.info "Turning ${device} off"
-    mqttPublish(topic, "0")
+    mqttPublish(topic, '0')
 }
 
-void componentSetLevel(device, level) {
-    Map config = parseJson(device.getDataValue("config"))
-    String topic = getCommandTopic(config).plus("Dimmer")
-    String payload = level.toString()
+void componentSetLevel(ChildDeviceWrapper device, Integer level) {
+    Map config = parseJson(device.getDataValue('config'))
+    String topic = getCommandTopic(config) + 'Dimmer'
+    String payload = level
     log.info "Setting ${device} level to ${level}%"
     mqttPublish(topic, payload)
 }
@@ -287,277 +232,93 @@ void componentSetLevel(device, level) {
 //     }
 // }
 
-void componentSetColorTemperature(device, value) {
-    Map config = parseJson(device.getDataValue("config"))
+void componentSetColorTemperature(ChildDeviceWrapper device, Integer value) {
+    Map config = parseJson(device.getDataValue('config'))
 
-    if (config["lt_st"] == 2 || config["lt_st"] == 5) {
-        String topic = getCommandTopic(config).plus("CT")
-        String payload = Math.round(1000000f / value.toInteger()).toString()
+    if (config['lt_st'] == 2 || config['lt_st'] == 5) {
+        String topic = getCommandTopic(config) + 'CT'
+        String payload = Math.round(1000000f / value)
         log.info "Setting ${device} color temperature to ${value}K"
         mqttPublish(topic, payload)
         return
     }
 
-    String topic = getCommandTopic(config).plus("WHITE")
+    String topic = getCommandTopic(config) + 'WHITE'
     // ignore value of color temperature as there is only one white for this device
-    String payload = device.currentValue("level").toString()
+    String payload = device.currentValue('level')
     log.info "Setting ${device} white channel to ${value}K"
     mqttPublish(topic, payload)
 }
 
-void componentSetColor(device, colormap) {
+void componentSetColor(ChildDeviceWrapper device, Map colormap) {
     def (int r, int g, int b) = ColorUtils.hsvToRGB([colormap.hue, colormap.saturation, colormap.level])
-    Map config = parseJson(device.getDataValue("config"))
-    String topic = getCommandTopic(config).plus("Color")
+    Map config = parseJson(device.getDataValue('config'))
+    String topic = getCommandTopic(config) + 'Color'
     String payload = "${r},${g},${b}"
     log.info "Setting ${device} color (RGB) to ${payload}"
     mqttPublish(topic, payload)
 }
 
-void componentSetHue(device, hue) {
+void componentSetHue(ChildDeviceWrapper device, Integer hue) {
     componentSetColor(device, [
-        hue: hue, 
-        saturation: 100, 
-        level: device.currentValue("level") ?: 100
+        hue: hue,
+        saturation: 100,
+        level: device.currentValue('level') ?: 100
     ])
 }
 
-void componentSetSaturation(device, percent) {
+void componentSetSaturation(ChildDeviceWrapper device, Integer percent) {
     componentSetColor(device, [
-        hue: device.currentValue("hue") ?: 100, 
-        saturation: percent, 
-        level: device.currentValue("level") ?: 100
+        hue: device.currentValue('hue') ?: 100,
+        saturation: percent,
+        level: device.currentValue('level') ?: 100
     ])
 }
 
-void componentRefresh(device) {
-    Map config = parseJson(device.getDataValue("config"))
-    String topic = getCommandTopic(config).plus("STATE")
+void componentRefresh(ChildDeviceWrapper device) {
+    Map config = parseJson(device.getDataValue('config'))
+    String topic = getCommandTopic(config) + 'STATE'
     log.info "Refreshing ${device}"
-    mqttPublish(topic, "")
-}
-
-/**
- *  Common Tasmota MQTT communication methods
- */
-
-private boolean mqttConnect() {
-    unschedule("mqttConnect")
-    try {
-        def hub = device.getHub()
-        def mqtt = interfaces.mqtt
-        String clientId = hub.hardwareID + "-" + device.id
-        log.info "Connecting to MQTT broker at ${settings.mqttBroker}"
-        state.ConnectCount = (state?.ConnectCount ?: 0) + 1
-        mqtt.connect(
-            settings.mqttBroker,
-            clientId,
-            settings?.mqttUsername,
-            settings?.mqttPassword
-        )
-        return true
-    } catch(e) {
-        log.error "MQTT connect error: ${e}"
-        runInMillis(new Random(now()).nextInt(30000), "mqttConnect")
-    }
-
-    return false
-}
-
-private void mqttDisconnect() {
-    if (interfaces.mqtt.isConnected()) {
-        log.info "Disconnecting from MQTT broker at ${settings?.mqttBroker}"
-    }
-
-    try {
-        interfaces.mqtt.disconnect()
-    }
-    catch (any)
-    {
-        // Ignore any exceptions since we are disconnecting
-    }
-}
-
-private void mqttPublish(String topic, String payload = "", int qos = 0) {
-    if (interfaces.mqtt.isConnected()) {
-        if (logEnable) log.debug "PUB: ${topic} = ${payload}"
-        interfaces.mqtt.publish(topic, payload, qos, false)
-        state.TransmitCount = (state?.TransmitCount ?: 0) + 1
-    } else {
-        log.warn "MQTT not connected, unable to publish ${topic} = ${payload}"
-        runInMillis(new Random(now()).nextInt(30000), "initialize")
-    }
-}
-
-private void mqttReceive(Map message) {
-    String topic = message.get("topic")
-    String payload = message.get("payload")
-    if (logEnable) log.debug "RCV: ${topic} = ${payload}"
-    state.ReceiveCount = (state?.mqttReceiveCount ?: 0) + 1
-
-    // Ignore empty payloads
-    if (!payload) return
-
-    if (topic.startsWith(settings.discoveryPrefix) && topic.endsWith("config")) {
-        // Parse Home Assistant Discovery topic
-        parseAutoDiscovery(topic, parseJson(payload))
-    } else if (state.Subscriptions.containsKey(topic)) {
-        // Parse one of our subscription notifications
-        def dni = state.Subscriptions[topic]
-        def childDevice = getChildDevice(dni)
-        if (childDevice) {
-            parseTopicPayload(childDevice, topic, payload)
-        } else {
-            log.warn "Unable to find child device id ${dni} for topic ${topic}"
-        }
-    } else {
-        if (logEnable) log.debug "Unhandled topic ${topic}, ignoring payload"
-    }
+    mqttPublish(topic, '')
 }
 
 // Called with MQTT client status messages
 void mqttClientStatus(String status) {
-    // The string that is passed to this method with start with "Error" if an error occurred or "Status" if this is just a status message.
-    def parts = status.split(": ")
+    // The string that is passed to this method with start with "Error" if an error occurred
+    // or "Status" if this is just a status message.
+    List<String> parts = status.split(': ')
     switch (parts[0]) {
-        case "Error":
+        case 'Error':
             log.warn "MQTT ${status}"
             switch (parts[1]) {
-                case "Connection lost":
-                case "send error":
-                    sendEvent(name: "presence", value: "not present", descriptionText: "${device.displayName} {$parts[1]}")
-                    runInMillis(new Random(now()).nextInt(30000), "initialize")
+                case 'Connection lost':
+                case 'send error':
+                    runIn(30, 'initialize')
                     break
             }
             break
-        case "Status":
+        case 'Status':
             log.info "MQTT ${status}"
             switch (parts[1]) {
-                case "Connection succeeded":
-                    sendEvent(name: "presence", value: "present", descriptionText: "${device.displayName} is connected")
+                case 'Connection succeeded':
+                    sendEvent(name: 'presence', value: 'present', descriptionText: "${device.displayName} is connected")
                     // without this delay the `parse` method is never called
                     // (it seems that there needs to be some delay after connection to subscribe)
-                    runInMillis(1000, "mqttSubscribeDiscovery")
+                    runIn(1, 'mqttSubscribeDiscovery')
                     break
             }
             break
         default:
-        	if (logEnable) log.debug "MQTT ${status}"
+            log.warn "MQTT ${status}"
             break
     }
 }
 
-private void mqttSubscribeDiscovery() {
-    if (logEnable) log.trace "Subscribing to Tasmota discovery topic at ${settings.discoveryPrefix}"
-    interfaces.mqtt.subscribe("${settings.discoveryPrefix}/#")
-}
-
 /**
- *  Utility methods
+ *  Static Utility methods
  */
 
-private def getOrCreateDevice(String driverName, String deviceNetworkId, String name, String label) {
-    def childDevice = getChildDevice(deviceNetworkId)
-    if (!childDevice) {
-        log.info "Autodiscovery: Creating child device ${name} [${deviceNetworkId}] (${driverName})"
-        childDevice = addChildDevice(
-            "hubitat",
-            driverName,
-            deviceNetworkId,
-            [
-                name: name
-            ]
-        )
-    } else {
-        if (logEnable) log.debug "Autodiscovery: Found child device ${name} [${deviceNetworkId}] (${driverName})"
-    }
-
-    if (childDevice.getName() != name) childDevice.setName(name)
-    if (childDevice.getLabel() != label) childDevice.setLabel(label)
-
-    return childDevice
-}
-
-private String getGenericName(def hsv) {
-    String colorName
-
-    if (!hsv[0] && !hsv[1]) {
-        colorName = "White"
-    } else {
-        switch (hsv[0] * 3.6 as int) {
-            case 0..15: colorName = "Red"
-                break
-            case 16..45: colorName = "Orange"
-                break
-            case 46..75: colorName = "Yellow"
-                break
-            case 76..105: colorName = "Chartreuse"
-                break
-            case 106..135: colorName = "Green"
-                break
-            case 136..165: colorName = "Spring"
-                break
-            case 166..195: colorName = "Cyan"
-                break
-            case 196..225: colorName = "Azure"
-                break
-            case 226..255: colorName = "Blue"
-                break
-            case 256..285: colorName = "Violet"
-                break
-            case 286..315: colorName = "Magenta"
-                break
-            case 316..345: colorName = "Rose"
-                break
-            case 346..360: colorName = "Red"
-                break
-        }
-    }
-
-    return colorName
-}
-
-private String getGenericTempName(int value) {
-    String genericName
-    if (!value) return
-
-    if (value <= 2000) genericName = "Sodium"
-    else if (value <= 2100) genericName = "Starlight"
-    else if (value < 2400) genericName = "Sunrise"
-    else if (value < 2800) genericName = "Incandescent"
-    else if (value < 3300) genericName = "Soft White"
-    else if (value < 3500) genericName = "Warm White"
-    else if (value < 4150) genericName = "Moonlight"
-    else if (value <= 5000) genericName = "Horizon"
-    else if (value < 5500) genericName = "Daylight"
-    else if (value < 6000) genericName = "Electronic"
-    else if (value <= 6500) genericName = "Skylight"
-    else if (value < 20000) genericName = "Polar"
-
-    return genericName
-}
-
-private def limit(value, lowerBound = 0, upperBound = 100) {
-    value == null ? value = upperBound : null
-
-    if (lowerBound < upperBound){
-        if (value < lowerBound) value = lowerBound
-        if (value > upperBound) value = upperBound
-    }
-    else if (upperBound < lowerBound) {
-        if (value < upperBound) value = upperBound
-        if (value > lowerBound) value = lowerBound
-    }
-
-    return value
-}
-
-private void logsOff() {
-    device.updateSetting("logEnable", [value: "false", type: "bool"] )
-    log.info "debug logging disabled for ${device.displayName}"
-}
-
-private Map newEvent(def device, String name, def value, unit = null) {
+private static Map newEvent(ChildDeviceWrapper device, String name, Object value, String unit = null) {
     return [
         name: name,
         value: value,
@@ -566,55 +327,294 @@ private Map newEvent(def device, String name, def value, unit = null) {
     ]
 }
 
-private String getCommandTopic(config) {
-    return getTopic(config, config["tp"][0])
+private static String getGenericName(List<Integer> hsv) {
+    String colorName
+
+    if (!hsv[0] && !hsv[1]) {
+        colorName = 'White'
+    } else {
+        switch (hsv[0] * 3.6 as int) {
+            case 0..15: colorName = 'Red'
+                break
+            case 16..45: colorName = 'Orange'
+                break
+            case 46..75: colorName = 'Yellow'
+                break
+            case 76..105: colorName = 'Chartreuse'
+                break
+            case 106..135: colorName = 'Green'
+                break
+            case 136..165: colorName = 'Spring'
+                break
+            case 166..195: colorName = 'Cyan'
+                break
+            case 196..225: colorName = 'Azure'
+                break
+            case 226..255: colorName = 'Blue'
+                break
+            case 256..285: colorName = 'Violet'
+                break
+            case 286..315: colorName = 'Magenta'
+                break
+            case 316..345: colorName = 'Rose'
+                break
+            case 346..360: colorName = 'Red'
+                break
+        }
+    }
+
+    return colorName
 }
 
-private String getStatTopic(config) {
-    return getTopic(config, config["tp"][1])
+private static List<Integer> rgbToHSV(String rgb) {
+    return ColorUtils.rgbToHSV(rgb.tokenize(',')*.asType(int).take(3))
 }
 
-private String getTeleTopic(config) {
-    return getTopic(config, config["tp"][2])
+private static String rgbToHEX(String rgb) {
+    return ColorUtils.rgbToHEX(rgb.tokenize(',')*.asType(int).take(3))
 }
 
-private String getTopic(config, prefix) {
-    topic = config["ft"]
-    topic = topic.replace("%hostname%", config["hn"])
-    topic = topic.replace("%id%", config["mac"][-6..-1])
-    topic = topic.replace("%prefix%", prefix)
-    topic = topic.replace("%topic%", config["t"])
+private static int toKelvin(BigDecimal value) {
+    return Math.round(1000000f / value) as int
+}
+
+/**
+ * Discovery logic
+ */
+private void parseAutoDiscovery(String topic, Map config) {
+    if (logEnable) { log.debug "Autodiscovery: ${topic}=${config}" }
+    if (!config) {
+        log.warn "Autodiscovery: Config empty or missing ${topic}"
+        return
+    }
+
+    String hostname = config['hn']
+    List<Integer> relay = config['rl']
+    relay.eachWithIndex { relaytype, idx ->
+        if (relaytype > 0 && relaytype <= 3) {
+            parseAutoDiscoveryDevice(idx as int, relaytype as int, config)
+        } else if (relaytype) {
+            log.warn "Autodiscovery ${hostname}: Relay ${idx + 1} has unknown type ${relaytype}"
+        }
+    }
+}
+
+private void parseAutoDiscoveryDevice(int idx, int relaytype, Map config) {
+    String friendlyname = config['fn'][idx]
+    String devicename = config['dn']
+    String dni = config['mac']
+    if (idx > 0) { dni += "-${idx}" }
+
+    String driver = getDeviceDriver(relaytype, config)
+    if (!driver) {
+        log.error "Autodiscovery ${dni}: Missing driver for ${friendlyname}"
+        return
+    }
+
+    ChildDeviceWrapper device = getOrCreateDevice(driver, dni, devicename, friendlyname)
+    log.info device
+    if (!device) {
+        log.error "Autodiscovery: Unable to create driver ${driver} for ${friendlyname}"
+        return
+    }
+
+    // Persist configuration to device data fields
+    device.updateDataValue('config', JsonOutput.toJson(config))
+    device.updateDataValue('index', (idx + 1).toString())
+
+    if (device.hasCapability('LightEffects')) {
+        device.sendEvent(name: 'lightEffects', value: JsonOutput.toJson(lightEffects))
+    }
+
+    log.info "Autodiscovery: ${device} (${dni}) using ${driver} driver"
+
+    List<String> subscriptions = [
+        getStatTopic(config) + 'RESULT',
+        getTeleTopic(config) + 'STATE'
+    ]
+
+    // Add topic subscriptions
+    subscriptions.each { topic ->
+        if (logEnable) { log.trace "Autodiscovery: Subscribing to topic ${topic} for ${device}" }
+        interfaces.mqtt.subscribe(topic, config.qos ?: 0)
+        state.Subscriptions[topic] = dni
+    }
+
+    // Force refresh of state
+    componentRefresh(device)
+}
+
+/**
+ *  Message Parsing logic
+ */
+private void parseTopicPayload(ChildDeviceWrapper device, String topic, String payload) {
+    List<Map> events = []
+
+    // Detect json payload
+    if (!payload.startsWith('{') || !payload.endsWith('}')) {
+        log.warn "${device} ${topic}: Ignoring non JSON payload (${payload})"
+        return
+    }
+
+    // Get the configuration from the device
+    Map config = device.data
+    Map json = parseJson(payload)
+
+    // Iterate the json payload content
+    json.each { kv ->
+        // Get the action mappings for this variable
+        mappings[kv.key].each { action ->
+            Object value = kv.value
+            if (action.func) {
+                value = action.func.call([ device: device, config: config, value: kv.value ])
+                if (logEnable && value != it.value) {
+                    log.debug "${device} ${action.event ?: ''}: Converted from Tasmota ${kv.value} to Hubitat ${value}"
+                }
+            }
+
+            if (value != null && action.event && device.currentValue(action.event) != value) {
+                events << newEvent(device, action.event, value, action?.unit)
+            }
+        }
+    }
+
+    if (events) { device.parse(events) }
+}
+
+/**
+ *  Common Tasmota MQTT communication methods
+ */
+
+private void mqttConnect() {
+    unschedule('mqttConnect')
+    try {
+        String clientId = device.hub.hardwareID + '-' + device.id
+        log.info "Connecting to MQTT broker at ${settings.mqttBroker}"
+        interfaces.mqtt.connect(
+            settings.mqttBroker,
+            clientId,
+            settings?.mqttUsername,
+            settings?.mqttPassword
+        )
+    } catch (e) {
+        log.error "MQTT connect error: ${e}"
+        runIn(30, 'mqttConnect')
+    }
+}
+
+private void mqttDisconnect() {
+    if (interfaces.mqtt.connected) {
+        log.info "Disconnecting from MQTT broker at ${settings?.mqttBroker}"
+        interfaces.mqtt.disconnect()
+    }
+
+    sendEvent(name: 'presence', value: 'not present', descriptionText: "${device.displayName} is not connected")
+}
+
+private void mqttPublish(String topic, String payload = '', int qos = 0) {
+    if (interfaces.mqtt.connected) {
+        if (logEnable) { log.debug "PUB: ${topic} = ${payload}" }
+        interfaces.mqtt.publish(topic, payload, qos, false)
+    }
+}
+
+private void mqttReceive(Map message) {
+    String topic = message.get('topic')
+    String payload = message.get('payload')
+    if (logEnable) { log.debug "RCV: ${topic} = ${payload}" }
+
+    if (topic.startsWith(settings.discoveryPrefix) && topic.endsWith('config')) {
+        // Parse Home Assistant Discovery topic
+        parseAutoDiscovery(topic, parseJson(payload))
+    } else if (state.Subscriptions.containsKey(topic)) {
+        // Parse one of our subscription notifications
+        String dni = state.Subscriptions[topic]
+        ChildDeviceWrapper childDevice = getChildDevice(dni)
+        if (childDevice) {
+            parseTopicPayload(childDevice, topic, payload)
+        } else {
+            log.warn "Unable to find child device id ${dni} for topic ${topic}"
+        }
+    } else if (logEnable) {
+        log.debug "Unhandled topic ${topic}, ignoring payload"
+    }
+}
+
+/* groovylint-disable-next-line UnusedPrivateMethod */
+private void mqttSubscribeDiscovery() {
+    if (logEnable) { log.trace "Subscribing to Tasmota discovery topic at ${settings.discoveryPrefix}" }
+    interfaces.mqtt.subscribe("${settings.discoveryPrefix}/#")
+}
+
+/**
+ *  Utility methods
+ */
+
+private ChildDeviceWrapper getOrCreateDevice(String driverName, String deviceNetworkId, String name, String label) {
+    ChildDeviceWrapper childDevice = getChildDevice(deviceNetworkId)
+    if (!childDevice) {
+        log.info "Autodiscovery: Creating child device ${name} [${deviceNetworkId}] (${driverName})"
+        childDevice = addChildDevice(
+            'hubitat',
+            driverName,
+            deviceNetworkId,
+            [
+                name: name
+            ]
+        )
+    } else if (logEnable) {
+        log.debug "Autodiscovery: Found child device ${name} [${deviceNetworkId}] (${driverName})"
+    }
+
+    if (childDevice.name != name) { childDevice.name = name }
+    if (childDevice.label != label) { childDevice.label = label }
+
+    return childDevice
+}
+
+/* groovylint-disable-next-line UnusedPrivateMethod */
+private void logsOff() {
+    device.updateSetting('logEnable', [value: 'false', type: 'bool'] )
+    log.info "debug logging disabled for ${device.displayName}"
+}
+
+private String getCommandTopic(Map config) {
+    return getTopic(config, config['tp'][0])
+}
+
+private String getStatTopic(Map config) {
+    return getTopic(config, config['tp'][1])
+}
+
+private String getTeleTopic(Map config) {
+    return getTopic(config, config['tp'][2])
+}
+
+private String getTopic(Map config, String prefix) {
+    topic = config['ft']
+    topic = topic.replace('%hostname%', config['hn'])
+    topic = topic.replace('%id%', config['mac'][-6..-1])
+    topic = topic.replace('%prefix%', prefix)
+    topic = topic.replace('%topic%', config['t'])
     return topic
 }
 
-private String getDeviceDriver(int relay_type, Map config) {
-    switch (relay_type) {
+private String getDeviceDriver(int relaytype, Map config) {
+    switch (relaytype) {
         case 1:
-            return "Generic Component Switch"
+            return 'Generic Component Switch'
         case 2: // light or light fan
-            if (config["if"]) {
-                log.warn "Light Fan not implemented"
+            if (config['if']) {
+                log.warn 'Light Fan not implemented'
             } else {
-                switch (config["lt_st"]) {
-                    case 1: return "Generic Component Dimmer"
-                    case 2: return "Generic Component CT"
-                    case 3: return "Generic Component RGB"
+                switch (config['lt_st']) {
+                    case 1: return 'Generic Component Dimmer'
+                    case 2: return 'Generic Component CT'
+                    case 3: return 'Generic Component RGB'
                     case 4:
-                    case 5: return "Generic Component RGBW"
+                    case 5: return 'Generic Component RGBW Light Effects'
                 }
             }
             break
     }
-}
-
-private def rgbToHSV(String rgb) {
-    return ColorUtils.rgbToHSV(rgb.tokenize(",")*.asType(int).take(3))
-}
-
-private def rgbToHEX(String rgb) {
-    return ColorUtils.rgbToHEX(rgb.tokenize(",")*.asType(int).take(3))
-}
-
-private int toKelvin(value) {
-    return Math.round(1000000f / value) as int
 }
