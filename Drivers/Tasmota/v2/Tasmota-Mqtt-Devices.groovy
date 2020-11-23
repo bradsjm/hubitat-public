@@ -1,4 +1,3 @@
-/* groovylint-disable MethodCount, CompileStatic, DuplicateNumberLiteral, DuplicateStringLiteral */
 /**
  *  MIT License
  *  Copyright 2020 Jonathan Bradshaw (jb@nrgup.net)
@@ -21,41 +20,14 @@
  *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  *  SOFTWARE.
 */
-import groovy.transform.Field
-import groovy.json.JsonOutput
-import hubitat.helper.ColorUtils
 import com.hubitat.app.ChildDeviceWrapper
-
-@Field static Map mappings = [
-    'POWER': [
-        [ event: 'switch', func: { c -> c.value.toLowerCase() } ]
-    ],
-    'Dimmer': [
-        [ event: 'level', unit: '%' ]
-    ],
-    'CT': [
-        [ event: 'colorTemperature', unit: 'K', func: { c -> toKelvin(c.value) } ],
-    ],
-    'Color': [
-        [ event: 'hue', func: { c -> rgbToHSV(c.value)[0] as int } ],
-        [ event: 'saturation', func: { c -> rgbToHSV(c.value)[1] as int } ],
-        [ event: 'color', func: { c -> rgbToHEX(c.value) } ],
-        [ event: 'colorMode', func: { c -> c.value.startsWith('0,0,0') ? 'CT' : 'RGB' } ],
-        [ event: 'colorName', func: { c -> getGenericName(rgbToHSV(c.value)) } ],
-    ]
-]
-
-@Field static Map lightEffects = [
-    0: 'None',
-    1: 'Blink',
-    2: 'Wakeup',
-    3: 'Cycle Up',
-    4: 'Cycle Down',
-    5: 'Random Cycle'
-]
+import com.hubitat.app.DeviceWrapper
+import groovy.json.JsonOutput
+import groovy.transform.Field
+import hubitat.helper.ColorUtils
 
 metadata {
-    definition (name: 'MQTT - Tasmota', namespace: 'bradsjm', author: 'Jonathan Bradshaw') {
+    definition (name: 'MQTT - Tasmota Discovery', namespace: 'bradsjm', author: 'Jonathan Bradshaw') {
         capability 'Initialize'
         capability 'PresenceSensor'
         capability 'Refresh'
@@ -93,6 +65,14 @@ metadata {
                   required: false
         }
 
+        section('Options') {
+            input name: 'so20',
+                  type: 'bool',
+                  title: 'Update of Dimmer/Color/CT without turning power on',
+                  required: false,
+                  defaultValue: false
+        }
+
         section('Misc') {
             input name: 'logEnable',
                   type: 'bool',
@@ -103,6 +83,8 @@ metadata {
     }
 }
 
+@Field static Map subscriptions = [:]
+
 /**
  *  Hubitat Driver Event Handlers
  */
@@ -111,9 +93,7 @@ metadata {
 void initialize() {
     log.info "${device.displayName} driver initializing"
     unschedule()
-    state.clear()
-
-    state.Subscriptions = [:]
+    subscriptions.clear()
 
     if (!settings.mqttBroker) {
         log.error 'Unable to connect because Broker setting not configured'
@@ -140,6 +120,12 @@ void refresh() {
     childDevices.each { device -> componentRefresh(device) }
 }
 
+// command to remove all the child devices
+void removeDevices() {
+    log.info "${device.displayName} removing all child devices"
+    childDevices.each { device -> deleteChildDevice(device.deviceNetworkId) }
+}
+
 // Called when the device is removed.
 void uninstalled() {
     mqttDisconnect()
@@ -155,13 +141,6 @@ void updated() {
     if (logEnable) { runIn(1800, 'logsOff') }
 }
 
-// command to remove all the child devices
-void removeDevices() {
-    log.info "${device.displayName} removing all child devices"
-    state.Subscriptions = [:]
-    childDevices.each { device -> deleteChildDevice(device.deviceNetworkId) }
-}
-
 /**
  *  Switch Capability
  */
@@ -170,44 +149,70 @@ void removeDevices() {
 void on() {
     childDevices.findAll { device -> device.hasCommand('on') }.each { device ->
         componentOn(device)
-    }
+}
 }
 
 // Turn off all devices
 void off() {
     childDevices.findAll { device -> device.hasCommand('off') }.each { device ->
         componentOff(device)
-    }
+}
 }
 
 /**
  *  Component child device callbacks
  */
 
-void componentOn(ChildDeviceWrapper device) {
+void componentOn(DeviceWrapper device) {
     Map config = parseJson(device.getDataValue('config'))
     String topic = getCommandTopic(config) + 'POWER'
-    int index = device.getDataValue('index') as int
-    if (index > 1) { topic += index.toString() }
+    String index = device.getDataValue('index')
     log.info "Turning ${device} on"
-    mqttPublish(topic, '1')
+    mqttPublish(topic + index, '1')
 }
 
-void componentOff(ChildDeviceWrapper device) {
+void componentOff(DeviceWrapper device) {
     Map config = parseJson(device.getDataValue('config'))
     String topic = getCommandTopic(config) + 'POWER'
-    int index = device.getDataValue('index') as int
-    if (index > 1) { topic += index.toString() }
+    String index = device.getDataValue('index')
     log.info "Turning ${device} off"
-    mqttPublish(topic, '0')
+    mqttPublish(topic + index, '0')
 }
 
-void componentSetLevel(ChildDeviceWrapper device, Integer level) {
+void componentSetLevel(DeviceWrapper device, BigDecimal level) {
     Map config = parseJson(device.getDataValue('config'))
     String topic = getCommandTopic(config) + 'Dimmer'
     String payload = level
     log.info "Setting ${device} level to ${level}%"
     mqttPublish(topic, payload)
+}
+
+void componentSetEffect(DeviceWrapper device, BigDecimal id) {
+    Map config = parseJson(device.getDataValue('config'))
+    String index = device.getDataValue('index')
+    String topic = getCommandTopic(config)
+    log.info "Setting ${device} effect to ${id}"
+    switch (id) {
+        case 0:
+            mqttPublish(topic + 'Scheme', '0')
+            mqttPublish(topic + 'Power' + index, 'blinkoff')
+            break
+        case 1:
+            mqttPublish(topic + 'Power' + index, 'blink')
+            break
+        case 2:
+            mqttPublish(topic + 'Scheme', '1')
+            break
+        case 3:
+            mqttPublish(topic + 'Scheme', '2')
+            break
+        case 4:
+            mqttPublish(topic + 'Scheme', '3')
+            break
+        case 5:
+            mqttPublish(topic + 'Scheme', '4')
+            break
+    }
 }
 
 // void componentStartLevelChange(device, direction) {
@@ -232,7 +237,7 @@ void componentSetLevel(ChildDeviceWrapper device, Integer level) {
 //     }
 // }
 
-void componentSetColorTemperature(ChildDeviceWrapper device, Integer value) {
+void componentSetColorTemperature(DeviceWrapper device, BigDecimal value) {
     Map config = parseJson(device.getDataValue('config'))
 
     if (config['lt_st'] == 2 || config['lt_st'] == 5) {
@@ -250,7 +255,7 @@ void componentSetColorTemperature(ChildDeviceWrapper device, Integer value) {
     mqttPublish(topic, payload)
 }
 
-void componentSetColor(ChildDeviceWrapper device, Map colormap) {
+void componentSetColor(DeviceWrapper device, Map colormap) {
     def (int r, int g, int b) = ColorUtils.hsvToRGB([colormap.hue, colormap.saturation, colormap.level])
     Map config = parseJson(device.getDataValue('config'))
     String topic = getCommandTopic(config) + 'Color'
@@ -259,7 +264,7 @@ void componentSetColor(ChildDeviceWrapper device, Map colormap) {
     mqttPublish(topic, payload)
 }
 
-void componentSetHue(ChildDeviceWrapper device, Integer hue) {
+void componentSetHue(DeviceWrapper device, BigDecimal hue) {
     componentSetColor(device, [
         hue: hue,
         saturation: 100,
@@ -267,7 +272,7 @@ void componentSetHue(ChildDeviceWrapper device, Integer hue) {
     ])
 }
 
-void componentSetSaturation(ChildDeviceWrapper device, Integer percent) {
+void componentSetSaturation(DeviceWrapper device, BigDecimal percent) {
     componentSetColor(device, [
         hue: device.currentValue('hue') ?: 100,
         saturation: percent,
@@ -275,7 +280,7 @@ void componentSetSaturation(ChildDeviceWrapper device, Integer percent) {
     ])
 }
 
-void componentRefresh(ChildDeviceWrapper device) {
+void componentRefresh(DeviceWrapper device) {
     Map config = parseJson(device.getDataValue('config'))
     String topic = getCommandTopic(config) + 'STATE'
     log.info "Refreshing ${device}"
@@ -390,16 +395,21 @@ private void parseAutoDiscovery(String topic, Map config) {
 
     String hostname = config['hn']
     List<Integer> relay = config['rl']
+
+    // Send device configuration options
+    configureOptions(config)
+
+    // Iterate through the defined relays/outputs
     relay.eachWithIndex { relaytype, idx ->
         if (relaytype > 0 && relaytype <= 3) {
-            parseAutoDiscoveryDevice(idx as int, relaytype as int, config)
+            parseAutoDiscoveryRelay(idx as int, relaytype as int, config)
         } else if (relaytype) {
             log.warn "Autodiscovery ${hostname}: Relay ${idx + 1} has unknown type ${relaytype}"
         }
     }
 }
 
-private void parseAutoDiscoveryDevice(int idx, int relaytype, Map config) {
+private void parseAutoDiscoveryRelay(int idx, int relaytype, Map config) {
     String friendlyname = config['fn'][idx]
     String devicename = config['dn']
     String dni = config['mac']
@@ -412,36 +422,56 @@ private void parseAutoDiscoveryDevice(int idx, int relaytype, Map config) {
     }
 
     ChildDeviceWrapper device = getOrCreateDevice(driver, dni, devicename, friendlyname)
-    log.info device
     if (!device) {
         log.error "Autodiscovery: Unable to create driver ${driver} for ${friendlyname}"
         return
     }
+
+    log.info "Autodiscovery: ${device} (${dni}) using ${driver} driver"
 
     // Persist configuration to device data fields
     device.updateDataValue('config', JsonOutput.toJson(config))
     device.updateDataValue('index', (idx + 1).toString())
 
     if (device.hasCapability('LightEffects')) {
-        device.sendEvent(name: 'lightEffects', value: JsonOutput.toJson(lightEffects))
+        device.sendEvent(name: 'lightEffects', value: JsonOutput.toJson([
+            0: 'None',
+            1: 'Blink',
+            2: 'Wakeup',
+            3: 'Cycle Up',
+            4: 'Cycle Down',
+            5: 'Random Cycle'
+        ]))
     }
 
-    log.info "Autodiscovery: ${device} (${dni}) using ${driver} driver"
-
-    List<String> subscriptions = [
+    List<String> topics = [
         getStatTopic(config) + 'RESULT',
         getTeleTopic(config) + 'STATE'
     ]
 
     // Add topic subscriptions
-    subscriptions.each { topic ->
+    topics.each { topic ->
         if (logEnable) { log.trace "Autodiscovery: Subscribing to topic ${topic} for ${device}" }
-        interfaces.mqtt.subscribe(topic, config.qos ?: 0)
-        state.Subscriptions[topic] = dni
-    }
+        interfaces.mqtt.subscribe(topic)
 
-    // Force refresh of state
-    componentRefresh(device)
+        if (subscriptions.containsKey(topic)) {
+            subscriptions[topic] += dni
+        } else {
+            subscriptions[topic] = [ dni ]
+        }
+    }
+}
+
+private void configureOptions(Map config) {
+    String topic = getCommandTopic(config) + 'BACKLOG'
+    String payload = ''
+
+    payload += 'Latitude ' + location.latitude + ';'
+    payload += 'Longitude ' + location.longitude + ';'
+    payload += 'so17 1;'
+    payload += 'so20 ' + (settings['so20'] ? '1' : '0') + ';'
+
+    mqttPublish(topic, payload)
 }
 
 /**
@@ -457,28 +487,38 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
     }
 
     // Get the configuration from the device
-    Map config = device.data
+    String index = device.getDataValue('index')
     Map json = parseJson(payload)
 
     // Iterate the json payload content
     json.each { kv ->
-        // Get the action mappings for this variable
-        mappings[kv.key].each { action ->
-            Object value = kv.value
-            if (action.func) {
-                value = action.func.call([ device: device, config: config, value: kv.value ])
-                if (logEnable && value != it.value) {
-                    log.debug "${device} ${action.event ?: ''}: Converted from Tasmota ${kv.value} to Hubitat ${value}"
-                }
-            }
-
-            if (value != null && action.event && device.currentValue(action.event) != value) {
-                events << newEvent(device, action.event, value, action?.unit)
-            }
+        switch (kv.key) {
+            case 'POWER':
+            case "POWER${index}":
+                events << newEvent(device, 'switch', kv.value.toLowerCase())
+                break
+            case 'Dimmer':
+                events << newEvent(device, 'level', kv.value, '%')
+                break
+            case 'CT':
+                events << newEvent(device, 'colorTemperature', toKelvin(kv.value), 'K')
+                break
+            case 'Color':
+                events << newEvent(device, 'hue', rgbToHSV(kv.value)[0])
+                events << newEvent(device, 'saturation', rgbToHSV(kv.value)[1])
+                events << newEvent(device, 'color', rgbToHEX(kv.value))
+                events << newEvent(device, 'colorMode', kv.value.startsWith('0,0,0') ? 'CT' : 'RGB')
+                events << newEvent(device, 'colorName', getGenericName(rgbToHSV(kv.value)))
+                break
+            default:
+                if (logEnable) { log.warn "Ignoring ${device} [ ${kv.key}: ${kv.value} ]" }
+                break
         }
     }
 
-    if (events) { device.parse(events) }
+    if (events) {
+        device.parse(events)
+    }
 }
 
 /**
@@ -526,14 +566,15 @@ private void mqttReceive(Map message) {
     if (topic.startsWith(settings.discoveryPrefix) && topic.endsWith('config')) {
         // Parse Home Assistant Discovery topic
         parseAutoDiscovery(topic, parseJson(payload))
-    } else if (state.Subscriptions.containsKey(topic)) {
-        // Parse one of our subscription notifications
-        String dni = state.Subscriptions[topic]
-        ChildDeviceWrapper childDevice = getChildDevice(dni)
-        if (childDevice) {
-            parseTopicPayload(childDevice, topic, payload)
-        } else {
-            log.warn "Unable to find child device id ${dni} for topic ${topic}"
+    } else if (subscriptions.containsKey(topic)) {
+        // Parse subscription notifications
+        subscriptions[topic].each { dni ->
+            ChildDeviceWrapper childDevice = getChildDevice(dni)
+            if (childDevice) {
+                parseTopicPayload(childDevice, topic, payload)
+            } else {
+                log.warn "Unable to find child device id ${dni} for topic ${topic}"
+            }
         }
     } else if (logEnable) {
         log.debug "Unhandled topic ${topic}, ignoring payload"
