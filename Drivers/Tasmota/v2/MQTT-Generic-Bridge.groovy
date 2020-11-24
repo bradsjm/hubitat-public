@@ -23,7 +23,7 @@
 static final String version() { "1.0" }
 
 metadata {
-    definition (name: "MQTT Bridge", namespace: "mqtt", author: "Jonathan Bradshaw") {  
+    definition (name: "MQTT - Generic Bridge", namespace: "nrgup", author: "Jonathan Bradshaw") {  
         capability "Initialize"
         capability "PresenceSensor"
          
@@ -31,8 +31,8 @@ metadata {
             [ name:"topic", type: "STRING", description: "Topic"],
             [ name:"message", type: "STRING", description: "Message"
         ]]
-		command "subscribe", [[ name:"topic", type: "STRING", description: "Topic"]]
-		command "unsubscribe", [[ name:"topic", type: "STRING", description: "Topic"]]
+        command "subscribe", [[ name:"topic", type: "STRING", description: "Topic"]]
+        command "unsubscribe", [[ name:"topic", type: "STRING", description: "Topic"]]
     }
 
     preferences() {
@@ -208,7 +208,7 @@ void mqttClientStatus(String status) {
             }
             break
         default:
-        	if (logEnable) log.debug "MQTT ${status}"
+            if (logEnable) log.debug "MQTT ${status}"
             break
     }
 }

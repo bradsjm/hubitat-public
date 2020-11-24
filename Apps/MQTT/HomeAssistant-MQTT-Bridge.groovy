@@ -28,8 +28,8 @@ import groovy.json.JsonBuilder
 
 static final String version() { "0.1" }
 definition (
-    name: "Home Assistant Publisher", 
-    namespace: "mqtt", 
+    name: "HomeAssistant MQTT Bridge", 
+    namespace: "nrgup", 
     author: "Jonathan Bradshaw",
     category: "Intranet Connectivity",
     description: "Publish Hubitat devices to Home Assistant via MQTT",
@@ -561,7 +561,7 @@ private void createDriver () {
     def dni = "mqtt-bridge-${app.id}"
     def childDev = getChildDevice(dni)
 
-	if (childDev == null) {
+    if (childDev == null) {
         def name = "MQTT Bridge Device"
         childDev = addChildDevice(
             "mqtt",
@@ -574,7 +574,7 @@ private void createDriver () {
         )
     }
     
-	if (childDev == null) {
+    if (childDev == null) {
         log.error ("MQTT Bridge Device was not created")
         return
     }

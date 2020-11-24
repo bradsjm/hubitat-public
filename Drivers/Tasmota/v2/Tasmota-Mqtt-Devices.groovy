@@ -27,7 +27,7 @@ import groovy.transform.Field
 import hubitat.helper.ColorUtils
 
 metadata {
-    definition (name: 'MQTT - Tasmota Discovery', namespace: 'bradsjm', author: 'Jonathan Bradshaw') {
+    definition (name: 'MQTT - Tasmota Discovery', namespace: 'nrgup', author: 'Jonathan Bradshaw') {
         capability 'Initialize'
         capability 'PresenceSensor'
         capability 'Refresh'
@@ -653,7 +653,7 @@ private String getDeviceDriver(int relaytype, Map config) {
                     case 2: return 'Generic Component CT'
                     case 3: return 'Generic Component RGB'
                     case 4:
-                    case 5: return 'Generic Component RGBW Light Effects'
+                    case 5: return 'Generic Component RGBW'
                 }
             }
             break
