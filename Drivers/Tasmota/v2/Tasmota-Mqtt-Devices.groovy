@@ -467,9 +467,17 @@ private void parseAutoDiscoveryRelay(int idx, int relaytype, Map config) {
 
     log.info "Autodiscovery: ${device} (${dni}) using ${driver} driver"
 
-    // Persist configuration to device data fields
+    // Persist required configuration to device data fields
     device.updateDataValue('config', JsonOutput.toJson(config))
     device.updateDataValue('index', idx.toString())
+
+    // Informational data fields
+    device.updateDataValue('model', config['md'])
+    device.updateDataValue('ip', config['ip'])
+    device.updateDataValue('mac', config['mac'])
+    device.updateDataValue('hostname', config['hn'])
+    device.updateDataValue('software', config['sw'])
+    device.updateDataValue('topic', config['t'])
 
     if (device.hasCapability('LightEffects')) {
         device.sendEvent(name: 'lightEffects', value: JsonOutput.toJson([
@@ -484,13 +492,13 @@ private void parseAutoDiscoveryRelay(int idx, int relaytype, Map config) {
 
     List<String> topics = [
         getStatTopic(config) + 'RESULT',
-        getTeleTopic(config) + 'STATE'
+        getTeleTopic(config) + 'STATE',
+        getTeleTopic(config) + 'LWT'
     ]
 
     // Add topic subscriptions
     topics.each { topic ->
-        if (logEnable) { log.trace "Autodiscovery: Subscribing to topic ${topic} for ${device}" }
-        interfaces.mqtt.subscribe(topic)
+        mqttSubscribe(topic)
         if (subscriptions.containsKey(topic)) {
             subscriptions[topic] += dni
         } else {
@@ -518,6 +526,18 @@ private void configureDeviceSettings(Map config) {
  */
 private void parseTopicPayload(ChildDeviceWrapper device, String topic, String payload) {
     List<Map> events = []
+
+    // Process online/offline notifications
+    if (topic.endsWith('LWT')) {
+        String indicator = ' (Offline)'
+        if (device.label.contains(indicator)) {
+            device.label = device.label.replace(indicator, '')
+        }
+        if (payload == 'Offline') {
+            device.label += indicator
+        }
+        return
+    }
 
     // Detect json payload
     if (!payload.startsWith('{') || !payload.endsWith('}')) {
@@ -638,10 +658,16 @@ private void mqttReceive(Map message) {
     }
 }
 
+private void mqttSubscribe(String topic) {
+    if (interfaces.mqtt.connected) {
+        if (logEnable) { log.debug "SUB: ${topic}" }
+        interfaces.mqtt.subscribe(topic)
+    }
+}
+
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void mqttSubscribeDiscovery() {
-    if (logEnable) { log.trace "Subscribing to Tasmota discovery topic at ${settings.discoveryPrefix}" }
-    interfaces.mqtt.subscribe("${settings.discoveryPrefix}/#")
+    mqttSubscribe("${settings.discoveryPrefix}/#")
 }
 
 /**
