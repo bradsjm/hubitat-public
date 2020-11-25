@@ -27,7 +27,7 @@ import groovy.transform.Field
 import hubitat.helper.ColorUtils
 
 metadata {
-    definition (name: 'MQTT - Tasmota Discovery', namespace: 'nrgup', author: 'Jonathan Bradshaw') {
+    definition (name: 'MQTT - Tasmota Bridge', namespace: 'nrgup', author: 'Jonathan Bradshaw') {
         capability 'Initialize'
         capability 'PresenceSensor'
         capability 'Refresh'
@@ -534,20 +534,30 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
         switch (kv.key) {
             case 'POWER':
             case "POWER${index}":
-                events << newEvent(device, 'switch', kv.value.toLowerCase())
+                String value = kv.value.toLowerCase()
+                if (device.currentValue('switch') != value) {
+                    events << newEvent(device, 'switch', value)
+                }
                 break
             case 'Dimmer':
-                events << newEvent(device, 'level', kv.value, '%')
+                if (device.currentValue('level') != kv.value) {
+                    events << newEvent(device, 'level', kv.value, '%')
+                }
                 break
             case 'CT':
-                events << newEvent(device, 'colorTemperature', toKelvin(kv.value), 'K')
+                if (device.currentValue('colorTemperature') != kv.value) {
+                    events << newEvent(device, 'colorTemperature', toKelvin(kv.value), 'K')
+                }
                 break
             case 'Color':
-                events << newEvent(device, 'hue', rgbToHSV(kv.value)[0])
-                events << newEvent(device, 'saturation', rgbToHSV(kv.value)[1])
-                events << newEvent(device, 'color', rgbToHEX(kv.value))
-                events << newEvent(device, 'colorMode', kv.value.startsWith('0,0,0') ? 'CT' : 'RGB')
-                events << newEvent(device, 'colorName', getGenericName(rgbToHSV(kv.value)))
+                String hex = rgbToHEX(kv.value)
+                if (device.currentValue('color') != hex) {
+                    events << newEvent(device, 'color', hex)
+                    events << newEvent(device, 'hue', rgbToHSV(kv.value)[0])
+                    events << newEvent(device, 'saturation', rgbToHSV(kv.value)[1])
+                    events << newEvent(device, 'colorMode', kv.value.startsWith('0,0,0') ? 'CT' : 'RGB')
+                    events << newEvent(device, 'colorName', getGenericName(rgbToHSV(kv.value)))
+                }
                 break
             default:
                 if (logEnable) { log.warn "Ignoring ${device} [ ${kv.key}: ${kv.value} ]" }
