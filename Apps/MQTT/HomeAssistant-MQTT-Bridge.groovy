@@ -63,7 +63,7 @@ preferences {
 
 // Called when the app is first created.
 void installed() {
-    log.info "${app.name} driver v${version()} installed"
+    log.info "${app.name} v${version()} installed"
     settings.name = app.name
 }
 
@@ -71,12 +71,12 @@ void installed() {
 void uninstalled() {
     unsubscribe()
     removeAllChildDevices()
-    log.info "${app.name} driver v${version()} uninstalled"
+    log.info "${app.name} v${version()} uninstalled"
 }
 
 // Called when the settings are updated.
 void updated() {
-    log.info "${app.name} driver v${version()} configuration updated"
+    log.info "${app.name} v${version()} configuration updated"
     log.debug settings
     app.updateLabel(settings.name)
     initialize()

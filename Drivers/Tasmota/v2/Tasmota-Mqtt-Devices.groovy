@@ -33,47 +33,60 @@ metadata {
         capability 'Refresh'
         capability 'Switch'
 
+        command 'sendCommand', [
+            [
+                type: 'text',
+            ]
+        ]
         command 'removeDevices'
     }
 
     preferences {
-        section('MQTT Device Topics') {
+        section {
             input name: 'discoveryPrefix',
                   type: 'text',
                   title: 'Discovery Prefix',
                   description: 'Discovery Topic Prefix',
                   required: true,
                   defaultValue: 'tasmota/discovery'
-        }
 
-        section('MQTT Broker') {
             input name: 'mqttBroker',
                   type: 'text',
                   title: 'MQTT Broker Host/IP',
                   description: 'ex: tcp://hostnameorip:1883',
                   required: true,
                   defaultValue: 'tcp://mqtt:1883'
+
             input name: 'mqttUsername',
                   type: 'text',
                   title: 'MQTT Username',
                   description: '(blank if none)',
                   required: false
+
             input name: 'mqttPassword',
                   type: 'password',
                   title: 'MQTT Password',
                   description: '(blank if none)',
                   required: false
-        }
 
-        section('Options') {
             input name: 'so20',
                   type: 'bool',
                   title: 'Update of Dimmer/Color/CT without turning power on',
                   required: false,
                   defaultValue: false
-        }
 
-        section('Misc') {
+            input name: 'telePeriod',
+                  type: 'number',
+                  title: 'Interval for telemetry updates in seconds (0 to disable)',
+                  required: false,
+                  defaultValue: 300
+
+            input name: 'fadeTime',
+                  type: 'number',
+                  title: 'Default fade seconds (0 to disable)',
+                  required: false,
+                  defaultValue: 0
+
             input name: 'logEnable',
                   type: 'bool',
                   title: 'Enable debug logging',
@@ -83,6 +96,7 @@ metadata {
     }
 }
 
+// Keeps a list of topic to child device mappings for lookup for received messages
 @Field static Map subscriptions = [:]
 
 /**
@@ -114,18 +128,6 @@ void parse(String data) {
     mqttReceive(interfaces.mqtt.parseMessage(data))
 }
 
-// Called when refresh command is used
-void refresh() {
-    log.info "${device.displayName} refreshing devices"
-    childDevices.each { device -> componentRefresh(device) }
-}
-
-// command to remove all the child devices
-void removeDevices() {
-    log.info "${device.displayName} removing all child devices"
-    childDevices.each { device -> deleteChildDevice(device.deviceNetworkId) }
-}
-
 // Called when the device is removed.
 void uninstalled() {
     mqttDisconnect()
@@ -142,6 +144,32 @@ void updated() {
 }
 
 /**
+ *  Custom Commands
+ */
+
+// Called when refresh command is used
+void refresh() {
+    log.info "${device.displayName} refreshing devices"
+    childDevices.each { device -> componentRefresh(device) }
+}
+
+// command to remove all the child devices
+void removeDevices() {
+    log.info "${device.displayName} removing all child devices"
+    childDevices.each { device -> deleteChildDevice(device.deviceNetworkId) }
+}
+
+// send command to all child devices
+void sendCommand(String command) {
+    log.info "${device.displayName} sending ${command} to all devices"
+    childDevices.each { device ->
+        Map config = parseJson(device.getDataValue('config'))
+        String topic = getCommandTopic(config) + 'Backlog'
+        mqttPublish(topic, command)
+    }
+}
+
+/**
  *  Switch Capability
  */
 
@@ -149,14 +177,14 @@ void updated() {
 void on() {
     childDevices.findAll { device -> device.hasCommand('on') }.each { device ->
         componentOn(device)
-}
+    }
 }
 
 // Turn off all devices
 void off() {
     childDevices.findAll { device -> device.hasCommand('off') }.each { device ->
         componentOff(device)
-}
+    }
 }
 
 /**
@@ -165,54 +193,29 @@ void off() {
 
 void componentOn(DeviceWrapper device) {
     Map config = parseJson(device.getDataValue('config'))
-    String topic = getCommandTopic(config) + 'POWER'
+    String topic = getCommandTopic(config) + 'Backlog'
+    String fadeCommand = fadeCommand(settings.fadeTime)
     String index = device.getDataValue('index')
     log.info "Turning ${device} on"
-    mqttPublish(topic + index, '1')
+    mqttPublish(topic, fadeCommand + "POWER${index} 1")
 }
 
 void componentOff(DeviceWrapper device) {
     Map config = parseJson(device.getDataValue('config'))
-    String topic = getCommandTopic(config) + 'POWER'
+    String topic = getCommandTopic(config) + 'Backlog'
+    String fadeCommand = fadeCommand(settings.fadeTime)
     String index = device.getDataValue('index')
     log.info "Turning ${device} off"
-    mqttPublish(topic + index, '0')
+    mqttPublish(topic, fadeCommand + "POWER${index} 0")
 }
 
-void componentSetLevel(DeviceWrapper device, BigDecimal level) {
+void componentSetLevel(DeviceWrapper device, BigDecimal level, BigDecimal duration = 0) {
     Map config = parseJson(device.getDataValue('config'))
-    String topic = getCommandTopic(config) + 'Dimmer'
-    String payload = level
-    log.info "Setting ${device} level to ${level}%"
-    mqttPublish(topic, payload)
-}
-
-void componentSetEffect(DeviceWrapper device, BigDecimal id) {
-    Map config = parseJson(device.getDataValue('config'))
+    String topic = getCommandTopic(config) + 'Backlog'
+    String fadeCommand = fadeCommand(duration ?: settings.fadeTime)
     String index = device.getDataValue('index')
-    String topic = getCommandTopic(config)
-    log.info "Setting ${device} effect to ${id}"
-    switch (id) {
-        case 0:
-            mqttPublish(topic + 'Scheme', '0')
-            mqttPublish(topic + 'Power' + index, 'blinkoff')
-            break
-        case 1:
-            mqttPublish(topic + 'Power' + index, 'blink')
-            break
-        case 2:
-            mqttPublish(topic + 'Scheme', '1')
-            break
-        case 3:
-            mqttPublish(topic + 'Scheme', '2')
-            break
-        case 4:
-            mqttPublish(topic + 'Scheme', '3')
-            break
-        case 5:
-            mqttPublish(topic + 'Scheme', '4')
-            break
-    }
+    log.info "Setting ${device} level to ${level}% over ${duration}s"
+    mqttPublish(topic, fadeCommand + "Dimmer${index} ${level}")
 }
 
 // void componentStartLevelChange(device, direction) {
@@ -239,29 +242,30 @@ void componentSetEffect(DeviceWrapper device, BigDecimal id) {
 
 void componentSetColorTemperature(DeviceWrapper device, BigDecimal value) {
     Map config = parseJson(device.getDataValue('config'))
+    String topic = getCommandTopic(config) + 'Backlog'
+    String fadeCommand = fadeCommand(duration ?: settings.fadeTime)
 
     if (config['lt_st'] == 2 || config['lt_st'] == 5) {
-        String topic = getCommandTopic(config) + 'CT'
-        String payload = Math.round(1000000f / value)
+        String level = Math.round(1000000f / value)
         log.info "Setting ${device} color temperature to ${value}K"
-        mqttPublish(topic, payload)
+        mqttPublish(topic, fadeCommand + "CT ${level}")
         return
     }
 
-    String topic = getCommandTopic(config) + 'WHITE'
     // ignore value of color temperature as there is only one white for this device
-    String payload = device.currentValue('level')
-    log.info "Setting ${device} white channel to ${value}K"
-    mqttPublish(topic, payload)
+    String level = device.currentValue('level')
+    log.info "Setting ${device} white channel to WHITE"
+    mqttPublish(topic, fadeCommand + "WHITE ${level}")
 }
 
 void componentSetColor(DeviceWrapper device, Map colormap) {
     def (int r, int g, int b) = ColorUtils.hsvToRGB([colormap.hue, colormap.saturation, colormap.level])
     Map config = parseJson(device.getDataValue('config'))
-    String topic = getCommandTopic(config) + 'Color'
-    String payload = "${r},${g},${b}"
-    log.info "Setting ${device} color (RGB) to ${payload}"
-    mqttPublish(topic, payload)
+    String topic = getCommandTopic(config) + 'Backlog'
+    String fadeCommand = fadeCommand(duration ?: settings.fadeTime)
+    String color = "${r},${g},${b}"
+    log.info "Setting ${device} color (RGB) to ${color}"
+    mqttPublish(topic, fadeCommand + "Color ${color}")
 }
 
 void componentSetHue(DeviceWrapper device, BigDecimal hue) {
@@ -281,10 +285,13 @@ void componentSetSaturation(DeviceWrapper device, BigDecimal percent) {
 }
 
 void componentRefresh(DeviceWrapper device) {
-    Map config = parseJson(device.getDataValue('config'))
-    String topic = getCommandTopic(config) + 'STATE'
-    log.info "Refreshing ${device}"
-    mqttPublish(topic, '')
+    String json = device.getDataValue('config')
+    if (json) {
+        Map config = parseJson(json)
+        String topic = getCommandTopic(config) + 'STATE'
+        log.info "Refreshing ${device}"
+        mqttPublish(topic, '')
+    }
 }
 
 // Called with MQTT client status messages
@@ -332,6 +339,13 @@ private static Map newEvent(ChildDeviceWrapper device, String name, Object value
     ]
 }
 
+// Get the Tasmota fade speed command from seconds
+private static String fadeCommand(BigDecimal seconds) {
+    int speed = Math.min(40f, seconds * 2).toInteger()
+    return speed ? "NoDelay;Fade 1;NoDelay;Speed ${speed};NoDelay;" : 'NoDelay;Fade 0;NoDelay;'
+}
+
+// Convert hsv to a generic color name
 private static String getGenericName(List<Integer> hsv) {
     String colorName
 
@@ -371,16 +385,39 @@ private static String getGenericName(List<Integer> hsv) {
     return colorName
 }
 
+// Convert rgb to HSV value
 private static List<Integer> rgbToHSV(String rgb) {
     return ColorUtils.rgbToHSV(rgb.tokenize(',')*.asType(int).take(3))
 }
 
+// Convert rgb to HEX value
 private static String rgbToHEX(String rgb) {
     return ColorUtils.rgbToHEX(rgb.tokenize(',')*.asType(int).take(3))
 }
 
+// Convert mireds to kelvin
 private static int toKelvin(BigDecimal value) {
     return Math.round(1000000f / value) as int
+}
+
+// Create topic subscription map from child devices
+private Map scanTopicMap() {
+    Map subs = [:]
+    childDevices.each { device ->
+        Map config = parseJson(device.getDataValue('config'))
+        String dni = config['mac']
+        String index = device.getDataValue('index')
+        if (index != '1') { dni += "-${index}" }
+        [ getStatTopic(config) + 'RESULT', getTeleTopic(config) + 'STATE'].each { topic ->
+            if (subs.containsKey(topic)) {
+                subs[topic] += dni
+            } else {
+                subs[topic] = [ dni ]
+            }
+        }
+    }
+
+    return subs
 }
 
 /**
@@ -397,12 +434,12 @@ private void parseAutoDiscovery(String topic, Map config) {
     List<Integer> relay = config['rl']
 
     // Send device configuration options
-    configureOptions(config)
+    configureDeviceSettings(config)
 
     // Iterate through the defined relays/outputs
     relay.eachWithIndex { relaytype, idx ->
         if (relaytype > 0 && relaytype <= 3) {
-            parseAutoDiscoveryRelay(idx as int, relaytype as int, config)
+            parseAutoDiscoveryRelay(1 + idx as int, relaytype as int, config)
         } else if (relaytype) {
             log.warn "Autodiscovery ${hostname}: Relay ${idx + 1} has unknown type ${relaytype}"
         }
@@ -410,10 +447,11 @@ private void parseAutoDiscovery(String topic, Map config) {
 }
 
 private void parseAutoDiscoveryRelay(int idx, int relaytype, Map config) {
-    String friendlyname = config['fn'][idx]
+    String friendlyname = config['fn'][idx - 1]
     String devicename = config['dn']
-    String dni = config['mac']
-    if (idx > 0) { dni += "-${idx}" }
+    String mac = config['mac']
+    String dni = mac
+    if (idx > 1) { dni += "-${idx}" }
 
     String driver = getDeviceDriver(relaytype, config)
     if (!driver) {
@@ -431,7 +469,7 @@ private void parseAutoDiscoveryRelay(int idx, int relaytype, Map config) {
 
     // Persist configuration to device data fields
     device.updateDataValue('config', JsonOutput.toJson(config))
-    device.updateDataValue('index', (idx + 1).toString())
+    device.updateDataValue('index', idx.toString())
 
     if (device.hasCapability('LightEffects')) {
         device.sendEvent(name: 'lightEffects', value: JsonOutput.toJson([
@@ -453,7 +491,6 @@ private void parseAutoDiscoveryRelay(int idx, int relaytype, Map config) {
     topics.each { topic ->
         if (logEnable) { log.trace "Autodiscovery: Subscribing to topic ${topic} for ${device}" }
         interfaces.mqtt.subscribe(topic)
-
         if (subscriptions.containsKey(topic)) {
             subscriptions[topic] += dni
         } else {
@@ -462,14 +499,16 @@ private void parseAutoDiscoveryRelay(int idx, int relaytype, Map config) {
     }
 }
 
-private void configureOptions(Map config) {
+// Configure Tasmota device settings
+private void configureDeviceSettings(Map config) {
     String topic = getCommandTopic(config) + 'BACKLOG'
     String payload = ''
 
     payload += 'Latitude ' + location.latitude + ';'
     payload += 'Longitude ' + location.longitude + ';'
-    payload += 'so17 1;'
+    payload += 'so17 1;' // use RGB not HEX results
     payload += 'so20 ' + (settings['so20'] ? '1' : '0') + ';'
+    payload += 'teleperiod ' + settings['telePeriod'] + ';'
 
     mqttPublish(topic, payload)
 }
@@ -566,7 +605,15 @@ private void mqttReceive(Map message) {
     if (topic.startsWith(settings.discoveryPrefix) && topic.endsWith('config')) {
         // Parse Home Assistant Discovery topic
         parseAutoDiscovery(topic, parseJson(payload))
-    } else if (subscriptions.containsKey(topic)) {
+    }
+
+    // Check if subscription map is empty
+    if (!subscriptions.size() && childDevices.size()) {
+        log.info 'Building topics for existing devices'
+        subscriptions = scanTopicMap()
+    }
+
+    if (subscriptions.containsKey(topic)) {
         // Parse subscription notifications
         subscriptions[topic].each { dni ->
             ChildDeviceWrapper childDevice = getChildDevice(dni)
