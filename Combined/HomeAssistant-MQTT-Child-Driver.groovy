@@ -22,7 +22,11 @@
 */
 
 metadata {
-    definition (name: 'MQTT - Generic Bridge', namespace: 'nrgup', author: 'Jonathan Bradshaw') {
+    definition (
+        name: 'Home Assistant MQTT Broker Driver',
+        namespace: 'nrgup',
+        author: 'Jonathan Bradshaw'
+    ) {
         capability 'Initialize'
         capability 'PresenceSensor'
 

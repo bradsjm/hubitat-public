@@ -27,11 +27,11 @@ import com.hubitat.hub.domain.State
 import groovy.json.JsonOutput
 
 definition (
-    name: 'HomeAssistant MQTT Bridge',
+    name: 'Home Assistant MQTT Bridge',
     namespace: 'nrgup',
     author: 'Jonathan Bradshaw',
     category: 'Intranet Connectivity',
-    description: 'Publish Hubitat devices to Home Assistant via MQTT',
+    description: 'Publish Hubitat sensors and thermostat devices to Home Assistant via MQTT',
     iconUrl: '',
     iconX2Url: '',
     installOnOpen: true,
