@@ -168,7 +168,7 @@ void initialize() {
     }
 
     scheduleUpdate()
-    schedule('0 */5 * * * ?', scheduleUpdate)
+    schedule('0 */5 * * * ?', 'scheduleUpdate')
 }
 
 private static List<Integer> ctToRGB(int colorTemp) {
