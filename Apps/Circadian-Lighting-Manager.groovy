@@ -21,6 +21,7 @@
  *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  *  SOFTWARE.
 */
+import com.hubitat.app.DeviceWrapper
 import com.hubitat.hub.domain.Event
 import hubitat.helper.ColorUtils
 
@@ -152,20 +153,14 @@ void updated() {
 // Called when the driver is initialized.
 void initialize() {
     log.info "${app.name} initializing"
-    state.disabledDevices = [] as Set
+    state.last = [:]
+    state.current = [:]
+    state.disabledDevices = []
     unsubscribe()
 
-    if (colorTemperatureOnDevices) {
-        subscribe(colorTemperatureOnDevices, 'switch.on', updateLamp)
-    }
-
-    if (colorOnDevices) {
-        subscribe(colorOnDevices, 'switch.on', updateLamp)
-    }
-
-    if (dimmableOnDevices) {
-        subscribe(dimmableOnDevices, 'switch.on', updateLamp)
-    }
+    subscribe(colorTemperatureOnDevices, 'switch.on', 'updateLamp')
+    subscribe(colorOnDevices, 'switch.on', 'updateLamp')
+    subscribe(dimmableOnDevices, 'switch.on', 'updateLamp')
 
     scheduleUpdate()
     schedule('0 */5 * * * ?', 'scheduleUpdate')
@@ -219,25 +214,25 @@ private void scheduleUpdate() {
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void updateLamp(Event evt) {
     Map current = state.current
-    Set state.disabledDevices -= evt.device
+    DeviceWrapper device = evt.device
 
-    if (evt.device in dimmableOnDevices && evt.device.currentValue('level') != current.brightness) {
-        if (logEnable) { log.debug "Setting ${evt.device} level to ${current.brightness}%" }
-        evt.device.setLevel(current.brightness)
+    if (device.id in settings.dimmableOnDevices*.id && device.currentValue('level') != current.brightness) {
+        if (logEnable) { log.debug "Setting ${device} level to ${current.brightness}%" }
+        device.setLevel(current.brightness)
     }
 
-    if (evt.device in colorOnDevices && (
-        evt.device.currentValue('hue') != current.hsv[0] ||
-        evt.device.currentValue('saturation') != current.hsv[1] ||
-        evt.device.currentValue('level') != current.hsv[2])) {
-        if (logEnable) { log.debug "Setting ${evt.device} color to ${current.hsv}" }
-        evt.device.setColor(current.hsv)
+    if (device.id in settings.colorOnDevices*.id && (
+        device.currentValue('hue') != current.hsv[0] ||
+        device.currentValue('saturation') != current.hsv[1] ||
+        device.currentValue('level') != current.hsv[2])) {
+        if (logEnable) { log.debug "Setting ${device} color to ${current.hsv}" }
+        device.setColor(current.hsv)
     }
 
-    if (evt.device in colorTemperatureOnDevices &&
-        evt.device.currentValue('colorTemperature') != current.colorTemperature) {
-        if (logEnable) { log.debug "Setting ${evt.device} color temperature to ${current.colorTemperature}K" }
-        evt.device.setColorTemperature(current.colorTemperature)
+    if (device.id in settings.colorTemperatureOnDevices*.id &&
+        device.currentValue('colorTemperature') != current.colorTemperature) {
+        if (logEnable) { log.debug "Setting ${device} color temperature to ${current.colorTemperature}K" }
+        device.setColorTemperature(current.colorTemperature)
     }
 }
 
@@ -246,7 +241,7 @@ private void updateLamps() {
     Map current = state.current
     Set disabled = state.disabledDevices
 
-    dimmableOnDevices.each { device ->
+    settings.dimmableOnDevices.each { device ->
         if (!disabled.contains(device) &&
             device.currentValue('switch') == 'on' &&
             device.currentValue('level') != current.brightness) {
@@ -255,7 +250,7 @@ private void updateLamps() {
         }
     }
 
-    colorOnDevices.each { device ->
+    settings.colorOnDevices.each { device ->
         if (!disabled.contains(device) &&
             device.currentValue('switch') == 'on' && (
             device.currentValue('hue') != current.hsv[0] ||
@@ -266,7 +261,7 @@ private void updateLamps() {
         }
     }
 
-    colorTemperatureOnDevices.each { device ->
+    settings.colorTemperatureOnDevices.each { device ->
         if (!disabled.contains(device) &&
             device.currentValue('switch') == 'on' &&
             device.currentValue('colorMode') != 'RGB' &&
@@ -276,7 +271,7 @@ private void updateLamps() {
         }
     }
 
-    dimmableDevices.each { device ->
+    settings.dimmableDevices.each { device ->
         if (!disabled.contains(device) &&
             device.currentValue('level') != current.brightness) {
             if (logEnable) { log.debug "Setting ${device} level to ${current.brightness}%" }
@@ -284,7 +279,7 @@ private void updateLamps() {
         }
     }
 
-    colorDevices.each { device ->
+    settings.colorDevices.each { device ->
         if (!disabled.contains(device) &&
             device.currentValue('color') != current.hsv) {
             if (logEnable) { log.debug "Setting ${device} color to ${current.hsv}" }
@@ -292,7 +287,7 @@ private void updateLamps() {
         }
     }
 
-    colorTemperatureDevices.each { device ->
+    settings.colorTemperatureDevices.each { device ->
         if (!disabled.contains(device) &&
             device.currentValue('colorMode') != 'RGB' &&
             device.currentValue('colorTemperature') != current.colorTemperature) {
