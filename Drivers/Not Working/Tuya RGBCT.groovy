@@ -8,8 +8,8 @@
 import groovy.json.JsonOutput
 import groovy.transform.Field
 import hubitat.helper.HexUtils
-import java.util.concurrent.ConcurrentLinkedQueue
-import java.util.concurrent.Semaphore
+//import java.util.concurrent.ConcurrentLinkedQueue
+//import java.util.concurrent.Semaphore
 import java.util.regex.Matcher
 import javax.crypto.Cipher
 import javax.crypto.spec.SecretKeySpec
@@ -68,6 +68,12 @@ preferences {
         input name: 'logEnable',
               type: 'bool',
               title: 'Enable debug logging',
+              required: false,
+              defaultValue: true
+
+        input name: 'logTextEnable',
+              type: 'bool',
+              title: 'Enable descriptionText logging',
               required: false,
               defaultValue: true
     }
@@ -155,7 +161,9 @@ void off() {
  */
 void setLevel(BigDecimal level, BigDecimal duration = 0) {
     log.info "Setting ${device.displayName} brightness to ${level}%"
-    String payload = control(devId, [ '3': (level * 2.55).toInteger() ])
+    // the brightness scale does not start at 0 but starts at 25 - 255
+    int value = Math.round(2.3206 * level + 22.56)
+    String payload = control(devId, [ '3': value ])
     byte[] output = encode('CONTROL', payload, settings.localKey)
     if (logEnable) { log.debug "SEND: ${ipAddress}: ${payload}" }
     send(output)
@@ -164,6 +172,7 @@ void setLevel(BigDecimal level, BigDecimal duration = 0) {
 
 // request query for device data
 void refresh() {
+    log.info "Querying ${device.displayName} status"
     String payload = query(devId)
     byte[] output = encode('DP_QUERY', payload, settings.localKey)
     if (logEnable) { log.debug "SEND: ${ipAddress}: ${payload}" }
@@ -171,56 +180,53 @@ void refresh() {
 }
 
 // Set the HSB color [hue:(0-100), saturation:(0-100), brightness level:(0-100)]
-void setColor(colormap) {
-    if (colormap.hue == null || colormap.saturation == null) return
-    int h = colormap.hue * 3.6
-    int s = colormap.saturation
-    int b = colormap.level
-    String hsb = Integer.toString(h, 16).padStart(4, '0') +
-                 Integer.toString(Math.round(2.55 * s), 16).padStart(2, '0') +
-                 Integer.toString(Math.round(2.55 * b), 16).padStart(2, '0')
-    h /= 60;
-    s /= 100;
-    b *= 2.55;
-    // String value = Integer.toString(h, 16).padStart(4, '0') +
-    //                Integer.toString(10 * s, 16).padStart(4, '0') +
-    //                Integer.toString(10 * b, 16).padStart(4, '0')
-    log.info "Setting ${device.displayName} color to ${hue}, ${saturation}, ${level}"
-    // String payload = control(devId, [ '5':  ])
-    // byte[] output = encode('CONTROL', payload, settings.localKey)
-    // if (logEnable) { log.debug "SEND: ${ipAddress}: ${payload}" }
-    // send(output)
-    // runInMillis(750, 'refresh')
-
+void setColor(Map colormap) {
+    log.info "Setting ${device.displayName} color to ${colormap}"
+    String hsb = Integer.toHexString((int)Math.round(3.6 * colormap.hue)).padLeft(10, '0') +
+                 Integer.toHexString((int)Math.round(2.55 * colormap.saturation)).padLeft(2, '0') +
+                 Integer.toHexString((int)Math.round(2.3206 * colormap.level + 22.56)).padLeft(2, '0')
+    String payload = control(devId, [ '5': hsb ])
+    byte[] output = encode('CONTROL', payload, settings.localKey)
+    if (logEnable) { log.debug "SEND: ${ipAddress}: ${payload}" }
+    send(output)
+    runInMillis(750, 'refresh')
 }
 
 /*
  * Color Control Capability
  */
-void setHue(hue) {
-    // Hubitat hue is 0-100 to be converted to Tasmota 0-360
-    hue = limit(Math.round(hue * 3.6), 0, 360).toInteger()
-
-    if (settings.enforceState && !settings.preStaging) state.desiredPowerState = "on"
-    mqttPublish(getTopic("HsbColor1"), hue.toString())
-    sendEvent(newEvent("colorName", ""))
+void setHue(BigDecimal hue) {
     log.info "Setting ${device.displayName} hue to ${hue}"
+    /* groovylint-disable-next-line UnnecessarySetter */
+    setColor([
+        hue: hue,
+        saturation: device.currentValue('saturation'),
+        level: device.currentValue('level') ?: 100
+    ])
 }
 
-void setSaturation(saturation) {
-    saturation = limit(saturation).toInteger()
-
-    if (settings.enforceState && !settings.preStaging) state.desiredPowerState = "on"
-    mqttPublish(getTopic("HsbColor2"), saturation.toString())
-    sendEvent(newEvent("colorName", ""))
+void setSaturation(BigDecimal saturation) {
     log.info "Setting ${device.displayName} saturation to ${saturation}"
+    /* groovylint-disable-next-line UnnecessarySetter */
+    setColor([
+        hue: device.currentValue('hue') ?: 100,
+        saturation: saturation,
+        level: device.currentValue('level') ?: 100
+    ])
 }
 
 /*
  * Color Temperature Capability
  */
-void setColorTemperature(kelvin) {
+void setColorTemperature(BigDecimal kelvin) {
     log.info "Setting ${device.displayName} temperature to ${kelvin}K"
+    int range = settings.coldColorTemp - settings.warmColorTemp
+    int value = Math.round(255 * ((kelvin - settings.warmColorTemp) / range))
+    String payload = control(devId, [ '4': value ])
+    byte[] output = encode('CONTROL', payload, settings.localKey)
+    if (logEnable) { log.debug "SEND: ${ipAddress}: ${payload}" }
+    send(output)
+    runInMillis(750, 'refresh')
 }
 
 /*
@@ -238,6 +244,7 @@ private static byte[] copy(byte[] buffer, byte[] source, int from) {
     for (int i = 0; i < source.length; i++) {
         buffer[i + from] = source[i]
     }
+
     return buffer
 }
 
@@ -246,6 +253,7 @@ private static byte[] copy(byte[] source, int from, int length) {
     for (int i = 0; i < length; i++) {
         buffer[i] = source[i + from]
     }
+
     return buffer
 }
 
@@ -253,6 +261,7 @@ private static byte[] copy(byte[] buffer, byte[] source, int from, int length) {
     for (int i = 0; i < length; i++) {
         buffer[i + from] = source[i]
     }
+
     return buffer
 }
 
@@ -343,6 +352,7 @@ private static long crc32(byte[] buffer) {
     for (byte b : buffer) {
         crc = ((crc >>> 8) & 0xFFFFFFFFL) ^ (crc32Table[(int) ((crc ^ b) & 0xff)] & 0xFFFFFFFFL)
     }
+
     return ((crc & 0xFFFFFFFFL) ^ 0xFFFFFFFFL) & 0xFFFFFFFFL // return 0xFFFFFFFFL
 }
 
@@ -360,7 +370,7 @@ private static byte[] encrypt (byte[] payload, String secret) {
     return cipher.doFinal(payload)
 }
 
-private static byte[] encode(String command, String input, String localKey, String ver = '3.3') {
+private static byte[] encode(String command, String input, String localKey, long seq = 0, String ver = '3.3') {
     byte[] payload = null
 
     if (ver == '3.3') {
@@ -388,9 +398,9 @@ private static byte[] encode(String command, String input, String localKey, Stri
     putUInt32(buffer, 8, commandByte(command))
     putUInt32(buffer, 12, payload.length + 8)
 
-    // Optionally add sequence number.
-    if (sequenceNo >= 0) {
-        putUInt32(buffer, 4, sequenceNo++)
+    // Optionally add sequence number. Pass a negative value to skip.
+    if (seq >= 0) {
+        putUInt32(buffer, 4, seq ?: sequenceNo++)
     }
 
     // Add payload, crc and suffix
@@ -417,6 +427,7 @@ private static byte[] fill(byte[] buffer, byte fill, int from, int length) {
     for (int i = from; i < from + length; i++) {
         buffer[i] = fill
     }
+
     return buffer
 }
 
@@ -550,7 +561,7 @@ private String getGenericName(List<Integer> hsv) {
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void heartbeat() {
-    byte[] output = encode('HEART_BEAT', '', localKey)
+    byte[] output = encode('HEART_BEAT', '', localKey, -1) // no sequence number
     if (logEnable) { log.debug 'Sending heartbeat packet...' }
     send(output)
 }
@@ -561,66 +572,54 @@ private void logsOff() {
     log.info "debug logging disabled for ${device.displayName}"
 }
 
-private Map newEvent(String name, Object value, String unit = null) {
-    return [
-        name: name,
-        value: value,
-        unit: unit,
-        descriptionText: "${device.displayName} ${name} is ${value}${unit ?: ''}"
-    ]
+private void newEvent(String name, Object value, String unit = null) {
+    if (device.currentValue(name) != value) {
+        String splitName = splitCamelCase(name)
+        String description = "${device.displayName} ${splitName} is ${value}${unit ?: ''}"
+        log.info description
+        sendEvent([
+            name: name,
+            value: value,
+            unit: unit,
+            descriptionText: settings.logTextEnable ? description : ''
+        ])
+    }
 }
 
 private void parseDps(Map dps) {
     String colorMode = device.currentValue('colorMode')
 
     if (dps.containsKey('1')) {
-        sendEvent(newEvent('switch', dps['1'] ? 'on' : 'off'))
+        newEvent('switch', dps['1'] ? 'on' : 'off')
     }
 
     if (dps.containsKey('2')) {
         colorMode = dps['2'] == 'colour' ? 'RGB' : 'CT'
-        sendEvent(newEvent('colorMode', colorMode))
+        newEvent('colorMode', colorMode)
     }
 
     if (colorMode == 'CT') {
         if (dps.containsKey('3')) {
-            int value = Math.round((int)dps['3'] / 2.55)
-            sendEvent(newEvent('level', value, '%'))
+            // the brightness scale does not start at 0 but starts at 25 - 255
+            int value = Math.round(((int)dps['3'] - 22.56) / 2.3206)
+            newEvent('level', value, '%')
         }
         if (dps.containsKey('4')) {
             int range = settings.coldColorTemp - settings.warmColorTemp
-            int value = settings.warmColorTemp + Math.round(range * (dps['4'] / 100))
-            sendEvent(newEvent('colorTemperature', value, 'K'))
+            int value = settings.warmColorTemp + Math.round(range * (dps['4'] / 255))
+            newEvent('colorTemperature', value, 'K')
         }
     } else if (dps.containsKey('5')) {
         String value = dps['5']
-        boolean found = false
-        int h, s, b
-        switch (dps['5'].length()) {
-            case 12: // HSB
-                Matcher match = value =~ /^([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{4})$/
-                if (match.find()) {
-                    found = true
-                    h = Math.round(Integer.parseInt(match.group(1), 16) / 16)
-                    s = Math.round(Integer.parseInt(match.group(2), 16) / 10)
-                    b = Math.round(Integer.parseInt(match.group(3), 16) / 10)
-                }
-                break
-            case 14: // HEXHSB
-                Matcher match = value =~ /^.{6}([0-9a-f]{4})([0-9a-f]{2})([0-9a-f]{2})$/
-                if (match.find()) {
-                    found = true
-                    h = Math.round(Integer.parseInt(match.group(1), 16) / 3.6)
-                    s = Math.round(Integer.parseInt(match.group(2), 16) / 2.55)
-                    b = Math.round(Integer.parseInt(match.group(3), 16) / 2.55)
-                }
-                break
-        }
-        if (found) {
-            sendEvent(newEvent('hue', h))
-            sendEvent(newEvent('colorName', getGenericName([h, s, b])))
-            sendEvent(newEvent('saturation', s))
-            sendEvent(newEvent('level', b))
+        Matcher match = value =~ /^.{6}([0-9a-f]{4})([0-9a-f]{2})([0-9a-f]{2})$/
+        if (match.find()) {
+            h = Math.round(Integer.parseInt(match.group(1), 16) / 3.6)
+            s = Math.round(Integer.parseInt(match.group(2), 16) / 2.55)
+            b = Math.round((Integer.parseInt(match.group(3), 16) - 22.56) / 2.3206)
+            newEvent('hue', h)
+            newEvent('colorName', getGenericName([h, s, b]))
+            newEvent('saturation', s)
+            newEvent('level', b)
         }
     }
 }
@@ -633,6 +632,17 @@ private String query(String devId) {
       //dps: [:],
       //uid: devId
     ])
+}
+
+private String splitCamelCase(String s) {
+   return s.replaceAll(
+      String.format('%s|%s|%s',
+         '(?<=[A-Z])(?=[A-Z][a-z])',
+         '(?<=[^A-Z])(?=[A-Z])',
+         '(?<=[A-Za-z])(?=[^A-Za-z])'
+      ),
+      ' '
+   )
 }
 
 private void send(byte[] output) {
