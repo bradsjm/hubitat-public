@@ -1,9 +1,10 @@
-/*
- * Many thanks to:
- *      The OpenHAB add-on code by Wim Vissers at https://github.com/wvissers/openhab2-addons-tuya
- *      The tuyapi project at https://github.com/codetheweb/tuyapi
+/**
+ * Copyright (c) 2010-2020 by the respective copyright holders.
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which is available at http://www.eclipse.org/legal/epl-v10.html
  */
-
 import groovy.json.JsonOutput
 import groovy.transform.Field
 import hubitat.helper.HexUtils
@@ -15,6 +16,7 @@ import javax.crypto.spec.SecretKeySpec
 
 //@Field static ConcurrentLinkedQueue commandQueue = new ConcurrentLinkedQueue()
 //@Field static Semaphore mutex = new Semaphore(1)
+@Field static long sequenceNo = 1
 
 metadata {
     definition(
@@ -101,42 +103,6 @@ void updated() {
     if (logEnable) { runIn(1800, 'logsOff') }
 }
 
-void on() {
-    log.info "Turning ${device.displayName} on"
-    String payload = control(devId, [ '1': true ])
-    byte[] output = encode('CONTROL', payload, localKey, nextSequence())
-    if (logEnable) { log.debug "SEND: ${ipAddress} #${state.sequenceNo}: ${payload}" }
-    send(output)
-    runInMillis(750, 'refresh')
-}
-
-void off() {
-    log.info "Turning ${device.displayName} off"
-    String payload = control(devId, [ '1': false ])
-    byte[] output = encode('CONTROL', payload, localKey, nextSequence())
-    if (logEnable) { log.debug "SEND: ${ipAddress} #${state.sequenceNo}: ${payload}" }
-    send(output)
-    runInMillis(750, 'refresh')
-}
-
-// Set the brightness level and optional duration
-void setLevel(BigDecimal level, BigDecimal duration = 0) {
-    log.info "Setting ${device.displayName} brightness to ${level}%"
-    String payload = control(devId, [ '3': (level * 2.55).toInteger() ])
-    byte[] output = encode('CONTROL', payload, localKey, nextSequence())
-    if (logEnable) { log.debug "SEND: ${ipAddress} #${state.sequenceNo}: ${payload}" }
-    send(output)
-    runInMillis(750, 'refresh')
-}
-
-// request query for device data
-void refresh() {
-    String payload = query(devId)
-    byte[] output = encode('DP_QUERY', payload, localKey, nextSequence())
-    if (logEnable) { log.debug "SEND: ${ipAddress} #${state.sequenceNo}: ${payload}" }
-    send(output)
-}
-
 // Parse incoming messages
 void parse(String message) {
     byte[] buffer = HexUtils.hexStringToByteArray(message)
@@ -149,57 +115,13 @@ void parse(String message) {
     if (result.text?.startsWith('{') && result.text?.endsWith('}')) {
         Map json = parseJson(result.text)
         if (logEnable) { log.debug 'RECV: ' + json }
-        if (json.dps.containsKey('1')) {
-            sendEvent(newEvent('switch', json.dps['1'] ? 'on' : 'off'))
-        }
-        if (json.dps.containsKey('2')) {
-            sendEvent(newEvent('colorMode', json.dps['2'] == 'colour' ? 'RGB' : 'CT'))
-        }
-        if (json.dps.containsKey('3')) {
-            int value = Math.round((int)json.dps['3'] / 2.55)
-            sendEvent(newEvent('level', value, '%'))
-        }
-        if (json.dps.containsKey('4')) {
-            int range = settings.coldColorTemp - settings.warmColorTemp
-            int value = settings.warmColorTemp + Math.round(range * (json.dps['4'] / 100))
-            sendEvent(newEvent('colorTemperature', value, 'K'))
-        }
-        if (json.dps.containsKey('5')) {
-            String value = json.dps['5']
-            boolean found = false
-            int h, s, b
-            switch (json.dps['5'].length()) {
-                case 12: // HSB
-                    Matcher match = value =~ /^([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{4})$/
-                    if (match.find()) {
-                        found = true
-                        h = Math.round(Integer.parseInt(match.group(1), 16) / 16)
-                        s = Math.round(Integer.parseInt(match.group(2), 16) / 10)
-                        b = Math.round(Integer.parseInt(match.group(3), 16) / 10)
-                    }
-                    break
-                case 14: // HEXHSB
-                    Matcher match = value =~ /^.{6}([0-9a-f]{4})([0-9a-f]{2})([0-9a-f]{2})$/
-                    if (match.find()) {
-                        found = true
-                        h = Math.round(Integer.parseInt(match.group(1), 16) / 3.6)
-                        s = Math.round(Integer.parseInt(match.group(2), 16) / 2.55)
-                        b = Math.round(Integer.parseInt(match.group(3), 16) / 2.55)
-                    }
-                    break
-            }
-            if (found) {
-                sendEvent(newEvent('hue', h))
-                sendEvent(newEvent('colorName', getGenericName([h, s, b])))
-                sendEvent(newEvent('saturation', s))
-                sendEvent(newEvent('level', b))
-            }
-        }
+        parseDps(json.dps)
     } else if (result.text) {
         log.info result
     }
 }
 
+// Socket status updates
 void socketStatus(String message) {
     log.info message
     if (message.contains('Stream closed')) {
@@ -207,47 +129,141 @@ void socketStatus(String message) {
     }
 }
 
-private static byte[] encode(String command, String input, String localKey, long sequenceNo = 0, String ver = '3.3') {
-    byte[] payload = null
+/*
+ * Switch Capability
+ */
+void on() {
+    log.info "Turning ${device.displayName} on"
+    String payload = control(devId, [ '1': true ])
+    byte[] output = encode('CONTROL', payload, settings.localKey)
+    if (logEnable) { log.debug "SEND: ${ipAddress}: ${payload}" }
+    send(output)
+    runInMillis(750, 'refresh')
+}
 
-    if (ver == '3.3') {
-        payload = encrypt(input.getBytes('UTF-8'), localKey)
-        // Check if we need an extended header, only for certain CommandTypes
-        if (command != 'DP_QUERY') {
-            // Add 3.3 header
-            byte[] buffer = new byte[payload.length + 15]
-            fill(buffer, (byte) 0x00, 0, 15)
-            copy(buffer, '3.3', 0)
-            copy(buffer, payload, 15)
-            payload = buffer
-        }
-    } else {
-        // Todo other versions
-        payload = input
+void off() {
+    log.info "Turning ${device.displayName} off"
+    String payload = control(devId, [ '1': false ])
+    byte[] output = encode('CONTROL', payload, settings.localKey)
+    if (logEnable) { log.debug "SEND: ${ipAddress}: ${payload}" }
+    send(output)
+    runInMillis(750, 'refresh')
+}
+
+/*
+ * SwitchLevel Capability
+ */
+void setLevel(BigDecimal level, BigDecimal duration = 0) {
+    log.info "Setting ${device.displayName} brightness to ${level}%"
+    String payload = control(devId, [ '3': (level * 2.55).toInteger() ])
+    byte[] output = encode('CONTROL', payload, settings.localKey)
+    if (logEnable) { log.debug "SEND: ${ipAddress}: ${payload}" }
+    send(output)
+    runInMillis(750, 'refresh')
+}
+
+// request query for device data
+void refresh() {
+    String payload = query(devId)
+    byte[] output = encode('DP_QUERY', payload, settings.localKey)
+    if (logEnable) { log.debug "SEND: ${ipAddress}: ${payload}" }
+    send(output)
+}
+
+// Set the HSB color [hue:(0-100), saturation:(0-100), brightness level:(0-100)]
+void setColor(colormap) {
+    if (colormap.hue == null || colormap.saturation == null) return
+    int h = colormap.hue * 3.6
+    int s = colormap.saturation
+    int b = colormap.level
+    String hsb = Integer.toString(h, 16).padStart(4, '0') +
+                 Integer.toString(Math.round(2.55 * s), 16).padStart(2, '0') +
+                 Integer.toString(Math.round(2.55 * b), 16).padStart(2, '0')
+    h /= 60;
+    s /= 100;
+    b *= 2.55;
+    // String value = Integer.toString(h, 16).padStart(4, '0') +
+    //                Integer.toString(10 * s, 16).padStart(4, '0') +
+    //                Integer.toString(10 * b, 16).padStart(4, '0')
+    log.info "Setting ${device.displayName} color to ${hue}, ${saturation}, ${level}"
+    String payload = control(devId, [ '5':  ])
+    byte[] output = encode('CONTROL', payload, settings.localKey)
+    if (logEnable) { log.debug "SEND: ${ipAddress}: ${payload}" }
+    send(output)
+    runInMillis(750, 'refresh')
+
+}
+
+/*
+ * Color Control Capability
+ */
+void setHue(hue) {
+    // Hubitat hue is 0-100 to be converted to Tasmota 0-360
+    hue = limit(Math.round(hue * 3.6), 0, 360).toInteger()
+
+    if (settings.enforceState && !settings.preStaging) state.desiredPowerState = "on"
+    mqttPublish(getTopic("HsbColor1"), hue.toString())
+    sendEvent(newEvent("colorName", ""))
+    log.info "Setting ${device.displayName} hue to ${hue}"
+}
+
+void setSaturation(saturation) {
+    saturation = limit(saturation).toInteger()
+
+    if (settings.enforceState && !settings.preStaging) state.desiredPowerState = "on"
+    mqttPublish(getTopic("HsbColor2"), saturation.toString())
+    sendEvent(newEvent("colorName", ""))
+    log.info "Setting ${device.displayName} saturation to ${saturation}"
+}
+
+/*
+ * Color Temperature Capability
+ */
+void setColorTemperature(kelvin) {
+    log.info "Setting ${device.displayName} temperature to ${kelvin}K"
+}
+
+/*
+ * Tuya Protocol Functions (encode, decode, encryption along with byte array manipulation functions)
+ *
+ * Code in this section is licensed under the Eclipse Public License 1.0. The author is grateful to
+ * Wim Vissers for his work on the Tuya OpenHAB add-on code at https://github.com/wvissers/openhab2-addons-tuya
+ * which has been adapted from the original for sandboxed Groovy execution.
+ */
+private static byte[] copy(byte[] buffer, String source, int from) {
+    return copy(buffer, source.getBytes('UTF-8'), from)
+}
+
+private static byte[] copy(byte[] buffer, byte[] source, int from) {
+    for (int i = 0; i < source.length; i++) {
+        buffer[i + from] = source[i]
     }
-
-    // Allocate buffer with room for payload + 24 bytes for
-    // prefix, sequence, command, length, crc, and suffix
-    byte[] buffer = new byte[payload.length + 24]
-
-    // Add prefix, command and length.
-    putUInt32(buffer, 0, 0x000055AA)
-    putUInt32(buffer, 8, commandByte(command))
-    putUInt32(buffer, 12, payload.length + 8)
-
-    // Optionally add sequence number.
-    if (sequenceNo >= 0) {
-        putUInt32(buffer, 4, sequenceNo)
-    }
-
-    // Add payload, crc and suffix
-    copy(buffer, payload, 16)
-    byte[] crcbuf = new byte[payload.length + 16]
-    copy(crcbuf, buffer, 0, payload.length + 16)
-    putUInt32(buffer, payload.length + 16, crc32(crcbuf))
-    putUInt32(buffer, payload.length + 20, 0x0000AA55)
-
     return buffer
+}
+
+private static byte[] copy(byte[] source, int from, int length) {
+    byte[] buffer = new byte[length]
+    for (int i = 0; i < length; i++) {
+        buffer[i] = source[i + from]
+    }
+    return buffer
+}
+
+private static byte[] copy(byte[] buffer, byte[] source, int from, int length) {
+    for (int i = 0; i < length; i++) {
+        buffer[i + from] = source[i]
+    }
+    return buffer
+}
+
+private static byte commandByte(String command) {
+    switch (command) {
+        case 'CONTROL': return 7
+        case 'STATUS': return 8
+        case 'HEART_BEAT': return 9
+        case 'DP_QUERY': return 10
+        case 'SCENE_EXECUTE': return 17
+    }
 }
 
 private static Map decode(byte[] buffer, String localKey) {
@@ -322,6 +338,71 @@ private static Map decode(byte[] buffer, String localKey) {
     return result
 }
 
+private static long crc32(byte[] buffer) {
+    long crc = 0xFFFFFFFFL
+    for (byte b : buffer) {
+        crc = ((crc >>> 8) & 0xFFFFFFFFL) ^ (crc32Table[(int) ((crc ^ b) & 0xff)] & 0xFFFFFFFFL)
+    }
+    return ((crc & 0xFFFFFFFFL) ^ 0xFFFFFFFFL) & 0xFFFFFFFFL // return 0xFFFFFFFFL
+}
+
+private static byte[] decrypt (byte[] payload, String secret) {
+    SecretKeySpec key = new SecretKeySpec(secret.getBytes('UTF-8'), 'AES')
+    Cipher cipher = Cipher.getInstance('AES/ECB/PKCS5Padding')
+    cipher.init(Cipher.DECRYPT_MODE, key)
+    return cipher.doFinal(payload)
+}
+
+private static byte[] encrypt (byte[] payload, String secret) {
+    SecretKeySpec key = new SecretKeySpec(secret.getBytes('UTF-8'), 'AES')
+    Cipher cipher = Cipher.getInstance('AES/ECB/PKCS5Padding')
+    cipher.init(Cipher.ENCRYPT_MODE, key)
+    return cipher.doFinal(payload)
+}
+
+private static byte[] encode(String command, String input, String localKey, String ver = '3.3') {
+    byte[] payload = null
+
+    if (ver == '3.3') {
+        payload = encrypt(input.getBytes('UTF-8'), localKey)
+        // Check if we need an extended header, only for certain CommandTypes
+        if (command != 'DP_QUERY') {
+            // Add 3.3 header
+            byte[] buffer = new byte[payload.length + 15]
+            fill(buffer, (byte) 0x00, 0, 15)
+            copy(buffer, '3.3', 0)
+            copy(buffer, payload, 15)
+            payload = buffer
+        }
+    } else {
+        // Todo other versions
+        payload = input
+    }
+
+    // Allocate buffer with room for payload + 24 bytes for
+    // prefix, sequence, command, length, crc, and suffix
+    byte[] buffer = new byte[payload.length + 24]
+
+    // Add prefix, command and length.
+    putUInt32(buffer, 0, 0x000055AA)
+    putUInt32(buffer, 8, commandByte(command))
+    putUInt32(buffer, 12, payload.length + 8)
+
+    // Optionally add sequence number.
+    if (sequenceNo >= 0) {
+        putUInt32(buffer, 4, sequenceNo++)
+    }
+
+    // Add payload, crc and suffix
+    copy(buffer, payload, 16)
+    byte[] crcbuf = new byte[payload.length + 16]
+    copy(crcbuf, buffer, 0, payload.length + 16)
+    putUInt32(buffer, payload.length + 16, crc32(crcbuf))
+    putUInt32(buffer, payload.length + 20, 0x0000AA55)
+
+    return buffer
+}
+
 private static long getUInt32(byte[] buffer, int start) {
     long result = 0
     for (int i = start; i < start + 4; i++) {
@@ -330,6 +411,13 @@ private static long getUInt32(byte[] buffer, int start) {
     }
 
     return result
+}
+
+private static byte[] fill(byte[] buffer, byte fill, int from, int length) {
+    for (int i = from; i < from + length; i++) {
+        buffer[i] = fill
+    }
+    return buffer
 }
 
 private static int indexOfUInt32(byte[] buffer, long marker) {
@@ -363,65 +451,6 @@ private static void putUInt32(byte[] buffer, int start, long value) {
     }
 }
 
-private static byte[] copy(byte[] buffer, String source, int from) {
-    return copy(buffer, source.getBytes('UTF-8'), from)
-}
-
-private static byte[] copy(byte[] buffer, byte[] source, int from) {
-    for (int i = 0; i < source.length; i++) {
-        buffer[i + from] = source[i]
-    }
-    return buffer
-}
-
-private static byte[] copy(byte[] source, int from, int length) {
-    byte[] buffer = new byte[length]
-    for (int i = 0; i < length; i++) {
-        buffer[i] = source[i + from]
-    }
-    return buffer
-}
-
-private static byte[] copy(byte[] buffer, byte[] source, int from, int length) {
-    for (int i = 0; i < length; i++) {
-        buffer[i + from] = source[i]
-    }
-    return buffer
-}
-
-private static byte[] fill(byte[] buffer, byte fill, int from, int length) {
-    for (int i = from; i < from + length; i++) {
-        buffer[i] = fill
-    }
-    return buffer
-}
-
-private static byte commandByte(String command) {
-    switch (command) {
-        case 'CONTROL': return 7
-        case 'STATUS': return 8
-        case 'HEART_BEAT': return 9
-        case 'DP_QUERY': return 10
-        case 'CONTROL_NEW': return 13
-        case 'DP_QUERY_NEW': return 16
-        case 'SCENE_EXECUTE': return 17
-    }
-}
-
-private static byte[] encrypt (byte[] payload, String secret) {
-    SecretKeySpec key = new SecretKeySpec(secret.getBytes('UTF-8'), 'AES')
-    Cipher cipher = Cipher.getInstance('AES/ECB/PKCS5Padding')
-    cipher.init(Cipher.ENCRYPT_MODE, key)
-    return cipher.doFinal(payload)
-}
-
-private static byte[] decrypt (byte[] payload, String secret) {
-    SecretKeySpec key = new SecretKeySpec(secret.getBytes('UTF-8'), 'AES')
-    Cipher cipher = Cipher.getInstance('AES/ECB/PKCS5Padding')
-    cipher.init(Cipher.DECRYPT_MODE, key)
-    return cipher.doFinal(payload)
-}
-
 @Field static final long[] crc32Table = [ 0x00000000, 0x77073096, 0xEE0E612C, 0x990951BA, 0x076DC419, 0x706AF48F,
     0xE963A535, 0x9E6495A3, 0x0EDB8832, 0x79DCB8A4, 0xE0D5E91E, 0x97D2D988, 0x09B64C2B, 0x7EB17CBD, 0xE7B82D07,
     0x90BF1D91, 0x1DB71064, 0x6AB020F2, 0xF3B97148, 0x84BE41DE, 0x1ADAD47D, 0x6DDDE4EB, 0xF4D4B551, 0x83D385C7,
@@ -451,17 +480,36 @@ private static byte[] decrypt (byte[] payload, String secret) {
     0x3E6E77DB, 0xAED16A4A, 0xD9D65ADC, 0x40DF0B66, 0x37D83BF0, 0xA9BCAE53, 0xDEBB9EC5, 0x47B2CF7F, 0x30B5FFE9,
     0xBDBDF21C, 0xCABAC28A, 0x53B39330, 0x24B4A3A6, 0xBAD03605, 0xCDD70693, 0x54DE5729, 0x23D967BF, 0xB3667A2E,
     0xC4614AB8, 0x5D681B02, 0x2A6F2B94, 0xB40BBE37, 0xC30C8EA1, 0x5A05DF1B, 0x2D02EF8D ]
+/* End of Tuya Protocol Functions */
 
-private static long crc32(byte[] buffer) {
-    long crc = 0xFFFFFFFFL
-    for (byte b : buffer) {
-        crc = ((crc >>> 8) & 0xFFFFFFFFL) ^ (crc32Table[(int) ((crc ^ b) & 0xff)] & 0xFFFFFFFFL)
-    }
-    return ((crc & 0xFFFFFFFFL) ^ 0xFFFFFFFFL) & 0xFFFFFFFFL // return 0xFFFFFFFFL
+/*
+ * Driver Internal Utility Functions
+ */
+private void connect(String ipAddress) {
+    interfaces.rawSocket.connect(
+        ipAddress,
+        6668,
+        byteInterface: true,
+        readDelay: 500
+    )
 }
 
-// Convert hsv to a generic color name
-private static String getGenericName(List<Integer> hsv) {
+private String control(String devId, Map dps) {
+    return JsonOutput.toJson([
+      gwId: devId,
+      devId: devId,
+      t: Math.round(now() / 1000).toString(),
+      dps: dps,
+      uid: ''
+    ])
+}
+
+private void disconnect() {
+    unschedule()
+    interfaces.rawSocket.disconnect()
+}
+
+private String getGenericName(List<Integer> hsv) {
     String colorName
 
     if (!hsv[0] && !hsv[1]) {
@@ -500,9 +548,17 @@ private static String getGenericName(List<Integer> hsv) {
     return colorName
 }
 
-private long nextSequence() {
-    state.sequenceNo = state.sequenceNo ? (long)state.sequenceNo + 1 : 1
-    return state.sequenceNo
+/* groovylint-disable-next-line UnusedPrivateMethod */
+private void heartbeat() {
+    byte[] output = encode('HEART_BEAT', '', localKey)
+    if (logEnable) { log.debug 'Sending heartbeat packet...' }
+    send(output)
+}
+
+/* groovylint-disable-next-line UnusedPrivateMethod */
+private void logsOff() {
+    device.updateSetting('logEnable', [value: 'false', type: 'bool'] )
+    log.info "debug logging disabled for ${device.displayName}"
 }
 
 private Map newEvent(String name, Object value, String unit = null) {
@@ -512,6 +568,61 @@ private Map newEvent(String name, Object value, String unit = null) {
         unit: unit,
         descriptionText: "${device.displayName} ${name} is ${value}${unit ?: ''}"
     ]
+}
+
+private void parseDps(Map dps) {
+    String colorMode = device.currentValue('colorMode')
+
+    if (dps.containsKey('1')) {
+        sendEvent(newEvent('switch', dps['1'] ? 'on' : 'off'))
+    }
+
+    if (dps.containsKey('2')) {
+        colorMode = dps['2'] == 'colour' ? 'RGB' : 'CT'
+        sendEvent(newEvent('colorMode', colorMode))
+    }
+
+    if (colorMode == 'CT') {
+        if (dps.containsKey('3')) {
+            int value = Math.round((int)dps['3'] / 2.55)
+            sendEvent(newEvent('level', value, '%'))
+        }
+        if (dps.containsKey('4')) {
+            int range = settings.coldColorTemp - settings.warmColorTemp
+            int value = settings.warmColorTemp + Math.round(range * (dps['4'] / 100))
+            sendEvent(newEvent('colorTemperature', value, 'K'))
+        }
+    } else if (dps.containsKey('5')) {
+        String value = dps['5']
+        boolean found = false
+        int h, s, b
+        switch (dps['5'].length()) {
+            case 12: // HSB
+                Matcher match = value =~ /^([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{4})$/
+                if (match.find()) {
+                    found = true
+                    h = Math.round(Integer.parseInt(match.group(1), 16) / 16)
+                    s = Math.round(Integer.parseInt(match.group(2), 16) / 10)
+                    b = Math.round(Integer.parseInt(match.group(3), 16) / 10)
+                }
+                break
+            case 14: // HEXHSB
+                Matcher match = value =~ /^.{6}([0-9a-f]{4})([0-9a-f]{2})([0-9a-f]{2})$/
+                if (match.find()) {
+                    found = true
+                    h = Math.round(Integer.parseInt(match.group(1), 16) / 3.6)
+                    s = Math.round(Integer.parseInt(match.group(2), 16) / 2.55)
+                    b = Math.round(Integer.parseInt(match.group(3), 16) / 2.55)
+                }
+                break
+        }
+        if (found) {
+            sendEvent(newEvent('hue', h))
+            sendEvent(newEvent('colorName', getGenericName([h, s, b])))
+            sendEvent(newEvent('saturation', s))
+            sendEvent(newEvent('level', b))
+        }
+    }
 }
 
 private String query(String devId) {
@@ -524,32 +635,6 @@ private String query(String devId) {
     ])
 }
 
-private String control(String devId, Map dps) {
-    return JsonOutput.toJson([
-      gwId: devId,
-      devId: devId,
-      t: Math.round(now() / 1000).toString(),
-      dps: dps,
-      uid: ''
-    ])
-}
-
-private void connect(String ipAddress) {
-    interfaces.rawSocket.connect(ipAddress, 6668, byteInterface: true, readDelay: 500)
-}
-
-private void disconnect() {
-    unschedule()
-    interfaces.rawSocket.disconnect()
-}
-
-/* groovylint-disable-next-line UnusedPrivateMethod */
-private void heartbeat() {
-    byte[] output = encode('HEART_BEAT', '', localKey)
-    if (logEnable) { log.debug 'Sending heartbeat packet...' }
-    send(output)
-}
-
 private void send(byte[] output) {
     String msg = HexUtils.byteArrayToHexString(output)
 
@@ -559,10 +644,4 @@ private void send(byte[] output) {
     } catch (e) {
         log.error "Error $e"
     }
-}
-
-/* groovylint-disable-next-line UnusedPrivateMethod */
-private void logsOff() {
-    device.updateSetting('logEnable', [value: 'false', type: 'bool'] )
-    log.info "debug logging disabled for ${device.displayName}"
 }
