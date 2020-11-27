@@ -4,19 +4,29 @@
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * which is available at http://www.eclipse.org/legal/epl-v10.html
+ *
+ * For this driver you will need to know the local IP address, device id
+ * and local key for the light. Instructions for this can be found at
+ * https://github.com/codetheweb/tuyapi/blob/master/docs/SETUP.md
  */
 import groovy.json.JsonOutput
 import groovy.transform.Field
+import hubitat.helper.ColorUtils
 import hubitat.helper.HexUtils
-//import java.util.concurrent.ConcurrentLinkedQueue
-//import java.util.concurrent.Semaphore
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.regex.Matcher
 import javax.crypto.Cipher
 import javax.crypto.spec.SecretKeySpec
 
-//@Field static ConcurrentLinkedQueue commandQueue = new ConcurrentLinkedQueue()
-//@Field static Semaphore mutex = new Semaphore(1)
+// Shared command queue map among all instances of this driver
+@Field static final ConcurrentHashMap<Integer, ConcurrentLinkedQueue> commandQueues = new ConcurrentHashMap<>()
+
+// Sequence number for sending Tuya packets
 @Field static long sequenceNo = 1
+
+// Refresh wait (in ms) before requesting refresh after sending a command
+@Field final static int refreshTime = 750
 
 metadata {
     definition(
@@ -28,6 +38,7 @@ metadata {
         capability 'Color Control'
         capability 'ColorMode'
         capability 'ColorTemperature'
+        capability 'PresenceSensor'
         capability 'Switch'
         capability 'SwitchLevel'
         capability 'Refresh'
@@ -83,10 +94,7 @@ preferences {
 void initialize() {
     unschedule()
     log.info "${device.displayName} driver initializing"
-    if (settings.ipAddress) {
-        connect(settings.ipAddress)
-        runIn(1, 'refresh')
-    }
+    connect()
 }
 
 // Called when the device is first created.
@@ -97,6 +105,7 @@ void installed() {
 // Called when the device is removed.
 void uninstalled() {
     disconnect()
+    commandQueues.remove(device.id)
     log.info "${device.displayName} driver uninstalled"
 }
 
@@ -131,7 +140,8 @@ void parse(String message) {
 void socketStatus(String message) {
     log.info message
     if (message.contains('Stream closed')) {
-        runIn(5, 'initialize')
+        sendEvent(name: 'presence', value: 'not present', descriptionText: message)
+        runIn(5, 'connect')
     }
 }
 
@@ -142,18 +152,18 @@ void on() {
     log.info "Turning ${device.displayName} on"
     String payload = control(devId, [ '1': true ])
     byte[] output = encode('CONTROL', payload, settings.localKey)
-    if (logEnable) { log.debug "SEND: ${ipAddress}: ${payload}" }
-    send(output)
-    runInMillis(750, 'refresh')
+    if (logEnable) { log.debug "QUEUE: ${payload}" }
+    queue(output)
+    runInMillis(refreshTime, 'refresh')
 }
 
 void off() {
     log.info "Turning ${device.displayName} off"
     String payload = control(devId, [ '1': false ])
     byte[] output = encode('CONTROL', payload, settings.localKey)
-    if (logEnable) { log.debug "SEND: ${ipAddress}: ${payload}" }
-    send(output)
-    runInMillis(750, 'refresh')
+    if (logEnable) { log.debug "QUEUE: ${payload}" }
+    queue(output)
+    runInMillis(refreshTime, 'refresh')
 }
 
 /*
@@ -165,9 +175,9 @@ void setLevel(BigDecimal level, BigDecimal duration = 0) {
     int value = Math.round(2.3206 * level + 22.56)
     String payload = control(devId, [ '3': value ])
     byte[] output = encode('CONTROL', payload, settings.localKey)
-    if (logEnable) { log.debug "SEND: ${ipAddress}: ${payload}" }
-    send(output)
-    runInMillis(750, 'refresh')
+    if (logEnable) { log.debug "QUEUE: ${payload}" }
+    queue(output)
+    runInMillis(refreshTime, 'refresh')
 }
 
 // request query for device data
@@ -175,21 +185,25 @@ void refresh() {
     log.info "Querying ${device.displayName} status"
     String payload = query(devId)
     byte[] output = encode('DP_QUERY', payload, settings.localKey)
-    if (logEnable) { log.debug "SEND: ${ipAddress}: ${payload}" }
-    send(output)
+    if (logEnable) { log.debug "QUEUE: ${payload}" }
+    queue(output)
 }
 
 // Set the HSB color [hue:(0-100), saturation:(0-100), brightness level:(0-100)]
 void setColor(Map colormap) {
     log.info "Setting ${device.displayName} color to ${colormap}"
-    String hsb = Integer.toHexString((int)Math.round(3.6 * colormap.hue)).padLeft(10, '0') +
+    def (int r, int g, int b) = ColorUtils.hsvToRGB([colormap.hue, colormap.saturation, colormap.level])
+    String rgb = Integer.toHexString(r).padLeft(2, '0') +
+                 Integer.toHexString(g).padLeft(2, '0') +
+                 Integer.toHexString(b).padLeft(2, '0')
+    String hsb = Integer.toHexString((int)Math.round(3.6 * colormap.hue)).padLeft(4, '0') +
                  Integer.toHexString((int)Math.round(2.55 * colormap.saturation)).padLeft(2, '0') +
                  Integer.toHexString((int)Math.round(2.3206 * colormap.level + 22.56)).padLeft(2, '0')
-    String payload = control(devId, [ '5': hsb ])
+    String payload = control(devId, [ '5': rgb + hsb ])
     byte[] output = encode('CONTROL', payload, settings.localKey)
-    if (logEnable) { log.debug "SEND: ${ipAddress}: ${payload}" }
-    send(output)
-    runInMillis(750, 'refresh')
+    if (logEnable) { log.debug "QUEUE: ${payload}" }
+    queue(output)
+    runInMillis(refreshTime, 'refresh')
 }
 
 /*
@@ -224,9 +238,9 @@ void setColorTemperature(BigDecimal kelvin) {
     int value = Math.round(255 * ((kelvin - settings.warmColorTemp) / range))
     String payload = control(devId, [ '4': value ])
     byte[] output = encode('CONTROL', payload, settings.localKey)
-    if (logEnable) { log.debug "SEND: ${ipAddress}: ${payload}" }
-    send(output)
-    runInMillis(750, 'refresh')
+    if (logEnable) { log.debug "QUEUE: ${payload}" }
+    queue(output)
+    runInMillis(refreshTime, 'refresh')
 }
 
 /*
@@ -496,13 +510,25 @@ private static void putUInt32(byte[] buffer, int start, long value) {
 /*
  * Driver Internal Utility Functions
  */
-private void connect(String ipAddress) {
-    interfaces.rawSocket.connect(
-        ipAddress,
-        6668,
-        byteInterface: true,
-        readDelay: 500
-    )
+private void connect() {
+    if (!settings.ipAddress) { return }
+
+    try {
+        log.info "Connecting to ${settings.ipAddress}"
+        interfaces.rawSocket.connect(
+            settings.ipAddress,
+            6668,
+            byteInterface: true,
+            readDelay: 500
+        )
+        sendEvent(name: 'presence', value: 'present', descriptionText: 'Connected')
+        runIn(1, 'refresh')
+        return
+    } catch (e) {
+        log.error "Connect Error: $e"
+        sendEvent(name: 'presence', value: 'not present', descriptionText: e)
+        runIn(15, 'connect')
+    }
 }
 
 private String control(String devId, Map dps) {
@@ -574,7 +600,7 @@ private void logsOff() {
 
 private void newEvent(String name, Object value, String unit = null) {
     if (device.currentValue(name) != value) {
-        String splitName = splitCamelCase(name)
+        String splitName = splitCamelCase(name).toLowerCase()
         String description = "${device.displayName} ${splitName} is ${value}${unit ?: ''}"
         log.info description
         sendEvent([
@@ -598,19 +624,19 @@ private void parseDps(Map dps) {
         newEvent('colorMode', colorMode)
     }
 
-    if (colorMode == 'CT') {
-        if (dps.containsKey('3')) {
-            // the brightness scale does not start at 0 but starts at 25 - 255
-            int value = Math.round(((int)dps['3'] - 22.56) / 2.3206)
-            newEvent('level', value, '%')
-        }
-        if (dps.containsKey('4')) {
-            int range = settings.coldColorTemp - settings.warmColorTemp
-            int value = settings.warmColorTemp + Math.round(range * (dps['4'] / 255))
-            newEvent('colorTemperature', value, 'K')
-        }
-    } else if (dps.containsKey('5')) {
+    if (dps.containsKey('3') && colorMode == 'CT') {
+        // the brightness scale does not start at 0 but starts at 25 - 255
+        int value = Math.round(((int)dps['3'] - 22.56) / 2.3206)
+        newEvent('level', value, '%')
+    }
+    if (dps.containsKey('4')) {
+        int range = settings.coldColorTemp - settings.warmColorTemp
+        int value = settings.warmColorTemp + Math.round(range * (dps['4'] / 255))
+        newEvent('colorTemperature', value, 'K')
+    }
+    if (dps.containsKey('5') && colorMode == 'RGB') {
         String value = dps['5']
+        // first six characters are RGB values which we ignore and use HSB instead
         Matcher match = value =~ /^.{6}([0-9a-f]{4})([0-9a-f]{2})([0-9a-f]{2})$/
         if (match.find()) {
             h = Math.round(Integer.parseInt(match.group(1), 16) / 3.6)
@@ -645,6 +671,27 @@ private String splitCamelCase(String s) {
    )
 }
 
+private void queue(byte[] output) {
+    // Get or create a dedicated linked queue to be used for this driver id
+    ConcurrentLinkedQueue queue = commandQueues.computeIfAbsent(device.id) { k -> new ConcurrentLinkedQueue() }
+    if (queue.size() <= 5) {
+        queue.add(output)
+        if (logEnable) { log.debug "Queue size: ${queue.size()}" }
+    }
+    poll()
+}
+
+private void poll() {
+    if (device.currentValue('presence') == 'present') {
+        ConcurrentLinkedQueue queue = commandQueues.get(device.id)
+        if (!queue) { return }
+        send(queue.poll())
+        int size = queue.size()
+        if (logEnable) { log.debug "Queue size: ${size}" }
+        if (size) { runInMillis(refreshTime, 'poll') }
+    }
+}
+
 private void send(byte[] output) {
     String msg = HexUtils.byteArrayToHexString(output)
 
@@ -652,6 +699,7 @@ private void send(byte[] output) {
         interfaces.rawSocket.sendMessage(msg)
         runIn(15, 'heartbeat')
     } catch (e) {
-        log.error "Error $e"
+        sendEvent(name: 'presence', value: 'not present', descriptionText: e)
+        log.error "Send Error: $e"
     }
 }
