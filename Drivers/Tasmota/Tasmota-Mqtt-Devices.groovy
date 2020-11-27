@@ -271,15 +271,15 @@ void componentSetColor(DeviceWrapper device, Map colormap) {
 void componentSetHue(DeviceWrapper device, BigDecimal hue) {
     componentSetColor(device, [
         hue: hue,
-        saturation: 100,
+        saturation: device.currentValue('saturation') ?: 100,
         level: device.currentValue('level') ?: 100
     ])
 }
 
-void componentSetSaturation(DeviceWrapper device, BigDecimal percent) {
+void componentSetSaturation(DeviceWrapper device, BigDecimal saturation) {
     componentSetColor(device, [
         hue: device.currentValue('hue') ?: 100,
-        saturation: percent,
+        saturation: saturation,
         level: device.currentValue('level') ?: 100
     ])
 }
