@@ -20,7 +20,7 @@ import javax.crypto.spec.SecretKeySpec
 
 metadata {
     definition(
-        name: 'Tuya Light',
+        name: 'Tuya RGBCT Light',
         namespace: 'nrgup',
         author: 'Jonathan Bradshaw'
     ) {
@@ -186,11 +186,11 @@ void setColor(colormap) {
     //                Integer.toString(10 * s, 16).padStart(4, '0') +
     //                Integer.toString(10 * b, 16).padStart(4, '0')
     log.info "Setting ${device.displayName} color to ${hue}, ${saturation}, ${level}"
-    String payload = control(devId, [ '5':  ])
-    byte[] output = encode('CONTROL', payload, settings.localKey)
-    if (logEnable) { log.debug "SEND: ${ipAddress}: ${payload}" }
-    send(output)
-    runInMillis(750, 'refresh')
+    // String payload = control(devId, [ '5':  ])
+    // byte[] output = encode('CONTROL', payload, settings.localKey)
+    // if (logEnable) { log.debug "SEND: ${ipAddress}: ${payload}" }
+    // send(output)
+    // runInMillis(750, 'refresh')
 
 }
 
