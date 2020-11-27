@@ -180,7 +180,9 @@ void setLevel(BigDecimal level, BigDecimal duration = 0) {
     runInMillis(refreshTime, 'refresh')
 }
 
-// request query for device data
+/*
+ * Refresh Capability
+ */
 void refresh() {
     log.info "Querying ${device.displayName} status"
     String payload = query(devId)
@@ -188,6 +190,10 @@ void refresh() {
     if (logEnable) { log.debug "QUEUE: ${payload}" }
     queue(output)
 }
+
+/*
+ * Color Control Capability
+ */
 
 // Set the HSB color [hue:(0-100), saturation:(0-100), brightness level:(0-100)]
 void setColor(Map colormap) {
@@ -206,9 +212,6 @@ void setColor(Map colormap) {
     runInMillis(refreshTime, 'refresh')
 }
 
-/*
- * Color Control Capability
- */
 void setHue(BigDecimal hue) {
     log.info "Setting ${device.displayName} hue to ${hue}"
     /* groovylint-disable-next-line UnnecessarySetter */
@@ -645,7 +648,7 @@ private void parseDps(Map dps) {
             newEvent('hue', h)
             newEvent('colorName', getGenericName([h, s, b]))
             newEvent('saturation', s)
-            newEvent('level', b)
+            newEvent('level', b, '%')
         }
     }
 }
