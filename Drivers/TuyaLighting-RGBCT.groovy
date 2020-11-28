@@ -246,6 +246,8 @@ void setColorTemperature(BigDecimal kelvin) {
     log.info "Setting ${device.displayName} temperature to ${kelvin}K"
     int range = settings.coldColorTemp - settings.warmColorTemp
     int value = Math.round(255 * ((kelvin - settings.warmColorTemp) / range))
+    if (value < 0) { value = 0 }
+    if (value > 255) { value = 255 }
     String payload = control(devId, [ '4': value ])
     byte[] output = encode('CONTROL', payload, settings.localKey)
     if (logEnable) { log.debug "QUEUE: ${payload}" }
