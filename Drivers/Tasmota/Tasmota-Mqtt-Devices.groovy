@@ -678,7 +678,7 @@ private String getCommandTopic(Map config) {
     return getTopic(config, config['tp'][0])
 }
 
-private Map getDeviceConfig(ChildDeviceWrapper device) {
+private Map getDeviceConfig(DeviceWrapper device) {
     return configCache.computeIfAbsent(device.id) { k -> parseJson(device.getDataValue('config')) }
 }
 
