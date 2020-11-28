@@ -155,12 +155,38 @@ void initialize() {
     log.info "${app.name} initializing"
     state.last = [:]
     state.current = [:]
-    state.disabledDevices = []
+    state.disabledDevices = [] as Set
     unsubscribe()
+
+    List activated = []
+    if (colorTemperatureOnDevices) { activated.addAll(colorTemperatureOnDevices) }
+    if (colorOnDevices) { activated.addAll(colorOnDevices) }
+    if (dimmableOnDevices) { activated.addAll(dimmableOnDevices) }
+
+    List managed = []
+    if (colorTemperatureDevices) { managed.addAll(colorTemperatureDevices) }
+    if (colorDevices) { managed.addAll(colorDevices) }
+    if (dimmableDevices) { managed.addAll(dimmableDevices) }
+
+    List allDevices = activated + managed
 
     subscribe(colorTemperatureOnDevices, 'switch.on', 'updateLamp')
     subscribe(colorOnDevices, 'switch.on', 'updateLamp')
     subscribe(dimmableOnDevices, 'switch.on', 'updateLamp')
+
+    subscribe(colorTemperatureOnDevices, 'switch.off', 'enableLamp')
+    subscribe(colorOnDevices, 'switch.off', 'enableLamp')
+    subscribe(dimmableOnDevices, 'switch.off', 'enableLamp')
+    subscribe(colorTemperatureDevices, 'switch.off', 'enableLamp')
+    subscribe(colorDevices, 'switch.off', 'enableLamp')
+    subscribe(dimmableDevices, 'switch.off', 'enableLamp')
+
+    subscribe(colorTemperatureOnDevices, 'level', 'levelCheck')
+    subscribe(colorOnDevices, 'level', 'levelCheck')
+    subscribe(dimmableOnDevices, 'level', 'levelCheck')
+    subscribe(colorTemperatureDevices, 'level', 'levelCheck')
+    subscribe(colorDevices, 'level', 'levelCheck')
+    subscribe(dimmableDevices, 'level', 'levelCheck')
 
     scheduleUpdate()
     schedule('0 */5 * * * ?', 'scheduleUpdate')
@@ -212,6 +238,31 @@ private void scheduleUpdate() {
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
+private void enableLamp(Event evt) {
+    DeviceWrapper device = evt.device
+
+    if (device.id in state.disabledDevices) {
+        log.info "Re-enabling ${device} for circadian management (light turned off)"
+        state.disabledDevices.remove(device.id)
+    }
+}
+
+/* groovylint-disable-next-line UnusedPrivateMethod */
+private void levelCheck(Event evt) {
+    DeviceWrapper device = evt.device
+    int value = evt.value as int
+    int brightness = state.current.brightness
+
+    if ((value > brightness + 3 || value < brightness - 3) &&
+        !state.disabledDevices.contains(device.id)) {
+        log.info "Disabling ${device} for circadian management due to manual brightness change"
+        state.disabledDevices.add(device.id)
+    } else {
+        enableLamp(evt)
+    }
+}
+
+/* groovylint-disable-next-line UnusedPrivateMethod */
 private void updateLamp(Event evt) {
     Map current = state.current
     DeviceWrapper device = evt.device
@@ -241,8 +292,8 @@ private void updateLamps() {
     Map current = state.current
     Set disabled = state.disabledDevices
 
-    settings.dimmableOnDevices.each { device ->
-        if (!disabled.contains(device) &&
+    settings.dimmableOnDevices?.each { device ->
+        if (!disabled.contains(device.id) &&
             device.currentValue('switch') == 'on' &&
             device.currentValue('level') != current.brightness) {
             if (logEnable) { log.debug "Setting ${device} level to ${current.brightness}%" }
@@ -250,8 +301,8 @@ private void updateLamps() {
         }
     }
 
-    settings.colorOnDevices.each { device ->
-        if (!disabled.contains(device) &&
+    settings.colorOnDevices?.each { device ->
+        if (!disabled.contains(device.id) &&
             device.currentValue('switch') == 'on' && (
             device.currentValue('hue') != current.hsv[0] ||
             device.currentValue('saturation') != current.hsv[1] ||
@@ -261,8 +312,8 @@ private void updateLamps() {
         }
     }
 
-    settings.colorTemperatureOnDevices.each { device ->
-        if (!disabled.contains(device) &&
+    settings.colorTemperatureOnDevices?.each { device ->
+        if (!disabled.contains(device.id) &&
             device.currentValue('switch') == 'on' &&
             device.currentValue('colorMode') != 'RGB' &&
             device.currentValue('colorTemperature') != current.colorTemperature) {
@@ -271,24 +322,24 @@ private void updateLamps() {
         }
     }
 
-    settings.dimmableDevices.each { device ->
-        if (!disabled.contains(device) &&
+    settings.dimmableDevices?.each { device ->
+        if (!disabled.contains(device.id) &&
             device.currentValue('level') != current.brightness) {
             if (logEnable) { log.debug "Setting ${device} level to ${current.brightness}%" }
             device.setLevel(current.brightness)
         }
     }
 
-    settings.colorDevices.each { device ->
-        if (!disabled.contains(device) &&
+    settings.colorDevices?.each { device ->
+        if (!disabled.contains(device.id) &&
             device.currentValue('color') != current.hsv) {
             if (logEnable) { log.debug "Setting ${device} color to ${current.hsv}" }
             device.setColor(current.hsv)
         }
     }
 
-    settings.colorTemperatureDevices.each { device ->
-        if (!disabled.contains(device) &&
+    settings.colorTemperatureDevices?.each { device ->
+        if (!disabled.contains(device.id) &&
             device.currentValue('colorMode') != 'RGB' &&
             device.currentValue('colorTemperature') != current.colorTemperature) {
             if (logEnable) { log.debug "Setting ${device} color temperature to ${current.colorTemperature}K" }
