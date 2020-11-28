@@ -92,7 +92,6 @@ preferences {
 
 // Called when the device is started.
 void initialize() {
-    state.clear()
     log.info "${device.displayName} driver initializing"
     sendEvent(name: "lightEffects", value: JsonOutput.toJson(lightEffects))
     connect()
@@ -172,7 +171,6 @@ void on() {
     log.info "Turning ${device.displayName} on"
     String payload = control(devId, [ '1': true ])
     byte[] output = encode('CONTROL', payload, settings.localKey)
-    if (logEnable) { log.debug "QUEUE: ${payload}" }
     queue(output)
 }
 
@@ -180,7 +178,6 @@ void off() {
     log.info "Turning ${device.displayName} off"
     String payload = control(devId, [ '1': false ])
     byte[] output = encode('CONTROL', payload, settings.localKey)
-    if (logEnable) { log.debug "QUEUE: ${payload}" }
     queue(output)
 }
 
@@ -193,7 +190,6 @@ void setLevel(BigDecimal level, BigDecimal duration = 0) {
     int value = Math.round(2.3206 * level + 22.56)
     String payload = control(devId, [ '3': value ])
     byte[] output = encode('CONTROL', payload, settings.localKey)
-    if (logEnable) { log.debug "QUEUE: ${payload}" }
     queue(output)
 }
 
@@ -204,7 +200,6 @@ void refresh() {
     log.info "Querying ${device.displayName} status"
     String payload = query(devId)
     byte[] output = encode('DP_QUERY', payload, settings.localKey)
-    if (logEnable) { log.debug "QUEUE: ${payload}" }
     queue(output)
 }
 
@@ -224,7 +219,6 @@ void setColor(Map colormap) {
                  Integer.toHexString((int)Math.round(2.3206 * colormap.level + 22.56)).padLeft(2, '0')
     String payload = control(devId, [ '5': rgb + hsb ])
     byte[] output = encode('CONTROL', payload, settings.localKey)
-    if (logEnable) { log.debug "QUEUE: ${payload}" }
     queue(output)
 }
 
@@ -321,7 +315,6 @@ private static byte commandByte(String command) {
         case 'STATUS': return 8
         case 'HEART_BEAT': return 9
         case 'DP_QUERY': return 10
-        case 'SCENE_EXECUTE': return 17
     }
 }
 
@@ -664,7 +657,7 @@ private void parseDps(Map dps) {
         colorMode = value == 'white' ? 'CT' : 'RGB'
         newEvent('colorMode', colorMode)
         if (value.startsWith('scene')) {
-            newEvent('effect', value.replace('scene', ''))
+            newEvent('effect', value.replace('scene', '') as int)
         }
     }
 
@@ -712,7 +705,10 @@ private String splitCamelCase(String s) {
 }
 
 private void queue(byte[] output) {
-    ConcurrentLinkedQueue queue = commandQueues.computeIfAbsent(device.id) { k -> new ConcurrentLinkedQueue() }
+    ConcurrentLinkedQueue queue = commandQueues.computeIfAbsent(device.id) {
+        k -> new ConcurrentLinkedQueue()
+    }
+
     if (queue.size() <= 5) {
         queue.add(output)
     } else {
@@ -733,5 +729,5 @@ private void poll() {
 
 private void send(byte[] output) {
     interfaces.rawSocket.sendMessage(HexUtils.byteArrayToHexString(output))
-    if (logEnable) { log.trace "Sent data packet" }
+    if (logEnable) { log.trace "Sent packet" }
 }

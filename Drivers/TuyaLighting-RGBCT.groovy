@@ -26,9 +26,6 @@ import javax.crypto.spec.SecretKeySpec
 @Field static final Object sequenceSync = new Object()
 @Field static long sequenceNo = 1
 
-// Refresh wait (in ms) before requesting refresh after sending a command
-@Field final static int refreshTime = 750
-
 metadata {
     definition(
         name: 'Tuya - RGBCT Light',
@@ -93,9 +90,11 @@ preferences {
 
 // Called when the device is started.
 void initialize() {
-    unschedule()
     log.info "${device.displayName} driver initializing"
     connect()
+    int sec = new Random().nextInt(60)
+    unschedule()
+    schedule('*/15 * * ? * * *', 'heartbeat')
 }
 
 // Called when the device is first created.
@@ -153,10 +152,12 @@ void parse(String message) {
 
 // Socket status updates
 void socketStatus(String message) {
-    log.info message
     if (message.contains('error')) {
+        log.error 'socketStatus: ' + message
         disconnect()
-        runIn(5, 'connect')
+        return
+    } else {
+        log.info message
     }
 }
 
@@ -167,7 +168,6 @@ void on() {
     log.info "Turning ${device.displayName} on"
     String payload = control(devId, [ '1': true ])
     byte[] output = encode('CONTROL', payload, settings.localKey)
-    if (logEnable) { log.debug "QUEUE: ${payload}" }
     queue(output)
 }
 
@@ -175,7 +175,6 @@ void off() {
     log.info "Turning ${device.displayName} off"
     String payload = control(devId, [ '1': false ])
     byte[] output = encode('CONTROL', payload, settings.localKey)
-    if (logEnable) { log.debug "QUEUE: ${payload}" }
     queue(output)
 }
 
@@ -188,7 +187,6 @@ void setLevel(BigDecimal level, BigDecimal duration = 0) {
     int value = Math.round(2.3206 * level + 22.56)
     String payload = control(devId, [ '3': value ])
     byte[] output = encode('CONTROL', payload, settings.localKey)
-    if (logEnable) { log.debug "QUEUE: ${payload}" }
     queue(output)
 }
 
@@ -199,7 +197,6 @@ void refresh() {
     log.info "Querying ${device.displayName} status"
     String payload = query(devId)
     byte[] output = encode('DP_QUERY', payload, settings.localKey)
-    if (logEnable) { log.debug "QUEUE: ${payload}" }
     queue(output)
 }
 
@@ -219,7 +216,6 @@ void setColor(Map colormap) {
                  Integer.toHexString((int)Math.round(2.3206 * colormap.level + 22.56)).padLeft(2, '0')
     String payload = control(devId, [ '5': rgb + hsb ])
     byte[] output = encode('CONTROL', payload, settings.localKey)
-    if (logEnable) { log.debug "QUEUE: ${payload}" }
     queue(output)
 }
 
@@ -298,7 +294,6 @@ private static byte commandByte(String command) {
         case 'STATUS': return 8
         case 'HEART_BEAT': return 9
         case 'DP_QUERY': return 10
-        case 'SCENE_EXECUTE': return 17
     }
 }
 
@@ -402,7 +397,6 @@ private static byte[] encode(String command, String input, String localKey) {
 
     // Check if we need an extended header, only for certain CommandTypes
     if (command != 'DP_QUERY') {
-        // Add 3.3 header
         byte[] buffer = new byte[payload.length + 15]
         fill(buffer, (byte) 0x00, 0, 15)
         copy(buffer, '3.3', 0)
@@ -536,7 +530,6 @@ private void connect() {
     } catch (e) {
         log.error "Connect Error: $e"
         sendEvent(name: 'presence', value: 'not present', descriptionText: e)
-        runIn(15, 'connect')
     }
 }
 
@@ -551,7 +544,7 @@ private String control(String devId, Map dps) {
 }
 
 private void disconnect() {
-    unschedule()
+    log.info 'Closing connection'
     sendEvent(name: 'presence', value: 'not present', descriptionText: message)
     try {
         interfaces.rawSocket.close()
@@ -601,7 +594,12 @@ private String getGenericName(List<Integer> hsv) {
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void heartbeat() {
-    byte[] output = encode('HEART_BEAT', '', localKey) // no sequence number
+    if (device.currentValue('presence') == 'not present') {
+        connect()
+        return
+    }
+
+    byte[] output = encode('HEART_BEAT', '', localKey)
     if (logEnable) { log.trace 'Sending heartbeat' }
     queue(output)
 }
@@ -686,30 +684,29 @@ private String splitCamelCase(String s) {
 }
 
 private void queue(byte[] output) {
-    // Get or create a dedicated linked queue to be used for this driver id
-    ConcurrentLinkedQueue queue = commandQueues.computeIfAbsent(device.id) { k -> new ConcurrentLinkedQueue() }
+    ConcurrentLinkedQueue queue = commandQueues.computeIfAbsent(device.id) {
+        k -> new ConcurrentLinkedQueue()
+    }
+
     if (queue.size() <= 5) {
         queue.add(output)
-        if (logEnable) { log.debug "Queue size: ${queue.size()}" }
     } else {
         log.warn "Queue is full"
     }
+
     poll()
 }
 
 private void poll() {
     if (device.currentValue('presence') == 'present') {
         ConcurrentLinkedQueue queue = commandQueues.get(device.id)
-        if (!queue) { return }
         send(queue.poll())
         int size = queue.size()
-        if (logEnable) { log.debug "Queue size: ${size}" }
-        if (size) { runInMillis(refreshTime, 'poll') }
+        if (size) { runInMillis(1000, 'poll') }
     }
 }
 
 private void send(byte[] output) {
     interfaces.rawSocket.sendMessage(HexUtils.byteArrayToHexString(output))
-    if (logEnable) { log.trace "Sent data packet" }
-    runIn(15, 'heartbeat')
+    if (logEnable) { log.trace "Sent packet" }
 }
