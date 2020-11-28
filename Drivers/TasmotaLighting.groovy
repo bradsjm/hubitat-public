@@ -27,7 +27,7 @@ import groovy.transform.Field
 import hubitat.helper.ColorUtils
 
 metadata {
-    definition (name: 'MQTT - Tasmota Bridge', namespace: 'nrgup', author: 'Jonathan Bradshaw') {
+    definition (name: 'MQTT - Tasmota Lighting', namespace: 'nrgup', author: 'Jonathan Bradshaw') {
         capability 'Initialize'
         capability 'PresenceSensor'
         capability 'Refresh'
@@ -450,7 +450,10 @@ private void parseAutoDiscoveryRelay(int idx, int relaytype, Map config) {
     String devicename = config['dn']
     String mac = config['mac']
     String dni = mac
-    if (idx > 1) { dni += "-${idx}" }
+    if (idx > 1) { 
+        dni += "-${idx}"
+        devicename += " #${idx}"
+    }
 
     String driver = getDeviceDriver(relaytype, config)
     if (!driver) {
