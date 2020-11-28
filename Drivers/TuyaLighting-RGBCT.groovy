@@ -91,9 +91,9 @@ preferences {
 // Called when the device is started.
 void initialize() {
     log.info "${device.displayName} driver initializing"
+    unschedule()
     connect()
     int sec = new Random().nextInt(60)
-    unschedule()
     schedule('*/15 * * ? * * *', 'heartbeat')
 }
 
@@ -524,6 +524,7 @@ private void connect() {
             byteInterface: true,
             readDelay: 500
         )
+        log.info "Connected"
         sendEvent(name: 'presence', value: 'present', descriptionText: 'Connected')
         runIn(1, 'refresh')
         return
