@@ -23,14 +23,12 @@ import javax.crypto.spec.SecretKeySpec
 @Field static final ConcurrentHashMap<Integer, ConcurrentLinkedQueue> commandQueues = new ConcurrentHashMap<>()
 
 // Sequence number for sending Tuya packets
+@Field static final Object sequenceSync = new Object()
 @Field static long sequenceNo = 1
-
-// Refresh wait (in ms) before requesting refresh after sending a command
-@Field final static int refreshTime = 750
 
 metadata {
     definition(
-        name: 'Tuya RGB String Lights',
+        name: 'Tuya - RGB String Lights',
         namespace: 'nrgup',
         author: 'Jonathan Bradshaw'
     ) {
@@ -94,10 +92,13 @@ preferences {
 
 // Called when the device is started.
 void initialize() {
-    unschedule()
+    state.clear()
     log.info "${device.displayName} driver initializing"
     sendEvent(name: "lightEffects", value: JsonOutput.toJson(lightEffects))
     connect()
+    int sec = new Random().nextInt(60)
+    unschedule()
+    schedule('*/15 * * ? * * *', 'heartbeat')
 }
 
 // Called when the device is first created.
@@ -130,21 +131,37 @@ void parse(String message) {
         return
     }
 
-    if (result.text?.startsWith('{') && result.text?.endsWith('}')) {
-        Map json = parseJson(result.text)
-        if (logEnable) { log.debug 'RECV: ' + json }
-        parseDps(json.dps)
-    } else if (result.text) {
-        log.info result
+    switch (result.commandByte) {
+        case 7: // COMMAND ACK
+            if (logEnable) log.trace "Received #${result.sequenceNumber} ACK"
+            refresh()
+            break
+        case 9: // HEART_BEAT ACK
+            if (logEnable) log.trace 'Received heartbeat'
+            break
+        case 10: // DP_QUERY RESULTS
+            if (result.text?.startsWith('{') && result.text?.endsWith('}')) {
+                Map json = parseJson(result.text)
+                if (logEnable) { log.debug 'RECV: ' + json }
+                parseDps(json.dps)
+            } else if (result.text) {
+                log.info result
+            }
+            break
+        default:
+            if (logEnable) log.debug result
+            break
     }
 }
 
 // Socket status updates
 void socketStatus(String message) {
-    log.info message
-    if (message.contains('Stream closed')) {
-        sendEvent(name: 'presence', value: 'not present', descriptionText: message)
-        runIn(5, 'connect')
+    if (message.contains('error')) {
+        log.error 'socketStatus: ' + message
+        disconnect()
+        return
+    } else {
+        log.info message
     }
 }
 
@@ -157,7 +174,6 @@ void on() {
     byte[] output = encode('CONTROL', payload, settings.localKey)
     if (logEnable) { log.debug "QUEUE: ${payload}" }
     queue(output)
-    runInMillis(refreshTime, 'refresh')
 }
 
 void off() {
@@ -166,7 +182,6 @@ void off() {
     byte[] output = encode('CONTROL', payload, settings.localKey)
     if (logEnable) { log.debug "QUEUE: ${payload}" }
     queue(output)
-    runInMillis(refreshTime, 'refresh')
 }
 
 /*
@@ -180,7 +195,6 @@ void setLevel(BigDecimal level, BigDecimal duration = 0) {
     byte[] output = encode('CONTROL', payload, settings.localKey)
     if (logEnable) { log.debug "QUEUE: ${payload}" }
     queue(output)
-    runInMillis(refreshTime, 'refresh')
 }
 
 /*
@@ -212,7 +226,6 @@ void setColor(Map colormap) {
     byte[] output = encode('CONTROL', payload, settings.localKey)
     if (logEnable) { log.debug "QUEUE: ${payload}" }
     queue(output)
-    runInMillis(refreshTime, 'refresh')
 }
 
 void setHue(BigDecimal hue) {
@@ -250,7 +263,6 @@ void setEffect(BigDecimal id) {
     byte[] output = encode('CONTROL', payload, settings.localKey)
     if (logEnable) { log.debug "QUEUE: ${payload}" }
     queue(output)
-    runInMillis(refreshTime, 'refresh')
 }
 
 void setNextEffect() {
@@ -408,23 +420,16 @@ private static byte[] encrypt (byte[] payload, String secret) {
     return cipher.doFinal(payload)
 }
 
-private static byte[] encode(String command, String input, String localKey, long seq = 0, String ver = '3.3') {
-    byte[] payload = null
+private static byte[] encode(String command, String input, String localKey) {
+    byte[] payload = encrypt(input.getBytes('UTF-8'), localKey)
 
-    if (ver == '3.3') {
-        payload = encrypt(input.getBytes('UTF-8'), localKey)
-        // Check if we need an extended header, only for certain CommandTypes
-        if (command != 'DP_QUERY') {
-            // Add 3.3 header
-            byte[] buffer = new byte[payload.length + 15]
-            fill(buffer, (byte) 0x00, 0, 15)
-            copy(buffer, '3.3', 0)
-            copy(buffer, payload, 15)
-            payload = buffer
-        }
-    } else {
-        // Todo other versions
-        payload = input
+    // Check if we need an extended header, only for certain CommandTypes
+    if (command != 'DP_QUERY') {
+        byte[] buffer = new byte[payload.length + 15]
+        fill(buffer, (byte) 0x00, 0, 15)
+        copy(buffer, '3.3', 0)
+        copy(buffer, payload, 15)
+        payload = buffer
     }
 
     // Allocate buffer with room for payload + 24 bytes for
@@ -436,9 +441,11 @@ private static byte[] encode(String command, String input, String localKey, long
     putUInt32(buffer, 8, commandByte(command))
     putUInt32(buffer, 12, payload.length + 8)
 
-    // Optionally add sequence number. Pass a negative value to skip.
-    if (seq >= 0) {
-        putUInt32(buffer, 4, seq ?: sequenceNo++)
+    // Optionally add sequence number.
+    if (command != 'HEART_BEAT') {
+        synchronized (sequenceSync) { 
+            putUInt32(buffer, 4, sequenceNo++)
+        }
     }
 
     // Add payload, crc and suffix
@@ -551,7 +558,6 @@ private void connect() {
     } catch (e) {
         log.error "Connect Error: $e"
         sendEvent(name: 'presence', value: 'not present', descriptionText: e)
-        runIn(15, 'connect')
     }
 }
 
@@ -566,8 +572,13 @@ private String control(String devId, Map dps) {
 }
 
 private void disconnect() {
-    unschedule()
-    interfaces.rawSocket.disconnect()
+    log.info 'Closing connection'
+    sendEvent(name: 'presence', value: 'not present', descriptionText: message)
+    try {
+        interfaces.rawSocket.close()
+    } catch (e) { 
+        log.error 'Disconnecting: ' + e
+    }
 }
 
 private String getGenericName(List<Integer> hsv) {
@@ -611,9 +622,14 @@ private String getGenericName(List<Integer> hsv) {
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void heartbeat() {
-    byte[] output = encode('HEART_BEAT', '', localKey, -1) // no sequence number
-    if (logEnable) { log.debug 'Sending heartbeat packet...' }
-    send(output)
+    if (device.currentValue('presence') == 'not present') {
+        connect()
+        return
+    }
+
+    byte[] output = encode('HEART_BEAT', '', localKey)
+    if (logEnable) { log.trace 'Sending heartbeat' }
+    queue(output)
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
@@ -696,34 +712,26 @@ private String splitCamelCase(String s) {
 }
 
 private void queue(byte[] output) {
-    // Get or create a dedicated linked queue to be used for this driver id
     ConcurrentLinkedQueue queue = commandQueues.computeIfAbsent(device.id) { k -> new ConcurrentLinkedQueue() }
     if (queue.size() <= 5) {
         queue.add(output)
-        if (logEnable) { log.debug "Queue size: ${queue.size()}" }
+    } else {
+        log.warn "Queue is full"
     }
+
     poll()
 }
 
 private void poll() {
     if (device.currentValue('presence') == 'present') {
         ConcurrentLinkedQueue queue = commandQueues.get(device.id)
-        if (!queue) { return }
         send(queue.poll())
         int size = queue.size()
-        if (logEnable) { log.debug "Queue size: ${size}" }
-        if (size) { runInMillis(refreshTime, 'poll') }
+        if (size) { runInMillis(1000, 'poll') }
     }
 }
 
 private void send(byte[] output) {
-    String msg = HexUtils.byteArrayToHexString(output)
-
-    try {
-        interfaces.rawSocket.sendMessage(msg)
-        runIn(15, 'heartbeat')
-    } catch (e) {
-        sendEvent(name: 'presence', value: 'not present', descriptionText: e)
-        log.error "Send Error: $e"
-    }
+    interfaces.rawSocket.sendMessage(HexUtils.byteArrayToHexString(output))
+    if (logEnable) { log.trace "Sent data packet" }
 }
