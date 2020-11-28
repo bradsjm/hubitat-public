@@ -285,9 +285,8 @@ void componentSetSaturation(DeviceWrapper device, BigDecimal saturation) {
 }
 
 void componentRefresh(DeviceWrapper device) {
-    String json = getDeviceConfig(device)
-    if (json) {
-        Map config = parseJson(json)
+    Map config = getDeviceConfig(device)
+    if (config) {
         String topic = getCommandTopic(config) + 'STATE'
         log.info "Refreshing ${device}"
         mqttPublish(topic, '')
@@ -639,7 +638,7 @@ private void mqttReceive(Map message) {
 
     // Check if subscription map is empty
     if (!subscriptions.size() && childDevices.size()) {
-        log.info 'Building topics for existing devices'
+        log.info 'Scanning existing devices for subscription topic map'
         subscriptions = scanTopicMap()
     }
 
