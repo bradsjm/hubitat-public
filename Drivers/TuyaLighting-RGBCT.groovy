@@ -15,16 +15,14 @@ import hubitat.helper.ColorUtils
 import hubitat.helper.HexUtils
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.Semaphore
 import java.util.regex.Matcher
 import javax.crypto.Cipher
 import javax.crypto.spec.SecretKeySpec
 
 // Shared command queue map among all instances of this driver
 @Field static final ConcurrentHashMap<Integer, ConcurrentLinkedQueue> commandQueues = new ConcurrentHashMap<>()
-
-// Sequence number for sending Tuya packets
-@Field static final Object sequenceSync = new Object()
-@Field static long sequenceNo = 1
+@Field static final ConcurrentHashMap<Integer, Semaphore> semaphores = new ConcurrentHashMap<>()
 
 metadata {
     definition(
@@ -36,6 +34,7 @@ metadata {
         capability 'Color Control'
         capability 'ColorMode'
         capability 'ColorTemperature'
+        capability 'Initialize'
         capability 'PresenceSensor'
         capability 'Switch'
         capability 'SwitchLevel'
@@ -120,6 +119,9 @@ void updated() {
 
 // Parse incoming messages
 void parse(String message) {
+    getMutex().release()
+    if (logEnable) { log.trace 'Released mutex' }
+
     byte[] buffer = HexUtils.hexStringToByteArray(message)
     Map result = decode(buffer, localKey)
     if (result.error) {
@@ -130,7 +132,7 @@ void parse(String message) {
     switch (result.commandByte) {
         case 7: // COMMAND ACK
             if (logEnable) log.trace "Received #${result.sequenceNumber} ACK"
-            refresh()
+            if (!getQueue().peek()) refresh()
             break
         case 9: // HEART_BEAT ACK
             if (logEnable) log.trace "Received heartbeat response"
@@ -394,7 +396,7 @@ private static byte[] encrypt (byte[] payload, String secret) {
     return cipher.doFinal(payload)
 }
 
-private static byte[] encode(String command, String input, String localKey) {
+private static byte[] encode(String command, String input, String localKey, seq = 0) {
     byte[] payload = encrypt(input.getBytes('UTF-8'), localKey)
 
     // Check if we need an extended header, only for certain CommandTypes
@@ -416,11 +418,7 @@ private static byte[] encode(String command, String input, String localKey) {
     putUInt32(buffer, 12, payload.length + 8)
 
     // Optionally add sequence number.
-    if (command != 'HEART_BEAT') {
-        synchronized (sequenceSync) { 
-            putUInt32(buffer, 4, sequenceNo++)
-        }
-    }
+    putUInt32(buffer, 4, seq)
 
     // Add payload, crc and suffix
     copy(buffer, payload, 16)
@@ -527,6 +525,7 @@ private void connect() {
             readDelay: 500
         )
         log.info "Connected"
+        getMutex().release()
         sendEvent(name: 'presence', value: 'present', descriptionText: 'Connected')
         runIn(1, 'refresh')
         return
@@ -595,6 +594,14 @@ private String getGenericName(List<Integer> hsv) {
     return colorName
 }
 
+private ConcurrentLinkedQueue getQueue() {
+    return commandQueues.computeIfAbsent(device.id) { k -> new ConcurrentLinkedQueue() }
+}
+
+private Semaphore getMutex() {
+    return semaphores.computeIfAbsent(device.id) { k -> new Semaphore(1) }
+}
+
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void heartbeat() {
     if (device.currentValue('presence') == 'not present') {
@@ -602,9 +609,11 @@ private void heartbeat() {
         return
     }
 
-    byte[] output = encode('HEART_BEAT', '', localKey)
-    if (logEnable) { log.trace 'Sending heartbeat' }
-    queue(output)
+    if (!getQueue().peek()) {
+        byte[] output = encode('HEART_BEAT', '', localKey)
+        if (logEnable) { log.trace 'Sending heartbeat' }
+        queue(output)
+    }
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
@@ -687,25 +696,29 @@ private String splitCamelCase(String s) {
 }
 
 private void queue(byte[] output) {
-    ConcurrentLinkedQueue queue = commandQueues.computeIfAbsent(device.id) {
-        k -> new ConcurrentLinkedQueue()
-    }
-
-    if (queue.size() <= 5) {
+    ConcurrentLinkedQueue queue = getQueue()
+    int size = queue.size()
+    if (size <= 5) {
         queue.add(output)
     } else {
-        log.warn "Queue is full"
+        log.warn "Queue is full (${size})"
     }
 
     poll()
 }
 
 private void poll() {
-    if (device.currentValue('presence') == 'present') {
-        ConcurrentLinkedQueue queue = commandQueues.get(device.id)
+    if (device.currentValue('presence') == 'not present') { return }
+
+    ConcurrentLinkedQueue queue = getQueue()
+    if (!queue.peek()) { return }
+
+    if (getMutex().tryAcquire()) {
+        if (logEnable) { log.trace 'Acquired mutex' }
         send(queue.poll())
-        int size = queue.size()
-        if (size) { runInMillis(1000, 'poll') }
+    } else {
+        log.trace 'Waiting on mutex to release'
+        runInMillis(1000, 'poll') 
     }
 }
 
