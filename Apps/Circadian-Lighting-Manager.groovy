@@ -153,7 +153,7 @@ void updated() {
 // Called when the driver is initialized.
 void initialize() {
     log.info "${app.name} initializing"
-    state.last = [:]
+    state.clear()
     state.current = [:]
     state.disabledDevices = [] as Set
     unsubscribe()
@@ -231,9 +231,8 @@ private static List<Integer> ctToRGB(int colorTemp) {
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void scheduleUpdate() {
-    state.last = state.current
     state.current = currentCircadianValues()
-    log.info "Circadian State: ${state.current}"
+    log.info "Circadian State now: ${state.current}"
     updateLamps()
 }
 
@@ -268,7 +267,7 @@ private void updateLamp(Event evt) {
     DeviceWrapper device = evt.device
 
     if (device.id in settings.dimmableOnDevices*.id && device.currentValue('level') != current.brightness) {
-        if (logEnable) { log.debug "Setting ${device} level to ${current.brightness}%" }
+        log.info "Setting ${device} level to ${current.brightness}%"
         device.setLevel(current.brightness)
     }
 
@@ -276,13 +275,13 @@ private void updateLamp(Event evt) {
         device.currentValue('hue') != current.hsv[0] ||
         device.currentValue('saturation') != current.hsv[1] ||
         device.currentValue('level') != current.hsv[2])) {
-        if (logEnable) { log.debug "Setting ${device} color to ${current.hsv}" }
+        log.info "Setting ${device} color to ${current.hsv}"
         device.setColor(current.hsv)
     }
 
     if (device.id in settings.colorTemperatureOnDevices*.id &&
         device.currentValue('colorTemperature') != current.colorTemperature) {
-        if (logEnable) { log.debug "Setting ${device} color temperature to ${current.colorTemperature}K" }
+        log.info "Setting ${device} color temperature to ${current.colorTemperature}K"
         device.setColorTemperature(current.colorTemperature)
     }
 }
@@ -291,6 +290,8 @@ private void updateLamp(Event evt) {
 private void updateLamps() {
     Map current = state.current
     Set disabled = state.disabledDevices
+
+    log.info 'Starting circadian updates to lights'
 
     settings.dimmableOnDevices?.each { device ->
         if (!disabled.contains(device.id) &&
