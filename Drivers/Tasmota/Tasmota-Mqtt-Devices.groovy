@@ -96,8 +96,11 @@ metadata {
     }
 }
 
-// Keeps a list of topic to child device mappings for lookup for received messages
-@Field static Map subscriptions = [:]
+// List of topic to child device mappings for lookup for received messages
+@Field static final Map subscriptions = [:]
+
+// Cache of device configuration data for performance
+@Field static final Map<Integer, Map> configCache = [:]
 
 /**
  *  Hubitat Driver Event Handlers
@@ -163,7 +166,7 @@ void removeDevices() {
 void sendCommand(String command) {
     log.info "${device.displayName} sending ${command} to all devices"
     childDevices.each { device ->
-        Map config = parseJson(device.getDataValue('config'))
+        Map config = getDeviceConfig(device)
         String topic = getCommandTopic(config) + 'Backlog'
         mqttPublish(topic, command)
     }
@@ -192,30 +195,27 @@ void off() {
  */
 
 void componentOn(DeviceWrapper device) {
-    Map config = parseJson(device.getDataValue('config'))
+    Map config = getDeviceConfig(device)
     String topic = getCommandTopic(config) + 'Backlog'
     String fadeCommand = fadeCommand(settings.fadeTime)
-    String index = device.getDataValue('index')
     log.info "Turning ${device} on"
-    mqttPublish(topic, fadeCommand + "POWER${index} 1")
+    mqttPublish(topic, fadeCommand + "POWER${config.index ?: 1} 1")
 }
 
 void componentOff(DeviceWrapper device) {
-    Map config = parseJson(device.getDataValue('config'))
+    Map config = getDeviceConfig(device)
     String topic = getCommandTopic(config) + 'Backlog'
     String fadeCommand = fadeCommand(settings.fadeTime)
-    String index = device.getDataValue('index')
     log.info "Turning ${device} off"
-    mqttPublish(topic, fadeCommand + "POWER${index} 0")
+    mqttPublish(topic, fadeCommand + "POWER${config.index ?: 1} 0")
 }
 
 void componentSetLevel(DeviceWrapper device, BigDecimal level, BigDecimal duration = 0) {
-    Map config = parseJson(device.getDataValue('config'))
+    Map config = getDeviceConfig(device)
     String topic = getCommandTopic(config) + 'Backlog'
     String fadeCommand = fadeCommand(duration ?: settings.fadeTime)
-    String index = device.getDataValue('index')
     log.info "Setting ${device} level to ${level}% over ${duration}s"
-    mqttPublish(topic, fadeCommand + "Dimmer${index} ${level}")
+    mqttPublish(topic, fadeCommand + "Dimmer${config.index ?: 1} ${level}")
 }
 
 // void componentStartLevelChange(device, direction) {
@@ -241,7 +241,7 @@ void componentSetLevel(DeviceWrapper device, BigDecimal level, BigDecimal durati
 // }
 
 void componentSetColorTemperature(DeviceWrapper device, BigDecimal value) {
-    Map config = parseJson(device.getDataValue('config'))
+    Map config = getDeviceConfig(device)
     String topic = getCommandTopic(config) + 'Backlog'
     String fadeCommand = fadeCommand(duration ?: settings.fadeTime)
 
@@ -260,7 +260,7 @@ void componentSetColorTemperature(DeviceWrapper device, BigDecimal value) {
 
 void componentSetColor(DeviceWrapper device, Map colormap) {
     def (int r, int g, int b) = ColorUtils.hsvToRGB([colormap.hue, colormap.saturation, colormap.level])
-    Map config = parseJson(device.getDataValue('config'))
+    Map config = getDeviceConfig(device)
     String topic = getCommandTopic(config) + 'Backlog'
     String fadeCommand = fadeCommand(duration ?: settings.fadeTime)
     String color = "${r},${g},${b}"
@@ -285,7 +285,7 @@ void componentSetSaturation(DeviceWrapper device, BigDecimal saturation) {
 }
 
 void componentRefresh(DeviceWrapper device) {
-    String json = device.getDataValue('config')
+    String json = getDeviceConfig(device)
     if (json) {
         Map config = parseJson(json)
         String topic = getCommandTopic(config) + 'STATE'
@@ -404,9 +404,9 @@ private static int toKelvin(BigDecimal value) {
 private Map scanTopicMap() {
     Map subs = [:]
     childDevices.each { device ->
-        Map config = parseJson(device.getDataValue('config'))
+        Map config = getDeviceConfig(device)
         String dni = config['mac']
-        String index = device.getDataValue('index')
+        String index = config['index']
         if (index != '1') { dni += "-${index}" }
         [ getStatTopic(config) + 'RESULT', getTeleTopic(config) + 'STATE'].each { topic ->
             if (subs.containsKey(topic)) {
@@ -468,8 +468,8 @@ private void parseAutoDiscoveryRelay(int idx, int relaytype, Map config) {
     log.info "Autodiscovery: ${device} (${dni}) using ${driver} driver"
 
     // Persist required configuration to device data fields
+    config['index'] = idx
     device.updateDataValue('config', JsonOutput.toJson(config))
-    device.updateDataValue('index', idx.toString())
 
     // Informational data fields
     device.updateDataValue('model', config['md'])
@@ -546,7 +546,7 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
     }
 
     // Get the configuration from the device
-    String index = device.getDataValue('index')
+    String index = getDeviceConfig(device)['index']
     Map json = parseJson(payload)
 
     // Iterate the json payload content
@@ -674,6 +674,34 @@ private void mqttSubscribeDiscovery() {
  *  Utility methods
  */
 
+private String getCommandTopic(Map config) {
+    return getTopic(config, config['tp'][0])
+}
+
+private Map getDeviceConfig(ChildDeviceWrapper device) {
+    return configCache.computeIfAbsent(device.id) { k -> parseJson(device.getDataValue('config')) }
+}
+
+private String getDeviceDriver(int relaytype, Map config) {
+    switch (relaytype) {
+        case 1:
+            return 'Generic Component Switch'
+        case 2: // light or light fan
+            if (config['if']) {
+                log.warn 'Light Fan not implemented'
+            } else {
+                switch (config['lt_st']) {
+                    case 1: return 'Generic Component Dimmer'
+                    case 2: return 'Generic Component CT'
+                    case 3: return 'Generic Component RGB'
+                    case 4:
+                    case 5: return 'Generic Component RGBW'
+                }
+            }
+            break
+    }
+}
+
 private ChildDeviceWrapper getOrCreateDevice(String driverName, String deviceNetworkId, String name, String label) {
     ChildDeviceWrapper childDevice = getChildDevice(deviceNetworkId)
     if (!childDevice) {
@@ -696,16 +724,6 @@ private ChildDeviceWrapper getOrCreateDevice(String driverName, String deviceNet
     return childDevice
 }
 
-/* groovylint-disable-next-line UnusedPrivateMethod */
-private void logsOff() {
-    device.updateSetting('logEnable', [value: 'false', type: 'bool'] )
-    log.info "debug logging disabled for ${device.displayName}"
-}
-
-private String getCommandTopic(Map config) {
-    return getTopic(config, config['tp'][0])
-}
-
 private String getStatTopic(Map config) {
     return getTopic(config, config['tp'][1])
 }
@@ -723,22 +741,9 @@ private String getTopic(Map config, String prefix) {
     return topic
 }
 
-private String getDeviceDriver(int relaytype, Map config) {
-    switch (relaytype) {
-        case 1:
-            return 'Generic Component Switch'
-        case 2: // light or light fan
-            if (config['if']) {
-                log.warn 'Light Fan not implemented'
-            } else {
-                switch (config['lt_st']) {
-                    case 1: return 'Generic Component Dimmer'
-                    case 2: return 'Generic Component CT'
-                    case 3: return 'Generic Component RGB'
-                    case 4:
-                    case 5: return 'Generic Component RGBW'
-                }
-            }
-            break
-    }
+/* groovylint-disable-next-line UnusedPrivateMethod */
+private void logsOff() {
+    device.updateSetting('logEnable', [value: 'false', type: 'bool'] )
+    log.info "debug logging disabled for ${device.displayName}"
 }
+
