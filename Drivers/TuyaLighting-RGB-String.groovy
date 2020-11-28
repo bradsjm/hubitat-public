@@ -94,6 +94,7 @@ void initialize() {
     log.info "${device.displayName} driver initializing"
     sendEvent(name: "lightEffects", value: JsonOutput.toJson(lightEffects))
     unschedule()
+    getQueue().clear()
     connect()
     int sec = new Random().nextInt(60)
     schedule('*/15 * * ? * * *', 'heartbeat')
@@ -158,12 +159,17 @@ void parse(String message) {
 
 // Socket status updates
 void socketStatus(String message) {
-    if (message.contains('error')) {
-        log.error 'socketStatus: ' + message
+    try {
+        if (message.contains('error')) {
+            log.error 'socketStatus: ' + message
+            disconnect()
+            return
+        } else {
+            log.info message
+        }
+    } catch (e) {
+        log.error 'socketStatus: ' + e
         disconnect()
-        return
-    } else {
-        log.info message
     }
 }
 
