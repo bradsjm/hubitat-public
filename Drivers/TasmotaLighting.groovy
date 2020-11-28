@@ -97,7 +97,7 @@ metadata {
 }
 
 // List of topic to child device mappings for lookup for received messages
-@Field static final Map subscriptions = [:]
+@Field static final Map<String, Set> subscriptions = [:]
 
 // Cache of device configuration data for performance
 @Field static final Map<Integer, Map> configCache = [:]
@@ -450,7 +450,7 @@ private void parseAutoDiscoveryRelay(int idx, int relaytype, Map config) {
     String devicename = config['dn']
     String mac = config['mac']
     String dni = mac
-    if (idx > 1) { 
+    if (idx > 1) {
         dni += "-${idx}"
         devicename += " #${idx}"
     }
@@ -471,15 +471,15 @@ private void parseAutoDiscoveryRelay(int idx, int relaytype, Map config) {
 
     // Persist required configuration to device data fields
     config['index'] = idx
-    device.updateDataValue('config', JsonOutput.toJson(config))
-
-    // Informational data fields
-    device.updateDataValue('model', config['md'])
-    device.updateDataValue('ip', config['ip'])
-    device.updateDataValue('mac', config['mac'])
-    device.updateDataValue('hostname', config['hn'])
-    device.updateDataValue('software', config['sw'])
-    device.updateDataValue('topic', config['t'])
+    device.with {
+        updateDataValue 'config', JsonOutput.toJson(config)
+        updateDataValue 'model', config['md']
+        updateDataValue 'ip', config['ip']
+        updateDataValue 'mac', config['mac']
+        updateDataValue 'hostname', config['hn']
+        updateDataValue 'software', config['sw']
+        updateDataValue 'topic', config['t']
+    }
 
     if (device.hasCapability('LightEffects')) {
         device.sendEvent(name: 'lightEffects', value: JsonOutput.toJson([
@@ -501,11 +501,7 @@ private void parseAutoDiscoveryRelay(int idx, int relaytype, Map config) {
     // Add topic subscriptions
     topics.each { topic ->
         mqttSubscribe(topic)
-        if (subscriptions.containsKey(topic)) {
-            subscriptions[topic] += dni
-        } else {
-            subscriptions[topic] = [ dni ]
-        }
+        subscriptions.computeIfAbsent(topic) { k -> [] as Set }.add(dni)
     }
 }
 
