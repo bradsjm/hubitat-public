@@ -123,6 +123,13 @@ preferences {
         }
 
         section {
+            input name: 'disabledModes',
+                  type: 'mode',
+                  title: 'Select mode(s) where lighting manager should be disabled',
+                  multiple: true
+        }
+
+        section {
             input name: 'logEnable',
                   type: 'bool',
                   title: 'Enable Debug logging',
@@ -167,8 +174,6 @@ void initialize() {
     if (colorTemperatureDevices) { managed.addAll(colorTemperatureDevices) }
     if (colorDevices) { managed.addAll(colorDevices) }
     if (dimmableDevices) { managed.addAll(dimmableDevices) }
-
-    List allDevices = activated + managed
 
     subscribe(colorTemperatureOnDevices, 'switch.on', 'updateLamp')
     subscribe(colorOnDevices, 'switch.on', 'updateLamp')
@@ -266,6 +271,11 @@ private void updateLamp(Event evt) {
     Map current = state.current
     DeviceWrapper device = evt.device
 
+    if (location.mode in disabledModes) {
+        log.info "Manager is disabled due to mode ${location.mode}"
+        return
+    }
+
     if (device.id in settings.dimmableOnDevices*.id && device.currentValue('level') != current.brightness) {
         log.info "Setting ${device} level to ${current.brightness}%"
         device.setLevel(current.brightness)
@@ -290,6 +300,11 @@ private void updateLamp(Event evt) {
 private void updateLamps() {
     Map current = state.current
     Set disabled = state.disabledDevices
+
+    if (location.mode in disabledModes) {
+        log.info "Manager is disabled due to mode ${location.mode}"
+        return
+    }
 
     log.info 'Starting circadian updates to lights'
 
