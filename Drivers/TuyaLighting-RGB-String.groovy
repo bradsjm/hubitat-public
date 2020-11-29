@@ -135,14 +135,14 @@ void parse(String message) {
 
     switch (result.commandByte) {
         case 7: // COMMAND ACK
-            if (logEnable) log.trace "Received Command ACK"
-            if (!getQueue().peek()) refresh()
+            log.info "${device.displayName} received command acknowledgment"
+            if (!getQueue().size()) refresh()
             break
         case 9: // HEART_BEAT ACK
-            if (logEnable) log.trace 'Received heartbeat ACK'
+            if (logEnable) log.trace 'Received heartbeat response'
             break
         case 10: // DP_QUERY RESULTS
-            if (logEnable) log.trace "Received Query ACK"
+            log.info "${device.displayName} received query response"
             if (result.text?.startsWith('{') && result.text?.endsWith('}')) {
                 Map json = parseJson(result.text)
                 if (logEnable) { log.debug 'RECV: ' + json }
@@ -543,14 +543,14 @@ private void connect() {
     if (!settings.ipAddress) { return }
 
     try {
-        log.info "Connecting to ${settings.ipAddress}"
+        log.info "${device.displayName} connecting to ${settings.ipAddress}"
         interfaces.rawSocket.connect(
             settings.ipAddress,
             6668,
             byteInterface: true,
             readDelay: 500
         )
-        log.info "Connected"
+        log.info "${device.displayName} connected"
         getMutex().release()
         sendEvent(name: 'presence', value: 'present', descriptionText: 'Connected')
         runIn(1, 'refresh')
@@ -572,7 +572,7 @@ private String control(String devId, Map dps) {
 }
 
 private void disconnect() {
-    log.info 'Closing connection'
+    log.info "${device.displayName} closing connection"
     sendEvent(name: 'presence', value: 'not present', descriptionText: message)
     try {
         interfaces.rawSocket.close()
@@ -737,14 +737,14 @@ private void poll() {
     if (device.currentValue('presence') == 'not present') { return }
 
     ConcurrentLinkedQueue queue = getQueue()
-    if (!queue.peek()) { return }
+    if (!queue.size()) { return }
 
-    if (getMutex().tryAcquire()) {
+    if (getMutex().tryAcquire(2, java.util.concurrent.TimeUnit.SECONDS)) {
         if (logEnable) { log.trace 'Acquired mutex' }
         send(queue.poll())
     } else {
-        log.trace 'Waiting on mutex to release'
-        runInMillis(1000, 'poll') 
+        log.trace 'Timeout waiting on mutex, something is wrong'
+        disconnect()
     }
 }
 
