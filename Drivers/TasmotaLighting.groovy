@@ -329,15 +329,6 @@ void mqttClientStatus(String status) {
  *  Static Utility methods
  */
 
-private static Map newEvent(ChildDeviceWrapper device, String name, Object value, String unit = null) {
-    return [
-        name: name,
-        value: value,
-        unit: unit,
-        descriptionText: "${device.displayName} ${name} is ${value}${unit ?: ''}"
-    ]
-}
-
 // Get the Tasmota fade speed command from seconds
 private static String fadeCommand(BigDecimal seconds) {
     int speed = Math.min(40f, seconds * 2).toInteger()
@@ -384,6 +375,17 @@ private static String getGenericName(List<Integer> hsv) {
     return colorName
 }
 
+private static Map newEvent(ChildDeviceWrapper device, String name, Object value, String unit = null) {
+    String splitName = splitCamelCase(name).toLowerCase()
+    String description = "${device.displayName} ${splitName} is ${value}${unit ?: ''}"
+    return [
+        name: name,
+        value: value,
+        unit: unit,
+        descriptionText: description
+    ]
+}
+
 // Convert rgb to HSV value
 private static List<Integer> rgbToHSV(String rgb) {
     return ColorUtils.rgbToHSV(rgb.tokenize(',')*.asType(int).take(3))
@@ -417,6 +419,17 @@ private Map scanTopicMap() {
     }
 
     return subs
+}
+
+private String splitCamelCase(String s) {
+   return s.replaceAll(
+      String.format('%s|%s|%s',
+         '(?<=[A-Z])(?=[A-Z][a-z])',
+         '(?<=[^A-Z])(?=[A-Z])',
+         '(?<=[A-Za-z])(?=[^A-Za-z])'
+      ),
+      ' '
+   )
 }
 
 /**
@@ -569,12 +582,23 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
                 break
             case 'Color':
                 String hex = rgbToHEX(kv.value)
+                String colorMode = kv.value.startsWith('0,0,0') ? 'CT' : 'RGB'
+                String colorName = getGenericName(rgbToHSV(kv.value))
+                List<Integer> hsv = rgbToHSV(kv.value)
                 if (device.currentValue('color') != hex) {
                     events << newEvent(device, 'color', hex)
-                    events << newEvent(device, 'hue', rgbToHSV(kv.value)[0])
-                    events << newEvent(device, 'saturation', rgbToHSV(kv.value)[1])
-                    events << newEvent(device, 'colorMode', kv.value.startsWith('0,0,0') ? 'CT' : 'RGB')
-                    events << newEvent(device, 'colorName', getGenericName(rgbToHSV(kv.value)))
+                }
+                if (device.currentValue('hue') != hsv[0]) {
+                    events << newEvent(device, 'hue', hsv[0])
+                }
+                if (device.currentValue('saturation') != hsv[1]) {
+                    events << newEvent(device, 'saturation', hsv[1])
+                }
+                if (device.currentValue('colorMode') != colorMode) {
+                    events << newEvent(device, 'colorMode', colorMode)
+                }
+                if (device.currentValue('colorName') != colorName) {
+                    events << newEvent(device, 'colorName', colorName)
                 }
                 break
             default:
