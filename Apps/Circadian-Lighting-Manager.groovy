@@ -44,6 +44,14 @@ preferences {
                   required: false
         }
 
+        section {
+            input name: 'masterEnable',
+                  type: 'bool',
+                  title: 'Application enabled',
+                  required: false,
+                  defaultValue: true
+        }
+
         section('Active Managed Lights (only when on)', hideable: true, hidden: true) {
             input name: 'colorTemperatureOnDevices',
                   type: 'capability.colorTemperature',
@@ -161,40 +169,40 @@ void updated() {
 void initialize() {
     log.info "${app.name} initializing"
     state.clear()
+    unschedule()
+    unsubscribe()
     state.current = [:]
     state.disabledDevices = [] as Set
-    unsubscribe()
 
-    List activated = []
-    if (colorTemperatureOnDevices) { activated.addAll(colorTemperatureOnDevices) }
-    if (colorOnDevices) { activated.addAll(colorOnDevices) }
-    if (dimmableOnDevices) { activated.addAll(dimmableOnDevices) }
+    if (masterEnable) {
+        List activated = []
+        if (colorTemperatureOnDevices) { activated.addAll(colorTemperatureOnDevices) }
+        if (colorOnDevices) { activated.addAll(colorOnDevices) }
+        if (dimmableOnDevices) { activated.addAll(dimmableOnDevices) }
 
-    List managed = []
-    if (colorTemperatureDevices) { managed.addAll(colorTemperatureDevices) }
-    if (colorDevices) { managed.addAll(colorDevices) }
-    if (dimmableDevices) { managed.addAll(dimmableDevices) }
+        List managed = []
+        if (colorTemperatureDevices) { managed.addAll(colorTemperatureDevices) }
+        if (colorDevices) { managed.addAll(colorDevices) }
+        if (dimmableDevices) { managed.addAll(dimmableDevices) }
 
-    subscribe(colorTemperatureOnDevices, 'switch.on', 'updateLamp')
-    subscribe(colorOnDevices, 'switch.on', 'updateLamp')
-    subscribe(dimmableOnDevices, 'switch.on', 'updateLamp')
+        subscribe(colorTemperatureOnDevices, 'switch', 'updateLamp')
+        subscribe(colorOnDevices, 'switch', 'updateLamp')
+        subscribe(dimmableOnDevices, 'switch', 'updateLamp')
 
-    subscribe(colorTemperatureOnDevices, 'switch.off', 'enableLamp')
-    subscribe(colorOnDevices, 'switch.off', 'enableLamp')
-    subscribe(dimmableOnDevices, 'switch.off', 'enableLamp')
-    subscribe(colorTemperatureDevices, 'switch.off', 'enableLamp')
-    subscribe(colorDevices, 'switch.off', 'enableLamp')
-    subscribe(dimmableDevices, 'switch.off', 'enableLamp')
+        subscribe(colorTemperatureDevices, 'switch.off', 'updateLamp')
+        subscribe(colorDevices, 'switch.off', 'updateLamp')
+        subscribe(dimmableDevices, 'switch.off', 'updateLamp')
 
-    subscribe(colorTemperatureOnDevices, 'level', 'levelCheck')
-    subscribe(colorOnDevices, 'level', 'levelCheck')
-    subscribe(dimmableOnDevices, 'level', 'levelCheck')
-    subscribe(colorTemperatureDevices, 'level', 'levelCheck')
-    subscribe(colorDevices, 'level', 'levelCheck')
-    subscribe(dimmableDevices, 'level', 'levelCheck')
+        subscribe(colorTemperatureOnDevices, 'level', 'levelCheck')
+        subscribe(colorOnDevices, 'level', 'levelCheck')
+        subscribe(dimmableOnDevices, 'level', 'levelCheck')
+        subscribe(colorTemperatureDevices, 'level', 'levelCheck')
+        subscribe(colorDevices, 'level', 'levelCheck')
+        subscribe(dimmableDevices, 'level', 'levelCheck')
 
-    scheduleUpdate()
-    schedule('0 */5 * * * ?', 'scheduleUpdate')
+        scheduleUpdate()
+        schedule('0 */5 * * * ?', 'scheduleUpdate')
+    }
 }
 
 private static List<Integer> ctToRGB(int colorTemp) {
@@ -242,16 +250,6 @@ private void scheduleUpdate() {
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
-private void enableLamp(Event evt) {
-    DeviceWrapper device = evt.device
-
-    if (device.id in state.disabledDevices) {
-        log.info "Re-enabling ${device} for circadian management (light turned off)"
-        state.disabledDevices.remove(device.id)
-    }
-}
-
-/* groovylint-disable-next-line UnusedPrivateMethod */
 private void levelCheck(Event evt) {
     DeviceWrapper device = evt.device
     int value = evt.value as int
@@ -270,6 +268,12 @@ private void levelCheck(Event evt) {
 private void updateLamp(Event evt) {
     Map current = state.current
     DeviceWrapper device = evt.device
+
+    if (evt.value == 'off' && device.id in state.disabledDevices) {
+        log.info "Re-enabling ${device} for circadian management (light turned off)"
+        state.disabledDevices.remove(device.id)
+        return
+    }
 
     if (location.mode in disabledModes) {
         log.info "Manager is disabled due to mode ${location.mode}"
