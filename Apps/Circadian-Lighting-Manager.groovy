@@ -259,8 +259,9 @@ private void levelCheck(Event evt) {
         !state.disabledDevices.contains(device.id)) {
         log.info "Disabling ${device} for circadian management due to manual brightness change"
         state.disabledDevices.add(device.id)
-    } else {
-        enableLamp(evt)
+    } else if (device.id in state.disabledDevices) {
+        log.info "Re-enabling ${device} for circadian management (light now at circadian brightness)"
+        state.disabledDevices.remove(device.id)
     }
 }
 

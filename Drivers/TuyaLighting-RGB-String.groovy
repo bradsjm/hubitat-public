@@ -16,6 +16,7 @@ import hubitat.helper.HexUtils
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Semaphore
+import java.util.concurrent.TimeUnit
 import java.util.regex.Matcher
 import javax.crypto.Cipher
 import javax.crypto.spec.SecretKeySpec
@@ -96,7 +97,6 @@ void initialize() {
     unschedule()
     getQueue().clear()
     connect()
-    int sec = new Random().nextInt(60)
     schedule('*/15 * * ? * * *', 'heartbeat')
 }
 
@@ -734,17 +734,21 @@ private void queue(byte[] output) {
 }
 
 private void poll() {
-    if (device.currentValue('presence') == 'not present') { return }
+    if (device.currentValue('presence') == 'not present') {
+        log.warn "Poll called but not connected"
+        return
+    }
 
     ConcurrentLinkedQueue queue = getQueue()
-    if (!queue.size()) { return }
-
-    if (getMutex().tryAcquire(2, java.util.concurrent.TimeUnit.SECONDS)) {
-        if (logEnable) { log.trace 'Acquired mutex' }
-        send(queue.poll())
-    } else {
-        log.trace 'Timeout waiting on mutex, something is wrong'
-        disconnect()
+    while (queue.peek()) {
+        if (getMutex().tryAcquire(1, TimeUnit.SECONDS)) {
+            if (logEnable) { log.trace 'Acquired mutex' }
+            send(queue.poll())
+        } else {
+            log.warn 'Timeout waiting on mutex, disconnecting'
+            disconnect()
+            return
+        }
     }
 }
 
