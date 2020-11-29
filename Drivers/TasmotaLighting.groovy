@@ -375,17 +375,6 @@ private static String getGenericName(List<Integer> hsv) {
     return colorName
 }
 
-private static Map newEvent(ChildDeviceWrapper device, String name, Object value, String unit = null) {
-    String splitName = splitCamelCase(name).toLowerCase()
-    String description = "${device.displayName} ${splitName} is ${value}${unit ?: ''}"
-    return [
-        name: name,
-        value: value,
-        unit: unit,
-        descriptionText: description
-    ]
-}
-
 // Convert rgb to HSV value
 private static List<Integer> rgbToHSV(String rgb) {
     return ColorUtils.rgbToHSV(rgb.tokenize(',')*.asType(int).take(3))
@@ -399,6 +388,18 @@ private static String rgbToHEX(String rgb) {
 // Convert mireds to kelvin
 private static int toKelvin(BigDecimal value) {
     return Math.round(1000000f / value) as int
+}
+
+private Map newEvent(ChildDeviceWrapper device, String name, Object value, String unit = null) {
+    String splitName = splitCamelCase(name).toLowerCase()
+    String description = "${device.displayName} ${splitName} is ${value}${unit ?: ''}"
+    log.info description
+    return [
+        name: name,
+        value: value,
+        unit: unit,
+        descriptionText: description
+    ]
 }
 
 // Create topic subscription map from child devices
