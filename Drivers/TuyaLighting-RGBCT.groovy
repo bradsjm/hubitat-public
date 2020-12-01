@@ -23,11 +23,12 @@ import javax.crypto.spec.SecretKeySpec
 
 // Shared command queue map among all instances of this driver
 @Field static final ConcurrentHashMap<Integer, ConcurrentLinkedQueue> commandQueues = new ConcurrentHashMap<>()
+@Field static final ConcurrentHashMap<Integer, ConcurrentLinkedQueue> eventQueues = new ConcurrentHashMap<>()
 @Field static final ConcurrentHashMap<Integer, Semaphore> semaphores = new ConcurrentHashMap<>()
 
 metadata {
     definition(
-        name: 'Tuya - RGBCT Light',
+        name: 'Tuya - RGB/CT Light',
         namespace: 'nrgup',
         author: 'Jonathan Bradshaw'
     ) {
@@ -132,14 +133,23 @@ void parse(String message) {
 
     switch (result.commandByte) {
         case 7: // COMMAND ACK
-            log.info "${device.displayName} received command acknowledgment"
-            if (!getQueue().size()) refresh()
+            log.info "${device.displayName} received acknowledgment (return code: ${result.returnCode})"
+            List<Map> events = getEventQueue().poll()
+            if (events && result.returnCode == 0) {
+                events.each { e ->
+                    if (device.currentValue(e.name) != e.value) {
+                        log.info e.descriptionText
+                        sendEvent(e)
+                    }
+                }
+            }
             break
         case 9: // HEART_BEAT ACK
-            if (logEnable) log.trace 'Received heartbeat response'
+            if (logEnable) log.trace 'Received heartbeat'
             break
+        case 8: // STATUS RESULTS
         case 10: // DP_QUERY RESULTS
-            log.info "${device.displayName} Received query response"
+            log.info "${device.displayName} received query response"
             if (result.text?.startsWith('{') && result.text?.endsWith('}')) {
                 Map json = parseJson(result.text)
                 if (logEnable) { log.debug 'RECV: ' + json }
@@ -177,14 +187,14 @@ void on() {
     log.info "Turning ${device.displayName} on"
     String payload = control(devId, [ '1': true ])
     byte[] output = encode('CONTROL', payload, settings.localKey)
-    queue(output)
+    queue(output, [ newEvent('switch', 'on') ])
 }
 
 void off() {
     log.info "Turning ${device.displayName} off"
     String payload = control(devId, [ '1': false ])
     byte[] output = encode('CONTROL', payload, settings.localKey)
-    queue(output)
+    queue(output, [ newEvent('switch', 'off') ])
 }
 
 /*
@@ -196,7 +206,7 @@ void setLevel(BigDecimal level, BigDecimal duration = 0) {
     int value = Math.round(2.3206 * level + 22.56)
     String payload = control(devId, [ '3': value ])
     byte[] output = encode('CONTROL', payload, settings.localKey)
-    queue(output)
+    queue(output, [ newEvent('level', level, '%') ])
 }
 
 /*
@@ -225,7 +235,13 @@ void setColor(Map colormap) {
                  Integer.toHexString((int)Math.round(2.3206 * colormap.level + 22.56)).padLeft(2, '0')
     String payload = control(devId, [ '5': rgb + hsb ])
     byte[] output = encode('CONTROL', payload, settings.localKey)
-    queue(output)
+    queue(output, [
+        newEvent('hue', colormap.hue),
+        newEvent('colorName', getGenericName([colormap.hue, colormap.saturation, colormap.level])),
+        newEvent('saturation', colormap.saturation),
+        newEvent('level', colormap.level, '%'),
+        newEvent('colorMode', 'RGB')
+    ])
 }
 
 void setHue(BigDecimal hue) {
@@ -260,7 +276,10 @@ void setColorTemperature(BigDecimal kelvin) {
     String payload = control(devId, [ '4': value ])
     byte[] output = encode('CONTROL', payload, settings.localKey)
     if (logEnable) { log.debug "QUEUE: ${payload}" }
-    queue(output)
+    queue(output, [
+        newEvent('colorTemperature', kelvin, 'K' ),
+        newEvent('colorMode', 'CT')
+    ])
 }
 
 /*
@@ -605,6 +624,10 @@ private ConcurrentLinkedQueue getQueue() {
     return commandQueues.computeIfAbsent(device.id) { k -> new ConcurrentLinkedQueue() }
 }
 
+private ConcurrentLinkedQueue getEventQueue() {
+    return eventQueues.computeIfAbsent(device.id) { k -> new ConcurrentLinkedQueue() }
+}
+
 private Semaphore getMutex() {
     return semaphores.computeIfAbsent(device.id) { k -> new Semaphore(1) }
 }
@@ -616,7 +639,7 @@ private void heartbeat() {
         return
     }
 
-    if (!getQueue().size()) {
+    if (!getQueue().peek()) {
         byte[] output = encode('HEART_BEAT', '', localKey)
         if (logEnable) { log.trace 'Sending heartbeat' }
         queue(output)
@@ -629,41 +652,39 @@ private void logsOff() {
     log.info "debug logging disabled for ${device.displayName}"
 }
 
-private void newEvent(String name, Object value, String unit = null) {
-    if (device.currentValue(name) != value) {
-        String splitName = splitCamelCase(name).toLowerCase()
-        String description = "${device.displayName} ${splitName} is ${value}${unit ?: ''}"
-        log.info description
-        sendEvent([
-            name: name,
-            value: value,
-            unit: unit,
-            descriptionText: settings.logTextEnable ? description : ''
-        ])
-    }
+private Map newEvent(String name, Object value, String unit = null) {
+    String splitName = splitCamelCase(name).toLowerCase()
+    String description = "${device.displayName} ${splitName} is ${value}${unit ?: ''}"
+    return [
+        name: name,
+        value: value,
+        unit: unit,
+        descriptionText: settings.logTextEnable ? description : ''
+    ]
 }
 
 private void parseDps(Map dps) {
     String colorMode = device.currentValue('colorMode')
+    List<Map> events = []
 
     if (dps.containsKey('1')) {
-        newEvent('switch', dps['1'] ? 'on' : 'off')
+        events << newEvent('switch', dps['1'] ? 'on' : 'off')
     }
 
     if (dps.containsKey('2')) {
         colorMode = dps['2'] == 'colour' ? 'RGB' : 'CT'
-        newEvent('colorMode', colorMode)
+        events << newEvent('colorMode', colorMode)
     }
 
     if (dps.containsKey('3') && colorMode == 'CT') {
         // the brightness scale does not start at 0 but starts at 25 - 255
         int value = Math.round(((int)dps['3'] - 22.56) / 2.3206)
-        newEvent('level', value, '%')
+        events << newEvent('level', value, '%')
     }
     if (dps.containsKey('4')) {
         int range = settings.coldColorTemp - settings.warmColorTemp
         int value = settings.warmColorTemp + Math.round(range * (dps['4'] / 255))
-        newEvent('colorTemperature', value, 'K')
+        events << newEvent('colorTemperature', value, 'K')
     }
     if (dps.containsKey('5') && colorMode == 'RGB') {
         String value = dps['5']
@@ -673,10 +694,17 @@ private void parseDps(Map dps) {
             h = Math.round(Integer.parseInt(match.group(1), 16) / 3.6)
             s = Math.round(Integer.parseInt(match.group(2), 16) / 2.55)
             b = Math.round((Integer.parseInt(match.group(3), 16) - 22.56) / 2.3206)
-            newEvent('hue', h)
-            newEvent('colorName', getGenericName([h, s, b]))
-            newEvent('saturation', s)
-            newEvent('level', b, '%')
+            events << newEvent('hue', h)
+            events << newEvent('colorName', getGenericName([h, s, b]))
+            events << newEvent('saturation', s)
+            events << newEvent('level', b, '%')
+        }
+    }
+
+    events.each { e ->
+        if (device.currentValue(e.name) != e.value) {
+            log.info e.descriptionText
+            sendEvent(e)
         }
     }
 }
@@ -702,16 +730,18 @@ private String splitCamelCase(String s) {
    )
 }
 
-private void queue(byte[] output) {
+private void queue(byte[] output, List<Map> event = null) {
     ConcurrentLinkedQueue queue = getQueue()
+    ConcurrentLinkedQueue events = getEventQueue()
     int size = queue.size()
     if (size <= 5) {
         queue.add(output)
+        if (event) { events.add(event) }
     } else {
         log.warn "Queue is full (${size})"
     }
 
-    poll()
+    if (!size) { poll() }
 }
 
 private void poll() {
@@ -721,15 +751,19 @@ private void poll() {
     }
 
     ConcurrentLinkedQueue queue = getQueue()
-    while (queue.peek()) {
+    if (queue.peek()) {
         if (getMutex().tryAcquire(1, TimeUnit.SECONDS)) {
             if (logEnable) { log.trace 'Acquired mutex' }
             send(queue.poll())
         } else {
-            log.warn 'Timeout waiting on mutex, disconnecting'
+            log.warn 'Timeout waiting on response, disconnecting'
             disconnect()
             return
         }
+    }
+    
+    if (queue.peek()) {
+        runInMillis(50, 'poll')
     }
 }
 
