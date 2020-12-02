@@ -43,6 +43,7 @@ metadata {
         capability 'Refresh'
 
         attribute 'effect', 'number'
+        attribute 'notPresentCounter', 'number'
     }
 }
 
@@ -94,10 +95,15 @@ preferences {
 // Called when the device is started.
 void initialize() {
     log.info "${device.displayName} driver initializing"
-    sendEvent(name: "lightEffects", value: JsonOutput.toJson(lightEffects))
+
     unschedule()
     getTuyaQueues().clear()
     getEventQueue().clear()
+
+    if(device.currentValue('notPresentCounter') == null) {
+        sendEvent(name: "notPresentCounter", value: 0, descriptionText: "Initialized" )
+    }
+
     connect()
     schedule('*/20 * * ? * * *', 'heartbeat')
 }
@@ -568,6 +574,7 @@ private void connect() {
     } catch (e) {
         log.error "Connect Error: $e"
         sendEvent(name: 'presence', value: 'not present', descriptionText: e)
+        sendEvent(name: "notPresentCounter", value: (device.currentValue('notPresentCounter') ?: 0) + 1)
     }
 }
 
@@ -584,6 +591,7 @@ private String control(String devId, Map dps) {
 private void disconnect() {
     log.info "${device.displayName} closing connection"
     sendEvent(name: 'presence', value: 'not present', descriptionText: message)
+    sendEvent(name: "notPresentCounter", value: (device.currentValue('notPresentCounter') ?: 0) + 1)
     try {
         interfaces.rawSocket.close()
     } catch (e) { 
