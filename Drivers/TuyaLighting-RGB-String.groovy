@@ -749,33 +749,34 @@ private void queue(String command, String payload = '', List<Map> events = null)
         log.warn "Queue is full (${size})"
     }
 
-    if (!size) { processQueue() }
+    if (!getMutex().hasQueuedThreads()) {
+        processQueue()
+    }
 }
 
 private void processQueue() {
     ConcurrentLinkedQueue queue = getTuyaQueues()
     Semaphore mutex = getMutex()
+    byte[] output
 
     if (device.currentValue('presence') == 'not present') {
-        log.warn 'Poll called but not connected'
+        log.warn "${device.displayName} Unable to process queue due to being disconnected"
         return
     }
 
-    while (queue.peek()) {
-        byte[] output
-        // Send queue item
-        output = queue.poll()
+    while ((output = queue.peek()) != null) {
         interfaces.rawSocket.sendMessage(HexUtils.byteArrayToHexString(output))
         if (logEnable) { log.trace '>> Sent packet' }
 
         // Wait for response to be received
         if (mutex.tryAcquire(1, TimeUnit.SECONDS)) {
+            // Release queue item and mutex
+            queue.poll() 
             mutex.release()
             if (logEnable) { log.trace '<< Received response' }
         } else {
-            // Put command back into queue
-            queue.add(output)
-            log.warn 'Timeout waiting on response confirmation, disconnecting'
+            // Keep item in queue for re-processing when connected again
+            log.warn "${device.displayName} Timeout waiting on response confirmation, disconnecting"
             disconnect()
         }
     }
