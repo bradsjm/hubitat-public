@@ -99,7 +99,7 @@ void initialize() {
     getTuyaQueues().clear()
     getEventQueue().clear()
     connect()
-    schedule('*/15 * * ? * * *', 'heartbeat')
+    schedule('*/20 * * ? * * *', 'heartbeat')
 }
 
 // Called when the device is first created.
@@ -119,7 +119,6 @@ void updated() {
     log.info "${device.displayName} driver configuration updated"
     log.debug settings
     initialize()
-
     if (logEnable) { runIn(1800, 'logsOff') }
 }
 
@@ -190,13 +189,13 @@ void socketStatus(String message) {
 void on() {
     log.info "Turning ${device.displayName} on"
     String payload = control(devId, [ '1': true ])
-    queue(encode('CONTROL', payload, settings.localKey), [ newEvent('switch', 'on') ])
+    queue('CONTROL', payload, [ newEvent('switch', 'on') ])
 }
 
 void off() {
     log.info "Turning ${device.displayName} off"
     String payload = control(devId, [ '1': false ])
-    queue(encode('CONTROL', payload, settings.localKey), [ newEvent('switch', 'off') ])
+    queue('CONTROL', payload, [ newEvent('switch', 'off') ])
 }
 
 /*
@@ -207,7 +206,7 @@ void setLevel(BigDecimal level, BigDecimal duration = 0) {
     // the brightness scale does not start at 0 but starts at 25 - 255
     int value = Math.round(2.3206 * level + 22.56)
     String payload = control(devId, [ '3': value ])
-    queue(encode('CONTROL', payload, settings.localKey), [ newEvent('level', level, '%') ])
+    queue('CONTROL', payload, [ newEvent('level', level, '%') ])
 }
 
 /*
@@ -216,7 +215,7 @@ void setLevel(BigDecimal level, BigDecimal duration = 0) {
 void refresh() {
     log.info "Querying ${device.displayName} status"
     String payload = query(devId)
-    queue(encode('DP_QUERY', payload, settings.localKey))
+    queue('DP_QUERY',payload)
 }
 
 /*
@@ -234,7 +233,7 @@ void setColor(Map colormap) {
                  Integer.toHexString((int)Math.round(2.55 * colormap.saturation)).padLeft(2, '0') +
                  Integer.toHexString((int)Math.round(2.3206 * colormap.level + 22.56)).padLeft(2, '0')
     String payload = control(devId, [ '5': rgb + hsb ])
-    queue(encode('CONTROL', payload, settings.localKey), [
+    queue('CONTROL', payload, [
             newEvent('hue', colormap.hue),
             newEvent('colorName', getGenericName([colormap.hue, colormap.saturation, colormap.level])),
             newEvent('saturation', colormap.saturation),
@@ -276,7 +275,7 @@ void setEffect(BigDecimal id) {
     if (logEnable) log.debug "Setting effect $id"
     String payload = control(devId, [ '2': "scene${id}" ])
     if (logEnable) { log.debug "QUEUE: ${payload}" }
-    queue(encode('CONTROL', payload, settings.localKey), [ newEvent('effect', id) ])
+    queue('CONTROL', payload, [ newEvent('effect', id) ])
 }
 
 void setNextEffect() {
@@ -455,7 +454,7 @@ private static byte[] encode(String command, String input, String localKey, seq 
     putUInt32(buffer, 12, payload.length + 8)
 
     // Optionally add sequence number.
-    putUInt32(buffer, 4, seq)
+    putUInt32(buffer, 4, seq ?: java.util.Calendar.getInstance().getTimeInMillis() / 1000 as int)
 
     // Add payload, crc and suffix
     copy(buffer, payload, 16)
@@ -652,7 +651,7 @@ private void heartbeat() {
 
     if (!getTuyaQueues().peek()) {
         if (logEnable) { log.trace 'Sending heartbeat' }
-        queue(encode('HEART_BEAT', '', localKey))
+        queue('HEART_BEAT')
     }
 }
 
@@ -738,10 +737,12 @@ private String splitCamelCase(String s) {
    )
 }
 
-private void queue(byte[] output, List<Map> events = null) {
+private void queue(String command, String payload = '', List<Map> events = null) {
     ConcurrentLinkedQueue queue = getTuyaQueues()
+    byte[] output = encode(command, payload, settings.localKey)
     int size = queue.size()
     if (size <= 5) {
+        if (logEnable) { log.debug "SEND: ${command} ${payload}" }
         queue.add(output)
         if (events) getEventQueue().add(events)
     } else {
@@ -770,7 +771,7 @@ private void processQueue() {
         // Wait for response to be received
         if (mutex.tryAcquire(1, TimeUnit.SECONDS)) {
             mutex.release()
-            if (logEnable) { log.trace '<< Confirmed response' }
+            if (logEnable) { log.trace '<< Received response' }
         } else {
             // Put command back into queue
             queue.add(output)

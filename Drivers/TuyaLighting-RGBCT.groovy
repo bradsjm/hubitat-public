@@ -22,7 +22,7 @@ import javax.crypto.Cipher
 import javax.crypto.spec.SecretKeySpec
 
 // Shared command queue map among all instances of this driver
-@Field static final ConcurrentHashMap<Integer, ConcurrentLinkedQueue> commandQueues = new ConcurrentHashMap<>()
+@Field static final ConcurrentHashMap<Integer, ConcurrentLinkedQueue> tuyaQueues = new ConcurrentHashMap<>()
 @Field static final ConcurrentHashMap<Integer, ConcurrentLinkedQueue> eventQueues = new ConcurrentHashMap<>()
 @Field static final ConcurrentHashMap<Integer, Semaphore> semaphores = new ConcurrentHashMap<>()
 
@@ -93,9 +93,10 @@ preferences {
 void initialize() {
     log.info "${device.displayName} driver initializing"
     unschedule()
-    getQueue().clear()
+    getTuyaQueues().clear()
+    getEventQueue().clear()
     connect()
-    schedule('*/15 * * ? * * *', 'heartbeat')
+    schedule('*/20 * * ? * * *', 'heartbeat')
 }
 
 // Called when the device is first created.
@@ -106,7 +107,7 @@ void installed() {
 // Called when the device is removed.
 void uninstalled() {
     disconnect()
-    commandQueues.remove(device.id)
+    tuyaQueues.remove(device.id)
     log.info "${device.displayName} driver uninstalled"
 }
 
@@ -115,17 +116,16 @@ void updated() {
     log.info "${device.displayName} driver configuration updated"
     log.debug settings
     initialize()
-
     if (logEnable) { runIn(1800, 'logsOff') }
 }
 
 // Parse incoming messages
 void parse(String message) {
     getMutex().release()
-    if (logEnable) { log.trace 'Released mutex' }
 
     byte[] buffer = HexUtils.hexStringToByteArray(message)
     Map result = decode(buffer, localKey)
+    if (logEnable) { log.debug 'RECV: ' + result }
     if (result.error) {
         log.error result
         return
@@ -152,7 +152,7 @@ void parse(String message) {
             log.info "${device.displayName} received query response"
             if (result.text?.startsWith('{') && result.text?.endsWith('}')) {
                 Map json = parseJson(result.text)
-                if (logEnable) { log.debug 'RECV: ' + json }
+                if (logEnable) { log.debug 'JSON: ' + json }
                 parseDps(json.dps)
             } else if (result.text) {
                 log.info result
@@ -186,15 +186,13 @@ void socketStatus(String message) {
 void on() {
     log.info "Turning ${device.displayName} on"
     String payload = control(devId, [ '1': true ])
-    byte[] output = encode('CONTROL', payload, settings.localKey)
-    queue(output, [ newEvent('switch', 'on') ])
+    queue('CONTROL', payload, [ newEvent('switch', 'on') ])
 }
 
 void off() {
     log.info "Turning ${device.displayName} off"
     String payload = control(devId, [ '1': false ])
-    byte[] output = encode('CONTROL', payload, settings.localKey)
-    queue(output, [ newEvent('switch', 'off') ])
+    queue('CONTROL', payload, [ newEvent('switch', 'off') ])
 }
 
 /*
@@ -205,8 +203,7 @@ void setLevel(BigDecimal level, BigDecimal duration = 0) {
     // the brightness scale does not start at 0 but starts at 25 - 255
     int value = Math.round(2.3206 * level + 22.56)
     String payload = control(devId, [ '3': value ])
-    byte[] output = encode('CONTROL', payload, settings.localKey)
-    queue(output, [ newEvent('level', level, '%') ])
+    queue('CONTROL', payload, [ newEvent('level', level, '%') ])
 }
 
 /*
@@ -215,8 +212,7 @@ void setLevel(BigDecimal level, BigDecimal duration = 0) {
 void refresh() {
     log.info "Querying ${device.displayName} status"
     String payload = query(devId)
-    byte[] output = encode('DP_QUERY', payload, settings.localKey)
-    queue(output)
+    queue('DP_QUERY',payload)
 }
 
 /*
@@ -234,13 +230,12 @@ void setColor(Map colormap) {
                  Integer.toHexString((int)Math.round(2.55 * colormap.saturation)).padLeft(2, '0') +
                  Integer.toHexString((int)Math.round(2.3206 * colormap.level + 22.56)).padLeft(2, '0')
     String payload = control(devId, [ '5': rgb + hsb ])
-    byte[] output = encode('CONTROL', payload, settings.localKey)
-    queue(output, [
-        newEvent('hue', colormap.hue),
-        newEvent('colorName', getGenericName([colormap.hue, colormap.saturation, colormap.level])),
-        newEvent('saturation', colormap.saturation),
-        newEvent('level', colormap.level, '%'),
-        newEvent('colorMode', 'RGB')
+    queue('CONTROL', payload, [
+            newEvent('hue', colormap.hue),
+            newEvent('colorName', getGenericName([colormap.hue, colormap.saturation, colormap.level])),
+            newEvent('saturation', colormap.saturation),
+            newEvent('level', colormap.level, '%'),
+            newEvent('colorMode', 'RGB')
     ])
 }
 
@@ -274,9 +269,7 @@ void setColorTemperature(BigDecimal kelvin) {
     if (value < 0) { value = 0 }
     if (value > 255) { value = 255 }
     String payload = control(devId, [ '4': value ])
-    byte[] output = encode('CONTROL', payload, settings.localKey)
-    if (logEnable) { log.debug "QUEUE: ${payload}" }
-    queue(output, [
+    queue('CONTROL', payload, [
         newEvent('colorTemperature', kelvin, 'K' ),
         newEvent('colorMode', 'CT')
     ])
@@ -444,7 +437,7 @@ private static byte[] encode(String command, String input, String localKey, seq 
     putUInt32(buffer, 12, payload.length + 8)
 
     // Optionally add sequence number.
-    putUInt32(buffer, 4, seq)
+    putUInt32(buffer, 4, seq ?: java.util.Calendar.getInstance().getTimeInMillis() / 1000 as int)
 
     // Add payload, crc and suffix
     copy(buffer, payload, 16)
@@ -620,16 +613,16 @@ private String getGenericName(List<Integer> hsv) {
     return colorName
 }
 
-private ConcurrentLinkedQueue getQueue() {
-    return commandQueues.computeIfAbsent(device.id) { k -> new ConcurrentLinkedQueue() }
-}
-
 private ConcurrentLinkedQueue getEventQueue() {
     return eventQueues.computeIfAbsent(device.id) { k -> new ConcurrentLinkedQueue() }
 }
 
 private Semaphore getMutex() {
     return semaphores.computeIfAbsent(device.id) { k -> new Semaphore(1) }
+}
+
+private ConcurrentLinkedQueue getTuyaQueues() {
+    return tuyaQueues.computeIfAbsent(device.id) { k -> new ConcurrentLinkedQueue() }
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
@@ -639,10 +632,9 @@ private void heartbeat() {
         return
     }
 
-    if (!getQueue().peek()) {
-        byte[] output = encode('HEART_BEAT', '', localKey)
+    if (!getTuyaQueues().peek()) {
         if (logEnable) { log.trace 'Sending heartbeat' }
-        queue(output)
+        queue('HEART_BEAT')
     }
 }
 
@@ -714,8 +706,6 @@ private String query(String devId) {
       gwId: devId,
       devId: devId,
       t: Math.round(now() / 1000).toString(),
-      //dps: [:],
-      //uid: devId
     ])
 }
 
@@ -730,44 +720,47 @@ private String splitCamelCase(String s) {
    )
 }
 
-private void queue(byte[] output, List<Map> event = null) {
-    ConcurrentLinkedQueue queue = getQueue()
-    ConcurrentLinkedQueue events = getEventQueue()
+private void queue(String command, String payload = '', List<Map> events = null) {
+    ConcurrentLinkedQueue queue = getTuyaQueues()
+    byte[] output = encode(command, payload, settings.localKey)
     int size = queue.size()
     if (size <= 5) {
+        if (logEnable) { log.debug "SEND: ${command} ${payload}" }
         queue.add(output)
-        if (event) { events.add(event) }
+        if (events) getEventQueue().add(events)
     } else {
         log.warn "Queue is full (${size})"
     }
 
-    if (!size) { poll() }
+    if (!size) { processQueue() }
 }
 
-private void poll() {
+private void processQueue() {
+    ConcurrentLinkedQueue queue = getTuyaQueues()
+    Semaphore mutex = getMutex()
+
     if (device.currentValue('presence') == 'not present') {
-        log.warn "Poll called but not connected"
+        log.warn 'Poll called but not connected'
         return
     }
 
-    ConcurrentLinkedQueue queue = getQueue()
-    if (queue.peek()) {
-        if (getMutex().tryAcquire(1, TimeUnit.SECONDS)) {
-            if (logEnable) { log.trace 'Acquired mutex' }
-            send(queue.poll())
+    while (queue.peek()) {
+        byte[] output
+        // Send queue item
+        output = queue.poll()
+        interfaces.rawSocket.sendMessage(HexUtils.byteArrayToHexString(output))
+        if (logEnable) { log.trace '>> Sent packet' }
+
+        // Wait for response to be received
+        if (mutex.tryAcquire(1, TimeUnit.SECONDS)) {
+            mutex.release()
+            if (logEnable) { log.trace '<< Received response' }
         } else {
-            log.warn 'Timeout waiting on response, disconnecting'
+            // Put command back into queue
+            queue.add(output)
+            log.warn 'Timeout waiting on response confirmation, disconnecting'
             disconnect()
-            return
         }
-    }
-    
-    if (queue.peek()) {
-        runInMillis(50, 'poll')
     }
 }
 
-private void send(byte[] output) {
-    interfaces.rawSocket.sendMessage(HexUtils.byteArrayToHexString(output))
-    if (logEnable) { log.trace "Sent packet" }
-}
