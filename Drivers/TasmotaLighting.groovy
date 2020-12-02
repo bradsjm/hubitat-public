@@ -27,7 +27,7 @@ import groovy.transform.Field
 import hubitat.helper.ColorUtils
 
 metadata {
-    definition (name: 'MQTT - Tasmota Lighting', namespace: 'nrgup', author: 'Jonathan Bradshaw') {
+    definition (name: 'Tasmota - Lighting (MQTT)', namespace: 'nrgup', author: 'Jonathan Bradshaw') {
         capability 'Initialize'
         capability 'PresenceSensor'
         capability 'Refresh'
@@ -509,6 +509,7 @@ private void parseAutoDiscoveryRelay(int idx, int relaytype, Map config) {
     List<String> topics = [
         getStatTopic(config) + 'RESULT',
         getTeleTopic(config) + 'STATE',
+        getTeleTopic(config) + 'SENSOR',
         getTeleTopic(config) + 'LWT'
     ]
 
@@ -600,6 +601,11 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
                 }
                 if (device.currentValue('colorName') != colorName) {
                     events << newEvent(device, 'colorName', colorName)
+                }
+                break
+            case 'ENERGY':
+                if (device.currentValue('power') != kv.value) {
+                    events << newEvent(device, 'power', kv.value['Power'], 'W')
                 }
                 break
             default:
@@ -734,7 +740,8 @@ private ChildDeviceWrapper getOrCreateDevice(String driverName, String deviceNet
             driverName,
             deviceNetworkId,
             [
-                name: name
+                name: name,
+                isComponent: true
             ]
         )
     } else if (logEnable) {
