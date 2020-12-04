@@ -128,60 +128,50 @@ void updated() {
 
 // Parse incoming messages
 void parse(String message) {
-    byte[] buffer = HexUtils.hexStringToByteArray(message)
-    Map result = decode(buffer, localKey)
-    if (logEnable) { log.debug 'RECV: ' + result }
-    if (result.error) {
-        log.error result
-        return
-    }
+    try {
+        Map result = decode(HexUtils.hexStringToByteArray(message), settings.localKey)
 
-    Map queueItem = getQueue().peek()
-    if (queueItem) {
-        if (logEnable) { log.debug 'Releasing mutex' }
-        getMutex().release()
-    }
+        if (result.error) {
+            log.error 'RECV: ' + result
+            return
+        }
 
-    if (queueItem == null) {
-        log.warn 'Queue item was null'
-    } else if (queueItem?.sequenceNumber != result?.sequenceNumber) {
-        log.warn "Mismatched seq, got ${result.sequenceNumber} but was expecting ${queueItem.sequenceNumber}"
-    }
+        Map queueItem = getQueue().peek()
+        if (queueItem) {
+            getMutex().release()
+        }
 
-    switch (result.commandByte) {
-        case 7: // COMMAND ACK
-            log.info "${device.displayName} received ack #${result.sequenceNumber} (RC: ${result.returnCode})"
-            List<Map> events = queueItem?.events
-            if (events && result.returnCode == 0) {
-                events.each { e ->
-                    if (device.currentValue(e.name) != e.value) {
-                        log.info e.descriptionText
-                        sendEvent(e)
-                    } else {
-                        if (logEnable) log.debug e.descriptionText + ' (Already set)'
-                    }
+        if (queueItem?.sequenceNumber != result?.sequenceNumber) {
+            log.warn "Mismatched seq, got ${result.sequenceNumber} but was expecting ${queueItem.sequenceNumber}"
+        }
+
+        switch (result.commandByte) {
+            case 7: // COMMAND ACK
+                log.info "${device.displayName} received ack #${result.sequenceNumber} (RC: ${result.returnCode})"
+                if (result.returnCode == 0 && queueItem?.payload?.dps) {
+                    parseDps(queueItem.payload.dps)
                 }
-            } else {
-                log.warn "${device.displayName} No events processed"
-            }
-            break
-        case 9: // HEART_BEAT ACK
-            if (logEnable) log.trace 'Received heartbeat'
-            break
-        case 8: // STATUS RESULTS
-        case 10: // DP_QUERY RESULTS
-            log.info "${device.displayName} received results #${result.sequenceNumber}"
-            if (result.text?.startsWith('{') && result.text?.endsWith('}')) {
-                Map json = parseJson(result.text)
-                if (logEnable) { log.debug 'PARSED: ' + json }
-                parseDps(json.dps)
-            } else if (result.text) {
-                log.info result
-            }
-            break
-        default:
-            if (logEnable) log.debug result
-            break
+                break
+            case 9: // HEART_BEAT ACK
+                if (logEnable) log.trace 'Received heartbeat'
+                break
+            case 8: // STATUS RESULTS
+            case 10: // DP_QUERY RESULTS
+                log.info "${device.displayName} received results #${result.sequenceNumber}"
+                if (result.text && result.text.startsWith('{')) {
+                    Map json = parseJson(result.text)
+                    if (logEnable) { log.debug 'PARSED: ' + json }
+                    parseDps(json.dps)
+                } else if (result.text) {
+                    log.info 'TEXT: ' + result.text
+                }
+                break
+            default:
+                if (logEnable) log.debug result
+                break
+        }
+    } catch (InterruptedException ex) {
+        log.debug 'parse ' + ex
     }
 }
 
@@ -190,15 +180,15 @@ void socketStatus(String message) {
     try {
         if (message.contains('error')) {
             log.error 'socketStatus: ' + message
-            disconnect()
-            return
         } else {
             log.info message
+            return
         }
-    } catch (e) {
+    } catch (InterruptedException e) {
         log.error 'socketStatus: ' + e
-        disconnect()
     }
+
+    disconnect()
 }
 
 /*
@@ -207,13 +197,13 @@ void socketStatus(String message) {
 void on() {
     log.info "Turning ${device.displayName} on"
     Map payload = control(devId, [ '1': true ])
-    queue('CONTROL', payload, [ newEvent('switch', 'on') ])
+    queue('CONTROL', payload)
 }
 
 void off() {
     log.info "Turning ${device.displayName} off"
     Map payload = control(devId, [ '1': false ])
-    queue('CONTROL', payload, [ newEvent('switch', 'off') ])
+    queue('CONTROL', payload)
 }
 
 /*
@@ -224,7 +214,7 @@ void setLevel(BigDecimal level, BigDecimal duration = 0) {
     // the brightness scale does not start at 0 but starts at 25 - 255
     int value = Math.round(2.3206 * level + 22.56)
     Map payload = control(devId, [ '3': value ])
-    queue('CONTROL', payload, [ newEvent('level', level, '%') ])
+    queue('CONTROL', payload)
 }
 
 /*
@@ -251,13 +241,7 @@ void setColor(Map colormap) {
                  Integer.toHexString((int)Math.round(2.55 * colormap.saturation)).padLeft(2, '0') +
                  Integer.toHexString((int)Math.round(2.3206 * colormap.level + 22.56)).padLeft(2, '0')
     Map payload = control(devId, [ '5': rgb + hsb ])
-    queue('CONTROL', payload, [
-            newEvent('hue', colormap.hue),
-            newEvent('colorName', getGenericName([colormap.hue, colormap.saturation, colormap.level])),
-            newEvent('saturation', colormap.saturation),
-            newEvent('level', colormap.level, '%'),
-            newEvent('colorMode', 'RGB')
-    ])
+    queue('CONTROL', payload)
 }
 
 void setHue(BigDecimal hue) {
@@ -290,10 +274,7 @@ void setColorTemperature(BigDecimal kelvin) {
     int range = settings.coldColorTemp - settings.warmColorTemp
     int value = Math.round(255 * ((k - settings.warmColorTemp) / range))
     Map payload = control(devId, [ '4': value ])
-    queue('CONTROL', payload, [
-        newEvent('colorTemperature', k, 'K' ),
-        newEvent('colorMode', 'CT')
-    ])
+    queue('CONTROL', payload)
 }
 
 /*
@@ -378,13 +359,13 @@ private static Map decode(byte[] buffer, String localKey) {
     result.returnCode = getUInt32(buffer, 16) & 0xFFFFFF00
 
     // Get the payload
-    // Adjust for messages lacking a return code
+    // Adjust for status messages lacking a return code
     byte[] payload
-    boolean correct = false
+    boolean status = false
     if (result.returnCode != 0) {
         payload = copy(buffer, 16, (int) (result.payloadSize - 8))
     } else if (result.commandByte == 8) { // STATUS
-        correct = true
+        status = true
         payload = copy(buffer, 16 + 3, (int) (result.payloadSize - 11))
     } else {
         payload = copy(buffer, 16 + 4, (int) (result.payloadSize - 12))
@@ -392,7 +373,7 @@ private static Map decode(byte[] buffer, String localKey) {
 
     try {
         byte[] data = decrypt(payload, localKey)
-        result.text = correct ? new String(data, 16, data.length - 16) : new String(data, 'UTF-8')
+        result.text = status ? new String(data, 16, data.length - 16) : new String(data, 'UTF-8')
     } catch (e) {
         result.error = e
     }
@@ -445,7 +426,7 @@ private static byte[] encode(String command, String input, String localKey, seq 
     putUInt32(buffer, 12, payload.length + 8)
 
     // Optionally add sequence number.
-    putUInt32(buffer, 4, seq ?: java.util.Calendar.getInstance().getTimeInMillis() / 1000 as int)
+    putUInt32(buffer, 4, seq)
 
     // Add payload, crc and suffix
     copy(buffer, payload, 16)
@@ -727,7 +708,7 @@ private String splitCamelCase(String s) {
    )
 }
 
-private void queue(String command, Map payload = [:], List<Map> events = null) {
+private void queue(String command, Map payload = [:]) {
     ConcurrentLinkedQueue queue = getQueue()
     int size = queue.size()
     if (size <= 5) {
@@ -735,7 +716,6 @@ private void queue(String command, Map payload = [:], List<Map> events = null) {
         queue.add([
             'command': command,
             'payload': payload,
-            'events': events,
             'sequenceNumber': payload.t ?: 0
         ])
     } else {
@@ -765,25 +745,28 @@ private void processQueue() {
             queueItem.sequenceNumber
         )
 
-        // Acquire mutex to indicate we can send
-        log.debug "Acquiring mutex for sending"
-        if (!mutex.tryAcquire(3, TimeUnit.SECONDS)) {
-            log.warn "${device.displayName} Timeout acquiring mutex for sending (stale?)"
-        }
+        try {
+            // Acquire mutex to indicate we can send
+            if (!mutex.tryAcquire(3, TimeUnit.SECONDS)) {
+                log.warn "${device.displayName} Timeout acquiring mutex for sending (stale?)"
+            }
 
-        interfaces.rawSocket.sendMessage(HexUtils.byteArrayToHexString(output))
-        if (logEnable) { log.trace "SEND: ${queueItem.command} ${queueItem.payload} #${queueItem.sequenceNumber}" }
+            interfaces.rawSocket.sendMessage(HexUtils.byteArrayToHexString(output))
+            if (logEnable) { log.trace "SEND: ${queueItem.command} ${queueItem.payload} #${queueItem.sequenceNumber}" }
 
-        // Wait for mutex to indicate response was received
-        if (mutex.tryAcquire(3, TimeUnit.SECONDS)) {
-            // Release mutex and queue item
-            queue.poll()
-            if (logEnable) { log.trace '<< Transaction completed >>' }
-            mutex.release()
-        } else {
-            // Keep item in queue for re-processing when connected again
-            log.warn "${device.displayName} Timeout waiting on response confirmation, disconnecting"
-            disconnect()
+            // Wait for mutex to indicate response was received
+            if (mutex.tryAcquire(3, TimeUnit.SECONDS)) {
+                // Release mutex and queue item
+                queue.poll()
+                if (logEnable) { log.trace '<< Transaction completed >>' }
+                mutex.release()
+            } else {
+                // Keep item in queue for re-processing when connected again
+                log.warn "${device.displayName} Timeout waiting on response confirmation, disconnecting"
+                disconnect()
+            }
+        } catch (InterruptedException ex) {
+            log.debug 'processQueue ' + ex
         }
     }
 
