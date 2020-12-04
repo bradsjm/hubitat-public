@@ -23,7 +23,6 @@ import javax.crypto.spec.SecretKeySpec
 
 // Shared command queue map among all instances of this driver
 @Field static final ConcurrentHashMap<Integer, ConcurrentLinkedQueue> tuyaQueues = new ConcurrentHashMap<>()
-@Field static final ConcurrentHashMap<Integer, ConcurrentLinkedQueue> eventQueues = new ConcurrentHashMap<>()
 @Field static final ConcurrentHashMap<Integer, Semaphore> semaphores = new ConcurrentHashMap<>()
 
 metadata {
@@ -97,8 +96,7 @@ void initialize() {
     log.info "${device.displayName} driver initializing"
 
     unschedule()
-    getTuyaQueues().clear()
-    getEventQueue().clear()
+    getQueue().clear()
 
     if(device.currentValue('notPresentCounter') == null) {
         sendEvent(name: "notPresentCounter", value: 0, descriptionText: "Initialized" )
@@ -130,8 +128,6 @@ void updated() {
 
 // Parse incoming messages
 void parse(String message) {
-    getMutex().release()
-
     byte[] buffer = HexUtils.hexStringToByteArray(message)
     Map result = decode(buffer, localKey)
     if (logEnable) { log.debug 'RECV: ' + result }
@@ -140,17 +136,24 @@ void parse(String message) {
         return
     }
 
+    Map queueItem = getQueue().peek()
+    getMutex().release() 
+
     switch (result.commandByte) {
         case 7: // COMMAND ACK
             log.info "${device.displayName} received acknowledgment (return code: ${result.returnCode})"
-            List<Map> events = getEventQueue().poll()
+            List<Map> events = queueItem?.events
             if (events && result.returnCode == 0) {
                 events.each { e ->
                     if (device.currentValue(e.name) != e.value) {
                         log.info e.descriptionText
                         sendEvent(e)
+                    } else {
+                        if (logEnable) log.debug e.descriptionText + ' (Already set)'
                     }
                 }
+            } else {
+                log.warn "${device.displayName} No events processed"
             }
             break
         case 9: // HEART_BEAT ACK
@@ -638,15 +641,11 @@ private String getGenericName(List<Integer> hsv) {
     return colorName
 }
 
-private ConcurrentLinkedQueue getEventQueue() {
-    return eventQueues.computeIfAbsent(device.id) { k -> new ConcurrentLinkedQueue() }
-}
-
 private Semaphore getMutex() {
-    return semaphores.computeIfAbsent(device.id) { k -> new Semaphore(1) }
+    return semaphores.computeIfAbsent(device.id) { k -> new Semaphore(-1) }
 }
 
-private ConcurrentLinkedQueue getTuyaQueues() {
+private ConcurrentLinkedQueue getQueue() {
     return tuyaQueues.computeIfAbsent(device.id) { k -> new ConcurrentLinkedQueue() }
 }
 
@@ -657,7 +656,7 @@ private void heartbeat() {
         return
     }
 
-    if (!getTuyaQueues().peek()) {
+    if (!getQueue().peek()) {
         if (logEnable) { log.trace 'Sending heartbeat' }
         queue('HEART_BEAT')
     }
@@ -746,13 +745,12 @@ private String splitCamelCase(String s) {
 }
 
 private void queue(String command, String payload = '', List<Map> events = null) {
-    ConcurrentLinkedQueue queue = getTuyaQueues()
+    ConcurrentLinkedQueue queue = getQueue()
     byte[] output = encode(command, payload, settings.localKey)
     int size = queue.size()
     if (size <= 5) {
         if (logEnable) { log.debug "SEND: ${command} ${payload}" }
-        queue.add(output)
-        if (events) getEventQueue().add(events)
+        queue.add([ 'output': output, 'events': events ])
     } else {
         log.warn "Queue is full (${size})"
     }
@@ -763,23 +761,23 @@ private void queue(String command, String payload = '', List<Map> events = null)
 }
 
 private void processQueue() {
-    ConcurrentLinkedQueue queue = getTuyaQueues()
+    ConcurrentLinkedQueue queue = getQueue()
     Semaphore mutex = getMutex()
-    byte[] output
+    Map queueItem
 
     if (device.currentValue('presence') == 'not present') {
         log.warn "${device.displayName} Unable to process queue due to being disconnected"
         return
     }
 
-    while ((output = queue.peek()) != null) {
-        interfaces.rawSocket.sendMessage(HexUtils.byteArrayToHexString(output))
+    if ((queueItem = queue.peek())) {
+        interfaces.rawSocket.sendMessage(HexUtils.byteArrayToHexString(queueItem['output']))
         if (logEnable) { log.trace '>> Sent packet' }
 
         // Wait for response to be received
-        if (mutex.tryAcquire(1, TimeUnit.SECONDS)) {
-            // Release queue item and mutex
-            queue.poll() 
+        if (mutex.tryAcquire(3, TimeUnit.SECONDS)) {
+            // Release mutex and queue item
+            queue.poll()
             mutex.release()
             if (logEnable) { log.trace '<< Received response' }
         } else {
@@ -788,4 +786,9 @@ private void processQueue() {
             disconnect()
         }
     }
+
+    if (queue.peek()) {
+        runIn(50, 'processQueue')
+    }
 }
+
