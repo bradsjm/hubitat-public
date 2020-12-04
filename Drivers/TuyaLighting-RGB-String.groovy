@@ -23,7 +23,6 @@ import javax.crypto.spec.SecretKeySpec
 
 // Shared command queue map among all instances of this driver
 @Field static final ConcurrentHashMap<Integer, ConcurrentLinkedQueue> tuyaQueues = new ConcurrentHashMap<>()
-@Field static final ConcurrentHashMap<Integer, Semaphore> semaphores = new ConcurrentHashMap<>()
 
 metadata {
     definition(
@@ -96,7 +95,7 @@ void initialize() {
     log.info "${device.displayName} driver initializing"
 
     unschedule()
-    getQueue().clear()
+    tuyaQueues.remove(device.id)
 
     if(device.currentValue('notPresentCounter') == null) {
         sendEvent(name: "notPresentCounter", value: 0, descriptionText: "Initialized" )
@@ -128,32 +127,21 @@ void updated() {
 
 // Parse incoming messages
 void parse(String message) {
-    byte[] buffer = HexUtils.hexStringToByteArray(message)
-    Map result = decode(buffer, localKey)
-    if (logEnable) { log.debug 'RECV: ' + result }
+    Map result = decode(HexUtils.hexStringToByteArray(message), settings.localKey)
+    Map queueItem = getQueue().poll()
+
     if (result.error) {
-        log.error result
+        log.error 'RECV: ' + result
         return
     }
 
-    Map queueItem = getQueue().peek()
-    getMutex().release() 
-
     switch (result.commandByte) {
         case 7: // COMMAND ACK
-            log.info "${device.displayName} received acknowledgment (return code: ${result.returnCode})"
-            List<Map> events = queueItem?.events
-            if (events && result.returnCode == 0) {
-                events.each { e ->
-                    if (device.currentValue(e.name) != e.value) {
-                        log.info e.descriptionText
-                        sendEvent(e)
-                    } else {
-                        if (logEnable) log.debug e.descriptionText + ' (Already set)'
-                    }
+            if (queueItem && queueItem.sequenceNumber == result.sequenceNumber) {
+                log.info "${device.displayName} received ack #${result.sequenceNumber} (RC: ${result.returnCode})"
+                if (result.returnCode == 0 && queueItem.payload.dps) {
+                    parseDps(queueItem.payload.dps)
                 }
-            } else {
-                log.warn "${device.displayName} No events processed"
             }
             break
         case 9: // HEART_BEAT ACK
@@ -161,13 +149,14 @@ void parse(String message) {
             break
         case 8: // STATUS RESULTS
         case 10: // DP_QUERY RESULTS
-            log.info "${device.displayName} received query response"
-            if (result.text?.startsWith('{') && result.text?.endsWith('}')) {
+            String source = result.sequenceNumber ? 'requested' : 'cloud'
+            log.info "${device.displayName} received ${source} action results"
+            if (result.text && result.text.startsWith('{')) {
                 Map json = parseJson(result.text)
-                if (logEnable) { log.debug 'JSON: ' + json }
+                if (logEnable) { log.debug 'PARSED: ' + json }
                 parseDps(json.dps)
             } else if (result.text) {
-                log.info result
+                log.info 'TEXT: ' + result.text
             }
             break
         default:
@@ -178,17 +167,11 @@ void parse(String message) {
 
 // Socket status updates
 void socketStatus(String message) {
-    try {
-        if (message.contains('error')) {
-            log.error 'socketStatus: ' + message
-            disconnect()
-            return
-        } else {
-            log.info message
-        }
-    } catch (e) {
-        log.error 'socketStatus: ' + e
+    if (message.contains('error')) {
+        log.error 'socketStatus: ' + message
         disconnect()
+    } else {
+        log.info message
     }
 }
 
@@ -197,14 +180,14 @@ void socketStatus(String message) {
  */
 void on() {
     log.info "Turning ${device.displayName} on"
-    String payload = control(devId, [ '1': true ])
-    queue('CONTROL', payload, [ newEvent('switch', 'on') ])
+    Map payload = control(devId, [ '1': true ])
+    queue('CONTROL', payload)
 }
 
 void off() {
     log.info "Turning ${device.displayName} off"
-    String payload = control(devId, [ '1': false ])
-    queue('CONTROL', payload, [ newEvent('switch', 'off') ])
+    Map payload = control(devId, [ '1': false ])
+    queue('CONTROL', payload)
 }
 
 /*
@@ -214,8 +197,8 @@ void setLevel(BigDecimal level, BigDecimal duration = 0) {
     log.info "Setting ${device.displayName} brightness to ${level}%"
     // the brightness scale does not start at 0 but starts at 25 - 255
     int value = Math.round(2.3206 * level + 22.56)
-    String payload = control(devId, [ '3': value ])
-    queue('CONTROL', payload, [ newEvent('level', level, '%') ])
+    Map payload = control(devId, [ '3': value ])
+    queue('CONTROL', payload)
 }
 
 /*
@@ -223,8 +206,8 @@ void setLevel(BigDecimal level, BigDecimal duration = 0) {
  */
 void refresh() {
     log.info "Querying ${device.displayName} status"
-    String payload = query(devId)
-    queue('DP_QUERY',payload)
+    Map payload = query(devId)
+    queue('DP_QUERY', payload)
 }
 
 /*
@@ -241,14 +224,8 @@ void setColor(Map colormap) {
     String hsb = Integer.toHexString((int)Math.round(3.6 * colormap.hue)).padLeft(4, '0') +
                  Integer.toHexString((int)Math.round(2.55 * colormap.saturation)).padLeft(2, '0') +
                  Integer.toHexString((int)Math.round(2.3206 * colormap.level + 22.56)).padLeft(2, '0')
-    String payload = control(devId, [ '5': rgb + hsb ])
-    queue('CONTROL', payload, [
-            newEvent('hue', colormap.hue),
-            newEvent('colorName', getGenericName([colormap.hue, colormap.saturation, colormap.level])),
-            newEvent('saturation', colormap.saturation),
-            newEvent('level', colormap.level, '%'),
-            newEvent('colorMode', 'RGB')
-    ])
+    Map payload = control(devId, [ '5': rgb + hsb ])
+    queue('CONTROL', payload)
 }
 
 void setHue(BigDecimal hue) {
@@ -282,9 +259,9 @@ void setEffect(String effect) {
 
 void setEffect(BigDecimal id) {
     if (logEnable) log.debug "Setting effect $id"
-    String payload = control(devId, [ '2': "scene${id}" ])
+    Map payload = control(devId, [ '2': "scene${id}" ])
     if (logEnable) { log.debug "QUEUE: ${payload}" }
-    queue('CONTROL', payload, [ newEvent('effect', id) ])
+    queue('CONTROL', payload)
 }
 
 void setNextEffect() {
@@ -359,14 +336,7 @@ private static Map decode(byte[] buffer, String localKey) {
         result.error = 'Prefix does not match: ' + String.format('%x', prefix)
         return result
     }
-
-    // Check for extra data
-    int leftover = 0
-
-    // Leftover points to beginning of next packet, if any.
-    int suffixLocation = indexOfUInt32(buffer, 0x0000AA55)
-    leftover = suffixLocation + 4
-
+ 
     // Get sequence number
     result.sequenceNumber = getUInt32(buffer, 4)
 
@@ -375,12 +345,6 @@ private static Map decode(byte[] buffer, String localKey) {
 
     // Get payload size
     result.payloadSize = getUInt32(buffer, 12)
-
-    // Check for payload
-    if (leftover - 8 < result.payloadSize) {
-        result.error = 'Packet missing payload: payload has length: ' + result.payloadSize
-        return result
-    }
 
     // Check CRC
     long expectedCrc = getUInt32(buffer, (int) (16 + result.payloadSize - 8))
@@ -396,13 +360,13 @@ private static Map decode(byte[] buffer, String localKey) {
     result.returnCode = getUInt32(buffer, 16) & 0xFFFFFF00
 
     // Get the payload
-    // Adjust for messages lacking a return code
+    // Adjust for status messages lacking a return code
     byte[] payload
-    boolean correct = false
+    boolean status = false
     if (result.returnCode != 0) {
         payload = copy(buffer, 16, (int) (result.payloadSize - 8))
     } else if (result.commandByte == 8) { // STATUS
-        correct = true
+        status = true
         payload = copy(buffer, 16 + 3, (int) (result.payloadSize - 11))
     } else {
         payload = copy(buffer, 16 + 4, (int) (result.payloadSize - 12))
@@ -410,7 +374,7 @@ private static Map decode(byte[] buffer, String localKey) {
 
     try {
         byte[] data = decrypt(payload, localKey)
-        result.text = correct ? new String(data, 16, data.length - 16) : new String(data, 'UTF-8')
+        result.text = status ? new String(data, 16, data.length - 16) : new String(data, 'UTF-8')
     } catch (e) {
         result.error = e
     }
@@ -441,7 +405,7 @@ private static byte[] encrypt (byte[] payload, String secret) {
     return cipher.doFinal(payload)
 }
 
-private static byte[] encode(String command, String input, String localKey, seq = 0) {
+private static byte[] encode(String command, String input, String localKey, long seq = 0) {
     byte[] payload = encrypt(input.getBytes('UTF-8'), localKey)
 
     // Check if we need an extended header, only for certain CommandTypes
@@ -463,7 +427,7 @@ private static byte[] encode(String command, String input, String localKey, seq 
     putUInt32(buffer, 12, payload.length + 8)
 
     // Optionally add sequence number.
-    putUInt32(buffer, 4, seq ?: java.util.Calendar.getInstance().getTimeInMillis() / 1000 as int)
+    putUInt32(buffer, 4, seq)
 
     // Add payload, crc and suffix
     copy(buffer, payload, 16)
@@ -570,7 +534,6 @@ private void connect() {
             readDelay: 500
         )
         log.info "${device.displayName} connected"
-        getMutex().release()
         sendEvent(name: 'presence', value: 'present', descriptionText: 'Connected')
         runIn(1, 'refresh')
         return
@@ -581,14 +544,14 @@ private void connect() {
     }
 }
 
-private String control(String devId, Map dps) {
-    return JsonOutput.toJson([
+private Map control(String devId, Map dps) {
+    return [
       gwId: devId,
       devId: devId,
-      t: Math.round(now() / 1000).toString(),
+      t: Math.round(now() / 1000),
       dps: dps,
       uid: ''
-    ])
+    ]
 }
 
 private void disconnect() {
@@ -597,7 +560,7 @@ private void disconnect() {
     sendEvent(name: "notPresentCounter", value: (device.currentValue('notPresentCounter') ?: 0) + 1)
     try {
         interfaces.rawSocket.close()
-    } catch (e) { 
+    } catch (e) {
         log.error 'Disconnecting: ' + e
     }
 }
@@ -639,10 +602,6 @@ private String getGenericName(List<Integer> hsv) {
     }
 
     return colorName
-}
-
-private Semaphore getMutex() {
-    return semaphores.computeIfAbsent(device.id) { k -> new Semaphore(-1) }
 }
 
 private ConcurrentLinkedQueue getQueue() {
@@ -725,12 +684,12 @@ private void parseDps(Map dps) {
     }
 }
 
-private String query(String devId) {
-    return JsonOutput.toJson([
+private Map query(String devId) {
+    return [
       gwId: devId,
       devId: devId,
-      t: Math.round(now() / 1000).toString()
-    ])
+      t: Math.round(now() / 1000),
+    ]
 }
 
 private String splitCamelCase(String s) {
@@ -744,25 +703,27 @@ private String splitCamelCase(String s) {
    )
 }
 
-private void queue(String command, String payload = '', List<Map> events = null) {
+private void queue(String command, Map payload = [:]) {
     ConcurrentLinkedQueue queue = getQueue()
-    byte[] output = encode(command, payload, settings.localKey)
     int size = queue.size()
     if (size <= 5) {
-        if (logEnable) { log.debug "SEND: ${command} ${payload}" }
-        queue.add([ 'output': output, 'events': events ])
+        queue.add([
+            'command': command,
+            'payload': payload,
+            'sequenceNumber': payload.t ?: 0
+        ])
     } else {
         log.warn "Queue is full (${size})"
     }
 
-    if (!getMutex().hasQueuedThreads()) {
+    if (!size) {
+        if (logEnable) { log.trace 'Starting queue processing' }
         processQueue()
     }
 }
 
 private void processQueue() {
     ConcurrentLinkedQueue queue = getQueue()
-    Semaphore mutex = getMutex()
     Map queueItem
 
     if (device.currentValue('presence') == 'not present') {
@@ -771,24 +732,20 @@ private void processQueue() {
     }
 
     if ((queueItem = queue.peek())) {
-        interfaces.rawSocket.sendMessage(HexUtils.byteArrayToHexString(queueItem['output']))
-        if (logEnable) { log.trace '>> Sent packet' }
+        byte[] output = encode(
+            queueItem.command,
+            JsonOutput.toJson(queueItem.payload),
+            settings.localKey,
+            queueItem.sequenceNumber
+        )
 
-        // Wait for response to be received
-        if (mutex.tryAcquire(3, TimeUnit.SECONDS)) {
-            // Release mutex and queue item
-            queue.poll()
-            mutex.release()
-            if (logEnable) { log.trace '<< Received response' }
-        } else {
-            // Keep item in queue for re-processing when connected again
-            log.warn "${device.displayName} Timeout waiting on response confirmation, disconnecting"
-            disconnect()
-        }
+        interfaces.rawSocket.sendMessage(HexUtils.byteArrayToHexString(output))
+        if (logEnable) { log.trace "Sending ${queueItem.command} -> ${queueItem.payload}" }
     }
 
-    if (queue.peek()) {
-        runIn(50, 'processQueue')
+    if (queue.size() > 1) {
+        runInMillis(425, 'processQueue')
+        if (logEnable) { log.trace 'Resuming queue processing in 425ms' }
     }
 }
 
