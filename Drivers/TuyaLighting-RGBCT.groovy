@@ -23,7 +23,6 @@ import javax.crypto.spec.SecretKeySpec
 
 // Shared command queue map among all instances of this driver
 @Field static final ConcurrentHashMap<Integer, ConcurrentLinkedQueue> tuyaQueues = new ConcurrentHashMap<>()
-@Field static final ConcurrentHashMap<Integer, Semaphore> semaphores = new ConcurrentHashMap<>()
 
 metadata {
     definition(
@@ -96,7 +95,6 @@ void initialize() {
 
     unschedule()
     tuyaQueues.remove(device.id)
-    semaphores.remove(device.id)
 
     if(device.currentValue('notPresentCounter') == null) {
         sendEvent(name: "notPresentCounter", value: 0, descriptionText: "Initialized" )
@@ -128,67 +126,52 @@ void updated() {
 
 // Parse incoming messages
 void parse(String message) {
-    try {
-        Map result = decode(HexUtils.hexStringToByteArray(message), settings.localKey)
+    Map result = decode(HexUtils.hexStringToByteArray(message), settings.localKey)
+    Map queueItem = getQueue().poll()
 
-        if (result.error) {
-            log.error 'RECV: ' + result
-            return
-        }
+    if (result.error) {
+        log.error 'RECV: ' + result
+        return
+    }
 
-        Map queueItem = getQueue().peek()
-        if (queueItem) {
-            getMutex().release()
-        }
-
-        if (queueItem?.sequenceNumber != result?.sequenceNumber) {
-            log.warn "Mismatched seq, got ${result.sequenceNumber} but was expecting ${queueItem.sequenceNumber}"
-        }
-
-        switch (result.commandByte) {
-            case 7: // COMMAND ACK
+    switch (result.commandByte) {
+        case 7: // COMMAND ACK
+            if (queueItem && queueItem.sequenceNumber == result.sequenceNumber) {
                 log.info "${device.displayName} received ack #${result.sequenceNumber} (RC: ${result.returnCode})"
-                if (result.returnCode == 0 && queueItem?.payload?.dps) {
+                if (result.returnCode == 0 && queueItem.payload.dps) {
                     parseDps(queueItem.payload.dps)
                 }
-                break
-            case 9: // HEART_BEAT ACK
-                if (logEnable) log.trace 'Received heartbeat'
-                break
-            case 8: // STATUS RESULTS
-            case 10: // DP_QUERY RESULTS
-                log.info "${device.displayName} received results #${result.sequenceNumber}"
-                if (result.text && result.text.startsWith('{')) {
-                    Map json = parseJson(result.text)
-                    if (logEnable) { log.debug 'PARSED: ' + json }
-                    parseDps(json.dps)
-                } else if (result.text) {
-                    log.info 'TEXT: ' + result.text
-                }
-                break
-            default:
-                if (logEnable) log.debug result
-                break
-        }
-    } catch (InterruptedException ex) {
-        log.debug 'parse ' + ex
+            }
+            break
+        case 9: // HEART_BEAT ACK
+            if (logEnable) log.trace 'Received heartbeat'
+            break
+        case 8: // STATUS RESULTS
+        case 10: // DP_QUERY RESULTS
+            String source = result.sequenceNumber ? 'requested' : 'cloud'
+            log.info "${device.displayName} received ${source} action results"
+            if (result.text && result.text.startsWith('{')) {
+                Map json = parseJson(result.text)
+                if (logEnable) { log.debug 'PARSED: ' + json }
+                parseDps(json.dps)
+            } else if (result.text) {
+                log.info 'TEXT: ' + result.text
+            }
+            break
+        default:
+            if (logEnable) log.debug result
+            break
     }
 }
 
 // Socket status updates
 void socketStatus(String message) {
-    try {
-        if (message.contains('error')) {
-            log.error 'socketStatus: ' + message
-        } else {
-            log.info message
-            return
-        }
-    } catch (InterruptedException e) {
-        log.error 'socketStatus: ' + e
+    if (message.contains('error')) {
+        log.error 'socketStatus: ' + message
+        disconnect()
+    } else {
+        log.info message
     }
-
-    disconnect()
 }
 
 /*
@@ -404,7 +387,7 @@ private static byte[] encrypt (byte[] payload, String secret) {
     return cipher.doFinal(payload)
 }
 
-private static byte[] encode(String command, String input, String localKey, seq = 0) {
+private static byte[] encode(String command, String input, String localKey, long seq = 0) {
     byte[] payload = encrypt(input.getBytes('UTF-8'), localKey)
 
     // Check if we need an extended header, only for certain CommandTypes
@@ -561,8 +544,6 @@ private void disconnect() {
         interfaces.rawSocket.close()
     } catch (e) {
         log.error 'Disconnecting: ' + e
-    } finally {
-        getMutex().release()
     }
 }
 
@@ -603,10 +584,6 @@ private String getGenericName(List<Integer> hsv) {
     }
 
     return colorName
-}
-
-private Semaphore getMutex() {
-    return semaphores.computeIfAbsent(device.id) { k -> new Semaphore(1) }
 }
 
 private ConcurrentLinkedQueue getQueue() {
@@ -712,7 +689,6 @@ private void queue(String command, Map payload = [:]) {
     ConcurrentLinkedQueue queue = getQueue()
     int size = queue.size()
     if (size <= 5) {
-        if (logEnable) { log.debug "QUEUE: ${command} ${payload}" }
         queue.add([
             'command': command,
             'payload': payload,
@@ -722,14 +698,14 @@ private void queue(String command, Map payload = [:]) {
         log.warn "Queue is full (${size})"
     }
 
-    if (!getMutex().hasQueuedThreads()) {
+    if (!size) {
+        if (logEnable) { log.trace 'Starting queue processing' }
         processQueue()
     }
 }
 
 private void processQueue() {
     ConcurrentLinkedQueue queue = getQueue()
-    Semaphore mutex = getMutex()
     Map queueItem
 
     if (device.currentValue('presence') == 'not present') {
@@ -745,33 +721,13 @@ private void processQueue() {
             queueItem.sequenceNumber
         )
 
-        try {
-            // Acquire mutex to indicate we can send
-            if (!mutex.tryAcquire(3, TimeUnit.SECONDS)) {
-                log.warn "${device.displayName} Timeout acquiring mutex for sending (stale?)"
-            }
-
-            interfaces.rawSocket.sendMessage(HexUtils.byteArrayToHexString(output))
-            if (logEnable) { log.trace "SEND: ${queueItem.command} ${queueItem.payload} #${queueItem.sequenceNumber}" }
-
-            // Wait for mutex to indicate response was received
-            if (mutex.tryAcquire(3, TimeUnit.SECONDS)) {
-                // Release mutex and queue item
-                queue.poll()
-                if (logEnable) { log.trace '<< Transaction completed >>' }
-                mutex.release()
-            } else {
-                // Keep item in queue for re-processing when connected again
-                log.warn "${device.displayName} Timeout waiting on response confirmation, disconnecting"
-                disconnect()
-            }
-        } catch (InterruptedException ex) {
-            log.debug 'processQueue ' + ex
-        }
+        interfaces.rawSocket.sendMessage(HexUtils.byteArrayToHexString(output))
+        if (logEnable) { log.trace "Sending ${queueItem.command} -> ${queueItem.payload}" }
     }
 
-    if (queue.peek()) {
-        runIn(50, 'processQueue')
+    if (queue.size() > 1) {
+        runInMillis(425, 'processQueue')
+        if (logEnable) { log.trace 'Resuming queue processing in 425ms' }
     }
 }
 
