@@ -558,7 +558,6 @@ private void publishCurrentState() {
 
 private void publishDeviceConfig(ChildDeviceWrapper mqtt, String path, Map config) {
     String json = JsonOutput.toJson(config)
-    log.info "Publishing discovery for ${config.name} to: ${path}"
     if (logEnable) { log.debug "Publish ${json}" }
     mqtt.publish(path, json, 0, true)
 }
@@ -568,7 +567,7 @@ private void publishDeviceEvent(Event event) {
     ChildDeviceWrapper mqtt = findBridge()
     String dni = event.device.deviceNetworkId
     String path = "hubitat/tele/${dni}/${event.name}"
-    log.info "Publishing (${event.displayName}) ${path}=${event.value}"
+    if (logEnable) { log.debug "Publishing (${event.displayName}) ${path}=${event.value}" }
     mqtt.publish(path, event.value)
 }
 
@@ -577,21 +576,21 @@ private void publishLocationEvent(Event event) {
     ChildDeviceWrapper mqtt = findBridge()
     String dni = location.hub.hardwareID
     String path = "hubitat/tele/${dni}"
-    log.info "Publishing (${location.hub.name}) ${path}/${event.name}=${event.value}"
+    if (logEnable) { log.debug "Publishing (${location.hub.name}) ${path}/${event.name}=${event.value}" }   
     mqtt.publish("${path}/${event.name}", event.value)
 
     switch (event.name) {
         case 'hsmStatus':
         case 'hsmAlert':
             String payload = getHsmState(event.value)
-            log.info "Publishing (${location.hub.name}) ${path}/hsmArmState=${payload}"
+            if (logEnable) { log.debug "Publishing (${location.hub.name}) ${path}/hsmArmState=${payload}" }
             mqtt.publish("${path}/hsmArmState", payload)
             break
     }
 }
 
 private void publishHubState(ChildDeviceWrapper mqtt) {
-    log.info "Publishing ${location.hub.name} current state"
+    if (logEnable) { log.debug "Publishing ${location.hub.name} current state" }
     String prefix = "hubitat/tele/${location.hub.hardwareID}"
     mqtt.publish("${prefix}/mode", location.mode)
     mqtt.publish("${prefix}/timeZone", location.timeZone.ID)
@@ -620,7 +619,6 @@ private void publishDeviceState(ChildDeviceWrapper mqtt) {
             log.warn "Skipping ${device.displayName} as last updated ${idleHours} hours ago"
         } else {
             String dni = device.deviceNetworkId
-            log.info "Publishing ${device.displayName} current state"
             device.currentStates.each { state ->
                 String path = "hubitat/tele/${dni}/${state.name}"
                 String value = state.value
