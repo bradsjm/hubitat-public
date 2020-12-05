@@ -535,6 +535,7 @@ private void connect() {
         )
         log.info "${device.displayName} connected"
         sendEvent(name: 'presence', value: 'present', descriptionText: 'Connected')
+        processQueue()
         runIn(1, 'refresh')
         return
     } catch (e) {
@@ -615,7 +616,20 @@ private void heartbeat() {
         return
     }
 
-    if (!getQueue().peek()) {
+    Map queueItem = getQueue().peek()
+    if (queueItem) {
+        log.info queueItem.sequenceNumber
+        log.info now()
+        log.info now() - queueItem.sequenceNumber
+    }
+
+    if (queueItem && queueItem.sequenceNumber < now() - 5000) {
+        log.warn 'Re-connecting due to aging item detected in queue'
+        disconnect()
+        connect()
+    }
+
+    if (!queueItem) {
         if (logEnable) { log.trace 'Sending heartbeat' }
         queue('HEART_BEAT')
     }
@@ -629,7 +643,12 @@ private void logsOff() {
 
 private Map newEvent(String name, Object value, String unit = null) {
     String splitName = splitCamelCase(name).toLowerCase()
-    String description = "${device.displayName} ${splitName} is ${value}${unit ?: ''}"
+    String description
+    if (device.currentValue(name) && value == device.currentValue(name)) {
+        description = "${device.displayName} ${splitName} is ${value}${unit ?: ''}"
+    } else {
+        description = "${device.displayName} ${splitName} was set to ${value}${unit ?: ''}"
+    }
     return [
         name: name,
         value: value,
@@ -677,8 +696,8 @@ private void parseDps(Map dps) {
     }
 
     events.each { e ->
+        log.info e.descriptionText
         if (device.currentValue(e.name) != e.value) {
-            log.info e.descriptionText
             sendEvent(e)
         }
     }
@@ -705,16 +724,24 @@ private String splitCamelCase(String s) {
 
 private void queue(String command, Map payload = [:]) {
     ConcurrentLinkedQueue queue = getQueue()
-    int size = queue.size()
-    if (size <= 5) {
-        queue.add([
-            'command': command,
-            'payload': payload,
-            'sequenceNumber': payload.t ?: 0
-        ])
-    } else {
-        log.warn "Queue is full (${size})"
+    Map queueItem = queue.peek()
+
+    if (queueItem?.command == command && queueItem?.payload?.dps == payload?.dps) {
+        log.info "Duplicate queue item ${command} ignored"
+        return
     }
+
+    int size = queue.size()
+    if (size > 5) {
+        log.warn "Queue is full (${size})"
+        queue.poll()
+    }
+
+    queue.add([
+        'command': command,
+        'payload': payload,
+        'sequenceNumber': payload.t ?: 0
+    ])
 
     if (!size) {
         if (logEnable) { log.trace 'Starting queue processing' }
@@ -726,7 +753,7 @@ private void processQueue() {
     ConcurrentLinkedQueue queue = getQueue()
     Map queueItem
 
-    if (device.currentValue('presence') == 'not present') {
+    if (device.currentValue('presence', true) == 'not present') {
         log.warn "${device.displayName} Unable to process queue due to being disconnected"
         return
     }
@@ -743,9 +770,10 @@ private void processQueue() {
         if (logEnable) { log.trace "Sending ${queueItem.command} -> ${queueItem.payload}" }
     }
 
-    if (queue.size() > 1) {
+    int size = queue.size() - 1
+    if (size) {
         runInMillis(425, 'processQueue')
-        if (logEnable) { log.trace 'Resuming queue processing in 425ms' }
+        if (logEnable) { log.trace "Resuming queue ({$size}) processing in 425ms" }
     }
 }
 
