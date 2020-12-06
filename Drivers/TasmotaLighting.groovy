@@ -457,6 +457,57 @@ private void parseAutoDiscovery(String topic, Map config) {
             log.warn "Autodiscovery ${hostname}: Relay ${idx + 1} has unknown type ${relaytype}"
         }
     }
+
+    // Check for pushable buttons
+    if (config['btn']) {
+        parseAutoDiscoveryButton(config)
+    }
+}
+
+private void parseAutoDiscoveryButton(Map config) {
+    String devicename = config['dn']
+    String mac = config['mac']
+    List<Integer> button = config['btn']
+    String dni = mac + '-btn'
+
+    int count = button.sum()
+    if (!count) { return }
+
+    // boolean mqttButtons = config['so']['73'] == 1
+    // boolean singleButtons = config['so']['13'] == 1
+    // boolean swapButtons = config['so']['11'] == 1
+    String friendlyname = devicename + (count > 1 ? ' Buttons' : ' Button')
+    String driver = 'Generic Component Button Controller'
+    ChildDeviceWrapper device = getOrCreateDevice(driver, dni, devicename, friendlyname)
+    if (!device) {
+        log.error "Autodiscovery: Unable to create driver ${driver} for ${devicename}"
+        return
+    }
+
+    log.info "Autodiscovery: ${device} (${dni}) using ${driver} driver"
+
+    device.with {
+        updateDataValue 'config', JsonOutput.toJson(config)
+        updateDataValue 'model', config['md']
+        updateDataValue 'ip', "http://${config.ip}/"
+        updateDataValue 'mac', config['mac']
+        updateDataValue 'hostname', "http://${config.hn}/"
+        updateDataValue 'software', config['sw']
+        updateDataValue 'topic', config['t']
+    }
+
+    device.sendEvent(name: 'numberOfButtons', value: count)
+
+    List<String> topics = [
+        getTeleTopic(config) + 'LWT',
+        getStatTopic(config) + 'RESULT'
+    ]
+
+    // Add topic subscriptions
+    topics.each { topic ->
+        mqttSubscribe(topic)
+        subscriptions.computeIfAbsent(topic) { k -> [] as Set }.add(dni)
+    }
 }
 
 private void parseAutoDiscoveryRelay(int idx, int relaytype, Map config) {
@@ -488,9 +539,9 @@ private void parseAutoDiscoveryRelay(int idx, int relaytype, Map config) {
     device.with {
         updateDataValue 'config', JsonOutput.toJson(config)
         updateDataValue 'model', config['md']
-        updateDataValue 'ip', config['ip']
+        updateDataValue 'ip', "http://${config.ip}/"
         updateDataValue 'mac', config['mac']
-        updateDataValue 'hostname', config['hn']
+        updateDataValue 'hostname', "http://${config.hn}/"
         updateDataValue 'software', config['sw']
         updateDataValue 'topic', config['t']
     }
@@ -606,6 +657,32 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
             case 'ENERGY':
                 if (device.currentValue('power') != kv.value) {
                     events << newEvent(device, 'power', kv.value['Power'], 'W')
+                }
+                break
+            case 'Button1':
+            case 'Button2':
+            case 'Button3':
+            case 'Button4':
+            case 'Button5':
+            case 'Button6':
+            case 'Button7':
+            case 'Button8':
+                String action = kv.value['Action']
+                int number = kv.key[-1] as int
+                if (logEnable) { log.debug "${device} button number ${number} ${action}" }
+                switch (action) {
+                    case 'SINGLE':
+                        events << newEvent(device, 'pushed', number)
+                        break
+                    case 'DOUBLE':
+                        events << newEvent(device, 'doubleTapped', number)
+                        break
+                    // case 'TRIPLE':
+                    // case 'QUAD':
+                    // case 'PENTA':
+                    case 'HOLD':
+                        events << newEvent(device, 'held', number)
+                        break
                 }
                 break
             default:
@@ -741,7 +818,7 @@ private ChildDeviceWrapper getOrCreateDevice(String driverName, String deviceNet
             deviceNetworkId,
             [
                 name: name,
-                isComponent: true
+                //isComponent: true
             ]
         )
     } else if (logEnable) {
