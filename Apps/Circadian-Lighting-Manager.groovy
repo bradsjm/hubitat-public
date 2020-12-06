@@ -128,6 +128,12 @@ preferences {
                   title: 'Maximum brightness (1-100)',
                   required: false,
                   defaultValue: 100
+
+            input name: 'reenableDelay',
+                  type: 'number',
+                  title: 'Automatically re-enable lights after specified minutes (0 for never)',
+                  required: false,
+                  defaultValue: 60
         }
 
         section {
@@ -172,7 +178,7 @@ void initialize() {
     unschedule()
     unsubscribe()
     state.current = [:]
-    state.disabledDevices = [] as Set
+    state.disabledDevices = [:]
 
     if (masterEnable) {
         List activated = []
@@ -189,9 +195,9 @@ void initialize() {
         subscribe(colorOnDevices, 'switch', 'updateLamp')
         subscribe(dimmableOnDevices, 'switch', 'updateLamp')
 
-        subscribe(colorTemperatureDevices, 'switch.off', 'updateLamp')
-        subscribe(colorDevices, 'switch.off', 'updateLamp')
-        subscribe(dimmableDevices, 'switch.off', 'updateLamp')
+        subscribe(colorTemperatureDevices, 'switch', 'updateLamp')
+        subscribe(colorDevices, 'switch', 'updateLamp')
+        subscribe(dimmableDevices, 'switch', 'updateLamp')
 
         subscribe(colorTemperatureOnDevices, 'level', 'levelCheck')
         subscribe(colorOnDevices, 'level', 'levelCheck')
@@ -255,10 +261,10 @@ private void levelCheck(Event evt) {
     int value = evt.value as int
     int brightness = state.current.brightness
 
-    if ((value > brightness + 3 || value < brightness - 3) &&
-        !state.disabledDevices.contains(device.id)) {
+    if ((value > brightness + 5 || value < brightness - 5) &&
+        !state.disabledDevices.containsKey(device.id)) {
         log.info "Disabling ${device} for circadian management due to manual brightness change"
-        state.disabledDevices.add(device.id)
+        state.disabledDevices.add(device.id, now())
     } else if (device.id in state.disabledDevices) {
         log.info "Re-enabling ${device} for circadian management (light now at circadian brightness)"
         state.disabledDevices.remove(device.id)
@@ -304,17 +310,23 @@ private void updateLamp(Event evt) {
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void updateLamps() {
     Map current = state.current
-    Set disabled = state.disabledDevices
+    Map disabled = state.disabledDevices
 
     if (location.mode in disabledModes) {
         log.info "Manager is disabled due to mode ${location.mode}"
         return
     }
 
+    // Remove disabled devices that have timed out
+    if (settings.reenableDelay) {
+        long expire = now() - (settings.reenableDelay * 60000)
+        disabled.values().removeIf { v -> v <= expire }
+    }
+
     log.info 'Starting circadian updates to lights'
 
     settings.dimmableOnDevices?.each { device ->
-        if (!disabled.contains(device.id) &&
+        if (!disabled.containsKey(device.id) &&
             device.currentValue('switch') == 'on' &&
             device.currentValue('level') != current.brightness) {
             if (logEnable) { log.debug "Setting ${device} level to ${current.brightness}%" }
@@ -323,7 +335,7 @@ private void updateLamps() {
     }
 
     settings.colorOnDevices?.each { device ->
-        if (!disabled.contains(device.id) &&
+        if (!disabled.containsKey(device.id) &&
             device.currentValue('switch') == 'on' && (
             device.currentValue('hue') != current.hsv[0] ||
             device.currentValue('saturation') != current.hsv[1] ||
@@ -334,7 +346,7 @@ private void updateLamps() {
     }
 
     settings.colorTemperatureOnDevices?.each { device ->
-        if (!disabled.contains(device.id) &&
+        if (!disabled.containsKey(device.id) &&
             device.currentValue('switch') == 'on' &&
             device.currentValue('colorMode') != 'RGB' &&
             device.currentValue('colorTemperature') != current.colorTemperature) {
@@ -344,7 +356,7 @@ private void updateLamps() {
     }
 
     settings.dimmableDevices?.each { device ->
-        if (!disabled.contains(device.id) &&
+        if (!disabled.containsKey(device.id) &&
             device.currentValue('level') != current.brightness) {
             if (logEnable) { log.debug "Setting ${device} level to ${current.brightness}%" }
             device.setLevel(current.brightness)
@@ -352,7 +364,7 @@ private void updateLamps() {
     }
 
     settings.colorDevices?.each { device ->
-        if (!disabled.contains(device.id) &&
+        if (!disabled.containsKey(device.id) &&
             device.currentValue('color') != current.hsv) {
             if (logEnable) { log.debug "Setting ${device} color to ${current.hsv}" }
             device.setColor(current.hsv)
@@ -360,7 +372,7 @@ private void updateLamps() {
     }
 
     settings.colorTemperatureDevices?.each { device ->
-        if (!disabled.contains(device.id) &&
+        if (!disabled.containsKey(device.id) &&
             device.currentValue('colorMode') != 'RGB' &&
             device.currentValue('colorTemperature') != current.colorTemperature) {
             if (logEnable) { log.debug "Setting ${device} color temperature to ${current.colorTemperature}K" }
