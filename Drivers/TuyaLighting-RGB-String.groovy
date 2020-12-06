@@ -102,7 +102,7 @@ void initialize() {
     }
 
     connect()
-    schedule('*/20 * * ? * * *', 'heartbeat')
+    schedule('*/15 * * ? * * *', 'heartbeat')
 }
 
 // Called when the device is first created.
@@ -133,11 +133,13 @@ void parse(String message) {
     if (result.error) {
         log.error 'RECV: ' + result
         return
+    } else if (logEnable) {
+        log.debug 'RECV: ' + result
     }
 
     switch (result.commandByte) {
         case 7: // COMMAND ACK
-            if (queueItem && queueItem.sequenceNumber == result.sequenceNumber) {
+            if (queueItem && queueItem.sequenceNumber) {
                 log.info "${device.displayName} received ack #${result.sequenceNumber} (RC: ${result.returnCode})"
                 if (result.returnCode == 0 && queueItem.payload.dps) {
                     parseDps(queueItem.payload.dps)
@@ -617,11 +619,6 @@ private void heartbeat() {
     }
 
     Map queueItem = getQueue().peek()
-    if (queueItem) {
-        log.info queueItem.sequenceNumber
-        log.info now()
-        log.info now() - queueItem.sequenceNumber
-    }
 
     if (queueItem && queueItem.sequenceNumber < now() - 5000) {
         log.warn 'Re-connecting due to aging item detected in queue'
@@ -732,7 +729,7 @@ private void queue(String command, Map payload = [:]) {
     }
 
     int size = queue.size()
-    if (size > 5) {
+    if (size >= 5) {
         log.warn "Queue is full (${size})"
         queue.poll()
     }
@@ -740,7 +737,7 @@ private void queue(String command, Map payload = [:]) {
     queue.add([
         'command': command,
         'payload': payload,
-        'sequenceNumber': payload.t ?: 0
+        'sequenceNumber': now()
     ])
 
     if (!size) {
@@ -752,11 +749,6 @@ private void queue(String command, Map payload = [:]) {
 private void processQueue() {
     ConcurrentLinkedQueue queue = getQueue()
     Map queueItem
-
-    if (device.currentValue('presence', true) == 'not present') {
-        log.warn "${device.displayName} Unable to process queue due to being disconnected"
-        return
-    }
 
     if ((queueItem = queue.peek())) {
         byte[] output = encode(
