@@ -92,6 +92,14 @@ preferences {
                   required: false
         }
 
+        section('Illuminance Configuration', hideable: true, hidden: true) {
+            input name: 'luxDevices',
+                  type: 'capability.illuminanceMeasurement',
+                  title: 'Lux Sensor Devices',
+                  multiple: true,
+                  required: false
+        }
+
         section('Configuration', hideable: true, hidden: true) {
             input name: 'coldCT',
                   type: 'number',
@@ -174,11 +182,11 @@ void updated() {
 // Called when the driver is initialized.
 void initialize() {
     log.info "${app.name} initializing"
-    state.clear()
     unschedule()
     unsubscribe()
     state.current = [:]
     state.disabledDevices = [:]
+    state.luxHistory = state.luxHistory ?: [:]
 
     if (masterEnable) {
         List activated = []
@@ -206,8 +214,12 @@ void initialize() {
         subscribe(colorDevices, 'level', 'levelCheck')
         subscribe(dimmableDevices, 'level', 'levelCheck')
 
-        scheduleUpdate()
-        schedule('0 */5 * * * ?', 'scheduleUpdate')
+        // Update circadian calculation and update lamps every 5 minutes
+        schedule('0 */5 * * * ?', 'circadianUpdate')
+        circadianUpdate()
+
+        // Every hour take a lux reading
+        schedule('0 0 * * * ?', 'luxHistoryUpdate')
     }
 }
 
@@ -249,10 +261,19 @@ private static List<Integer> ctToRGB(int colorTemp) {
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
-private void scheduleUpdate() {
+private void circadianUpdate() {
     state.current = currentCircadianValues()
     log.info "Circadian State now: ${state.current}"
     updateLamps()
+}
+
+/* groovylint-disable-next-line UnusedPrivateMethod */
+private void luxHistoryUpdate() {
+    int historySize = 5
+    int hour = Calendar.instance.get(Calendar.HOUR_OF_DAY)
+    int lux = currentLuxValue()
+    state.luxHistory[hour] = (state.luxHistory[hour] ?: []).takeRight(historySize - 1) + lux
+    log.info "Lux (hour ${hour}) history: ${state.luxHistory[hour]}"
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
@@ -264,7 +285,7 @@ private void levelCheck(Event evt) {
     if ((value > brightness + 5 || value < brightness - 5) &&
         !state.disabledDevices.containsKey(device.id)) {
         log.info "Disabling ${device} for circadian management due to manual brightness change"
-        state.disabledDevices.add(device.id, now())
+        state.disabledDevices.put(device.id, now())
     } else if (device.id in state.disabledDevices) {
         log.info "Re-enabling ${device} for circadian management (light now at circadian brightness)"
         state.disabledDevices.remove(device.id)
@@ -417,5 +438,19 @@ private Map currentCircadianValues() {
         brightness: brightness as int,
         hsv: hsv
     ]
+}
+
+/*
+ * Average of lux sensors
+ */
+private int currentLuxValue() {
+    int total = 0
+    int count = 0
+    luxDevices.each { d ->
+        int value = d.currentValue('illuminance')
+        if (value) { count++ }
+        total += value
+    }
+    return Math.round(total / count)
 }
 
