@@ -745,9 +745,9 @@ private void processQueue() {
     }
 
     int size = queue.size() - 1
-    if (size) {
-        runInMillis(425, 'processQueue')
-        if (logEnable) { log.trace "Resuming queue ({$size}) processing in 425ms" }
+    if (size > 0) {
+        runInMillis(500, 'processQueue')
+        if (logEnable) { log.trace "Resuming queue (length ${size}) processing in 500ms" }
     }
 }
 
