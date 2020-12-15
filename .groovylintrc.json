@@ -13,6 +13,9 @@
         "DuplicateStringLiteral": {
             "enabled": false
         },
+        "InsecureRandom": {
+            "enabled": false
+        },
         "MethodCount": {
             "enabled": false
         }
