@@ -104,42 +104,49 @@ preferences {
             input name: 'coldCT',
                   type: 'number',
                   title: 'Cold White Temperature',
+                  range: '2000..6000',
                   required: false,
                   defaultValue: 6500
 
             input name: 'warmCT',
                   type: 'number',
                   title: 'Warm White Temperature',
+                  range: '2000..6000',
                   required: false,
                   defaultValue: 2000
 
             input name: 'sunriseOffset',
                   type: 'number',
                   title: 'Sunrise Offset (+/-)',
+                  range: '-600..600',
                   required: false,
                   defaultValue: 0
 
             input name: 'sunsetOffset',
                   type: 'number',
                   title: 'Sunset Offset (+/-)',
+                  range: '-600..600',
                   required: false,
                   defaultValue: 0
 
             input name: 'minBrightness',
                   type: 'number',
                   title: 'Minimum brightness (1-100)',
+                  range: '1..100',
                   required: false,
                   defaultValue: 30
 
             input name: 'maxBrightness',
                   type: 'number',
                   title: 'Maximum brightness (1-100)',
+                  range: '1..100',
                   required: false,
                   defaultValue: 100
 
             input name: 'reenableDelay',
                   type: 'number',
                   title: 'Automatically re-enable lights after specified minutes (0 for never)',
+                  range: '0..600',
                   required: false,
                   defaultValue: 60
         }
@@ -270,10 +277,11 @@ private void circadianUpdate() {
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void luxHistoryUpdate() {
     int historySize = 5
-    int hour = Calendar.instance.get(Calendar.HOUR_OF_DAY)
+    String key = Calendar.instance.get(Calendar.HOUR_OF_DAY)
     int lux = currentLuxValue()
-    state.luxHistory[hour] = (state.luxHistory[hour] ?: []).takeRight(historySize - 1) + lux
-    log.info "Lux (hour ${hour}) history: ${state.luxHistory[hour]}"
+    log.info "Lux (hour ${key}) history: ${state.luxHistory[key]}"
+    state.luxHistory[key] = (state.luxHistory[key] ?: []).takeRight(historySize - 1) + lux
+    log.info "Lux (hour ${key}) history: ${state.luxHistory[key]}"
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */

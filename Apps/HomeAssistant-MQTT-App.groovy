@@ -649,7 +649,7 @@ private void deployDriver() {
         String name = 'MQTT Bridge Device'
         childDev = addChildDevice(
             'mqtt',
-            'MQTT Bridge',
+            'Home Assistant MQTT Broker Driver',
             dni,
             [
                 name: name,
