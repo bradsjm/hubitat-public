@@ -280,7 +280,7 @@ private void luxHistoryUpdate() {
     String key = Calendar.instance.get(Calendar.HOUR_OF_DAY)
     int lux = currentLuxValue()
     log.info "Lux (hour ${key}) history: ${state.luxHistory[key]}"
-    state.luxHistory[key] = (state.luxHistory[key] ?: []).takeRight(historySize - 1) + lux
+    state.luxHistory[key] = state.luxHistory.getOrDefault(key, []).takeRight(historySize - 1) + lux
     log.info "Lux (hour ${key}) history: ${state.luxHistory[key]}"
 }
 

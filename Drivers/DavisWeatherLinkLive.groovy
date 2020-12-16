@@ -224,7 +224,7 @@ private void parseWeatherData(Map json) {
     }
 
     events.each { e ->
-        log.info e.descriptionText
+        if (e.descriptionText) { log.info e.descriptionText }
         if (device.currentValue(e.name) != e.value) {
             sendEvent(e)
         }
