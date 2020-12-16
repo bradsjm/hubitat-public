@@ -10,7 +10,7 @@ metadata {
         attribute 'attrs', 'text'
     }
     preferences {
-        input name: 'logEnable', type: 'bool', title: 'Enable debug logging', defaultValue: true
+        input name: 'logEnable', type: 'bool', title: 'Enable debug logging', defaultValue: false
     }
 }
 
@@ -27,7 +27,6 @@ void logsOff() {
 // Called when the device is removed.
 void uninstalled() {
     log.info "${device.displayName} driver uninstalled"
-    disconnect()
 }
 
 // Called when the settings are updated.

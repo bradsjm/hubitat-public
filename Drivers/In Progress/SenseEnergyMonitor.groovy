@@ -21,6 +21,7 @@
  *  SOFTWARE.
 */
 import com.hubitat.app.ChildDeviceWrapper
+import groovy.transform.Field
 import hubitat.scheduling.AsyncResponse
 import java.math.RoundingMode
 
@@ -62,11 +63,23 @@ metadata {
                       defaultValue: 1,
                       options: [
                         1: '1%',
+                        2: '2%',
+                        3: '3%',
+                        4: '3%',
                         5: '5%',
                         10: '10%',
                         15: '15%'
-                    ]
+                      ]
 
+                input name: 'smoothingWindow',
+                      title: 'Smoothing Window Size',
+                      description: 'Number of samples to average',
+                      type: 'number',
+                      required: true,
+                      defaultValue: 5
+            }
+
+            section {
                 input name: 'logEnable',
                       type: 'bool',
                       title: 'Enable debug logging',
@@ -83,6 +96,9 @@ metadata {
         }
     }
 }
+
+// Cache for tracking rolling average for energy
+@Field static final Map<Integer, Map> rollingAverage = [:]
 
 /**
  *  Hubitat Driver Event Handlers
@@ -120,7 +136,7 @@ void parse(String data) {
 
 // Called with socket status messages
 void webSocketStatus(String status) {
-    if (logEnable) { log.debug "Sense websocket ${status}" }
+    log.warn "Sense websocket ${status}"
 }
 
 // Called when the device is removed.
@@ -219,19 +235,19 @@ private Map newEvent(String name, Object value, String unit = null) {
 private void parseRealtimeUpdate(Map payload) {
     List<Map> events = []
 
-    if (payload.hz) {
+    if (payload.containsKey('hz')) {
         BigDecimal hz = payload.hz.setScale(0, RoundingMode.HALF_UP)
         if (device.currentValue('hz') != hz) { events << newEvent('hz', hz, 'Hz') }
     }
 
-    if (payload.w) {
-        BigDecimal w = payload.w.setScale(0, RoundingMode.HALF_UP)
+    if (payload.containsKey('w')) {
+        BigDecimal w = rollingAverage(device.id + 'w', payload.w).setScale(0, RoundingMode.HALF_UP)
         if (delta(device.currentValue('energy'), w)) { events << newEvent('energy', w, 'W') }
     }
 
-    if (payload.voltage) {
-        BigDecimal l1 = payload.voltage[0].setScale(0, RoundingMode.HALF_UP)
-        BigDecimal l2 = payload.voltage[1].setScale(0, RoundingMode.HALF_UP)
+    if (payload.containsKey('voltage')) {
+        BigDecimal l1 = rollingAverage(device.id + 'l1', payload.voltage[0]).setScale(0, RoundingMode.HALF_UP)
+        BigDecimal l2 = rollingAverage(device.id + 'l2', payload.voltage[1]).setScale(0, RoundingMode.HALF_UP)
         BigDecimal avg = ((l1 + l2) / 2).setScale(0, RoundingMode.HALF_UP)
         if (device.currentValue('voltage') != avg) { events << newEvent('voltage', avg, 'V') }
         if (device.currentValue('leg1') != l1) { events << newEvent('leg1', l1, 'V') }
@@ -243,19 +259,37 @@ private void parseRealtimeUpdate(Map payload) {
         sendEvent(e)
     }
 
-    payload?.devices.each { device ->
-        parseDeviceUpdate(device)
+    if (payload.devices) {
+        /* groovylint-disable-next-line UnnecessaryGetter */
+        Set<String> childIds = getChildDevices()*.getDeviceNetworkId() as Set
+        payload.devices.each { devicePayload ->
+            childIds.remove(getDni(devicePayload.id))
+            if (devicePayload.tags['DeviceListAllowed'] == 'true') {
+                parseDeviceUpdate(devicePayload)
+            }
+        }
+
+        /* groovylint-disable-next-line UnnecessaryGetter */
+        childIds.each { id ->
+            ChildDeviceWrapper childDevice = getChildDevice(getDni(id))
+            if (childDevice && childDevice.currentValue('energy')) {
+                childDevice.parse([ newEvent('energy', 0, 'W') ])
+            }
+        }
     }
 }
 
-private void parseDeviceUpdate(Map deviceData) {
+private String getDni(String id) {
+    return 'sense' + device.id + '-' + id
+}
+
+private void parseDeviceUpdate(Map payload) {
     List<Map> events = []
-    String dni = 'sense' + device.id + '-' + deviceData.id
-    String label = deviceData.name + ' Energy Meter'
-    String name = deviceData.tags['UserDeviceTypeDisplayString']
+    String label = payload.name + ' Energy Meter'
+    String name = payload.tags['UserDeviceTypeDisplayString']
 
     ChildDeviceWrapper childDevice = getOrCreateDevice(
-        dni,
+        getDni(payload.id),
         label,
         name
     )
@@ -266,13 +300,15 @@ private void parseDeviceUpdate(Map deviceData) {
     if (childDevice.label != label) {
         childDevice.label = label
     }
+    if (childDevice.currentValue('icon') != payload.icon) {
+        events << newEvent('icon', payload.icon)
+    }
 
-    if (deviceData.w) {
-        BigDecimal w = deviceData.w.setScale(0, RoundingMode.HALF_UP)
+    if (payload.containsKey('w')) {
+        BigDecimal w = rollingAverage(childDevice.id + 'w', payload.w).setScale(0, RoundingMode.HALF_UP)
         if (delta(childDevice.currentValue('energy'), w)) { events << newEvent('energy', w, 'W') }
     }
 
-    events << newEvent('icon', deviceData.icon)
     childDevice.parse(events)
 }
 
@@ -289,14 +325,21 @@ private ChildDeviceWrapper getOrCreateDevice(String deviceNetworkId, String name
                 //isComponent: true
             ]
         )
-    } else if (logEnable) {
-        log.debug "Autodiscovery: Found child device ${name} [${deviceNetworkId}] (${driverName})"
     }
 
     if (childDevice.name != name) { childDevice.name = name }
     if (childDevice.label != label) { childDevice.label = label }
 
     return childDevice
+}
+
+private BigDecimal rollingAverage(String key, BigDecimal newValue) {
+    int size = settings.smoothingWindow ?: 5
+    Map rollingAverageCollection = rollingAverage.computeIfAbsent(device.id) { k -> [:] }
+    List<BigDecimal> values = rollingAverageCollection.getOrDefault(key, [])
+    values = values.takeRight(size - 1) + newValue
+    rollingAverageCollection[key] = values
+    return values.sum() / values.size()
 }
 
 private String splitCamelCase(String s) {
