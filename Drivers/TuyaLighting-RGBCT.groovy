@@ -675,7 +675,7 @@ private void parseDps(Map dps) {
     }
 
     events.each { e ->
-        log.info e.descriptionText
+        if (e.descriptionText) { log.info e.descriptionText }
         if (device.currentValue(e.name) != e.value) {
             sendEvent(e)
         }
