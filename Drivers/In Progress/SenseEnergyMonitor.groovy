@@ -40,6 +40,7 @@ metadata {
         capability 'VoltageMeasurement'
 
         attribute 'hz', 'number'
+        attribute 'amps', 'number'
         attribute 'leg1', 'number'
         attribute 'leg2', 'number'
 
@@ -62,20 +63,19 @@ metadata {
 
             section {
                 input name: 'updateInterval',
-                      title: 'Update interval',
-                      description: 'Use to limit number of events',
+                      title: 'Display update interval',
                       type: 'enum',
                       required: true,
                       defaultValue: 10,
                       options: [
-                        1: '1s',
-                        5: '5s',
-                        10: '10s',
-                        15: '15s',
-                        30: '30s',
-                        60: '60s',
-                        90: '90s',
-                        120: '120s'
+                        1: '1 second',
+                        5: '5 seconds',
+                        10: '10 seconds',
+                        15: '15 seconds',
+                        30: '30 seconds',
+                        60: '1 minute',
+                        120: '2 minutes',
+                        300: '5 minutes'
                       ]
 
                 input name: 'minimumWatts',
@@ -219,10 +219,12 @@ void refresh() {
     BigDecimal w = rollingAverage(device.id + 'w').setScale(0, RoundingMode.HALF_UP)
     BigDecimal l1 = rollingAverage(device.id + 'l1').setScale(0, RoundingMode.HALF_UP)
     BigDecimal l2 = rollingAverage(device.id + 'l2').setScale(0, RoundingMode.HALF_UP)
-    BigDecimal avg = ((l1 + l2) / 2).setScale(0, RoundingMode.HALF_UP)
+    BigDecimal voltage = ((l1 + l2) / 2).setScale(0, RoundingMode.HALF_UP)
+    BigDecimal amps = (w / voltage).setScale(0, RoundingMode.HALF_UP)
 
     events << newEvent(device.displayName, 'hz', hz, 'Hz')
-    events << newEvent(device.displayName, 'voltage', avg, 'V')
+    events << newEvent(device.displayName, 'voltage', voltage, 'V')
+    events << newEvent(device.displayName, 'amps', amps, 'A')
     events << newEvent(device.displayName, 'leg1', l1, 'V')
     events << newEvent(device.displayName, 'leg2', l2, 'V')
     events << newEvent(device.displayName, 'energy', w, 'W')
@@ -352,7 +354,6 @@ private void parseRealtimeUpdate(Map payload) {
         childIds.each { dni ->
             ChildDeviceWrapper childDevice = getChildDevice(dni)
             if (childDevice && childDevice.currentValue('energy')) {
-                log.info "Resetting ${childDevice}"
                 rollingAverage.remove(childDevice.id + 'w')
                 childDevice.parse([
                     newEvent(childDevice.displayName, 'energy', 0, 'W'),
