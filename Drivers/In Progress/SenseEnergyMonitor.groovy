@@ -136,10 +136,11 @@ void removeDevices() {
 // Called to parse received socket data
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedMethodParameter */
 void parse(String data) {
-    if (logEnable) { log.debug "Websocket received: ${data}" }
+    //if (logEnable) { log.debug "Websocket received: ${data}" }
     Map json = parseJson(data)
     switch (json.type) {
         case 'realtime_update':
+            if (logEnable) { log.debug 'Realtime update received' }
             parseRealtimeUpdate(json.payload)
             break
         case 'error':
@@ -150,6 +151,7 @@ void parse(String data) {
 
 // Called with socket status messages
 void webSocketStatus(String socketStatus) {
+    log.trace socketStatus
     if (logEnabled) { log.debug "socketStatus: ${socketStatus}" }
 
     if (socketStatus.startsWith('status: open')) {
@@ -157,17 +159,16 @@ void webSocketStatus(String socketStatus) {
         sendEvent(name: 'presence', value: 'present')
         pauseExecution(500)
         state.remove('delay')
-        return
     } else if (socketStatus.startsWith('status: closing')) {
         log.warn "${device.displayName} - Closing connection"
         sendEvent(name: 'presence', value: 'not present')
-        return
     } else if (socketStatus.startsWith('failure:')) {
         log.warn "${device.displayName} - Connection has failed with error [${socketStatus}]"
         sendEvent(name: 'presence', value: 'not present')
         autoReconnectWebSocket()
     } else {
         log.warn "${device.displayName} - reconnecting"
+        sendEvent(name: 'presence', value: 'not present')
         autoReconnectWebSocket()
     }
 }
@@ -197,6 +198,7 @@ void componentOff(DeviceWrapper device) {
 
 void componentRefresh(DeviceWrapper device) {
     List<Map> events = []
+    if (logEnable) log.debug "Refresh ${device} ..."
 
     BigDecimal dw = rollingAverage(device.id + 'w').setScale(0, RoundingMode.HALF_UP)
     String state = dw >= minimumWatts ? 'on' : 'off'
@@ -213,6 +215,7 @@ void componentRefresh(DeviceWrapper device) {
 }
 
 void refresh() {
+    if (logEnable) log.debug 'Refresh ...'
     List<Map> events = []
 
     BigDecimal hz = rollingAverage(device.id + 'hz').setScale(0, RoundingMode.HALF_UP)
@@ -220,7 +223,7 @@ void refresh() {
     BigDecimal l1 = rollingAverage(device.id + 'l1').setScale(0, RoundingMode.HALF_UP)
     BigDecimal l2 = rollingAverage(device.id + 'l2').setScale(0, RoundingMode.HALF_UP)
     BigDecimal voltage = ((l1 + l2) / 2).setScale(0, RoundingMode.HALF_UP)
-    BigDecimal amps = (w / voltage).setScale(0, RoundingMode.HALF_UP)
+    BigDecimal amps = (w / (l1 + l2)).setScale(0, RoundingMode.HALF_UP)
 
     events << newEvent(device.displayName, 'hz', hz, 'Hz')
     events << newEvent(device.displayName, 'voltage', voltage, 'V')
@@ -238,6 +241,7 @@ void refresh() {
 
     /* groovylint-disable-next-line UnnecessaryGetter */
     getChildDevices().each { childDevice -> componentRefresh(childDevice) }
+
     runIn(settings.updateInterval as int, 'refresh')
 }
 
@@ -284,6 +288,7 @@ private void connect(int monitorId, String token) {
         if (logEnable) { log.debug "Sense socket url: ${url}" }
         interfaces.webSocket.connect(url)
         runIn(3, 'refresh')
+        runIn(15 * 60, 'authenticate')
     } catch (e) {
         log.error "connect error: ${e}"
         autoReconnectWebSocket()
@@ -304,9 +309,8 @@ private void logsOff() {
 }
 
 private Map newEvent(String device, String name, Object value, String unit = null) {
-    String splitName = splitCamelCase(name).toLowerCase()
     String description
-    description = "${device} ${splitName} is ${value}${unit ?: ''}"
+    description = "${device} ${name} is ${value}${unit ?: ''}"
     return [
         name: name,
         value: value,
@@ -325,7 +329,6 @@ private void parseRealtimeUpdate(Map payload) {
     }
 
     if (payload.containsKey('voltage')) {
-        if (logEnable) { log.debug "Updating voltage data to ${payload.voltage}" }
         rollingAverage(device.id + 'l1', payload.voltage[0])
         rollingAverage(device.id + 'l2', payload.voltage[1])
     }
@@ -404,15 +407,4 @@ private BigDecimal rollingAverage(String key, BigDecimal newValue) {
         prev.takeRight(size - 1) + v
     })
     return values.sum() / values.size()
-}
-
-private String splitCamelCase(String s) {
-   return s.replaceAll(
-      String.format('%s|%s|%s',
-         '(?<=[A-Z])(?=[A-Z][a-z])',
-         '(?<=[^A-Z])(?=[A-Z])',
-         '(?<=[A-Za-z])(?=[^A-Za-z])'
-      ),
-      ' '
-   )
 }
