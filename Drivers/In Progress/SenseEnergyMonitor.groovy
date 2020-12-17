@@ -21,9 +21,11 @@
  *  SOFTWARE.
 */
 import com.hubitat.app.ChildDeviceWrapper
+import com.hubitat.app.DeviceWrapper
 import groovy.transform.Field
 import hubitat.scheduling.AsyncResponse
 import java.math.RoundingMode
+import java.util.concurrent.ConcurrentHashMap
 
 metadata {
     definition (name: 'Sense Energy Monitor',
@@ -33,6 +35,8 @@ metadata {
     ) {
         capability 'Initialize'
         capability 'EnergyMeter'
+        capability 'Refresh'
+        capability 'PresenceSensor'
         capability 'VoltageMeasurement'
 
         attribute 'hz', 'number'
@@ -40,6 +44,7 @@ metadata {
         attribute 'leg2', 'number'
 
         command 'disconnect'
+        command 'removeDevices'
 
         preferences {
             section {
@@ -56,27 +61,28 @@ metadata {
             }
 
             section {
-                input name: 'changeDelta',
-                      title: 'Minimum Energy (W) Change',
+                input name: 'updateInterval',
+                      title: 'Update interval',
+                      description: 'Use to limit number of events',
                       type: 'enum',
                       required: true,
-                      defaultValue: 1,
+                      defaultValue: 10,
                       options: [
-                        1: '1%',
-                        2: '2%',
-                        3: '3%',
-                        4: '3%',
-                        5: '5%',
-                        10: '10%',
-                        15: '15%'
+                        1: '1s',
+                        5: '5s',
+                        10: '10s',
+                        15: '15s',
+                        30: '30s',
+                        60: '60s',
+                        90: '90s',
+                        120: '120s'
                       ]
 
-                input name: 'smoothingWindow',
-                      title: 'Smoothing Window Size',
-                      description: 'Number of samples to average',
+                input name: 'minimumWatts',
+                      title: 'Minimum Watts for ON state',
                       type: 'number',
                       required: true,
-                      defaultValue: 5
+                      defaultValue: 1
             }
 
             section {
@@ -98,7 +104,7 @@ metadata {
 }
 
 // Cache for tracking rolling average for energy
-@Field static final Map<Integer, Map> rollingAverage = [:]
+@Field static final ConcurrentHashMap<String, List> rollingAverage = new ConcurrentHashMap<>()
 
 /**
  *  Hubitat Driver Event Handlers
@@ -107,7 +113,6 @@ metadata {
 // Called when the device is started.
 void initialize() {
     log.info "${device.displayName} driver initializing"
-
     if (!settings.email || !settings.password) {
         log.error 'Unable to connect because login and password are required'
         return
@@ -122,6 +127,12 @@ void installed() {
     log.info "${device.displayName} driver installed"
 }
 
+// command to remove all the child devices
+void removeDevices() {
+    log.info "${device.displayName} removing all child devices"
+    childDevices.each { device -> deleteChildDevice(device.deviceNetworkId) }
+}
+
 // Called to parse received socket data
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedMethodParameter */
 void parse(String data) {
@@ -131,12 +142,34 @@ void parse(String data) {
         case 'realtime_update':
             parseRealtimeUpdate(json.payload)
             break
+        case 'error':
+            log.error json.payload
+            break
     }
 }
 
 // Called with socket status messages
-void webSocketStatus(String status) {
-    log.warn "Sense websocket ${status}"
+void webSocketStatus(String socketStatus) {
+    if (logEnabled) { log.debug "socketStatus: ${socketStatus}" }
+
+    if (socketStatus.startsWith('status: open')) {
+        log.info "${device.displayName} - Connected"
+        sendEvent(name: 'presence', value: 'present')
+        pauseExecution(500)
+        state.remove('delay')
+        return
+    } else if (socketStatus.startsWith('status: closing')) {
+        log.warn "${device.displayName} - Closing connection"
+        sendEvent(name: 'presence', value: 'not present')
+        return
+    } else if (socketStatus.startsWith('failure:')) {
+        log.warn "${device.displayName} - Connection has failed with error [${socketStatus}]"
+        sendEvent(name: 'presence', value: 'not present')
+        autoReconnectWebSocket()
+    } else {
+        log.warn "${device.displayName} - reconnecting"
+        autoReconnectWebSocket()
+    }
 }
 
 // Called when the device is removed.
@@ -149,10 +182,61 @@ void uninstalled() {
 void updated() {
     log.info "${device.displayName} driver configuration updated"
     log.debug settings
-    state.clear()
     initialize()
 
     if (logEnable) { runIn(1800, 'logsOff') }
+}
+
+void componentOn(DeviceWrapper device) {
+    log.warn "${device} Command Not supported"
+}
+
+void componentOff(DeviceWrapper device) {
+    log.warn "${device} Command Not supported"
+}
+
+void componentRefresh(DeviceWrapper device) {
+    List<Map> events = []
+
+    BigDecimal dw = rollingAverage(device.id + 'w').setScale(0, RoundingMode.HALF_UP)
+    String state = dw >= minimumWatts ? 'on' : 'off'
+
+    if (device.currentValue('energy') != dw) {
+        events << newEvent(device.displayName, 'energy', dw, 'W')
+    }
+
+    if (device.currentValue('switch') != state) {
+        events << newEvent(device.displayName, 'switch', state)
+    }
+
+    if (events) { device.parse(events) }
+}
+
+void refresh() {
+    List<Map> events = []
+
+    BigDecimal hz = rollingAverage(device.id + 'hz').setScale(0, RoundingMode.HALF_UP)
+    BigDecimal w = rollingAverage(device.id + 'w').setScale(0, RoundingMode.HALF_UP)
+    BigDecimal l1 = rollingAverage(device.id + 'l1').setScale(0, RoundingMode.HALF_UP)
+    BigDecimal l2 = rollingAverage(device.id + 'l2').setScale(0, RoundingMode.HALF_UP)
+    BigDecimal avg = ((l1 + l2) / 2).setScale(0, RoundingMode.HALF_UP)
+
+    events << newEvent(device.displayName, 'hz', hz, 'Hz')
+    events << newEvent(device.displayName, 'voltage', avg, 'V')
+    events << newEvent(device.displayName, 'leg1', l1, 'V')
+    events << newEvent(device.displayName, 'leg2', l2, 'V')
+    events << newEvent(device.displayName, 'energy', w, 'W')
+
+    events.each { e ->
+        if (device.currentValue(e.name) != e.value) { 
+            if (e.descriptionText) { log.info e.descriptionText }
+            sendEvent(e)
+        }
+    }
+
+    /* groovylint-disable-next-line UnnecessaryGetter */
+    getChildDevices().each { childDevice -> componentRefresh(childDevice) }
+    runIn(settings.updateInterval as int, 'refresh')
 }
 
 private void authenticate() {
@@ -183,31 +267,32 @@ private void authHandler(AsyncResponse response, Object data) {
     }
 }
 
+private void autoReconnectWebSocket() {
+    state.delay = (state.delay ?: 0) + 30
+    if (state.delay > 600) { state.delay = 600 }
+
+    log.warn "${device.displayName} - Connection lost, will try to reconnect in ${state.delay} seconds"
+    runIn(state.delay, 'authenticate')
+}
+
 private void connect(int monitorId, String token) {
-    unschedule('authenticate')
     log.info "Connecting to Sense Live Data Stream for monitor ${monitorId}"
     try {
         String url = "wss://clientrt.sense.com/monitors/${monitorId}/realtimefeed?access_token=${token}"
         if (logEnable) { log.debug "Sense socket url: ${url}" }
-        state.connectCount = (state?.connectCount ?: 0) + 1
         interfaces.webSocket.connect(url)
+        runIn(3, 'refresh')
     } catch (e) {
         log.error "connect error: ${e}"
-        runInMillis(new Random(now()).nextInt(90000), 'authenticate')
+        autoReconnectWebSocket()
     }
-}
-
-private boolean delta(BigDecimal prevValue, BigDecimal newValue) {
-    if (!prevValue || !newValue) { return true }
-    BigDecimal increase = (1 - (prevValue / newValue)) * 100.0
-    boolean result = Math.abs(increase) >= (settings.changeDelta as int)
-    return result
 }
 
 private void disconnect() {
     unschedule()
     log.info 'Disconnecting from Sense Live Data Stream'
     interfaces.webSocket.close()
+    rollingAverage.clear()
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
@@ -216,14 +301,10 @@ private void logsOff() {
     device.updateSetting('logEnable', [value: 'false', type: 'bool'] )
 }
 
-private Map newEvent(String name, Object value, String unit = null) {
+private Map newEvent(String device, String name, Object value, String unit = null) {
     String splitName = splitCamelCase(name).toLowerCase()
     String description
-    if (device.currentValue(name) && value == device.currentValue(name)) {
-        description = "${device.displayName} ${splitName} is ${value}${unit ?: ''}"
-    } else {
-        description = "${device.displayName} ${splitName} was set to ${value}${unit ?: ''}"
-    }
+    description = "${device} ${splitName} is ${value}${unit ?: ''}"
     return [
         name: name,
         value: value,
@@ -233,47 +314,50 @@ private Map newEvent(String name, Object value, String unit = null) {
 }
 
 private void parseRealtimeUpdate(Map payload) {
-    List<Map> events = []
-
     if (payload.containsKey('hz')) {
-        BigDecimal hz = payload.hz.setScale(0, RoundingMode.HALF_UP)
-        if (device.currentValue('hz') != hz) { events << newEvent('hz', hz, 'Hz') }
+        rollingAverage(device.id + 'hz', payload.hz)
     }
 
     if (payload.containsKey('w')) {
-        BigDecimal w = rollingAverage(device.id + 'w', payload.w).setScale(0, RoundingMode.HALF_UP)
-        if (delta(device.currentValue('energy'), w)) { events << newEvent('energy', w, 'W') }
+        rollingAverage(device.id + 'w', payload.w)
     }
 
     if (payload.containsKey('voltage')) {
-        BigDecimal l1 = rollingAverage(device.id + 'l1', payload.voltage[0]).setScale(0, RoundingMode.HALF_UP)
-        BigDecimal l2 = rollingAverage(device.id + 'l2', payload.voltage[1]).setScale(0, RoundingMode.HALF_UP)
-        BigDecimal avg = ((l1 + l2) / 2).setScale(0, RoundingMode.HALF_UP)
-        if (device.currentValue('voltage') != avg) { events << newEvent('voltage', avg, 'V') }
-        if (device.currentValue('leg1') != l1) { events << newEvent('leg1', l1, 'V') }
-        if (device.currentValue('leg2') != l2) { events << newEvent('leg2', l2, 'V') }
-    }
-
-    events.each { e ->
-        if (e.descriptionText) { log.info e.descriptionText }
-        sendEvent(e)
+        if (logEnable) { log.debug "Updating voltage data to ${payload.voltage}" }
+        rollingAverage(device.id + 'l1', payload.voltage[0])
+        rollingAverage(device.id + 'l2', payload.voltage[1])
     }
 
     if (payload.devices) {
         /* groovylint-disable-next-line UnnecessaryGetter */
         Set<String> childIds = getChildDevices()*.getDeviceNetworkId() as Set
         payload.devices.each { devicePayload ->
-            childIds.remove(getDni(devicePayload.id))
-            if (devicePayload.tags['DeviceListAllowed'] == 'true') {
-                parseDeviceUpdate(devicePayload)
+            String dni = getDni(devicePayload.id)
+            childIds.remove(dni)
+            if (devicePayload.tags['DeviceListAllowed'] == 'true' && payload.containsKey('w')) {
+                ChildDeviceWrapper childDevice = getOrCreateDevice(devicePayload)
+                BigDecimal w = rollingAverage(childDevice.id + 'w', devicePayload.w)
+                if (w >= minimumWatts && childDevice.currentValue('switch') == 'off') {
+                    childDevice.parse([
+                        newEvent(childDevice.displayName, 'switch', 'on')
+                    ])
+                } else if (w < minimumWatts && childDevice.currentValue('switch') == 'on') {
+                    childDevice.parse([
+                        newEvent(childDevice.displayName, 'switch', 'off')
+                    ])
+                }
             }
         }
 
-        /* groovylint-disable-next-line UnnecessaryGetter */
-        childIds.each { id ->
-            ChildDeviceWrapper childDevice = getChildDevice(getDni(id))
+        childIds.each { dni ->
+            ChildDeviceWrapper childDevice = getChildDevice(dni)
             if (childDevice && childDevice.currentValue('energy')) {
-                childDevice.parse([ newEvent('energy', 0, 'W') ])
+                log.info "Resetting ${childDevice}"
+                rollingAverage.remove(childDevice.id + 'w')
+                childDevice.parse([
+                    newEvent(childDevice.displayName, 'energy', 0, 'W'),
+                    newEvent(childDevice.displayName, 'switch', 'off')
+                ])
             }
         }
     }
@@ -283,42 +367,17 @@ private String getDni(String id) {
     return 'sense' + device.id + '-' + id
 }
 
-private void parseDeviceUpdate(Map payload) {
-    List<Map> events = []
+private ChildDeviceWrapper getOrCreateDevice(Map payload) {
     String label = payload.name + ' Energy Meter'
     String name = payload.tags['UserDeviceTypeDisplayString']
+    String deviceNetworkId = getDni(payload.id)
 
-    ChildDeviceWrapper childDevice = getOrCreateDevice(
-        getDni(payload.id),
-        label,
-        name
-    )
-
-    if (childDevice.name != name) {
-        childDevice.name = name
-    }
-    if (childDevice.label != label) {
-        childDevice.label = label
-    }
-    if (childDevice.currentValue('icon') != payload.icon) {
-        events << newEvent('icon', payload.icon)
-    }
-
-    if (payload.containsKey('w')) {
-        BigDecimal w = rollingAverage(childDevice.id + 'w', payload.w).setScale(0, RoundingMode.HALF_UP)
-        if (delta(childDevice.currentValue('energy'), w)) { events << newEvent('energy', w, 'W') }
-    }
-
-    childDevice.parse(events)
-}
-
-private ChildDeviceWrapper getOrCreateDevice(String deviceNetworkId, String name, String label) {
     ChildDeviceWrapper childDevice = getChildDevice(deviceNetworkId)
     if (!childDevice) {
         log.info "Creating child device ${name} [${deviceNetworkId}]"
         childDevice = addChildDevice(
-            'nrgup',
-            'Sense Energy Monitor Child Device',
+            'hubitat',
+            'Generic Component Metering Switch',
             deviceNetworkId,
             [
                 name: name,
@@ -333,12 +392,16 @@ private ChildDeviceWrapper getOrCreateDevice(String deviceNetworkId, String name
     return childDevice
 }
 
+private BigDecimal rollingAverage(String key) {
+    List<BigDecimal> values = rollingAverage.getOrDefault(key, [])
+    return values ? values.sum() / values.size() : 0
+}
+
 private BigDecimal rollingAverage(String key, BigDecimal newValue) {
-    int size = settings.smoothingWindow ?: 5
-    Map rollingAverageCollection = rollingAverage.computeIfAbsent(device.id) { k -> [:] }
-    List<BigDecimal> values = rollingAverageCollection.getOrDefault(key, [])
-    values = values.takeRight(size - 1) + newValue
-    rollingAverageCollection[key] = values
+    int size = (settings.updateInterval as int) ?: 1
+    List<BigDecimal> values = rollingAverage.merge(key, [ newValue ], { prev, v ->
+        prev.takeRight(size - 1) + v
+    })
     return values.sum() / values.size()
 }
 
