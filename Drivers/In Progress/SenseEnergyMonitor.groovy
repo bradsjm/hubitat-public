@@ -198,9 +198,10 @@ void componentOff(DeviceWrapper device) {
 
 void componentRefresh(DeviceWrapper device) {
     List<Map> events = []
+    String dni = device.getDeviceNetworkId()
     if (logEnable) log.debug "Refresh ${device} ..."
 
-    BigDecimal dw = rollingAverage(device.id + 'w').setScale(0, RoundingMode.HALF_UP)
+    BigDecimal dw = rollingAverage(dni + 'w').setScale(0, RoundingMode.HALF_UP)
     String state = dw >= minimumWatts ? 'on' : 'off'
 
     if (device.currentValue('energy') != dw) {
@@ -217,11 +218,12 @@ void componentRefresh(DeviceWrapper device) {
 void refresh() {
     if (logEnable) log.debug 'Refresh ...'
     List<Map> events = []
+    String dni = device.getDeviceNetworkId()
 
-    BigDecimal hz = rollingAverage(device.id + 'hz').setScale(0, RoundingMode.HALF_UP)
-    BigDecimal w = rollingAverage(device.id + 'w').setScale(0, RoundingMode.HALF_UP)
-    BigDecimal l1 = rollingAverage(device.id + 'l1').setScale(0, RoundingMode.HALF_UP)
-    BigDecimal l2 = rollingAverage(device.id + 'l2').setScale(0, RoundingMode.HALF_UP)
+    BigDecimal hz = rollingAverage(dni + 'hz').setScale(0, RoundingMode.HALF_UP)
+    BigDecimal w = rollingAverage(dni + 'w').setScale(0, RoundingMode.HALF_UP)
+    BigDecimal l1 = rollingAverage(dni + 'l1').setScale(0, RoundingMode.HALF_UP)
+    BigDecimal l2 = rollingAverage(dni + 'l2').setScale(0, RoundingMode.HALF_UP)
     BigDecimal voltage = ((l1 + l2) / 2).setScale(0, RoundingMode.HALF_UP)
     BigDecimal amps = (w / (l1 + l2)).setScale(0, RoundingMode.HALF_UP)
 
@@ -320,51 +322,20 @@ private Map newEvent(String device, String name, Object value, String unit = nul
 }
 
 private void parseRealtimeUpdate(Map payload) {
-    if (payload.containsKey('hz')) {
-        rollingAverage(device.id + 'hz', payload.hz)
+    String dni = device.getDeviceNetworkId()
+    rollingAverage(dni + 'hz', payload.hz)
+    rollingAverage(dni + 'w', payload.w)
+    rollingAverage(dni + 'l1', payload.voltage[0])
+    rollingAverage(dni + 'l2', payload.voltage[1])
+
+    /* groovylint-disable-next-line UnnecessaryGetter */
+    Set<String> childIds = getChildDevices()*.getDeviceNetworkId() as Set
+    payload.devices.each { dp ->
+        childIds.remove(getDni(dp.id))
+        updateDevice(dp)
     }
 
-    if (payload.containsKey('w')) {
-        rollingAverage(device.id + 'w', payload.w)
-    }
-
-    if (payload.containsKey('voltage')) {
-        rollingAverage(device.id + 'l1', payload.voltage[0])
-        rollingAverage(device.id + 'l2', payload.voltage[1])
-    }
-
-    if (payload.devices) {
-        /* groovylint-disable-next-line UnnecessaryGetter */
-        Set<String> childIds = getChildDevices()*.getDeviceNetworkId() as Set
-        payload.devices.each { devicePayload ->
-            String dni = getDni(devicePayload.id)
-            childIds.remove(dni)
-            if (devicePayload.tags['DeviceListAllowed'] == 'true' && payload.containsKey('w')) {
-                ChildDeviceWrapper childDevice = getOrCreateDevice(devicePayload)
-                BigDecimal w = rollingAverage(childDevice.id + 'w', devicePayload.w)
-                if (w >= minimumWatts && childDevice.currentValue('switch') == 'off') {
-                    childDevice.parse([
-                        newEvent(childDevice.displayName, 'switch', 'on')
-                    ])
-                } else if (w < minimumWatts && childDevice.currentValue('switch') == 'on') {
-                    childDevice.parse([
-                        newEvent(childDevice.displayName, 'switch', 'off')
-                    ])
-                }
-            }
-        }
-
-        childIds.each { dni ->
-            ChildDeviceWrapper childDevice = getChildDevice(dni)
-            if (childDevice && childDevice.currentValue('energy')) {
-                rollingAverage.remove(childDevice.id + 'w')
-                childDevice.parse([
-                    newEvent(childDevice.displayName, 'energy', 0, 'W'),
-                    newEvent(childDevice.displayName, 'switch', 'off')
-                ])
-            }
-        }
-    }
+    childIds.each { d-> resetDevice(d) }
 }
 
 private String getDni(String id) {
@@ -375,6 +346,10 @@ private ChildDeviceWrapper getOrCreateDevice(Map payload) {
     String label = payload.name + ' Energy Meter'
     String name = payload.tags['UserDeviceTypeDisplayString']
     String deviceNetworkId = getDni(payload.id)
+
+    if (payload.containsKey('given_location')) {
+        name += ' in ' + payload['given_location']
+    }
 
     ChildDeviceWrapper childDevice = getChildDevice(deviceNetworkId)
     if (!childDevice) {
@@ -396,15 +371,39 @@ private ChildDeviceWrapper getOrCreateDevice(Map payload) {
     return childDevice
 }
 
+private void resetDevice(String dni) {
+    ChildDeviceWrapper childDevice = getChildDevice(dni)
+    if (childDevice && childDevice.currentValue('energy')) {
+        rollingAverage.remove(dni + 'w')
+        childDevice.parse([
+            newEvent(childDevice.displayName, 'energy', 0, 'W'),
+            newEvent(childDevice.displayName, 'switch', 'off')
+        ])
+    }
+}
+
 private BigDecimal rollingAverage(String key) {
     List<BigDecimal> values = rollingAverage.getOrDefault(key, [])
     return values ? values.sum() / values.size() : 0
 }
 
 private BigDecimal rollingAverage(String key, BigDecimal newValue) {
+    if (newValue == null) return 0
     int size = (settings.updateInterval as int) ?: 1
     List<BigDecimal> values = rollingAverage.merge(key, [ newValue ], { prev, v ->
         prev.takeRight(size - 1) + v
     })
     return values.sum() / values.size()
+}
+
+private void updateDevice(Map payload) {
+    if (payload.tags['DeviceListAllowed'] == 'true' && payload.containsKey('w')) {
+        BigDecimal w = rollingAverage(getDni(payload.id) + 'w', payload.w)
+        ChildDeviceWrapper childDevice = getOrCreateDevice(payload)
+        if (w >= settings.minimumWatts && childDevice.currentValue('switch') == 'off') {
+            childDevice.parse([newEvent(childDevice.displayName, 'switch', 'on')])
+        } else if (w < settings.minimumWatts && childDevice.currentValue('switch') == 'on') {
+            childDevice.parse([newEvent(childDevice.displayName, 'switch', 'off')])
+        }
+    }
 }
