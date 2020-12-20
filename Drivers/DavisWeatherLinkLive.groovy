@@ -38,16 +38,38 @@ metadata {
         capability 'Temperature Measurement'
         capability 'Ultraviolet Index'
 
-        // Wind
-        attribute 'windDirection', 'number'
-        attribute 'windSpeed', 'number'
-        attribute 'windGust', 'number'
-
-        // Rain
-        attribute 'raining', 'boolean'
-        attribute 'rainRate', 'number'
-        attribute 'rainDaily', 'number'
-        attribute 'rain24h', 'number'
+        attribute 'avgwindDirectionLast10min', 'number'
+        attribute 'avgwindDirectionLast2min', 'number'
+        attribute 'avgwindDirectionLastMin', 'number'
+        attribute 'avgWindSpeedLast10min', 'number'
+        attribute 'avgWindSpeedLast2min', 'number'
+        attribute 'avgWindSpeedLastMin', 'number'
+        attribute 'batteryFlag', 'number'
+        attribute 'dewPoint', 'number'
+        attribute 'dewPointInside', 'number'
+        attribute 'feelsLike', 'number'
+        attribute 'heatIndex', 'number'
+        attribute 'heatIndexInside', 'number'
+        attribute 'insideHumidity', 'number'
+        attribute 'insideTemperature', 'number'
+        attribute 'pressureTrend', 'number'
+        attribute 'rainfallDaily', 'number'
+        attribute 'rainfallLast15min', 'number'
+        attribute 'rainfallLast24hr', 'number'
+        attribute 'rainfallLast60min', 'number'
+        attribute 'rainfallMonthly', 'number'
+        attribute 'rainfallStormEnd', 'string'
+        attribute 'rainfallStormStart', 'string'
+        attribute 'rainfallStormTotal', 'string'
+        attribute 'rainfallYearly', 'number'
+        attribute 'raining', 'string'
+        attribute 'rainRateLast15min', 'number'
+        attribute 'rainRateLastMin', 'number'
+        attribute 'rxState', 'number'
+        attribute 'wetBulb', 'number'
+        attribute 'windChill', 'number'
+        attribute 'windGustLast10min', 'number'
+        attribute 'windGustLast2min', 'number'
 
         preferences {
             section {
@@ -90,6 +112,12 @@ metadata {
                       description: 'Automatically disabled after 30 minutes',
                       required: false,
                       defaultValue: true
+
+                input name: 'logTextEnable',
+                      type: 'bool',
+                      title: 'Enable descriptionText logging',
+                      required: false,
+                      defaultValue: true
             }
         }
     }
@@ -109,6 +137,7 @@ void uninstalled() {
 // Called when the preferences of a device are updated.
 void updated() {
     unschedule()
+    state.clear()
 
     if (settings.pollInterval > 0) {
         int randomSeconds = new Random(now()).nextInt(60)
@@ -171,7 +200,7 @@ private void parseWeatherData(Map json) {
     String rainUnit = ''
 
     // Transfer data into state for debug
-    state.lastResponse = json.conditions
+    if (logEnable) { state.lastResponse = json.conditions }
 
     json.conditions.each { c ->
         switch (c.data_structure_type) {
@@ -198,34 +227,61 @@ private void parseWeatherData(Map json) {
                 }
                 events << newEvent('temperature', c.temp, 'F')
                 events << newEvent('humidity', c.hum, '%')
+                events << newEvent('dewPoint', c.dew_point, 'F')
+                events << newEvent('heatIndex', c.heat_index, 'F')
+                events << newEvent('windChill', c.wind_chill, 'F')
+                events << newEvent('wetBulb', c.wet_bulb, 'F')
+                events << newEvent('feelsLike', c.thw_index, 'F')
                 events << newEvent('ultravioletIndex', c.uv_index, 'uvi')
-                events << newEvent('windSpeed', c.wind_speed_avg_last_1_min, 'mph')
-                events << newEvent('windDirection', c.wind_dir_scalar_avg_last_1_min, 'degrees')
-                events << newEvent('windGust', c.wind_speed_hi_last_2_min, 'mph')
-                events << newEvent('raining', c.rainfall_last_15_min > 0 ? 'true' : 'false')
-                events << newEvent('rainRate', c.rain_rate_hi * rainMultiplier, rainUnit)
-                events << newEvent('rainDaily', c.rainfall_daily * rainMultiplier, rainUnit)
-                events << newEvent('rain24h', c.rainfall_last_24_hr * rainMultiplier, rainUnit)
+                events << newEvent('rxState', c.rx_state)
+                events << newEvent('batteryFlag', c.trans_battery_flag)
+
+                events << newEvent('avgWindSpeedLastMin', c.wind_speed_avg_last_1_min, 'mph')
+                events << newEvent('avgWindSpeedLast2min', c.wind_speed_avg_last_2_min, 'mph')
+                events << newEvent('avgWindSpeedLast10min', c.wind_speed_avg_last_10_min, 'mph')
+                events << newEvent('avgwindDirectionLastMin', c.wind_dir_scalar_avg_last_1_min, 'deg')
+                events << newEvent('avgwindDirectionLast2min', c.wind_dir_scalar_avg_last_2_min, 'deg')
+                events << newEvent('avgwindDirectionLast10min', c.wind_dir_scalar_avg_last_10_min, 'deg')
+                events << newEvent('windGustLast2min', c.wind_speed_hi_last_2_min, 'mph')
+                events << newEvent('windGustLast10min', c.wind_speed_hi_last_10_min, 'mph')
+
+                events << newEvent('raining', c.rainfall_last_15_min ?: 0 > 0 ? 'true' : 'false')
+                events << newEvent('rainfallStormTotal', c.rain_storm_last ?: 0 * rainMultiplier, rainUnit)
+                events << newEvent('rainfallStormStart', c.rain_storm_last_start_at ? new Date((long)c.rain_storm_last_start_at * 1000).toString() : '')
+                events << newEvent('rainfallStormEnd', c.rain_storm_last_end_at ? new Date((long)c.rain_storm_last_end_at * 1000).toString() : '')
+                events << newEvent('rainRateLastMin', c.rain_rate_hi ?: 0 * rainMultiplier, rainUnit)
+                events << newEvent('rainRateLast15min', c.rain_rate_hi_last_15_min ?: 0 * rainMultiplier, rainUnit)
+                events << newEvent('rainfallLast15min', c.rainfall_last_15_min ?: 0 * rainMultiplier, rainUnit)
+                events << newEvent('rainfallLast60min', c.rainfall_last_60_min ?: 0 * rainMultiplier, rainUnit)
+                events << newEvent('rainfallLast24hr', c.rainfall_last_24_hr ?: 0 * rainMultiplier, rainUnit)
+                events << newEvent('rainfallDaily', c.rainfall_daily ?: 0 * rainMultiplier, rainUnit)
+                events << newEvent('rainfallMonthly', c.rainfall_monthly ?: 0 * rainMultiplier, rainUnit)
+                events << newEvent('rainfallYearly', c.rainfall_yearly ?: 0 * rainMultiplier, rainUnit)
                 break
             case 2:
                 if (c.txid != transmitterId) { return }
                 if (logEnable) {
-                    log.debug "[${device.displayName}] Received Leaf/Soil Moisture sensor #${c.txid} data"
+                    log.debug "[${device.displayName}] Skipping received Leaf/Soil Moisture sensor #${c.txid} data"
                 }
                 break
             case 3:
                 if (logEnable) { log.debug "[${device.displayName}] Received Base Barometer data" }
                 events << newEvent('pressure', c.bar_sea_level, 'inHg')
+                events << newEvent('pressureTrend', c.bar_trend, 'inHg')
                 break
             case 4:
                 if (logEnable) { log.debug "[${device.displayName}] Received Base Temperature/Humidity data" }
+                events << newEvent('insideTemperature', c.temp_in, 'F')
+                events << newEvent('insideHumidity', c.hum_in, '%')
+                events << newEvent('dewPointInside', c.dew_point_in, 'F')
+                events << newEvent('heatIndexInside', c.heat_index_in, 'F')
                 break
         }
     }
 
     events.each { e ->
         if (e.descriptionText) { log.info e.descriptionText }
-        if (device.currentValue(e.name) != e.value) {
+        if (e.value != null && device.currentValue(e.name) != e.value) {
             sendEvent(e)
         }
     }
