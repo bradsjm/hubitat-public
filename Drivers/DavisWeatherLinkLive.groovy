@@ -38,9 +38,9 @@ metadata {
         capability 'Temperature Measurement'
         capability 'Ultraviolet Index'
 
-        attribute 'avgwindDirectionLast10min', 'number'
-        attribute 'avgwindDirectionLast2min', 'number'
-        attribute 'avgwindDirectionLastMin', 'number'
+        attribute 'avgWindDirectionLast10min', 'number'
+        attribute 'avgWindDirectionLast2min', 'number'
+        attribute 'avgWindDirectionLastMin', 'number'
         attribute 'avgWindSpeedLast10min', 'number'
         attribute 'avgWindSpeedLast2min', 'number'
         attribute 'avgWindSpeedLastMin', 'number'
@@ -239,9 +239,9 @@ private void parseWeatherData(Map json) {
                 events << newEvent('avgWindSpeedLastMin', c.wind_speed_avg_last_1_min, 'mph')
                 events << newEvent('avgWindSpeedLast2min', c.wind_speed_avg_last_2_min, 'mph')
                 events << newEvent('avgWindSpeedLast10min', c.wind_speed_avg_last_10_min, 'mph')
-                events << newEvent('avgwindDirectionLastMin', c.wind_dir_scalar_avg_last_1_min, 'deg')
-                events << newEvent('avgwindDirectionLast2min', c.wind_dir_scalar_avg_last_2_min, 'deg')
-                events << newEvent('avgwindDirectionLast10min', c.wind_dir_scalar_avg_last_10_min, 'deg')
+                events << newEvent('avgWindDirectionLastMin', c.wind_dir_scalar_avg_last_1_min, 'deg')
+                events << newEvent('avgWindDirectionLast2min', c.wind_dir_scalar_avg_last_2_min, 'deg')
+                events << newEvent('avgWindDirectionLast10min', c.wind_dir_scalar_avg_last_10_min, 'deg')
                 events << newEvent('windGustLast2min', c.wind_speed_hi_last_2_min, 'mph')
                 events << newEvent('windGustLast10min', c.wind_speed_hi_last_10_min, 'mph')
 
