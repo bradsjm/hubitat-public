@@ -246,8 +246,8 @@ void componentSetColorTemperature(DeviceWrapper device, BigDecimal value) {
     String fadeCommand = fadeCommand(duration ?: settings.fadeTime)
 
     if (config['lt_st'] == 2 || config['lt_st'] == 5) {
-        String level = Math.round(1000000f / value)
-        log.info "Setting ${device} color temperature to ${value}K"
+        int level = 1000000f / value
+        log.info "Setting ${device} color temperature to ${value}K (${level} mireds)"
         mqttPublish(topic, fadeCommand + "CT ${level}")
         return
     }
@@ -387,7 +387,7 @@ private static String rgbToHEX(String rgb) {
 
 // Convert mireds to kelvin
 private static int toKelvin(BigDecimal value) {
-    return Math.round(1000000f / value) as int
+    return 1000000f / value as int
 }
 
 private Map newEvent(ChildDeviceWrapper device, String name, Object value, Map params = [:]) {
