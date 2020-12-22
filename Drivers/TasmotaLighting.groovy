@@ -397,6 +397,7 @@ private static int toKelvin(BigDecimal value) {
     return 1000000f / value as int
 }
 
+/* groovylint-disable-next-line UnusedPrivateMethod */
 private void healthcheck() {
     childDevices.each { device ->
         int elapsed = (now() - lastHeard.getOrDefault(device.id, now())) / 1000
@@ -628,8 +629,6 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
     // Get the configuration from the device
     String index = getDeviceConfig(device)['index']
     Map json = parseJson(payload)
-
-    // Update last heard tracker
     lastHeard[device.id] = now()
 
     // Iterate the json payload content
@@ -678,14 +677,7 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
                     events << newEvent(device, 'power', kv.value['Power'], [unit: 'W'])
                 }
                 break
-            case 'Button1':
-            case 'Button2':
-            case 'Button3':
-            case 'Button4':
-            case 'Button5':
-            case 'Button6':
-            case 'Button7':
-            case 'Button8':
+            case ~/^Button[1-8]$/:
                 String action = kv.value['Action']
                 int number = kv.key[-1] as int
                 if (logEnable) { log.debug "${device} button number ${number} ${action}" }
@@ -710,9 +702,7 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
         }
     }
 
-    if (events) {
-        device.parse(events)
-    }
+    if (events) { device.parse(events) }
 }
 
 /**
