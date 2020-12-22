@@ -102,6 +102,9 @@ metadata {
 // Cache of device configuration data for performance
 @Field static final Map<Integer, Map> configCache = [:]
 
+// Track of last heard from time for each device
+@Field static final Map<Integer, Long> lastHeard = [:]
+
 /**
  *  Hubitat Driver Event Handlers
  */
@@ -115,6 +118,10 @@ void initialize() {
     if (!settings.mqttBroker) {
         log.error 'Unable to connect because Broker setting not configured'
         return
+    }
+
+    if (settings.telePeriod) {
+        runIn(settings.telePeriod + 60, 'healthcheck')
     }
 
     mqttDisconnect()
@@ -390,6 +397,17 @@ private static int toKelvin(BigDecimal value) {
     return 1000000f / value as int
 }
 
+private void healthcheck() {
+    childDevices.each { device ->
+        int elapsed = (now() - lastHeard.getOrDefault(device.id, now())) / 1000
+        if (elapsed > settings.telePeriod) {
+            log.warn "${device} has not been heard from in ${elapsed} seconds"
+        }
+    }
+
+    runIn(settings.telePeriod + 60, 'healthcheck')
+}
+
 private Map newEvent(ChildDeviceWrapper device, String name, Object value, Map params = [:]) {
     String splitName = splitCamelCase(name).toLowerCase()
     String description = "${device.displayName} ${splitName} is ${value}${params.unit ?: ''}"
@@ -610,6 +628,9 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
     // Get the configuration from the device
     String index = getDeviceConfig(device)['index']
     Map json = parseJson(payload)
+
+    // Update last heard tracker
+    lastHeard[device.id] = now()
 
     // Iterate the json payload content
     json.each { kv ->
