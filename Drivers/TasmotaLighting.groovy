@@ -393,7 +393,6 @@ private static int toKelvin(BigDecimal value) {
 private Map newEvent(ChildDeviceWrapper device, String name, Object value, String unit = null) {
     String splitName = splitCamelCase(name).toLowerCase()
     String description = "${device.displayName} ${splitName} is ${value}${unit ?: ''}"
-    log.info description
     return [
         name: name,
         value: value,
@@ -672,16 +671,16 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
                 if (logEnable) { log.debug "${device} button number ${number} ${action}" }
                 switch (action) {
                     case 'SINGLE':
-                        events << newEvent(device, 'pushed', number)
+                        events << newEvent(device, 'pushed', number) + [ isStateChange: true ]
                         break
                     case 'DOUBLE':
-                        events << newEvent(device, 'doubleTapped', number)
+                        events << newEvent(device, 'doubleTapped', number) + [ isStateChange: true ]
                         break
                     // case 'TRIPLE':
                     // case 'QUAD':
                     // case 'PENTA':
                     case 'HOLD':
-                        events << newEvent(device, 'held', number)
+                        events << newEvent(device, 'held', number) + [ isStateChange: true ]
                         break
                 }
                 break
