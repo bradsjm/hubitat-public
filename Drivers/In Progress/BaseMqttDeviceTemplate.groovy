@@ -62,6 +62,12 @@ metadata {
                   title: 'Enable debug logging',
                   required: false,
                   defaultValue: true
+
+            input name: 'logTextEnable',
+                  type: 'bool',
+                  title: 'Enable descriptionText logging',
+                  required: false,
+                  defaultValue: true
         }
     }
 }
@@ -96,7 +102,8 @@ void mqttClientStatus(String status) {
 
 // Called to parse received MQTT data
 void parse(String data) {
-    mqttReceive(interfaces.mqtt.parseMessage(data))
+    Map message = interfaces.mqtt.parseMessage(data)
+    if (logEnable) { log.debug "RCV: ${message}" }
 }
 
 // Called when the device is removed.
@@ -118,11 +125,6 @@ void updated() {
  *  Implementation methods
  */
 
-private void parseTopicPayload(String topic, String payload) {
-    boolean isJson = payload.startsWith('{') && !payload.endsWith('}')
-    if (logEnable) { log.debug "${topic}: ${payload}" }
-}
-
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void subscribe() {
     mqttSubscribe('topic')
@@ -132,16 +134,16 @@ private void subscribe() {
  *  Common utility methods
  */
 
-private Map newEvent(String name, Object value, String unit = null) {
+private Map newEvent(String name, Object value, Map params = [:]) {
     String splitName = splitCamelCase(name).toLowerCase()
-    String description = "${device.displayName} ${splitName} is ${value}${unit ?: ''}"
+    String description = "${device.displayName} ${splitName} is ${value}${params.unit ?: ''}"
     log.info description
     return [
         name: name,
         value: value,
         unit: unit,
-        descriptionText: description
-    ]
+        descriptionText: settings.logTextEnable ? description : ''
+    ] + params
 }
 
 private String splitCamelCase(String s) {
@@ -190,13 +192,6 @@ private void mqttPublish(String topic, String payload = '', int qos = 0) {
         if (logEnable) { log.debug "PUB: ${topic} = ${payload}" }
         interfaces.mqtt.publish(topic, payload, qos, false)
     }
-}
-
-private void mqttReceive(Map message) {
-    String topic = message.get('topic')
-    String payload = message.get('payload')
-    if (logEnable) { log.debug "RCV: ${topic} = ${payload}" }
-    parseTopicPayload(topic, payload)
 }
 
 private void mqttSubscribe(String topic) {
