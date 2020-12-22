@@ -30,7 +30,7 @@ definition (
     namespace: 'nrgup',
     author: 'Jonathan Bradshaw',
     category: 'Lighting',
-    description: 'Sync your color temperature, color changing, and dimmable lights to natural daylight hues',
+    description: 'Sync your color temperature and/or color changing lights to natural daylight hues',
     iconUrl: '',
     iconX2Url: '',
     installOnOpen: true,
@@ -64,12 +64,6 @@ preferences {
                   title: 'Circadian RGB Color Adjustment Devices',
                   multiple: true,
                   required: false
-
-            input name: 'dimmableOnDevices',
-                  type: 'capability.switchLevel',
-                  title: 'Circadian Brightness Level Adjustment Devices',
-                  multiple: true,
-                  required: false
         }
 
         section('Fully Managed Lights (even when off)', hideable: true, hidden: true) {
@@ -82,20 +76,6 @@ preferences {
             input name: 'colorDevices',
                   type: 'capability.colorControl',
                   title: 'Circadian RGB Color Adjustment Devices',
-                  multiple: true,
-                  required: false
-
-            input name: 'dimmableDevices',
-                  type: 'capability.switchLevel',
-                  title: 'Circadian Brightness Level Adjustment Devices',
-                  multiple: true,
-                  required: false
-        }
-
-        section('Illuminance Configuration', hideable: true, hidden: true) {
-            input name: 'luxDevices',
-                  type: 'capability.illuminanceMeasurement',
-                  title: 'Lux Sensor Devices',
                   multiple: true,
                   required: false
         }
@@ -129,20 +109,6 @@ preferences {
                   required: false,
                   defaultValue: 0
 
-            input name: 'minBrightness',
-                  type: 'number',
-                  title: 'Minimum brightness (1-100)',
-                  range: '1..100',
-                  required: false,
-                  defaultValue: 30
-
-            input name: 'maxBrightness',
-                  type: 'number',
-                  title: 'Maximum brightness (1-100)',
-                  range: '1..100',
-                  required: false,
-                  defaultValue: 100
-
             input name: 'reenableDelay',
                   type: 'number',
                   title: 'Automatically re-enable lights after specified minutes (0 for never)',
@@ -151,7 +117,20 @@ preferences {
                   defaultValue: 60
         }
 
-        section {
+        section('Overrides', hideable: true, hidden: true) {
+            input name: 'disabledSwitch',
+                  type: 'capability.switch',
+                  title: 'Select switch to enable/disable manager'
+
+            input name: 'disabledSwitchValue',
+                    title: 'Disable lighting manager when switch is',
+                    type: 'enum',
+                    defaultValue: 'off',
+                    options: [
+                        on: 'on',
+                        off: 'off'
+                    ]
+
             input name: 'disabledModes',
                   type: 'mode',
                   title: 'Select mode(s) where lighting manager should be disabled',
@@ -193,40 +172,30 @@ void initialize() {
     unsubscribe()
     state.current = [:]
     state.disabledDevices = [:]
-    state.luxHistory = state.luxHistory ?: [:]
 
-    if (masterEnable) {
+    if (settings.masterEnable) {
         List activated = []
         if (colorTemperatureOnDevices) { activated.addAll(colorTemperatureOnDevices) }
         if (colorOnDevices) { activated.addAll(colorOnDevices) }
-        if (dimmableOnDevices) { activated.addAll(dimmableOnDevices) }
 
         List managed = []
         if (colorTemperatureDevices) { managed.addAll(colorTemperatureDevices) }
         if (colorDevices) { managed.addAll(colorDevices) }
-        if (dimmableDevices) { managed.addAll(dimmableDevices) }
 
         subscribe(colorTemperatureOnDevices, 'switch', 'updateLamp')
         subscribe(colorOnDevices, 'switch', 'updateLamp')
-        subscribe(dimmableOnDevices, 'switch', 'updateLamp')
 
         subscribe(colorTemperatureDevices, 'switch', 'updateLamp')
         subscribe(colorDevices, 'switch', 'updateLamp')
-        subscribe(dimmableDevices, 'switch', 'updateLamp')
 
-        subscribe(colorTemperatureOnDevices, 'level', 'levelCheck')
-        subscribe(colorOnDevices, 'level', 'levelCheck')
-        subscribe(dimmableOnDevices, 'level', 'levelCheck')
-        subscribe(colorTemperatureDevices, 'level', 'levelCheck')
-        subscribe(colorDevices, 'level', 'levelCheck')
-        subscribe(dimmableDevices, 'level', 'levelCheck')
+        subscribe(colorTemperatureOnDevices, 'colorTemperature', 'levelCheck')
+        subscribe(colorOnDevices, 'hue', 'levelCheck')
+        subscribe(colorTemperatureDevices, 'colorTemperature', 'levelCheck')
+        subscribe(colorDevices, 'hue', 'levelCheck')
 
         // Update circadian calculation and update lamps every 5 minutes
         schedule('0 */5 * * * ?', 'circadianUpdate')
         circadianUpdate()
-
-        // Every hour take a lux reading
-        schedule('0 0 * * * ?', 'luxHistoryUpdate')
     }
 }
 
@@ -275,29 +244,44 @@ private void circadianUpdate() {
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
-private void luxHistoryUpdate() {
-    int historySize = 5
-    String key = Calendar.instance.get(Calendar.HOUR_OF_DAY)
-    int lux = currentLuxValue()
-    log.info "Lux (hour ${key}) history: ${state.luxHistory[key]}"
-    state.luxHistory[key] = state.luxHistory.getOrDefault(key, []).takeRight(historySize - 1) + lux
-    log.info "Lux (hour ${key}) history: ${state.luxHistory[key]}"
-}
-
-/* groovylint-disable-next-line UnusedPrivateMethod */
 private void levelCheck(Event evt) {
     DeviceWrapper device = evt.device
+    String name = evt.name
     int value = evt.value as int
-    int brightness = state.current.brightness
+    int hue = state.current.hsv[0]
+    int ct = state.current.colorTemperature
 
-    if ((value > brightness + 5 || value < brightness - 5) &&
+    if (name == 'colorTemperature' && value != ct &&
         !state.disabledDevices.containsKey(device.id)) {
-        log.info "Disabling ${device} for circadian management due to manual brightness change"
+        log.info "Disabling ${device} for circadian management due to manual CT change"
+        state.disabledDevices.put(device.id, now())
+    } else if (name == 'hue' && value != hue &&
+        !state.disabledDevices.containsKey(device.id)) {
+        log.info "Disabling ${device} for circadian management due to manual hue change"
         state.disabledDevices.put(device.id, now())
     } else if (device.id in state.disabledDevices) {
         log.info "Re-enabling ${device} for circadian management (light now at circadian brightness)"
         state.disabledDevices.remove(device.id)
     }
+}
+
+private boolean isEnabled() {
+    if (!settings.masterEnable) {
+        log.info 'Manager is disabled'
+        return false
+    }
+
+    if (location.mode in disabledModes) {
+        log.info "Manager is disabled due to mode ${location.mode}"
+        return false
+    }
+
+    if (disabledSwitch && disabledSwitch.currentValue('switch') == disabledSwitchValue) {
+        log.info "Manager is disabled due to switch ${disabledSwitch} set to ${disabledSwitchValue}"
+        return false
+    }
+
+    return true
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
@@ -311,15 +295,7 @@ private void updateLamp(Event evt) {
         return
     }
 
-    if (location.mode in disabledModes) {
-        log.info "Manager is disabled due to mode ${location.mode}"
-        return
-    }
-
-    if (device.id in settings.dimmableOnDevices*.id && device.currentValue('level') != current.brightness) {
-        log.info "Setting ${device} level to ${current.brightness}%"
-        device.setLevel(current.brightness)
-    }
+    if (!isEnabled()) { return }
 
     if (device.id in settings.colorOnDevices*.id && (
         device.currentValue('hue') != current.hsv[0] ||
@@ -341,27 +317,15 @@ private void updateLamps() {
     Map current = state.current
     Map disabled = state.disabledDevices
 
-    if (location.mode in disabledModes) {
-        log.info "Manager is disabled due to mode ${location.mode}"
-        return
-    }
-
     // Remove disabled devices that have timed out
     if (settings.reenableDelay) {
         long expire = now() - (settings.reenableDelay * 60000)
         disabled.values().removeIf { v -> v <= expire }
     }
 
-    log.info 'Starting circadian updates to lights'
+    if (!isEnabled()) { return }
 
-    settings.dimmableOnDevices?.each { device ->
-        if (!disabled.containsKey(device.id) &&
-            device.currentValue('switch') == 'on' &&
-            device.currentValue('level') != current.brightness) {
-            if (logEnable) { log.debug "Setting ${device} level to ${current.brightness}%" }
-            device.setLevel(current.brightness)
-        }
-    }
+    log.info 'Starting circadian updates to lights'
 
     settings.colorOnDevices?.each { device ->
         if (!disabled.containsKey(device.id) &&
@@ -381,14 +345,6 @@ private void updateLamps() {
             device.currentValue('colorTemperature') != current.colorTemperature) {
             if (logEnable) { log.debug "Setting ${device} color temperature to ${current.colorTemperature}K" }
             device.setColorTemperature(current.colorTemperature)
-        }
-    }
-
-    settings.dimmableDevices?.each { device ->
-        if (!disabled.containsKey(device.id) &&
-            device.currentValue('level') != current.brightness) {
-            if (logEnable) { log.debug "Setting ${device} level to ${current.brightness}%" }
-            device.setLevel(current.brightness)
         }
     }
 
@@ -420,20 +376,15 @@ private Map currentCircadianValues() {
     )
     long midDay = after.sunrise.time + ((after.sunset.time - after.sunrise.time) / 2)
     long currentTime = now()
-    BigDecimal brightness = settings.minBrightness
     int range = settings.coldCT - settings.warmCT
     int colorTemp = settings.warmCT
 
     if (currentTime > after.sunrise.time && currentTime < after.sunset.time) {
         if (currentTime < midDay) {
             colorTemp = settings.warmCT + ((currentTime - after.sunrise.time) / (midDay - after.sunrise.time) * range)
-            brightness = ((currentTime - after.sunrise.time) / (midDay - after.sunrise.time))
         } else {
             colorTemp = settings.coldCT - ((currentTime - midDay) / (after.sunset.time - midDay) * range)
-            brightness = 1 - ((currentTime - midDay) / (after.sunset.time - midDay))
         }
-
-        brightness = settings.minBrightness + Math.round(brightness * (settings.maxBrightness - settings.minBrightness))
     }
 
     List<Integer> rgb = ctToRGB(colorTemp)
@@ -443,22 +394,6 @@ private Map currentCircadianValues() {
         sunrise: after.sunrise.time,
         sunset: after.sunset.time,
         colorTemperature: colorTemp,
-        brightness: brightness as int,
         hsv: hsv
     ]
 }
-
-/*
- * Average of lux sensors
- */
-private int currentLuxValue() {
-    int total = 0
-    int count = 0
-    luxDevices.each { d ->
-        int value = d.currentValue('illuminance')
-        if (value) { count++ }
-        total += value
-    }
-    return Math.round(total / count)
-}
-
