@@ -35,12 +35,9 @@ metadata {
         capability 'ColorMode'
         capability 'ColorTemperature'
         capability 'Initialize'
-        capability 'PresenceSensor'
         capability 'Switch'
         capability 'SwitchLevel'
         capability 'Refresh'
-
-        attribute 'notPresentCounter', 'number'
     }
 }
 
@@ -96,12 +93,9 @@ void initialize() {
     unschedule()
     tuyaQueues.remove(device.id)
 
-    if(device.currentValue('notPresentCounter') == null) {
-        sendEvent(name: "notPresentCounter", value: 0, descriptionText: "Initialized" )
-    }
-
     connect()
     schedule('*/15 * * ? * * *', 'heartbeat')
+    refresh()
 }
 
 // Called when the device is first created.
@@ -126,53 +120,58 @@ void updated() {
 
 // Parse incoming messages
 void parse(String message) {
+    ConcurrentLinkedQueue queue = getQueue()
     Map result = decode(HexUtils.hexStringToByteArray(message), settings.localKey)
-    Map queueItem = getQueue().poll()
+    Map queueItem = queue.poll()
 
     if (result.error) {
-        log.error 'RECV: ' + result
+        log.error result
         return
-    } else if (logEnable) {
-        log.debug 'RECV: ' + result
     }
 
     switch (result.commandByte) {
         case 7: // COMMAND ACK
             if (queueItem && queueItem.sequenceNumber) {
-                log.info "${device.displayName} received ack #${result.sequenceNumber} (RC: ${result.returnCode})"
+                if (logEnable) { log.trace 'Received ACK <- ' + result }
                 if (result.returnCode == 0 && queueItem.payload.dps) {
                     parseDps(queueItem.payload.dps)
                 }
+            } else {
+                log.warn "${device.displayName} received unrequested ACK ${result}"
             }
             break
         case 9: // HEART_BEAT ACK
-            if (logEnable) log.trace 'Received heartbeat'
+            if (logEnable) log.trace 'Received <- HEARTBEAT'
             break
         case 8: // STATUS RESULTS
         case 10: // DP_QUERY RESULTS
-            String source = result.sequenceNumber ? 'requested' : 'cloud'
-            log.info "${device.displayName} received ${source} action results"
+            if (logEnable) { log.trace 'Received RESULT <- ' + result }
             if (result.text && result.text.startsWith('{')) {
                 Map json = parseJson(result.text)
-                if (logEnable) { log.debug 'PARSED: ' + json }
                 parseDps(json.dps)
             } else if (result.text) {
-                log.info 'TEXT: ' + result.text
+                log.warn "${device.displayName} received TEXT <- ${result.text}"
             }
             break
         default:
-            if (logEnable) log.debug result
+            if (logEnable) { log.trace 'Received UNKNOWN <- ' + result }
             break
+    }
+
+    // Disconnect when queue processing is complete
+    if (queueItem.sequenceNumber && result.sequenceNumber >= queueItem.sequenceNumber && queue.peek() == null) {
+        log.info "${device.displayName} queue processing completed"
+        disconnect()
     }
 }
 
 // Socket status updates
 void socketStatus(String message) {
     if (message.contains('error')) {
-        log.error 'socketStatus: ' + message
-        disconnect()
+        log.error "${device.displayName} socketStatus ${message}"
+        connect()
     } else {
-        log.info message
+        log.info "${device.displayName} socketStatus ${message}"
     }
 }
 
@@ -511,6 +510,7 @@ private void connect() {
 
     try {
         log.info "${device.displayName} connecting to ${settings.ipAddress}"
+        interfaces.rawSocket.close()
         interfaces.rawSocket.connect(
             settings.ipAddress,
             6668,
@@ -518,14 +518,9 @@ private void connect() {
             readDelay: 500
         )
         log.info "${device.displayName} connected"
-        sendEvent(name: 'presence', value: 'present', descriptionText: 'Connected')
-        processQueue()
-        runIn(1, 'refresh')
         return
     } catch (e) {
         log.error "Connect Error: $e"
-        sendEvent(name: 'presence', value: 'not present', descriptionText: e)
-        sendEvent(name: "notPresentCounter", value: (device.currentValue('notPresentCounter') ?: 0) + 1)
     }
 }
 
@@ -540,14 +535,8 @@ private Map control(String devId, Map dps) {
 }
 
 private void disconnect() {
-    log.info "${device.displayName} closing connection"
-    sendEvent(name: 'presence', value: 'not present', descriptionText: message)
-    sendEvent(name: "notPresentCounter", value: (device.currentValue('notPresentCounter') ?: 0) + 1)
-    try {
-        interfaces.rawSocket.close()
-    } catch (e) {
-        log.error 'Disconnecting: ' + e
-    }
+    log.info "${device.displayName} disconnect"
+    interfaces.rawSocket.close()
 }
 
 private String getGenericName(List<Integer> hsv) {
@@ -595,22 +584,12 @@ private ConcurrentLinkedQueue getQueue() {
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void heartbeat() {
-    if (device.currentValue('presence') == 'not present') {
-        connect()
-        return
-    }
-
     Map queueItem = getQueue().peek()
-
-    if (queueItem && queueItem.sequenceNumber < now() - 5000) {
-        log.warn "${device.displayName} Re-connecting due to aging item detected in queue"
-        disconnect()
+    int age = queueItem ? (now() / 1000) - queueItem.sequenceNumber : 0
+    if (age > 5) {
+        log.warn "${device.displayName} re-connecting due to aging item (${age}s) detected in queue"
         connect()
-    }
-
-    if (!queueItem) {
-        if (logEnable) { log.trace 'Sending heartbeat' }
-        queue('HEART_BEAT')
+        processQueue()
     }
 }
 
@@ -706,24 +685,25 @@ private void queue(String command, Map payload = [:]) {
     Map queueItem = queue.peek()
 
     if (queueItem?.command == command && queueItem?.payload?.dps == payload?.dps) {
-        log.info "Duplicate queue item ${command} ignored"
+        log.info "${device.displayName} duplicate ${command} ignored"
         return
     }
 
     int size = queue.size()
     if (size >= 5) {
-        log.warn "Queue is full (${size})"
-        queue.poll()
+        log.warn "${device.displayName} removing oldest queue item"
+        queue.poll() // remove oldest item
     }
 
     queue.add([
         'command': command,
         'payload': payload,
-        'sequenceNumber': now()
+        'sequenceNumber': now() / 1000 as long
     ])
 
     if (!size) {
-        if (logEnable) { log.trace 'Starting queue processing' }
+        log.info "${device.displayName} starting queue processing"
+        connect()
         processQueue()
     }
 }
@@ -740,8 +720,13 @@ private void processQueue() {
             queueItem.sequenceNumber
         )
 
-        interfaces.rawSocket.sendMessage(HexUtils.byteArrayToHexString(output))
-        if (logEnable) { log.trace "Sending ${queueItem.command} -> ${queueItem.payload}" }
+        log.info "${device.displayName} sending ${queueItem.command} command"
+        if (logEnable) { log.trace "Sending ${queueItem.command} -> ${queueItem.payload} (seq #${queueItem.sequenceNumber})" }
+        try {
+            interfaces.rawSocket.sendMessage(HexUtils.byteArrayToHexString(output))
+        } catch (e) {
+            log.warn e
+        }
     }
 
     int size = queue.size() - 1
