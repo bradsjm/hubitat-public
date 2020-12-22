@@ -390,15 +390,14 @@ private static int toKelvin(BigDecimal value) {
     return Math.round(1000000f / value) as int
 }
 
-private Map newEvent(ChildDeviceWrapper device, String name, Object value, String unit = null) {
+private Map newEvent(ChildDeviceWrapper device, String name, Object value, Map params = [:]) {
     String splitName = splitCamelCase(name).toLowerCase()
-    String description = "${device.displayName} ${splitName} is ${value}${unit ?: ''}"
+    String description = "${device.displayName} ${splitName} is ${value}${params.unit ?: ''}"
     return [
         name: name,
         value: value,
-        unit: unit,
         descriptionText: description
-    ]
+    ] + params
 }
 
 // Create topic subscription map from child devices
@@ -624,12 +623,12 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
                 break
             case 'Dimmer':
                 if (device.currentValue('level') != kv.value) {
-                    events << newEvent(device, 'level', kv.value, '%')
+                    events << newEvent(device, 'level', kv.value, [unit: '%'])
                 }
                 break
             case 'CT':
                 if (device.currentValue('colorTemperature') != kv.value) {
-                    events << newEvent(device, 'colorTemperature', toKelvin(kv.value), 'K')
+                    events << newEvent(device, 'colorTemperature', toKelvin(kv.value), [unit: 'K'])
                 }
                 break
             case 'Color':
@@ -655,7 +654,7 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
                 break
             case 'ENERGY':
                 if (device.currentValue('power') != kv.value) {
-                    events << newEvent(device, 'power', kv.value['Power'], 'W')
+                    events << newEvent(device, 'power', kv.value['Power'], [unit: 'W'])
                 }
                 break
             case 'Button1':
@@ -671,16 +670,16 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
                 if (logEnable) { log.debug "${device} button number ${number} ${action}" }
                 switch (action) {
                     case 'SINGLE':
-                        events << newEvent(device, 'pushed', number) + [ isStateChange: true ]
+                        events << newEvent(device, 'pushed', number, [type: physical, isStateChange: true])
                         break
                     case 'DOUBLE':
-                        events << newEvent(device, 'doubleTapped', number) + [ isStateChange: true ]
+                        events << newEvent(device, 'doubleTapped', number, [type: physical, isStateChange: true])
                         break
                     // case 'TRIPLE':
                     // case 'QUAD':
                     // case 'PENTA':
                     case 'HOLD':
-                        events << newEvent(device, 'held', number) + [ isStateChange: true ]
+                        events << newEvent(device, 'held', number, [type: physical, isStateChange: true])
                         break
                 }
                 break
