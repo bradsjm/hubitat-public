@@ -251,7 +251,7 @@ private void levelCheck(Event evt) {
     int hue = state.current.hsv[0]
     int ct = state.current.colorTemperature
 
-    if (name == 'colorTemperature' && value != ct &&
+    if (name == 'colorTemperature' && toMireds(value) != toMireds(ct) &&
         !state.disabledDevices.containsKey(device.id)) {
         log.info "Disabling ${device} for circadian management due to manual CT change"
         state.disabledDevices.put(device.id, now())
@@ -396,4 +396,9 @@ private Map currentCircadianValues() {
         colorTemperature: colorTemp,
         hsv: hsv
     ]
+}
+
+// Convert kelvin to mireds
+private static int toMireds(BigDecimal value) {
+    return 1000000f / value as int
 }

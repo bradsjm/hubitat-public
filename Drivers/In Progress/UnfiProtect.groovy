@@ -20,10 +20,12 @@
  *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  *  SOFTWARE.
 */
-import groovy.transform.Field
 import groovy.json.JsonOutput
-import hubitat.scheduling.AsyncResponse
+import groovy.transform.Field
 import hubitat.helper.HexUtils
+import hubitat.scheduling.AsyncResponse
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 
 metadata {
     definition (name: 'UniFi Protect', namespace: 'nrgup', author: 'Jonathan Bradshaw', importUrl: '') {
@@ -121,52 +123,158 @@ void updated() {
     if (logEnable) { runIn(1800, 'logsOff') }
 }
 
-private static Map decodeUpdatePacket(byte[] packet) {
+/* A packet header is composed of 8 bytes in this order:
+ *
+ * Byte Offset  Description      Bits  Values
+ * 0            Packet Type      8     1 - action frame, 2 - payload frame.
+ * 1            Payload Format   8     1 - JSON object, 2 - UTF8-encoded string, 3 - Node Buffer.
+ * 2            Deflated         8     0 - uncompressed, 1 - compressed / deflated (zlib-based compression).
+ * 3            Unknown          8     Always 0. Possibly reserved for future use by Ubiquiti?
+ * 4-7          Payload Size:    32    Size of payload in network-byte order (big endian).
+ */
+private Map decodeUpdatePacket(byte[] packet) {
     Map result = [:]
-    int dataOffset = getUInt32(packet, 4) + 8 as int // UPDATE_PACKET_HEADER_SIZE is 8
-    result.size = (dataOffset + 8 + getUInt32(packet, dataOffset + 4)) // PAYLOAD_SIZE is 4
-    if (packet.length != result.size) {
-        result.error = "Packet length ${packet.length} does not match header information ${result.size}"
-        return result
+
+    int packetType = packet[0]
+    int payloadFormat = packet[1]
+    boolean deflated = packet[2]
+    int payloadSize = getUInt32(packet, 4)
+
+    if (deflated) {
+        decompress(new ByteArrayInputStream(packet, 8, payloadSize))
     }
 
-    return decodeUpdateFrame(packet, dataOffset)
+    return [:]
 }
 
-private static Map decodeUpdateFrame(byte[] frame, int dataOffset) {
-    String packetType
-    String payloadFormat
-
-    switch (frame[dataOffset]) {
-            case 1:
-                packetType = 'action'
-                break
-            case 2:
-                packetType = 'payload'
-                break
-    }
-
-    switch (frame[dataOffset + 1]) {
-            case 1:
-                payloadFormat = 'json'
-                break
-            case 2:
-                payloadFormat = 'string'
-                break
-            case 3:
-                payloadFormat = 'buffer'
-                break
-    }
-
-    boolean compressed = frame[dataOffset + 2] as boolean
-    if (compressed) {
-    }
-
-    return [
-        packetType : packetType,
-        payloadFormat : payloadFormat,
-        compressed: compressed
+private ByteArrayOutputStream decompress(ByteArrayInputStream input) {
+    ByteArrayOutputStream outstream = new ByteArrayOutputStream()
+    byte[] dictionary = new byte[32 * 1024]
+    Map ctx = [
+        input: input,
+        currentByte: 0 as byte,
+        numBitsRemaining: 0 as byte
     ]
+
+    // Zlib Header
+    byte cmf = input.read()
+    byte flg = input.read()
+
+    boolean bFinal = readBit(ctx) == 1
+    int bType = readInt(ctx, 2)
+
+    switch (bType) {
+        case 2:
+            Map litLenAndDist = decodeHuffmanCodes(ctx)
+            break
+    }
+
+    log.debug "bFinal ${bFinal}"
+    log.debug "bType ${bType}"
+
+    return outstream
+}
+
+// Reads from the bit input stream, decodes the Huffman code
+// specifications into code trees, and returns the trees.
+private Map decodeHuffmanCodes(Map ctx) {
+    int numLitLenCodes = readInt(ctx, 5) + 257;  // hlit + 257
+    int numDistCodes = readInt(ctx, 5) + 1;      // hdist + 1
+
+    // Read the code length code lengths
+    int numCodeLenCodes = readInt(ctx, 4) + 4;   // hclen + 4
+    int[] codeLenCodeLen = new int[19];  // This array is filled in a strange order
+    codeLenCodeLen[16] = readInt(ctx, 3);
+    codeLenCodeLen[17] = readInt(ctx, 3);
+    codeLenCodeLen[18] = readInt(ctx, 3);
+    codeLenCodeLen[ 0] = readInt(ctx, 3);
+
+    for (int i = 0; i < numCodeLenCodes - 4; i++) {
+        int j = (i % 2 == 0) ? (8 + i / 2) : (7 - i / 2);
+        codeLenCodeLen[j] = readInt(ctx, 3);
+    }
+
+    Map codeLenCode = canonicalCode(codeLenCodeLen)
+
+    // Read the main code lengths and handle runs
+    int[] codeLens = new int[numLitLenCodes + numDistCodes]
+    for (int codeLensIndex = 0; codeLensIndex < codeLens.length ) {
+        int sym = codeLenCode.decodeNextSymbol(input);
+        if (0 <= sym && sym <= 15) {
+            codeLens[codeLensIndex] = sym;
+            codeLensIndex++;
+        } else {
+            int runLen;
+            int runVal = 0;
+            if (sym == 16) {
+                if (codeLensIndex == 0)
+                    throw new DataFormatException("No code length value to copy");
+                runLen = readInt(2) + 3;
+                runVal = codeLens[codeLensIndex - 1];
+            } else if (sym == 17)
+                runLen = readInt(3) + 3;
+            else if (sym == 18)
+                runLen = readInt(7) + 11;
+            else
+                throw new AssertionError("Symbol out of range");
+            int end = codeLensIndex + runLen;
+            if (end > codeLens.length)
+                throw new DataFormatException("Run exceeds number of codes");
+            Arrays.fill(codeLens, codeLensIndex, end, runVal);
+            codeLensIndex = end;
+        }
+    }
+}
+
+// Decompresses a Huffman-coded block from the bit input stream based on the given Huffman codes.
+private void decompressHuffmanBlock(Map ctx) {
+    
+}
+
+private Map canonicalCode(int[] codeLengths) {
+    int[] symbolCodeBits = new int[codeLengths.length]
+    int[] symbolValues   = new int[codeLengths.length]
+    int numSymbolsAllocated = 0
+    int nextCode = 0
+    for (int codeLength = 1; codeLength <= 15; codeLength++) {
+        nextCode <<= 1
+        int startBit = 1 << codeLength
+        for (int symbol = 0; symbol < codeLengths.length; symbol++) {
+            if (codeLengths[symbol] != codeLength)
+                continue
+            symbolCodeBits[numSymbolsAllocated] = startBit | nextCode;
+            symbolValues  [numSymbolsAllocated] = symbol;
+            numSymbolsAllocated++;
+            nextCode++;
+        }
+    }
+    // Trim unused trailing elements
+    symbolCodeBits = Arrays.copyOf(symbolCodeBits, numSymbolsAllocated)
+    symbolValues   = Arrays.copyOf(symbolValues  , numSymbolsAllocated)
+    return [
+        symbolCodeBits: symbolCodeBits,
+        symbolValues: symbolValues
+    ]
+}
+
+private byte readBit(Map ctx) {
+    ctx.with {
+        if (currentByte == -1) { return -1 }
+        if (numBitsRemaining == 0) {
+            currentByte = ctx.input.read()
+            if (currentByte == -1) { return -1 }
+            numBitsRemaining = 8
+        }
+        numBitsRemaining--
+        return (currentByte >>> (7 - numBitsRemaining)) & 1
+    }
+}
+
+private int readInt(Map ctx, int numBits) {
+    int result = 0
+    for (int i = 0; i < numBits; i++)
+        result |= readBit(ctx) << i
+    return result;
 }
 
 private static long getUInt32(byte[] buffer, long start) {
