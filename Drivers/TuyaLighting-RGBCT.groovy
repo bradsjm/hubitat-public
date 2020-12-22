@@ -159,9 +159,12 @@ void parse(String message) {
     }
 
     // Disconnect when queue processing is complete
-    if (queueItem.sequenceNumber && result.sequenceNumber >= queueItem.sequenceNumber && queue.peek() == null) {
+    if (queueItem?.sequenceNumber && result.sequenceNumber >= queueItem.sequenceNumber && queue.peek() == null) {
         log.info "${device.displayName} queue processing completed"
         disconnect()
+    } else if (queue.peek()) {
+        log.info "${device.displayName} queue processing continues"
+        runInMillis(10, 'processQueue')
     }
 }
 
@@ -518,6 +521,7 @@ private void connect() {
             readDelay: 500
         )
         log.info "${device.displayName} connected"
+        runInMillis(10, 'processQueue')
         return
     } catch (e) {
         log.error "Connect Error: $e"
@@ -586,10 +590,9 @@ private ConcurrentLinkedQueue getQueue() {
 private void heartbeat() {
     Map queueItem = getQueue().peek()
     int age = queueItem ? (now() / 1000) - queueItem.sequenceNumber : 0
-    if (age > 5) {
-        log.warn "${device.displayName} re-connecting due to aging item (${age}s) detected in queue"
+    if (age > 50) {
+        log.warn "${device.displayName} re-connecting due to aging item (${age}ms) detected in queue"
         connect()
-        processQueue()
     }
 }
 
@@ -703,16 +706,14 @@ private void queue(String command, Map payload = [:]) {
 
     if (!size) {
         log.info "${device.displayName} starting queue processing"
-        connect()
-        processQueue()
+        runInMillis(10, 'connect')
     }
 }
 
 private void processQueue() {
-    ConcurrentLinkedQueue queue = getQueue()
-    Map queueItem
+    Map queueItem = getQueue().peek()
 
-    if ((queueItem = queue.peek())) {
+    if (queueItem) {
         byte[] output = encode(
             queueItem.command,
             JsonOutput.toJson(queueItem.payload),
@@ -727,12 +728,6 @@ private void processQueue() {
         } catch (e) {
             log.warn e
         }
-    }
-
-    int size = queue.size() - 1
-    if (size > 0) {
-        runInMillis(500, 'processQueue')
-        if (logEnable) { log.trace "Resuming queue (length ${size}) processing in 500ms" }
     }
 }
 
