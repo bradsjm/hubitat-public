@@ -236,6 +236,10 @@ private static List<Integer> ctToRGB(int colorTemp) {
     return [ r as int, g as int, b as int ]
 }
 
+private static int diff(int value1, int value2) {
+    return Math.abs(value1 - value2)
+}
+
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void circadianUpdate() {
     state.current = currentCircadianValues()
@@ -248,19 +252,19 @@ private void levelCheck(Event evt) {
     DeviceWrapper device = evt.device
     String name = evt.name
     int value = evt.value as int
-    int hue = state.current.hsv[0]
-    int ct = state.current.colorTemperature
+    int hue = state.current.hsv[0] as int
+    int ct = state.current.colorTemperature as int
 
-    if (name == 'colorTemperature' && toMireds(value) != toMireds(ct) &&
+    if (name == 'colorTemperature' && diff(value, ct) > 100 &&
         !state.disabledDevices.containsKey(device.id)) {
         log.info "Disabling ${device} for circadian management due to manual CT change"
         state.disabledDevices.put(device.id, now())
-    } else if (name == 'hue' && value != hue &&
+    } else if (name == 'hue' && diff(value, hue) > 10 &&
         !state.disabledDevices.containsKey(device.id)) {
         log.info "Disabling ${device} for circadian management due to manual hue change"
         state.disabledDevices.put(device.id, now())
     } else if (device.id in state.disabledDevices) {
-        log.info "Re-enabling ${device} for circadian management (light now at circadian brightness)"
+        log.info "Re-enabling ${device} for circadian management"
         state.disabledDevices.remove(device.id)
     }
 }
@@ -396,9 +400,4 @@ private Map currentCircadianValues() {
         colorTemperature: colorTemp,
         hsv: hsv
     ]
-}
-
-// Convert kelvin to mireds
-private static int toMireds(BigDecimal value) {
-    return 1000000f / value as int
 }
