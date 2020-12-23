@@ -204,7 +204,8 @@ void off() {
 void componentOn(DeviceWrapper device) {
     Map config = getDeviceConfig(device)
     String topic = getCommandTopic(config) + 'Backlog'
-    String fadeCommand = fadeCommand(settings.fadeTime)
+    boolean isTuyaMcu = config['ty']
+    String fadeCommand = isTuyaMcu ? '' : fadeCommand(settings.fadeTime)
     log.info "Turning ${device} on"
     mqttPublish(topic, fadeCommand + "POWER${config.index ?: 1} 1")
 }
@@ -212,16 +213,19 @@ void componentOn(DeviceWrapper device) {
 void componentOff(DeviceWrapper device) {
     Map config = getDeviceConfig(device)
     String topic = getCommandTopic(config) + 'Backlog'
-    String fadeCommand = fadeCommand(settings.fadeTime)
+    boolean isTuyaMcu = config['ty']
+    String fadeCommand = isTuyaMcu ? '' : fadeCommand(settings.fadeTime)
     log.info "Turning ${device} off"
     mqttPublish(topic, fadeCommand + "POWER${config.index ?: 1} 0")
 }
 
-void componentSetLevel(DeviceWrapper device, BigDecimal level, BigDecimal duration = 0) {
+void componentSetLevel(DeviceWrapper device, BigDecimal level, BigDecimal duration = -1) {
     Map config = getDeviceConfig(device)
     String topic = getCommandTopic(config) + 'Backlog'
-    String fadeCommand = fadeCommand(duration ?: settings.fadeTime)
-    log.info "Setting ${device} level to ${level}% over ${duration}s"
+    int seconds = duration >= 0 ? duration : settings.fadeTime
+    boolean isTuyaMcu = config['ty']
+    String fadeCommand = isTuyaMcu ? '' : fadeCommand(seconds)
+    log.info "Setting ${device} level to ${level}% over ${seconds}s"
     mqttPublish(topic, fadeCommand + "Dimmer${config.index ?: 1} ${level}")
 }
 
