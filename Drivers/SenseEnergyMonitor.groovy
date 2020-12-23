@@ -56,7 +56,7 @@ metadata {
                       required: true
 
                 input name: 'password',
-                      type: 'text',
+                      type: 'password',
                       title: 'Sense Password',
                       required: true
             }
