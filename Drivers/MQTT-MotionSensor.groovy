@@ -22,9 +22,9 @@
  */
 
 metadata {
-    definition (name: 'MQTT - Garage Door', namespace: 'nrgup', author: 'Jonathan Bradshaw') {
-        capability 'GarageDoorControl'
+    definition (name: 'MQTT - Motion Sensor', namespace: 'nrgup', author: 'Jonathan Bradshaw') {
         capability 'Initialize'
+        capability 'MotionSensor'
         capability 'PresenceSensor'
     }
 
@@ -33,13 +33,7 @@ metadata {
             input name: 'stateTopic',
                   type: 'text',
                   title: 'MQTT State Topic',
-                  description: 'ex: /garagedoor_control/state',
-                  required: true
-
-            input name: 'commandTopic',
-                  type: 'text',
-                  title: 'MQTT Command Topic',
-                  description: 'ex: /garagedoor_control/command',
+                  description: 'ex: /motionsensor/state',
                   required: true
 
             input name: 'availabilityTopic',
@@ -48,18 +42,18 @@ metadata {
                   description: 'ex: /garagedoor/status',
                   required: false
 
-            input name: 'travelTime',
-                  type: 'enum',
-                  title: 'Door Travel Time (seconds)',
-                  description: 'Minimum time for door to cycle',
-                  defaultValue: 15,
-                  required: true,
-                  options: [
-                    15: '15 seconds',
-                    30: '30 seconds',
-                    45: '45 seconds',
-                    60: '1 minute'
-                  ]
+            input name: 'activeValue',
+                  type: 'text',
+                  title: 'Active Payload Value',
+                  description: 'ex: active',
+                  required: true
+
+            input name: 'reverseState',
+                  type: 'bool',
+                  title: 'Invert match',
+                  description: 'Set state when value does not match',
+                  required: false,
+                  defaultValue: false
         }
 
         section {
@@ -140,26 +134,9 @@ void parse(String data) {
     }
 
     if (message.topic == settings.stateTopic) {
-        String doorState = device.currentValue('door')
-        if (logEnable) { log.debug "Current door state is ${doorState}" }
-        switch (doorState) {
-            case 'opening':
-                if (message.payload == 'open') {
-                    updateState(message.payload)
-                } else {
-                    runIn(settings.travelTime as int, 'updateState', [ data: message.payload ])
-                }
-                break
-            case 'closing':
-                if (message.payload == 'closed') {
-                    updateState(message.payload)
-                } else {
-                    runIn(settings.travelTime as int, 'updateState', [ data: message.payload ])
-                }
-                break
-            default:
-                updateState(message.payload)
-        }
+        boolean match = message.payload == settings.activeValue
+        if (settings.reverseState) { match = !match }
+        sendEvent(newEvent('motion', match ? 'active' : 'inactive'))
     }
 }
 
@@ -176,44 +153,6 @@ void updated() {
     initialize()
 
     if (logEnable) { runIn(1800, 'logsOff') }
-}
-
-/**
- *  Capability: Door Control
- */
-
-// Open door
-void open() {
-    String doorState = device.currentValue('door')
-    if (logEnable) { log.debug "Current door state is ${doorState}" }
-    if (doorState != 'closed' || doorState == 'opening') {
-        log.info "${device.displayName} ignoring open request (door is ${doorState})"
-        return
-    }
-
-    mqttPublish(settings.commandTopic, 'open')
-    sendEvent(newEvent('door', 'opening'))
-}
-
-// Close door
-void close() {
-    String doorState = device.currentValue('door')
-    if (logEnable) { log.debug "Current door state is ${doorState}" }
-    if (doorState != 'open' || doorState == 'closing') {
-        log.info "${device.displayName} ignoring close request (door is ${doorState})"
-        return
-    }
-
-    mqttPublish(settings.commandTopic, 'close')
-    sendEvent(newEvent('door', 'closing'))
-}
-
-/* groovylint-disable-next-line UnusedPrivateMethod */
-private void updateState(String value) {
-    unschedule('updateState')
-    String doorState = device.currentValue('door')
-    if (logEnable) { log.debug "Update door state from ${doorState} to ${value}" }
-    sendEvent(newEvent('door', value))
 }
 
 /**
@@ -285,13 +224,6 @@ private void mqttDisconnect() {
     sendEvent(newEvent('presence', 'not present'))
 }
 
-private void mqttPublish(String topic, String payload = '', int qos = 0) {
-    if (interfaces.mqtt.connected) {
-        if (logEnable) { log.debug "PUB: ${topic} = ${payload}" }
-        interfaces.mqtt.publish(topic, payload, qos, false)
-    }
-}
-
 private void mqttSubscribe(String topic) {
     if (interfaces.mqtt.connected) {
         if (logEnable) { log.debug "SUB: ${topic}" }
@@ -335,4 +267,3 @@ private void logsOff() {
     device.updateSetting('logEnable', [value: 'false', type: 'bool'] )
     log.info "debug logging disabled for ${device.displayName}"
 }
-
