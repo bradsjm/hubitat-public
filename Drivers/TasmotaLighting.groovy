@@ -225,7 +225,7 @@ void componentSetLevel(DeviceWrapper device, BigDecimal level, BigDecimal durati
     int seconds = duration >= 0 ? duration : settings.fadeTime
     boolean isTuyaMcu = config['ty']
     String fadeCommand = isTuyaMcu ? '' : fadeCommand(seconds)
-    log.info "Setting ${device} level to ${level}%" + isTuyaMcu ? '' : "over ${seconds}s"
+    log.info "Setting ${device} level to ${level}%" + (isTuyaMcu ? '' : " over ${seconds}s")
     mqttPublish(topic, fadeCommand + "Dimmer${config.index ?: 1} ${level}")
 }
 
