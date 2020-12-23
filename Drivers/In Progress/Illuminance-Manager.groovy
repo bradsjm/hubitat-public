@@ -53,45 +53,59 @@ preferences {
         }
 
         section('Managed Lights', hideable: true, hidden: true) {
-            input name: 'dimmableOnDevices',
+            input name: 'dimmableDevices',
                   type: 'capability.switchLevel',
-                  title: 'Circadian Brightness Level Adjustment Devices',
+                  title: 'Select lights to adjust brightness level',
                   multiple: true,
                   required: false
 
-            input name: 'dimmableDevices',
+            input name: 'dimmableOnDevices',
                   type: 'capability.switchLevel',
-                  title: 'Circadian Brightness Level Adjustment Devices',
+                  title: 'Select lights to adjust level only when on',
                   multiple: true,
                   required: false
         }
 
-        section('Illuminance Configuration', hideable: true, hidden: true) {
+        section('Illuminance Measurement', hideable: true, hidden: true) {
             input name: 'luxDevices',
                   type: 'capability.illuminanceMeasurement',
                   title: 'Lux Sensor Devices',
                   multiple: true,
-                  required: false
+                  required: true
+
+            input name: 'maxLux',
+                  type: 'number',
+                  title: 'Maximum Lux Value',
+                  range: '100..20000',
+                  required: true,
+                  defaultValue: 1000
         }
 
-        section('Configuration', hideable: true, hidden: true) {
-            input name: 'minBrightness',
+        section('Configuration Settings', hideable: true, hidden: true) {
+            input name: 'minLevel',
                   type: 'number',
-                  title: 'Minimum brightness (1-100)',
-                  range: '1..100',
-                  required: false,
-                  defaultValue: 30
+                  title: 'Minimum brightness level',
+                  range: '10..99',
+                  required: true,
+                  defaultValue: 10
 
-            input name: 'maxBrightness',
+            input name: 'maxLevel',
                   type: 'number',
-                  title: 'Maximum brightness (1-100)',
-                  range: '1..100',
-                  required: false,
+                  title: 'Maximum brightness level',
+                  range: '11..100',
+                  required: true,
                   defaultValue: 100
+
+            input name: 'transitionSeconds',
+                  type: 'number',
+                  title: 'Transition seconds for level changes',
+                  range: '0..60',
+                  required: true,
+                  defaultValue: 20
 
             input name: 'reenableDelay',
                   type: 'number',
-                  title: 'Automatically re-enable lights after specified minutes (0 for never)',
+                  title: 'Automatically re-enable control after specified minutes (0 for never)',
                   range: '0..600',
                   required: false,
                   defaultValue: 60
@@ -106,7 +120,7 @@ preferences {
                     title: 'Disable lighting manager when switch is',
                     type: 'enum',
                     required: true,
-                    defaultValue: 10,
+                    defaultValue: 'off',
                     options: [
                         on: 'on',
                         off: 'off'
@@ -151,7 +165,7 @@ void initialize() {
     log.info "${app.name} initializing"
     unschedule()
     unsubscribe()
-    state.current = [:]
+    state.brightness = 0
     state.disabledDevices = [:]
     state.luxHistory = state.luxHistory ?: [:]
 
@@ -170,10 +184,20 @@ void initialize() {
     }
 }
 
+private static int calculateLevel(Integer illum, Integer maxIllum, Integer minLevel, Integer maxLevel) {
+    float m = -0.1     // multiplier/slope 
+
+    int y = m * ( illum - maxIllum )
+    if ( y < minLevel ) { y = minLevel }
+    if ( y > maxLevel ) { y = maxLevel }
+    return y
+}
+
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void levelUpdate() {
-    //state.current = currentCircadianValues()
-    //log.info "Circadian State now: ${state.current}"
+    int lux = currentLuxValue()
+    state.brightness = calculateLevel(lux, settings.maxLux as int, settings.minLevel as int, settings.maxLevel as int)
+    log.info "Lux at ${lux}, brightness calculation ${state.brightness}%"
     updateLamps()
 }
 
@@ -182,7 +206,6 @@ private void luxHistoryUpdate() {
     int historySize = 5
     String key = Calendar.instance.get(Calendar.HOUR_OF_DAY)
     int lux = currentLuxValue()
-    log.info "Lux (hour ${key}) history: ${state.luxHistory[key]}"
     state.luxHistory[key] = state.luxHistory.getOrDefault(key, []).takeRight(historySize - 1) + lux
     log.info "Lux (hour ${key}) history: ${state.luxHistory[key]}"
 }
@@ -191,25 +214,25 @@ private void luxHistoryUpdate() {
 private void levelCheck(Event evt) {
     DeviceWrapper device = evt.device
     int value = evt.value as int
-    int brightness = state.current.brightness
+    int brightness = state.brightness
 
     if ((value > brightness + 5 || value < brightness - 5) &&
         !state.disabledDevices.containsKey(device.id)) {
-        log.info "Disabling ${device} for circadian management due to manual brightness change"
+        log.info "Disabling ${device} for illuminance management due to manual brightness change"
         state.disabledDevices.put(device.id, now())
     } else if (device.id in state.disabledDevices) {
-        log.info "Re-enabling ${device} for circadian management (light now at circadian brightness)"
+        log.info "Re-enabling ${device} for illuminance management (light now at ${value}%)"
         state.disabledDevices.remove(device.id)
     }
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void updateLamp(Event evt) {
-    Map current = state.current
+    int brightness = state.brightness
     DeviceWrapper device = evt.device
 
     if (evt.value == 'off' && device.id in state.disabledDevices) {
-        log.info "Re-enabling ${device} for circadian management (light turned off)"
+        log.info "Re-enabling ${device} for illuminance management (light turned off)"
         state.disabledDevices.remove(device.id)
         return
     }
@@ -224,15 +247,15 @@ private void updateLamp(Event evt) {
         return
     }
 
-    if (device.id in settings.dimmableOnDevices*.id && device.currentValue('level') != current.brightness) {
-        log.info "Setting ${device} level to ${current.brightness}%"
-        device.setLevel(current.brightness)
+    if (device.id in settings.dimmableOnDevices*.id && device.currentValue('level') != brightness) {
+        log.info "Setting ${device} level to ${brightness}%"
+        device.setLevel(brightness, settings.transitionSeconds as int)
     }
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void updateLamps() {
-    Map current = state.current
+    int brightness = state.brightness
     Map disabled = state.disabledDevices
 
     if (location.mode in disabledModes) {
@@ -246,22 +269,22 @@ private void updateLamps() {
         disabled.values().removeIf { v -> v <= expire }
     }
 
-    log.info 'Starting circadian updates to lights'
+    log.info 'Starting illuminance level updates to lights'
 
     settings.dimmableOnDevices?.each { device ->
         if (!disabled.containsKey(device.id) &&
             device.currentValue('switch') == 'on' &&
-            device.currentValue('level') != current.brightness) {
-            if (logEnable) { log.debug "Setting ${device} level to ${current.brightness}%" }
-            device.setLevel(current.brightness)
+            device.currentValue('level') != brightness) {
+            if (logEnable) { log.debug "Setting ${device} level to ${brightness}%" }
+            device.setLevel(brightness, settings.transitionSeconds as int)
         }
     }
 
     settings.dimmableDevices?.each { device ->
         if (!disabled.containsKey(device.id) &&
-            device.currentValue('level') != current.brightness) {
-            if (logEnable) { log.debug "Setting ${device} level to ${current.brightness}%" }
-            device.setLevel(current.brightness)
+            device.currentValue('level') != brightness) {
+            if (logEnable) { log.debug "Setting ${device} level to ${brightness}%" }
+            device.setLevel(brightness, settings.transitionSeconds as int)
         }
     }
 }
