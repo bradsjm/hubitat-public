@@ -47,6 +47,19 @@ metadata {
                   title: 'MQTT Availability Topic',
                   description: 'ex: /garagedoor/status',
                   required: false
+
+            input name: 'travelTime',
+                  type: 'enum',
+                  title: 'Door Travel Time (seconds)',
+                  description: 'Minimum time for door to cycle',
+                  defaultValue: 15,
+                  required: true,
+                  options: [
+                    15: '15 seconds',
+                    30: '30 seconds',
+                    45: '45 seconds',
+                    60: '1 minute'
+                  ]
         }
 
         section {
@@ -94,6 +107,7 @@ metadata {
 void initialize() {
     log.info "${device.displayName} driver initializing"
     unschedule()
+    state.clear()
 
     if (!settings.mqttBroker) {
         log.error 'Unable to connect because Broker setting not configured'
@@ -118,14 +132,33 @@ void mqttClientStatus(String status) {
 void parse(String data) {
     Map message = interfaces.mqtt.parseMessage(data)
     if (logEnable) { log.debug "RCV: ${message}" }
+
     if (message.topic == settings.availabilityTopic) {
         sendEvent(newEvent('presence', message.payload == 'online' ? 'present' : 'not present'))
         return
     }
 
     if (message.topic == settings.stateTopic) {
-        sendEvent(newEvent('door', message.payload))
-        return
+        String doorState = device.currentValue('door')
+        if (logEnable) { log.debug "Current door state is ${doorState}" }
+        switch (doorState) {
+            case 'opening':
+                if (message.payload == 'open') {
+                    updateState(message.payload)
+                } else {
+                    runIn(settings.travelTime as int, 'updateState', [ data: message.payload ])
+                }
+                break
+            case 'closing':
+                if (message.payload == 'closed') {
+                    updateState(message.payload)
+                } else {
+                    runIn(settings.travelTime as int, 'updateState', [ data: message.payload ])
+                }
+                break
+            default:
+                updateState(message.payload)
+        }
     }
 }
 
@@ -151,8 +184,9 @@ void updated() {
 // Open door
 void open() {
     String doorState = device.currentValue('door')
-    if (doorState != 'closed') {
-        log.info "${device.displayName} ignoring open request as door is ${doorState}"
+    if (logEnable) { log.debug "Current door state is ${doorState}" }
+    if (doorState != 'closed' || doorState == 'opening') {
+        log.info "${device.displayName} ignoring open request (door is ${doorState})"
         return
     }
 
@@ -163,13 +197,22 @@ void open() {
 // Close door
 void close() {
     String doorState = device.currentValue('door')
-    if (doorState != 'open') {
-        log.info "${device.displayName} ignoring close request as door is ${doorState}"
+    if (logEnable) { log.debug "Current door state is ${doorState}" }
+    if (doorState != 'open' || doorState == 'closing') {
+        log.info "${device.displayName} ignoring close request (door is ${doorState})"
         return
     }
 
     mqttPublish(settings.commandTopic, 'close')
     sendEvent(newEvent('door', 'closing'))
+}
+
+/* groovylint-disable-next-line UnusedPrivateMethod */
+private void updateState(String value) {
+    unschedule('updateState')
+    String doorState = device.currentValue('door')
+    if (logEnable) { log.debug "Update door state from ${doorState} to ${value}" }
+    sendEvent(newEvent('door', value))
 }
 
 /**
