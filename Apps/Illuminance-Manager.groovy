@@ -23,7 +23,6 @@
 */
 import com.hubitat.app.DeviceWrapper
 import com.hubitat.hub.domain.Event
-import hubitat.helper.ColorUtils
 
 definition (
     name: 'Illuminance Manager',
@@ -72,30 +71,9 @@ preferences {
                   title: 'Lux Sensor Devices',
                   multiple: true,
                   required: true
-
-            input name: 'maxLux',
-                  type: 'number',
-                  title: 'Maximum Lux Value',
-                  range: '100..20000',
-                  required: true,
-                  defaultValue: 1000
         }
 
         section('Configuration Settings', hideable: true, hidden: true) {
-            input name: 'minLevel',
-                  type: 'number',
-                  title: 'Minimum brightness level',
-                  range: '10..99',
-                  required: true,
-                  defaultValue: 10
-
-            input name: 'maxLevel',
-                  type: 'number',
-                  title: 'Maximum brightness level',
-                  range: '11..100',
-                  required: true,
-                  defaultValue: 100
-
             input name: 'transitionSeconds',
                   type: 'number',
                   title: 'Transition seconds for level changes',
@@ -167,6 +145,7 @@ void initialize() {
     unsubscribe()
     state.brightness = 0
     state.disabledDevices = [:]
+    state.lastUpdate = 0
     state.luxHistory = state.luxHistory ?: [:]
 
     if (masterEnable) {
@@ -184,20 +163,32 @@ void initialize() {
     }
 }
 
-private static int calculateLevel(Integer illum, Integer maxIllum, Integer minLevel, Integer maxLevel) {
-    float m = -0.1     // multiplier/slope 
-
-    int y = m * ( illum - maxIllum )
-    if ( y < minLevel ) { y = minLevel }
-    if ( y > maxLevel ) { y = maxLevel }
-    return y
+// https://www.desmos.com/calculator/vi0qou21ol
+private static int calculateLevel(Integer illum) {
+    // assuming max illum of 10,000 - 13,000
+    BigDecimal x = illum
+    BigDecimal a = 4500 // offset. it moves the curve up and down, without changing the curve's shape
+    BigDecimal b = 1.5  // logarithm's base. It changes the shape of the curve by making it slightly stipper or flatter
+    BigDecimal c = 200  // multiplier. It changes the curve's shape more drastically
+    BigDecimal y = ( Math.log10(1 / x) / Math.log10(b) ) * c + a
+    if (y < 1) { y = 1 }
+    if (y > 100) { y = 100 }
+    return y as int
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void levelUpdate() {
     int lux = currentLuxValue()
-    state.brightness = calculateLevel(lux, settings.maxLux as int, settings.minLevel as int, settings.maxLevel as int)
-    log.info "Lux at ${lux}, brightness calculation ${state.brightness}%"
+    int level = calculateLevel(lux)
+
+    if (level == state.brightness) {
+        log.info 'No change in brightness level, skipping update'
+        return
+    }
+
+    state.brightness = level
+    state.lastUpdate = now()
+    log.info "Lux now at ${lux}, brightness calculation level ${level}%"
     updateLamps()
 }
 
@@ -215,6 +206,12 @@ private void levelCheck(Event evt) {
     DeviceWrapper device = evt.device
     int value = evt.value as int
     int brightness = state.brightness
+
+    // ignore any changes shortly after making an update
+    if (now() - (state.lastUpdate as long) < 10 * 1000) {
+        if (logEnable) { log.debug "Ignoring ${device} level updates after update" }
+        return
+    }
 
     if ((value > brightness + 5 || value < brightness - 5) &&
         !state.disabledDevices.containsKey(device.id)) {
