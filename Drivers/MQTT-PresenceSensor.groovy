@@ -206,8 +206,6 @@ private void mqttDisconnect() {
         log.info "Disconnecting from MQTT broker at ${settings?.mqttBroker}"
         interfaces.mqtt.disconnect()
     }
-
-    sendEvent(newEvent('presence', 'not present'))
 }
 
 private void mqttSubscribe(String topic) {
