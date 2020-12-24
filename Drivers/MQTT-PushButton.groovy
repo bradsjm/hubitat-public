@@ -22,9 +22,10 @@
  */
 
 metadata {
-    definition (name: 'MQTT - Presence Sensor', namespace: 'nrgup', author: 'Jonathan Bradshaw') {
+    definition (name: 'MQTT - Pushable Button', namespace: 'nrgup', author: 'Jonathan Bradshaw') {
         capability 'Initialize'
         capability 'PresenceSensor'
+        capability 'PushableButton'
     }
 
     preferences {
@@ -35,16 +36,22 @@ metadata {
                   description: 'ex: topic/subtopic/state',
                   required: true
 
-            input name: 'presentValue',
+            input name: 'availabilityTopic',
                   type: 'text',
-                  title: 'Present Payload Value',
-                  description: 'ex: Home',
+                  title: 'MQTT Availability Topic',
+                  description: 'ex: topic/subtopic/status',
+                  required: false
+
+            input name: 'activeValue',
+                  type: 'text',
+                  title: 'Active Payload Value',
+                  description: 'ex: active',
                   required: true
 
             input name: 'reverseState',
                   type: 'bool',
                   title: 'Invert match',
-                  description: 'Set present when value does not match',
+                  description: 'Set state when value does not match',
                   required: false,
                   defaultValue: false
         }
@@ -94,11 +101,14 @@ metadata {
 void initialize() {
     log.info "${device.displayName} driver initializing"
     unschedule()
+    state.clear()
 
     if (!settings.mqttBroker) {
         log.error 'Unable to connect because Broker setting not configured'
         return
     }
+
+    sendEvent(newEvent('numberOfButtons', '1'))
 
     mqttDisconnect()
     mqttConnect()
@@ -119,12 +129,17 @@ void parse(String data) {
     Map message = interfaces.mqtt.parseMessage(data)
     if (logEnable) { log.debug "RCV: ${message}" }
 
+    if (message.topic == settings.availabilityTopic) {
+        boolean isOnline = message.payload.toLowerCase() in ['online','on','1','true']
+        sendEvent(newEvent('presence', isOnline ? 'present' : 'not present'))
+        return
+    }
+
     if (message.topic == settings.stateTopic) {
-        boolean match = message.payload == settings.presentValue
+        boolean match = message.payload == settings.activeValue
         if (settings.reverseState) { match = !match }
-        String value = match ? 'present' : 'not present'
-        if (device.currentValue('presence') != value) {
-            sendEvent(newEvent('presence', value))
+        if (match) {
+            sendEvent(newEvent('pushed', '1', [ isStateChange: true ]))
         }
     }
 }
@@ -151,6 +166,9 @@ void updated() {
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void subscribe() {
     mqttSubscribe(settings.stateTopic)
+    if (settings.availabilityTopic) {
+        mqttSubscribe(settings.availabilityTopic)
+    }
 }
 
 /**
@@ -253,4 +271,3 @@ private void logsOff() {
     device.updateSetting('logEnable', [value: 'false', type: 'bool'] )
     log.info "debug logging disabled for ${device.displayName}"
 }
-

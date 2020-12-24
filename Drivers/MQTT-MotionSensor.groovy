@@ -33,13 +33,13 @@ metadata {
             input name: 'stateTopic',
                   type: 'text',
                   title: 'MQTT State Topic',
-                  description: 'ex: /motionsensor/state',
+                  description: 'ex: topic/subtopic/state',
                   required: true
 
             input name: 'availabilityTopic',
                   type: 'text',
                   title: 'MQTT Availability Topic',
-                  description: 'ex: /garagedoor/status',
+                  description: 'ex: topic/subtopic/status',
                   required: false
 
             input name: 'activeValue',
@@ -136,7 +136,10 @@ void parse(String data) {
     if (message.topic == settings.stateTopic) {
         boolean match = message.payload == settings.activeValue
         if (settings.reverseState) { match = !match }
-        sendEvent(newEvent('motion', match ? 'active' : 'inactive'))
+        String value = match ? 'active' : 'inactive'
+        if (device.currentValue('motion') != value) {
+            sendEvent(newEvent('motion', value))
+        }
     }
 }
 
