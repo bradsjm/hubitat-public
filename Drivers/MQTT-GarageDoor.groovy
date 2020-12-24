@@ -51,14 +51,15 @@ metadata {
             input name: 'travelTime',
                   type: 'enum',
                   title: 'Door Travel Time (seconds)',
-                  description: 'Minimum time for door to cycle',
-                  defaultValue: 15,
+                  description: 'Maximum time for door to cycle',
+                  defaultValue: 60,
                   required: true,
                   options: [
                     15: '15 seconds',
                     30: '30 seconds',
                     45: '45 seconds',
-                    60: '1 minute'
+                    60: '60 seconds',
+                    90: '90 seconds'
                   ]
         }
 
