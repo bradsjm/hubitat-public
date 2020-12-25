@@ -75,6 +75,12 @@ metadata {
                   required: false,
                   defaultValue: false
 
+            input name: 'restoreState',
+                  type: 'bool',
+                  title: 'Attempt to restore state when device comes online',
+                  required: false,
+                  defaultValue: false
+
             input name: 'telePeriod',
                   type: 'number',
                   title: 'Interval for telemetry updates in seconds (0 to disable)',
@@ -606,6 +612,28 @@ private void configureDeviceSettings(Map config) {
     mqttPublish(topic, payload)
 }
 
+private void restoreState(ChildDeviceWrapper device) {
+    log.info "Attempting to restore ${device} previous state"
+    String sw = device.currentValue('switch')
+    BigDecimal level = device.currentValue('level')
+    BigDecimal colorTemperature = device.currentValue('colorTemperature')
+    String color = device.currentValue('color')
+    BigDecimal hue = device.currentValue('hue')
+    BigDecimal saturation = device.currentValue('saturation')
+    String colorMode = device.currentValue('colorMode')
+
+    if (sw == 'on') { componentOn(device) }
+    if (sw == 'off') { componentOff(device) }
+    if (colorMode == 'CT' && colorTemperature != null) {
+        componentSetColorTemperature(device, colorTemperature)
+        if (level != null) { componentSetLevel(device, level) }
+    } else if (colorMode == 'RGB' && color != null) {
+        componentSetColor(device, [ hue: hue, saturation: saturation, level: level])
+    } else if (level != null) {
+        componentSetLevel(device, level)
+    }
+}
+
 /**
  *  Message Parsing logic
  */
@@ -620,6 +648,8 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
         }
         if (payload == 'Offline') {
             device.label += indicator
+        } else if (settings.restoreState) {
+            restoreState(device)
         }
         return
     }
@@ -758,8 +788,9 @@ private void mqttReceive(Map message) {
 
     // Check if subscription map is empty
     if (!subscriptions.size() && childDevices.size()) {
-        log.info 'Scanning existing devices for subscription topic map'
+        log.info 'Scanning child devices to build subscription topic cache'
         subscriptions = scanTopicMap()
+        log.info "Completed scanning ${childDevices.size()} devices for topic cache"
     }
 
     if (subscriptions.containsKey(topic)) {
