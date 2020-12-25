@@ -633,7 +633,7 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
     // Get the configuration from the device
     String index = getDeviceConfig(device)['index']
     Map json = parseJson(payload)
-    lastHeard[device.id] = now()
+    if (index == 1) { lastHeard[device.id] = now() }
 
     // Iterate the json payload content
     json.each { kv ->

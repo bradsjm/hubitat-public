@@ -75,6 +75,18 @@ metadata {
                         300: '5 minutes',
                         600: '10 minutes'
                       ]
+
+                input name: 'updateInterval',
+                      type: 'enum',
+                      title: 'Update Interval',
+                      required: true,
+                      defaultValue: 15,
+                      options: [
+                        10: '10 seconds',
+                        15: '15 seconds',
+                        30: '30 seconds',
+                        45: '45 seconds'
+                      ]
             }
 
             section {
@@ -166,7 +178,7 @@ void parse(String data) {
 
     List history = dataCache.computeIfAbsent(device.id) { k -> [] }
     if (!history.size()) {
-        schedule('*/15 * * ? * * *', 'updateStats')
+        schedule('*/${settings.updateInterval} * * ? * * *', 'updateStats')
     }
 
     history.add([ time: (payload.time / 1000000) as long, distance: distance, bearing: bearing ])

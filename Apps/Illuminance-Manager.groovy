@@ -181,10 +181,10 @@ private void levelUpdate() {
     int lux = currentLuxValue()
     int level = calculateLevel(lux)
 
-    if (level == state.brightness) {
-        log.info 'No change in brightness level, skipping update'
-        return
-    }
+    // if (level == state.brightness) {
+    //     log.info 'No change in brightness level, skipping update'
+    //     return
+    // }
 
     state.brightness = level
     state.lastUpdate = now()
