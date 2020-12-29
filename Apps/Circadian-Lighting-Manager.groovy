@@ -301,16 +301,12 @@ private void updateLamp(Event evt) {
 
     if (!isEnabled()) { return }
 
-    if (device.id in settings.colorOnDevices*.id && (
-        device.currentValue('hue') != current.hsv[0] ||
-        device.currentValue('saturation') != current.hsv[1] ||
-        device.currentValue('level') != current.hsv[2])) {
+    if (device.id in settings.colorOnDevices*.id) {
         log.info "Setting ${device} color to ${current.hsv}"
         device.setColor(current.hsv)
     }
 
-    if (device.id in settings.colorTemperatureOnDevices*.id &&
-        device.currentValue('colorTemperature') != current.colorTemperature) {
+    if (device.id in settings.colorTemperatureOnDevices*.id) {
         log.info "Setting ${device} color temperature to ${current.colorTemperature}K"
         device.setColorTemperature(current.colorTemperature)
     }
@@ -333,10 +329,7 @@ private void updateLamps() {
 
     settings.colorOnDevices?.each { device ->
         if (!disabled.containsKey(device.id) &&
-            device.currentValue('switch') == 'on' && (
-            device.currentValue('hue') != current.hsv[0] ||
-            device.currentValue('saturation') != current.hsv[1] ||
-            device.currentValue('level') != current.hsv[2])) {
+            device.currentValue('switch') == 'on') {
             if (logEnable) { log.debug "Setting ${device} color to ${current.hsv}" }
             device.setColor(current.hsv)
         }
@@ -344,26 +337,21 @@ private void updateLamps() {
 
     settings.colorTemperatureOnDevices?.each { device ->
         if (!disabled.containsKey(device.id) &&
-            device.currentValue('switch') == 'on' &&
-            device.currentValue('colorMode') != 'RGB' &&
-            device.currentValue('colorTemperature') != current.colorTemperature) {
+            device.currentValue('switch') == 'on') {
             if (logEnable) { log.debug "Setting ${device} color temperature to ${current.colorTemperature}K" }
             device.setColorTemperature(current.colorTemperature)
         }
     }
 
     settings.colorDevices?.each { device ->
-        if (!disabled.containsKey(device.id) &&
-            device.currentValue('color') != current.hsv) {
+        if (!disabled.containsKey(device.id)) {
             if (logEnable) { log.debug "Setting ${device} color to ${current.hsv}" }
             device.setColor(current.hsv)
         }
     }
 
     settings.colorTemperatureDevices?.each { device ->
-        if (!disabled.containsKey(device.id) &&
-            device.currentValue('colorMode') != 'RGB' &&
-            device.currentValue('colorTemperature') != current.colorTemperature) {
+        if (!disabled.containsKey(device.id)) {
             if (logEnable) { log.debug "Setting ${device} color temperature to ${current.colorTemperature}K" }
             device.setColorTemperature(current.colorTemperature)
         }
