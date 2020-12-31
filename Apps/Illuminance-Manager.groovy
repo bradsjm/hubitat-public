@@ -181,11 +181,6 @@ private void levelUpdate() {
     int lux = currentLuxValue()
     int level = calculateLevel(lux)
 
-    // if (level == state.brightness) {
-    //     log.info 'No change in brightness level, skipping update'
-    //     return
-    // }
-
     state.brightness = level
     state.lastUpdate = now()
     log.info "Lux now at ${lux}, brightness calculation level ${level}%"
@@ -244,7 +239,7 @@ private void updateLamp(Event evt) {
         return
     }
 
-    if (device.id in settings.dimmableOnDevices*.id && device.currentValue('level') != brightness) {
+    if (device.id in settings.dimmableOnDevices*.id) {
         log.info "Setting ${device} level to ${brightness}%"
         device.setLevel(brightness, settings.transitionSeconds as int)
     }
@@ -270,16 +265,14 @@ private void updateLamps() {
 
     settings.dimmableOnDevices?.each { device ->
         if (!disabled.containsKey(device.id) &&
-            device.currentValue('switch') == 'on' &&
-            device.currentValue('level') != brightness) {
+            device.currentValue('switch') == 'on') {
             if (logEnable) { log.debug "Setting ${device} level to ${brightness}%" }
             device.setLevel(brightness, settings.transitionSeconds as int)
         }
     }
 
     settings.dimmableDevices?.each { device ->
-        if (!disabled.containsKey(device.id) &&
-            device.currentValue('level') != brightness) {
+        if (!disabled.containsKey(device.id)) {
             if (logEnable) { log.debug "Setting ${device} level to ${brightness}%" }
             device.setLevel(brightness, settings.transitionSeconds as int)
         }
