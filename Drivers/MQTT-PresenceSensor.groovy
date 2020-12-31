@@ -47,6 +47,13 @@ metadata {
                   description: 'Set present when value does not match',
                   required: false,
                   defaultValue: false
+
+            input name: 'delayTime',
+                  type: 'number',
+                  title: 'Debounce Time (ms)',
+                  description: 'Use 0 for no delay',
+                  required: false,
+                  defaultValue: 0
         }
 
         section {
@@ -124,7 +131,12 @@ void parse(String data) {
         if (settings.reverseState) { match = !match }
         String value = match ? 'present' : 'not present'
         if (device.currentValue('presence') != value) {
-            sendEvent(newEvent('presence', value))
+            if (settings.delayTime) {
+                if (logEnable) { log.debug "Delaying ${settings.delayTime}ms (debouncing)" }
+                runInMillis(settings.delayTime, 'setPresence', [data: value])
+            } else {
+                setPresence(value)
+            }
         }
     }
 }
@@ -147,6 +159,10 @@ void updated() {
 /**
  *  Implementation methods
  */
+
+private void setPresence(String value) {
+    sendEvent(newEvent('presence', value))
+}
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void subscribe() {
@@ -251,4 +267,3 @@ private void logsOff() {
     device.updateSetting('logEnable', [value: 'false', type: 'bool'] )
     log.info "debug logging disabled for ${device.displayName}"
 }
-
