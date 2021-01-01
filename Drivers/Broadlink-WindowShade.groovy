@@ -56,6 +56,17 @@ metadata {
                       description: '',
                       required: true,
                       defaultValue: ''
+
+                input name: 'sendIterations',
+                      type: 'enum',
+                      title: 'Repeat Sending',
+                      required: true,
+                      defaultValue: 1,
+                      options: [
+                        1: 'None',
+                        2: 'Once',
+                        3: 'Twice'
+                      ]
             }
 
             section {
@@ -145,10 +156,6 @@ void stop() {
 
     log.info "${device.displayName} stop"
     sendCode(state.codes.stop, 'parseStopResponse')
-}
-
-void setPosition(BigDecimal value) {
-    log.error "Set Position {$value} not supported in driver"
 }
 
 void storeCode(String name, String value) {
@@ -354,7 +361,7 @@ private int parse(String description) {
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
-private void parseOpen(String description) {
+private void parseOpenResponse(String description) {
     int result = parse(description)
     if (result == 0) {
         sendEvent(newEvent('windowShade', 'open'))
@@ -362,7 +369,7 @@ private void parseOpen(String description) {
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
-private void parseClose(String description) {
+private void parseCloseResponse(String description) {
     int result = parse(description)
     if (result == 0) {
         sendEvent(newEvent('windowShade', 'closed'))
@@ -370,7 +377,7 @@ private void parseClose(String description) {
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
-private void parseStop(String description) {
+private void parseStopResponse(String description) {
     int result = parse(description)
     if (result == 0) {
         sendEvent(newEvent('windowShade', 'partially open'))
@@ -460,7 +467,11 @@ private void sendCode(String code, String callback) {
         (byte) state.deviceType
     )
 
-    send(packet, callback)
+    int iterations = settings.sendIterations as int
+    if (iterations > 1) { log.info "Repeating code ${iterations-1} times" }
+    iterations.times {
+        send(packet, callback)
+    }
 }
 
 private Map newEvent(String name, Object value, String unit = null) {
