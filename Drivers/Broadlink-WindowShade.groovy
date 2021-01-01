@@ -52,14 +52,15 @@ metadata {
             section {
                 input name: 'networkHost',
                       type: 'text',
-                      title: 'Hostname/IP',
-                      description: '',
+                      title: 'IP Address',
+                      description: 'BroadLink Device IP',
                       required: true,
                       defaultValue: ''
 
                 input name: 'sendIterations',
                       type: 'enum',
-                      title: 'Repeat Sending',
+                      title: 'Repeat Iterations',
+                      description: 'Number of times to repeat',
                       required: true,
                       defaultValue: 1,
                       options: [
@@ -67,6 +68,26 @@ metadata {
                         2: 'Once',
                         3: 'Twice'
                       ]
+
+                input name: 'travelTime',
+                    type: 'enum',
+                    title: 'Travel Time (seconds)',
+                    description: 'Maximum time for device to cycle',
+                    defaultValue: 60,
+                    required: true,
+                    options: [
+                        15: '15 seconds',
+                        30: '30 seconds',
+                        45: '45 seconds',
+                        60: '60 seconds',
+                        90: '90 seconds'
+                    ]
+
+                input name: 'sendStop',
+                      type: 'bool',
+                      title: 'Send STOP after travel time',
+                      required: true,
+                      defaultValue: false
             }
 
             section {
@@ -136,7 +157,7 @@ void open() {
         log.error "${device.displayName} Open code not defined"
     }
 
-    log.info "${device.displayName} open"
+    log.info "${device.displayName} opening"
     sendCode(state.codes.open, 'parseOpenResponse')
 }
 
@@ -145,7 +166,7 @@ void close() {
         log.error "${device.displayName} Open code not defined"
     }
 
-    log.info "${device.displayName} close"
+    log.info "${device.displayName} closing"
     sendCode(state.codes.close, 'parseCloseResponse')
 }
 
@@ -154,7 +175,7 @@ void stop() {
         log.error "${device.displayName} Stop code not defined"
     }
 
-    log.info "${device.displayName} stop"
+    log.info "${device.displayName} stopping"
     sendCode(state.codes.stop, 'parseStopResponse')
 }
 
@@ -364,7 +385,12 @@ private int parse(String description) {
 private void parseOpenResponse(String description) {
     int result = parse(description)
     if (result == 0) {
-        sendEvent(newEvent('windowShade', 'open'))
+        sendEvent(newEvent('windowShade', 'opening'))
+        runIn(settings.travelTime as int, 'updateState', [ data: 'open' ])
+    }
+
+    if (settings.sendStop) {
+        runIn(settings.travelTime as int, 'stop')
     }
 }
 
@@ -372,16 +398,29 @@ private void parseOpenResponse(String description) {
 private void parseCloseResponse(String description) {
     int result = parse(description)
     if (result == 0) {
-        sendEvent(newEvent('windowShade', 'closed'))
+        sendEvent(newEvent('windowShade', 'closing'))
+        runIn(settings.travelTime as int, 'updateState', [ data: 'closed' ])
+    }
+
+    if (settings.sendStop) {
+        runIn(settings.travelTime as int, 'stop')
     }
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void parseStopResponse(String description) {
     int result = parse(description)
-    if (result == 0) {
+    if (result == 0 && device.currentValue('windowShade') in ['opening', 'closing']) {
         sendEvent(newEvent('windowShade', 'partially open'))
     }
+}
+
+/* groovylint-disable-next-line UnusedPrivateMethod */
+private void updateState(String value) {
+    unschedule('updateState')
+    String state = device.currentValue('windowShade')
+    if (logEnable) { log.debug "Update windowShade from ${state} to ${value}" }
+    sendEvent(newEvent('windowShade', value))
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
@@ -471,6 +510,7 @@ private void sendCode(String code, String callback) {
     if (iterations > 1) { log.info "Repeating code ${iterations-1} times" }
     iterations.times {
         send(packet, callback)
+        pauseExecution(100)
     }
 }
 
