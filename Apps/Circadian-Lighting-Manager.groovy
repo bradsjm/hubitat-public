@@ -248,80 +248,10 @@ private boolean checkEnabled() {
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
-<<<<<<< HEAD
 private void circadianUpdate() {
     state.current = currentCircadianValues()
     log.info "Circadian State now: ${state.current}"
     updateLamps()
-=======
-private void updateLamp(Event evt) {
-    Map current = state.current
-    DeviceWrapper device = evt.device
-
-    if (evt.value == 'off' && device.id in state.disabledDevices) {
-        log.info "Re-enabling ${device} for circadian management (light turned off)"
-        state.disabledDevices.remove(device.id)
-        return
-    }
-
-    if (!isEnabled()) { return }
-
-    if (device.id in settings.colorOnDevices*.id) {
-        log.info "Setting ${device} color to ${current.hsv}"
-        device.setColor(current.hsv)
-    }
-
-    if (device.id in settings.colorTemperatureOnDevices*.id) {
-        log.info "Setting ${device} color temperature to ${current.colorTemperature}K"
-        device.setColorTemperature(current.colorTemperature)
-    }
-}
-
-/* groovylint-disable-next-line UnusedPrivateMethod */
-private void updateLamps() {
-    Map current = state.current
-    Map disabled = state.disabledDevices
-
-    // Remove disabled devices that have timed out
-    if (settings.reenableDelay) {
-        long expire = now() - (settings.reenableDelay * 60000)
-        disabled.values().removeIf { v -> v <= expire }
-    }
-
-    if (!isEnabled()) { return }
-
-    log.info 'Starting circadian updates to lights'
-
-    settings.colorOnDevices?.each { device ->
-        if (!disabled.containsKey(device.id) &&
-            device.currentValue('switch') == 'on') {
-            if (logEnable) { log.debug "Setting ${device} color to ${current.hsv}" }
-            device.setColor(current.hsv)
-        }
-    }
-
-    settings.colorTemperatureOnDevices?.each { device ->
-        if (!disabled.containsKey(device.id) &&
-            device.currentValue('switch') == 'on') {
-            if (logEnable) { log.debug "Setting ${device} color temperature to ${current.colorTemperature}K" }
-            device.setColorTemperature(current.colorTemperature)
-        }
-    }
-
-    settings.colorDevices?.each { device ->
-        if (!disabled.containsKey(device.id)) {
-            if (logEnable) { log.debug "Setting ${device} color to ${current.hsv}" }
-            device.setColor(current.hsv)
-        }
-    }
-
-    settings.colorTemperatureDevices?.each { device ->
-        if (!disabled.containsKey(device.id)) {
-            if (logEnable) { log.debug "Setting ${device} color temperature to ${current.colorTemperature}K" }
-            device.setColorTemperature(current.colorTemperature)
-        }
-    }
->>>>>>> 3aacc18c7a961075512e3906940dc352be05ba82
 }
 
 /*
