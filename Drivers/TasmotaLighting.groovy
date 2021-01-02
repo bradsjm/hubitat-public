@@ -437,7 +437,15 @@ private Map scanTopicMap() {
         String dni = config['mac']
         String index = config['index']
         if (index != '1') { dni += "-${index}" }
-        [ getStatTopic(config) + 'RESULT', getTeleTopic(config) + 'STATE'].each { topic ->
+        List<String> topics = [
+            getStatTopic(config) + 'RESULT',
+            getTeleTopic(config) + 'STATE',
+            getTeleTopic(config) + 'SENSOR',
+            getTeleTopic(config) + 'LWT'
+        ]
+
+        topics.each { topic ->
+            mqttSubscribe(topic)
             if (subs.containsKey(topic)) {
                 subs[topic] += dni
             } else {
@@ -781,16 +789,16 @@ private void mqttReceive(Map message) {
     String payload = message.get('payload')
     if (logEnable) { log.debug "RCV: ${topic} = ${payload}" }
 
+    // Check if subscription map is complete
+    if (subscriptions.size() < childDevices.size()) {
+        log.info 'Scanning child devices to build subscription topic cache'
+        subscriptions = scanTopicMap()
+        log.info "Completed caching ${childDevices.size()} devices with ${subscriptions.size()} topics"
+    }
+
     if (topic.startsWith(settings.discoveryPrefix) && topic.endsWith('config')) {
         // Parse Home Assistant Discovery topic
         parseAutoDiscovery(topic, parseJson(payload))
-    }
-
-    // Check if subscription map is empty
-    if (!subscriptions.size() && childDevices.size()) {
-        log.info 'Scanning child devices to build subscription topic cache'
-        subscriptions = scanTopicMap()
-        log.info "Completed scanning ${childDevices.size()} devices for topic cache"
     }
 
     if (subscriptions.containsKey(topic)) {
