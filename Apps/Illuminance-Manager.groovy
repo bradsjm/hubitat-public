@@ -1,4 +1,3 @@
-/* groovylint-disable UnnecessarySetter */
 /**
  *  MIT License
  *  Copyright 2020 Jonathan Bradshaw (jb@nrgup.net)
@@ -29,7 +28,7 @@ definition (
     namespace: 'nrgup',
     author: 'Jonathan Bradshaw',
     category: 'Lighting',
-    description: 'Sync your light illuminance to outside lighting conditions',
+    description: 'Manage your light illuminance',
     iconUrl: '',
     iconX2Url: '',
     installOnOpen: true,
@@ -71,6 +70,24 @@ preferences {
                   title: 'Lux Sensor Devices',
                   multiple: true,
                   required: true
+
+            input name: 'offset',
+                  type: 'number',
+                  title: 'Logarithm offset. Moves the lighting curve up and down, without changing the curve shape',
+                  required: true,
+                  defaultValue: 4500
+
+            input name: 'base',
+                  type: 'decimal',
+                  title: 'Logarithm base. Changes the shape of the curve by making it slightly stipper or flatter',
+                  required: true,
+                  defaultValue: 1.5
+
+            input name: 'multiplier',
+                  type: 'number',
+                  title: 'Logarithm multiplier. Changes the curve shape more drastically',
+                  required: true,
+                  defaultValue: 200
         }
 
         section('Configuration Settings', hideable: true, hidden: true) {
@@ -146,7 +163,6 @@ void initialize() {
     state.brightness = 0
     state.disabledDevices = [:]
     state.lastUpdate = 0
-    state.luxHistory = state.luxHistory ?: [:]
 
     if (masterEnable) {
         subscribe(dimmableOnDevices, 'switch', 'updateLamp')
@@ -157,19 +173,17 @@ void initialize() {
         // Update lamps every 5 minutes
         schedule('0 */5 * * * ?', 'levelUpdate')
         levelUpdate()
-
-        // Every hour take a lux reading
-        schedule('0 0 * * * ?', 'luxHistoryUpdate')
     }
 }
 
 // https://www.desmos.com/calculator/vi0qou21ol
-private static int calculateLevel(Integer illum) {
+private int calculateLevel(Integer illum) {
     // assuming max illum of 10,000 - 13,000
     BigDecimal x = illum
-    BigDecimal a = 4500 // offset. it moves the curve up and down, without changing the curve's shape
-    BigDecimal b = 1.5  // logarithm's base. It changes the shape of the curve by making it slightly stipper or flatter
-    BigDecimal c = 200  // multiplier. It changes the curve's shape more drastically
+    BigDecimal a = settings.offset
+    BigDecimal b = settings.base
+    BigDecimal c = settings.multiplier
+    if (logEnable) { log.debug "x ${x} a ${a} b ${b} c ${c}" }
     BigDecimal y = ( Math.log10(1 / x) / Math.log10(b) ) * c + a
     if (y < 1) { y = 1 }
     if (y > 100) { y = 100 }
@@ -183,17 +197,8 @@ private void levelUpdate() {
 
     state.brightness = level
     state.lastUpdate = now()
-    log.info "Lux now at ${lux}, brightness calculation level ${level}%"
+    log.info "${app.name} Lux is ${lux}. Brightness level now ${level}%"
     updateLamps()
-}
-
-/* groovylint-disable-next-line UnusedPrivateMethod */
-private void luxHistoryUpdate() {
-    int historySize = 5
-    String key = Calendar.instance.get(Calendar.HOUR_OF_DAY)
-    int lux = currentLuxValue()
-    state.luxHistory[key] = state.luxHistory.getOrDefault(key, []).takeRight(historySize - 1) + lux
-    log.info "Lux (hour ${key}) history: ${state.luxHistory[key]}"
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
@@ -208,12 +213,11 @@ private void levelCheck(Event evt) {
         return
     }
 
-    if ((value > brightness + 5 || value < brightness - 5) &&
-        !state.disabledDevices.containsKey(device.id)) {
-        log.info "Disabling ${device} for illuminance management due to manual brightness change"
+    if ((value > brightness + 5 || value < brightness - 5) && !state.disabledDevices.containsKey(device.id)) {
+        log.info "${app.name} Disabling ${device} for illuminance management due to manual brightness change"
         state.disabledDevices.put(device.id, now())
-    } else if (device.id in state.disabledDevices) {
-        log.info "Re-enabling ${device} for illuminance management (light now at ${value}%)"
+    } else if (value < brightness + 5 && value > brightness - 5 && device.id in state.disabledDevices) {
+        log.info "${app.name} Re-enabling ${device} for illuminance management (light now at ${value}%)"
         state.disabledDevices.remove(device.id)
     }
 }
@@ -224,23 +228,23 @@ private void updateLamp(Event evt) {
     DeviceWrapper device = evt.device
 
     if (evt.value == 'off' && device.id in state.disabledDevices) {
-        log.info "Re-enabling ${device} for illuminance management (light turned off)"
+        log.info "${app.name} Re-enabling ${device} for illuminance management (light turned off)"
         state.disabledDevices.remove(device.id)
         return
     }
 
     if (location.mode in disabledModes) {
-        log.info "Manager is disabled due to mode ${location.mode}"
+        log.info "${app.name} Manager is disabled due to mode ${location.mode}"
         return
     }
 
     if (disabledSwitch && disabledSwitch.currentValue('switch') == disabledSwitchValue) {
-        log.info "Manager is disabled due to switch ${disabledSwitch} set to ${disabledSwitchValue}"
+        log.info "${app.name} Manager is disabled due to switch ${disabledSwitch} set to ${disabledSwitchValue}"
         return
     }
 
     if (device.id in settings.dimmableOnDevices*.id) {
-        log.info "Setting ${device} level to ${brightness}%"
+        log.info "${app.name} Setting ${device} level to ${brightness}%"
         device.setLevel(brightness, settings.transitionSeconds as int)
     }
 }
@@ -251,7 +255,7 @@ private void updateLamps() {
     Map disabled = state.disabledDevices
 
     if (location.mode in disabledModes) {
-        log.info "Manager is disabled due to mode ${location.mode}"
+        log.info "${app.name} Manager is disabled due to mode ${location.mode}"
         return
     }
 
@@ -261,7 +265,7 @@ private void updateLamps() {
         disabled.values().removeIf { v -> v <= expire }
     }
 
-    log.info 'Starting illuminance level updates to lights'
+    log.info "${app.name} Starting illuminance level updates to lights"
 
     settings.dimmableOnDevices?.each { device ->
         if (!disabled.containsKey(device.id) &&
