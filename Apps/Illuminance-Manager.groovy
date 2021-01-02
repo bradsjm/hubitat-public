@@ -64,33 +64,39 @@ preferences {
                   required: false
         }
 
-        section('Illuminance Measurement', hideable: true, hidden: true) {
+        section('Illuminance Calculation', hideable: true, hidden: true) {
             input name: 'luxDevices',
                   type: 'capability.illuminanceMeasurement',
                   title: 'Lux Sensor Devices',
                   multiple: true,
                   required: true
 
+            input name: 'minimumLevel',
+                  type: 'number',
+                  title: 'Minimum brightness level for lamps',
+                  required: true,
+                  defaultValue: 10
+
             input name: 'offset',
                   type: 'number',
-                  title: 'Logarithm offset. Moves the lighting curve up and down, without changing the curve shape',
+                  title: '<a href="https://www.desmos.com/calculator/vi0qou21ol">Logarithm offset</a> - Moves the lighting curve up and down, without changing the curve shape',
                   required: true,
                   defaultValue: 4500
 
             input name: 'base',
                   type: 'decimal',
-                  title: 'Logarithm base. Changes the shape of the curve by making it slightly stipper or flatter',
+                  title: '<a href="https://www.desmos.com/calculator/vi0qou21ol">Logarithm base</a> - Changes the shape of the curve by making it slightly stipper or flatter',
                   required: true,
                   defaultValue: 1.5
 
             input name: 'multiplier',
                   type: 'number',
-                  title: 'Logarithm multiplier. Changes the curve shape more drastically',
+                  title: '<a href="https://www.desmos.com/calculator/vi0qou21ol">Logarithm multiplier</a> - Changes the curve shape more drastically',
                   required: true,
                   defaultValue: 200
         }
 
-        section('Configuration Settings', hideable: true, hidden: true) {
+        section('General Settings', hideable: true, hidden: true) {
             input name: 'transitionSeconds',
                   type: 'number',
                   title: 'Transition seconds for level changes',
@@ -104,9 +110,23 @@ preferences {
                   range: '0..600',
                   required: false,
                   defaultValue: 60
+
+            input name: 'sunriseOffset',
+                  type: 'number',
+                  title: 'Sunrise Offset (+/-)',
+                  range: '-600..600',
+                  required: false,
+                  defaultValue: 0
+
+            input name: 'sunsetOffset',
+                  type: 'number',
+                  title: 'Sunset Offset (+/-)',
+                  range: '-600..600',
+                  required: false,
+                  defaultValue: 0
         }
 
-        section('Overrides', hideable: true, hidden: true) {
+        section('Override Settings', hideable: true, hidden: true) {
             input name: 'disabledSwitch',
                   type: 'capability.switch',
                   title: 'Select switch to enable/disable manager'
@@ -183,8 +203,8 @@ private int calculateLevel(Integer illum) {
     BigDecimal a = settings.offset
     BigDecimal b = settings.base
     BigDecimal c = settings.multiplier
-    if (logEnable) { log.debug "x ${x} a ${a} b ${b} c ${c}" }
     BigDecimal y = ( Math.log10(1 / x) / Math.log10(b) ) * c + a
+    if (logEnable) { log.debug "calculateLevel: x=${x} a=${a} b=${b} c=${c} y=${y}" }
     if (y < 1) { y = 1 }
     if (y > 100) { y = 100 }
     return y as int
@@ -192,12 +212,33 @@ private int calculateLevel(Integer illum) {
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void levelUpdate() {
-    int lux = currentLuxValue()
-    int level = calculateLevel(lux)
+    long currentTime = now()
+    int level = state.brightness
+    Map after = getSunriseAndSunset(
+        sunriseOffset: settings.sunriseOffset ?: 0,
+        sunsetOffset: settings.sunsetOffset ?: 0
+    )
+
+    if (currentTime >= after.sunrise.time && currentTime <= after.sunset.time) {
+        int lux = currentLuxValue()
+        level = calculateLevel(lux)
+        if (level < settings.minimumLevel) { level = settings.minimumLevel }
+        log.info "${app.name} Brightness level calculated at ${level}% based on ${lux} lux reading"
+    } else {
+        long midNight = after.sunset.time + ((after.sunset.time - after.sunrise.time) / 2)
+        int min = settings.minimumLevel ?: 1
+        int max = calculateLevel(0)
+        int range = max - min
+        if (currentTime < midNight) {
+            level = min + ((currentTime - after.sunset.time) / (midNight - after.sunset.time) * range)
+        } else {
+            level = max - ((currentTime - midNight) / (after.sunrise.time - midNight) * range)
+        }
+        log.info "${app.name} Brightness level calculated at ${level}% based on current night time"
+    }
 
     state.brightness = level
     state.lastUpdate = now()
-    log.info "${app.name} Lux is ${lux}. Brightness level now ${level}%"
     updateLamps()
 }
 
@@ -209,7 +250,7 @@ private void levelCheck(Event evt) {
 
     // ignore any changes shortly after making an update
     if (now() - (state.lastUpdate as long) < 10 * 1000) {
-        if (logEnable) { log.debug "Ignoring ${device} level updates after update" }
+        if (logEnable) { log.debug "Ignoring ${device} level change (within 10 seconds of update)" }
         return
     }
 
