@@ -33,6 +33,7 @@ metadata {
         capability 'Refresh'
         capability 'Switch'
 
+        command 'disconnect'
         command 'sendCommand', [
             [
                 type: 'text',
@@ -173,6 +174,12 @@ void refresh() {
 void removeDevices() {
     log.info "${device.displayName} removing all child devices"
     childDevices.each { device -> deleteChildDevice(device.deviceNetworkId) }
+}
+
+// disconnect from broker
+void disconnect() {
+    log.info "${device.displayName} disconnecting from broker"
+    mqttDisconnect()
 }
 
 // send command to all child devices
@@ -429,32 +436,22 @@ private Map newEvent(ChildDeviceWrapper device, String name, Object value, Map p
     ] + params
 }
 
-// Create topic subscription map from child devices
-private Map scanTopicMap() {
-    Map subs = [:]
-    childDevices.each { device ->
-        Map config = getDeviceConfig(device)
-        String dni = config['mac']
-        String index = config['index']
-        if (index != '1') { dni += "-${index}" }
-        List<String> topics = [
-            getStatTopic(config) + 'RESULT',
-            getTeleTopic(config) + 'STATE',
-            getTeleTopic(config) + 'SENSOR',
-            getTeleTopic(config) + 'LWT'
-        ]
+private void subscribeDeviceTopics(ChildDeviceWrapper device) {
+    Map config = getDeviceConfig(device)
+    String dni = config['mac']
+    String index = config['index']
+    if (index != '1') { dni += "-${index}" }
 
-        topics.each { topic ->
-            mqttSubscribe(topic)
-            if (subs.containsKey(topic)) {
-                subs[topic] += dni
-            } else {
-                subs[topic] = [ dni ]
-            }
-        }
+    List<String> topics = [
+        getStatTopic(config) + 'RESULT',
+        getTeleTopic(config) + 'STATE',
+        getTeleTopic(config) + 'SENSOR',
+        getTeleTopic(config) + 'LWT'
+    ]
+    topics.each { topic ->
+        mqttSubscribe(topic)
+        subscriptions.computeIfAbsent(topic) { k -> [] as Set }.add(dni)
     }
-
-    return subs
 }
 
 private String splitCamelCase(String s) {
@@ -475,6 +472,10 @@ private void parseAutoDiscovery(String topic, Map config) {
     if (logEnable) { log.debug "Autodiscovery: ${topic}=${config}" }
     if (!config) {
         log.warn "Autodiscovery: Config empty or missing ${topic}"
+        return
+    }
+
+    if (!topic.endsWith('/config')) {
         return
     }
 
@@ -532,17 +533,7 @@ private void parseAutoDiscoveryButton(Map config) {
     }
 
     device.sendEvent(name: 'numberOfButtons', value: count)
-
-    List<String> topics = [
-        getTeleTopic(config) + 'LWT',
-        getStatTopic(config) + 'RESULT'
-    ]
-
-    // Add topic subscriptions
-    topics.each { topic ->
-        mqttSubscribe(topic)
-        subscriptions.computeIfAbsent(topic) { k -> [] as Set }.add(dni)
-    }
+    subscribeDeviceTopics(device)
 }
 
 private void parseAutoDiscoveryRelay(int idx, int relaytype, Map config) {
@@ -592,18 +583,7 @@ private void parseAutoDiscoveryRelay(int idx, int relaytype, Map config) {
         ]))
     }
 
-    List<String> topics = [
-        getStatTopic(config) + 'RESULT',
-        getTeleTopic(config) + 'STATE',
-        getTeleTopic(config) + 'SENSOR',
-        getTeleTopic(config) + 'LWT'
-    ]
-
-    // Add topic subscriptions
-    topics.each { topic ->
-        mqttSubscribe(topic)
-        subscriptions.computeIfAbsent(topic) { k -> [] as Set }.add(dni)
-    }
+    subscribeDeviceTopics(device)
 }
 
 // Configure Tasmota device settings
@@ -642,6 +622,19 @@ private void restoreState(ChildDeviceWrapper device) {
     }
 }
 
+private void parseLWT(ChildDeviceWrapper device, String payload) {
+    String indicator = ' (Offline)'
+    if (device.label.contains(indicator)) {
+        device.label = device.label.replace(indicator, '')
+    }
+
+    if (payload == 'Offline') {
+        device.label += indicator
+    } else if (settings.restoreState) {
+        restoreState(device)
+    }
+}
+
 /**
  *  Message Parsing logic
  */
@@ -650,21 +643,13 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
 
     // Process online/offline notifications
     if (topic.endsWith('LWT')) {
-        String indicator = ' (Offline)'
-        if (device.label.contains(indicator)) {
-            device.label = device.label.replace(indicator, '')
-        }
-        if (payload == 'Offline') {
-            device.label += indicator
-        } else if (settings.restoreState) {
-            restoreState(device)
-        }
+        parseLWT(device, payload)
         return
     }
 
     // Detect json payload
     if (!payload.startsWith('{') || !payload.endsWith('}')) {
-        log.warn "${device} ${topic}: Ignoring non JSON payload (${payload})"
+        if (logEnable) { log.debug "${device} ${topic}: Ignoring non JSON payload (${payload})" }
         return
     }
 
@@ -738,9 +723,9 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
                         break
                 }
                 break
-            default:
-                if (logEnable) { log.warn "Ignoring ${device} [ ${kv.key}: ${kv.value} ]" }
-                break
+            // default:
+            //     if (logEnable) { log.debug "${device} ${topic}: No mapping for [ ${kv.key}: ${kv.value} ]" }
+            //     break
         }
     }
 
@@ -775,6 +760,7 @@ private void mqttDisconnect() {
     }
 
     sendEvent(name: 'presence', value: 'not present', descriptionText: "${device.displayName} is not connected")
+    subscriptions.clear()
 }
 
 private void mqttPublish(String topic, String payload = '', int qos = 0) {
@@ -792,13 +778,14 @@ private void mqttReceive(Map message) {
     // Check if subscription map is complete
     if (subscriptions.size() < childDevices.size()) {
         log.info 'Scanning child devices to build subscription topic cache'
-        subscriptions = scanTopicMap()
+        childDevices.each { device -> subscribeDeviceTopics(device) }
         log.info "Completed caching ${childDevices.size()} devices with ${subscriptions.size()} topics"
     }
 
-    if (topic.startsWith(settings.discoveryPrefix) && topic.endsWith('config')) {
+    if (topic.startsWith(settings.discoveryPrefix) && payload.startsWith('{')) {
         // Parse Home Assistant Discovery topic
         parseAutoDiscovery(topic, parseJson(payload))
+        return
     }
 
     if (subscriptions.containsKey(topic)) {
@@ -808,11 +795,14 @@ private void mqttReceive(Map message) {
             if (childDevice) {
                 parseTopicPayload(childDevice, topic, payload)
             } else {
-                log.warn "Unable to find child device id ${dni} for topic ${topic}"
+                log.warn "Unable to find child device id ${dni} for topic ${topic}, removing subscription"
+                subscriptions.remove(topic)
+                mqttUnsubscribe(topic)
             }
         }
-    } else if (logEnable) {
-        log.debug "Unhandled topic ${topic}, ignoring payload"
+    } else {
+        log.warn "Unhandled topic ${topic} received - removing subscription"
+        mqttUnsubscribe(topic)
     }
 }
 
@@ -826,6 +816,13 @@ private void mqttSubscribe(String topic) {
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void mqttSubscribeDiscovery() {
     mqttSubscribe("${settings.discoveryPrefix}/#")
+}
+
+private void mqttUnsubscribe(String topic) {
+    if (interfaces.mqtt.connected) {
+        if (logEnable) { log.debug "UNSUB: ${topic}" }
+        interfaces.mqtt.unsubscribe(topic)
+    }
 }
 
 /**
