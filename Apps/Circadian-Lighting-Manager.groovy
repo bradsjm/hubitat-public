@@ -1,4 +1,3 @@
-/* groovylint-disable UnnecessarySetter */
 /**
  *  MIT License
  *  Copyright 2020 Jonathan Bradshaw (jb@nrgup.net)
@@ -224,7 +223,7 @@ private static List<Integer> ctToRGB(int colorTemp) {
     return [ r as int, g as int, b as int ]
 }
 
-private static int diff(int value1, int value2) {
+private static int diff(BigDecimal value1, BigDecimal value2) {
     return Math.abs(value1 - value2)
 }
 
@@ -289,6 +288,7 @@ private Map currentCircadianValues() {
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void deviceEvent(Event evt) {
     DeviceWrapper device = evt.device
+    if (logEnable) { log.debug "${device} event: ${evt.name} = ${evt.value}" }
 
     switch (evt.name) {
         case 'switch':
@@ -311,10 +311,28 @@ private void deviceEvent(Event evt) {
                 if (checkEnabled()) { updateLamp(device) }
             }
             break
+        case 'colorMode':
+            if (evt.value == 'RGB') {
+                log.info "Disabling ${device} for circadian management due to color mode change to ${evt.value}"
+                state.disabledDevices.put(device.id, now())
+            }
+            break
         case 'hue':
             int value = evt.value as int
             int hue = state.current.hsv[0] as int
             if (diff(value, hue) > 10 && !state.disabledDevices.containsKey(device.id)) {
+                log.info "Disabling ${device} for circadian management due to manual hue change"
+                state.disabledDevices.put(device.id, now())
+            } else if (device.id in state.disabledDevices) {
+                log.info "Re-enabling ${device} for circadian management"
+                state.disabledDevices.remove(device.id)
+                if (checkEnabled()) { updateLamp(device) }
+            }
+            break
+        case 'saturation':
+            BigDecimal value = evt.value as BigDecimal
+            BigDecimal saturation = state.current.hsv[1] as BigDecimal
+            if (diff(value, saturation) > 10 && !state.disabledDevices.containsKey(device.id)) {
                 log.info "Disabling ${device} for circadian management due to manual hue change"
                 state.disabledDevices.put(device.id, now())
             } else if (device.id in state.disabledDevices) {
@@ -335,7 +353,7 @@ private void updateLamp(DeviceWrapper device) {
         device.currentValue('saturation') != current.hsv[1] ||
         device.currentValue('level') != current.hsv[2]) ) {
         log.info "Setting ${device} color to ${current.hsv}"
-        device.setColor(current.hsv)
+        device.color = current.hsv
     }
 
     if (device.id in settings.colorDevices*.id && (
@@ -343,20 +361,20 @@ private void updateLamp(DeviceWrapper device) {
         device.currentValue('saturation') != current.hsv[1] ||
         device.currentValue('level') != current.hsv[2]) ) {
         log.info "Setting ${device} color to ${current.hsv}"
-        device.setColor(current.hsv)
+        device.color = current.hsv
     }
 
     if (device.id in settings.colorTemperatureOnDevices*.id &&
         device.currentValue('switch') == 'on' &&
         device.currentValue('colorTemperature') != current.colorTemperature) {
         log.info "Setting ${device} color temperature to ${current.colorTemperature}K"
-        device.setColorTemperature(current.colorTemperature)
+        device.colorTemperature = current.colorTemperature
     }
 
     if (device.id in settings.colorTemperatureDevices*.id &&
         device.currentValue('colorTemperature') != current.colorTemperature) {
         log.info "Setting ${device} color temperature to ${current.colorTemperature}K"
-        device.setColorTemperature(current.colorTemperature)
+        device.colorTemperature = current.colorTemperature
     }
 }
 

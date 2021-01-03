@@ -199,7 +199,7 @@ void initialize() {
 // https://www.desmos.com/calculator/vi0qou21ol
 private int calculateLevel(Integer illum) {
     // assuming max illum of 10,000 - 13,000
-    BigDecimal x = illum
+    BigDecimal x = Math.max(illum, 1)
     BigDecimal a = settings.offset
     BigDecimal b = settings.base
     BigDecimal c = settings.multiplier
@@ -227,12 +227,16 @@ private void levelUpdate() {
     } else {
         long midNight = after.sunset.time + ((after.sunset.time - after.sunrise.time) / 2)
         int min = settings.minimumLevel ?: 1
-        int max = calculateLevel(0)
+        int max = calculateLevel(1)
         int range = max - min
         if (currentTime < midNight) {
-            level = min + ((currentTime - after.sunset.time) / (midNight - after.sunset.time) * range)
+            if (logEnable) { log.debug 'Current time is after sunset and before midnight' }
+            log.debug "${currentTime - after.sunset.time} / ${midNight - after.sunset.time}"
+            level = max - ((currentTime - after.sunset.time) / (midNight - after.sunset.time) * range)
         } else {
-            level = max - ((currentTime - midNight) / (after.sunrise.time - midNight) * range)
+            if (logEnable) { log.debug 'Current time is after midnight and before sunrise' }
+            log.debug "${currentTime - midnight} / ${after.sunrise.time - midNight}"
+            level = min + ((currentTime - midNight) / (after.sunrise.time - midNight) * range)
         }
         log.info "${app.name} Brightness level calculated at ${level}% based on current night time"
     }
@@ -247,18 +251,21 @@ private void levelCheck(Event evt) {
     DeviceWrapper device = evt.device
     int value = evt.value as int
     int brightness = state.brightness
+    int transition = settings.transitionSeconds
 
     // ignore any changes shortly after making an update
-    if (now() - (state.lastUpdate as long) < 10 * 1000) {
-        if (logEnable) { log.debug "Ignoring ${device} level change (within 10 seconds of update)" }
+    if (value != brightness && now() - (state.lastUpdate as long) <= transition * 1100) {
+        if (logEnable) {
+            log.debug "Ignoring ${device} level change to ${value}% (within ${transition}s change window)"
+        }
         return
     }
 
     if ((value > brightness + 5 || value < brightness - 5) && !state.disabledDevices.containsKey(device.id)) {
-        log.info "${app.name} Disabling ${device} for illuminance management due to manual brightness change"
+        log.info "${app.name} disabling ${device} for illuminance management (light now at ${value}%)"
         state.disabledDevices.put(device.id, now())
     } else if (value < brightness + 5 && value > brightness - 5 && device.id in state.disabledDevices) {
-        log.info "${app.name} Re-enabling ${device} for illuminance management (light now at ${value}%)"
+        log.info "${app.name} re-enabling ${device} for illuminance management (light now at ${value}%)"
         state.disabledDevices.remove(device.id)
     }
 }
