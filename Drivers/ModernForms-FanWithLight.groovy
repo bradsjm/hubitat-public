@@ -24,24 +24,32 @@ import groovy.json.JsonOutput
 import hubitat.scheduling.AsyncResponse
 
 metadata {
-    definition(name: 'Modern Forms Fan', namespace: 'nrgup', author: 'jb@nrgup.net') {
+    definition(name: 'Modern Forms - Fan with Light', namespace: 'nrgup', author: 'jb@nrgup.net') {
         capability 'Actuator'
         capability 'Initialize'
         capability 'FanControl'
+        capability 'Light'
         capability 'SwitchLevel'
-        capability 'Polling'
+        capability 'Refresh'
 
         attribute 'direction', 'string'
         attribute 'fanSleepTimer', 'string'
         attribute 'lightSleepTimer', 'string'
-        attribute 'windSpeed', 'number'
+        attribute 'breeze', 'string'
 
         command 'setDirection', [
             [
-                name: 'Fan Direction',
+                name: 'Fan direction',
                 type: 'ENUM',
-                description: 'Pick an option',
                 constraints: [ 'forward', 'reverse' ]
+            ]
+        ]
+
+        command 'setBreeze', [
+            [
+                name: 'Breeze speed',
+                type: 'ENUM',
+                constraints: [ 'off', 'on', 'low', 'medium', 'high' ]
             ]
         ]
     }
@@ -60,8 +68,15 @@ preferences {
     section {
         input name: 'autoOn',
             type: 'bool',
-            title: 'Automatic turn on',
-            description: 'Turn on when speed set',
+            title: 'Automatic fan on',
+            description: 'Turn on when fan speed set',
+            required: true,
+            defaultValue: true
+
+        input name: 'autoLightOn',
+            type: 'bool',
+            title: 'Automatic light on',
+            description: 'Turn on when light level set',
             required: true,
             defaultValue: true
 
@@ -85,13 +100,47 @@ preferences {
 
 void initialize() {
     if (settings.networkHost) {
-        poll()
+        refresh()
     }
 }
 
-void poll() {
-    log.info "${device.displayName} Polling device"
+void on() {
+    log.info "${device.displayName} Turning on light"
+    sendCommand([ 'lightOn': true ])
+}
+
+void off() {
+    log.info "${device.displayName} Turning off light"
+    sendCommand([ 'lightOn': false ])
+}
+
+void refresh() {
+    log.info "${device.displayName} Querying device state"
     sendCommand([ 'queryDynamicShadowData': 1 ])
+}
+
+void setBreeze(String mode) {
+    log.info "${device.displayName} Setting breeze mode to ${speed}"
+    Map payload = settings.autoOn ? [ 'wind': true ] : [:]
+    switch (mode) {
+        case 'on':
+            payload['wind'] = true
+            break
+        case 'off':
+            payload['wind'] = false
+            break
+        case 'low':
+            payload['windSpeed'] = 1
+            break
+        case 'medium':
+            payload['windSpeed'] = 2
+            break
+        case 'high':
+            payload['windSpeed'] = 3
+            break
+    }
+
+    sendCommand(payload)
 }
 
 void setDirection(String direction) {
@@ -101,7 +150,9 @@ void setDirection(String direction) {
 
 void setLevel(BigDecimal level) {
     log.info "${device.displayName} Set light level to ${level}"
-    sendCommand([ 'lightBrightness': level ])
+    Map payload = settings.autoLightOn ? [ 'lightOn': true ] : [:]
+    payload['lightBrightness'] = level
+    sendCommand(payload)
 }
 
 void setSpeed(String speed) {
@@ -146,6 +197,16 @@ void updated() {
     if (logEnable) { runIn(1800, 'logsOff') }
 }
 
+private String breezeName(int speed) {
+    switch (speed) {
+        case 1: return 'low'
+        case 2: return 'medium'
+        case 3: return 'high'
+    }
+
+    return 'unknown'
+}
+
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
 private void handler(AsyncResponse response, Object data) {
     int status = response.status
@@ -178,9 +239,9 @@ private void handler(AsyncResponse response, Object data) {
             sendEvent(newEvent('lightSleepTimer', sleepUntil))
         }
         if (json.containsKey('wind') && json.wind == false) {
-            sendEvent(newEvent('windSpeed', 'off'))
+            sendEvent(newEvent('breeze', 'off'))
         } else if (json.containsKey('windSpeed')) {
-            sendEvent(newEvent('windSpeed', speedName(json.windSpeed)))
+            sendEvent(newEvent('breeze', breezeName(json.windSpeed)))
         }
     } else {
         log.error "Modern Fans returned HTTP status ${status}"
