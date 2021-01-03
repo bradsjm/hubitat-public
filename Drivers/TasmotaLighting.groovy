@@ -704,6 +704,16 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
                     events << newEvent(device, 'power', kv.value['Power'], [unit: 'W'])
                 }
                 break
+            case 'Uptime':
+            case 'LoadAvg':
+            case 'MqttCount':
+                device.updateDataValue(kv.key.toLowerCase(), kv.value.toString())
+                break
+            case 'Wifi':
+                kv.value.each { wkv ->
+                    device.updateDataValue('wifi.' + wkv.key.toLowerCase(), wkv.value.toString())
+                }
+                break
             case ~/^Button[1-8]$/:
                 String action = kv.value['Action']
                 int number = kv.key[-1] as int
