@@ -196,7 +196,7 @@ private void logsOff() {
 
 private void parseWeatherData(Map json) {
     List<Map> events = []
-    int rainMultiplier = 0
+    BigDecimal rainMultiplier = 0
     String rainUnit = ''
 
     // Transfer data into state for debug
@@ -225,6 +225,7 @@ private void parseWeatherData(Map json) {
                         rainUnit = 'in'
                         break
                 }
+                if (logEnable) { log.debug "Rain multiplier code ${c.rain_size} is ${rainMultiplier} ${rainUnit}" }
                 events << newEvent('temperature', c.temp, 'F')
                 events << newEvent('humidity', c.hum, '%')
                 events << newEvent('dewPoint', c.dew_point, 'F')
@@ -245,18 +246,20 @@ private void parseWeatherData(Map json) {
                 events << newEvent('windGustLast2min', c.wind_speed_hi_last_2_min, 'mph')
                 events << newEvent('windGustLast10min', c.wind_speed_hi_last_10_min, 'mph')
 
-                events << newEvent('raining', c.rainfall_last_15_min ?: 0 > 0 ? 'true' : 'false')
+                events << newEvent('raining', (c.rainfall_last_15_min ?: 0) > 0 ? 'true' : 'false')
                 events << newEvent('rainfallStormTotal', c.rain_storm_last ?: 0 * rainMultiplier, rainUnit)
-                events << newEvent('rainfallStormStart', c.rain_storm_last_start_at ? new Date((long)c.rain_storm_last_start_at * 1000).toString() : '')
-                events << newEvent('rainfallStormEnd', c.rain_storm_last_end_at ? new Date((long)c.rain_storm_last_end_at * 1000).toString() : '')
-                events << newEvent('rainRateLastMin', c.rain_rate_hi ?: 0 * rainMultiplier, rainUnit)
-                events << newEvent('rainRateLast15min', c.rain_rate_hi_last_15_min ?: 0 * rainMultiplier, rainUnit)
-                events << newEvent('rainfallLast15min', c.rainfall_last_15_min ?: 0 * rainMultiplier, rainUnit)
-                events << newEvent('rainfallLast60min', c.rainfall_last_60_min ?: 0 * rainMultiplier, rainUnit)
-                events << newEvent('rainfallLast24hr', c.rainfall_last_24_hr ?: 0 * rainMultiplier, rainUnit)
-                events << newEvent('rainfallDaily', c.rainfall_daily ?: 0 * rainMultiplier, rainUnit)
-                events << newEvent('rainfallMonthly', c.rainfall_monthly ?: 0 * rainMultiplier, rainUnit)
-                events << newEvent('rainfallYearly', c.rainfall_yearly ?: 0 * rainMultiplier, rainUnit)
+                events << newEvent('rainfallStormStart', c.rain_storm_last_start_at ?
+                    new Date((long)c.rain_storm_last_start_at * 1000).toString() : '')
+                events << newEvent('rainfallStormEnd', c.rain_storm_last_end_at ?
+                    new Date((long)c.rain_storm_last_end_at * 1000).toString() : '')
+                events << newEvent('rainRateLastMin', (c.rain_rate_hi ?: 0) * rainMultiplier, rainUnit)
+                events << newEvent('rainRateLast15min', (c.rain_rate_hi_last_15_min ?: 0) * rainMultiplier, rainUnit)
+                events << newEvent('rainfallLast15min', (c.rainfall_last_15_min ?: 0) * rainMultiplier, rainUnit)
+                events << newEvent('rainfallLast60min', (c.rainfall_last_60_min ?: 0) * rainMultiplier, rainUnit)
+                events << newEvent('rainfallLast24hr', (c.rainfall_last_24_hr ?: 0) * rainMultiplier, rainUnit)
+                events << newEvent('rainfallDaily', (c.rainfall_daily ?: 0) * rainMultiplier, rainUnit)
+                events << newEvent('rainfallMonthly', (c.rainfall_monthly ?: 0) * rainMultiplier, rainUnit)
+                events << newEvent('rainfallYearly', (c.rainfall_yearly ?: 0) * rainMultiplier, rainUnit)
                 break
             case 2:
                 if (c.txid != transmitterId) { return }
