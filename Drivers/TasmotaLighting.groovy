@@ -438,9 +438,7 @@ private Map newEvent(ChildDeviceWrapper device, String name, Object value, Map p
 
 private void subscribeDeviceTopics(ChildDeviceWrapper device) {
     Map config = getDeviceConfig(device)
-    String dni = config['mac']
-    String index = config['index']
-    if (index != '1') { dni += "-${index}" }
+    String dni = device.deviceNetworkId
 
     List<String> topics = [
         getStatTopic(config) + 'RESULT',
@@ -844,7 +842,10 @@ private String getCommandTopic(Map config) {
 }
 
 private Map getDeviceConfig(DeviceWrapper device) {
-    return configCache.computeIfAbsent(device.id) { k -> parseJson(device.getDataValue('config')) }
+    return configCache.computeIfAbsent(device.id) { k ->
+        String config = device.getDataValue('config')
+        return config ? parseJson(config) : null
+    }
 }
 
 private String getDeviceDriver(int relaytype, Map config) {
