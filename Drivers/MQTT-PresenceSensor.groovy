@@ -161,7 +161,9 @@ void updated() {
  */
 
 private void setPresence(String value) {
-    sendEvent(newEvent('presence', value))
+    if (device.currentValue('presence') != value) {
+        sendEvent(newEvent('presence', value))
+    }
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */

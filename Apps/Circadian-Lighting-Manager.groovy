@@ -137,6 +137,18 @@ preferences {
         }
 
         section {
+            input name: 'updateInterval',
+                    title: 'Update interval',
+                    type: 'enum',
+                    defaultValue: 5,
+                    options: [
+                        5: 'Every 5 minutes',
+                        10: 'Every 10 minutes',
+                        15: 'Every 15 minutes',
+                        30: 'Every 30 minutes',
+                        45: 'Every 30 minutes'
+                    ]
+
             input name: 'logEnable',
                   type: 'bool',
                   title: 'Enable Debug logging',
@@ -179,9 +191,10 @@ void initialize() {
         if (colorDevices) { subscribe(colorDevices, 'deviceEvent', [ filtered: true ]) }
         if (colorOnDevices) { subscribe(colorOnDevices, 'deviceEvent', [ filtered: true ]) }
 
-        // Update circadian calculation and update lamps every 5 minutes
-        log.info 'Scheduling period updates'
-        schedule('0 */5 * * * ?', 'circadianUpdate')
+        // Update circadian calculation and update lamps on defined schedule
+        int interval = settings.updateInterval as int
+        log.info "Scheduling periodic updates every ${interval} minute(s)"
+        schedule("0 */${interval} * * * ?", 'circadianUpdate')
         circadianUpdate()
     }
 }
@@ -353,28 +366,28 @@ private void updateLamp(DeviceWrapper device) {
         device.currentValue('saturation') != current.hsv[1] ||
         device.currentValue('level') != current.hsv[2]) ) {
         log.info "Setting ${device} color to ${current.hsv}"
-        device.color = current.hsv
+        device.setColor(current.hsv)
     }
 
     if (device.id in settings.colorDevices*.id && (
         device.currentValue('hue') != current.hsv[0] ||
         device.currentValue('saturation') != current.hsv[1] ||
         device.currentValue('level') != current.hsv[2]) ) {
-        log.info "Setting ${device} color to ${current.hsv}"
-        device.color = current.hsv
+        log.info "Setting ${device} color to to ${current.hsv}"
+        device.setColor(current.hsv)
     }
 
     if (device.id in settings.colorTemperatureOnDevices*.id &&
         device.currentValue('switch') == 'on' &&
-        device.currentValue('colorTemperature') != current.colorTemperature) {
-        log.info "Setting ${device} color temperature to ${current.colorTemperature}K"
-        device.colorTemperature = current.colorTemperature
+        Math.abs(device.currentValue('colorTemperature') - current.colorTemperature) > 30) {
+        log.info "Setting ${device} color temperature from ${device.currentValue('colorTemperature')}K to ${current.colorTemperature}K"
+        device.setColorTemperature(current.colorTemperature)
     }
 
     if (device.id in settings.colorTemperatureDevices*.id &&
-        device.currentValue('colorTemperature') != current.colorTemperature) {
-        log.info "Setting ${device} color temperature to ${current.colorTemperature}K"
-        device.colorTemperature = current.colorTemperature
+        Math.abs(device.currentValue('colorTemperature') - current.colorTemperature) > 30) {
+        log.info "Setting ${device} color temperature from ${device.currentValue('colorTemperature')}K to ${current.colorTemperature}K"
+        device.setColorTemperature(current.colorTemperature)
     }
 }
 

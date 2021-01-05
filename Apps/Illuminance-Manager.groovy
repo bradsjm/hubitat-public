@@ -148,6 +148,18 @@ preferences {
         }
 
         section {
+            input name: 'updateInterval',
+                    title: 'Update interval',
+                    type: 'enum',
+                    defaultValue: 5,
+                    options: [
+                        5: 'Every 5 minutes',
+                        10: 'Every 10 minutes',
+                        15: 'Every 15 minutes',
+                        30: 'Every 30 minutes',
+                        45: 'Every 30 minutes'
+                    ]
+
             input name: 'logEnable',
                   type: 'bool',
                   title: 'Enable Debug logging',
@@ -190,8 +202,10 @@ void initialize() {
         subscribe(dimmableOnDevices, 'level', 'levelCheck')
         subscribe(dimmableDevices, 'level', 'levelCheck')
 
-        // Update lamps every 5 minutes
-        schedule('0 */5 * * * ?', 'levelUpdate')
+        // Update lamps on defined schedule
+        int interval = settings.updateInterval as int
+        log.info "Scheduling periodic updates every ${interval} minute(s)"
+        schedule("0 */${interval} * * * ?", 'levelUpdate')
         levelUpdate()
     }
 }
@@ -289,7 +303,7 @@ private void updateLamp(Event evt) {
         return
     }
 
-    if (device.id in settings.dimmableOnDevices*.id) {
+    if (device.currentValue('level') != brightness) {
         log.info "${app.name} Setting ${device} level to ${brightness}%"
         device.setLevel(brightness, settings.transitionSeconds as int)
     }
@@ -315,6 +329,7 @@ private void updateLamps() {
 
     settings.dimmableOnDevices?.each { device ->
         if (!disabled.containsKey(device.id) &&
+            device.currentValue('level') != brightness &&
             device.currentValue('switch') == 'on') {
             if (logEnable) { log.debug "Setting ${device} level to ${brightness}%" }
             device.setLevel(brightness, settings.transitionSeconds as int)
@@ -322,7 +337,7 @@ private void updateLamps() {
     }
 
     settings.dimmableDevices?.each { device ->
-        if (!disabled.containsKey(device.id)) {
+        if (!disabled.containsKey(device.id) && device.currentValue('level') != brightness) {
             if (logEnable) { log.debug "Setting ${device} level to ${brightness}%" }
             device.setLevel(brightness, settings.transitionSeconds as int)
         }

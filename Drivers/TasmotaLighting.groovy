@@ -36,7 +36,9 @@ metadata {
         command 'disconnect'
         command 'sendCommand', [
             [
-                type: 'text',
+                name: 'command*',
+                type: 'STRING',
+                description: 'Sent to all devices'
             ]
         ]
         command 'removeDevices'
@@ -416,10 +418,19 @@ private static int toKelvin(BigDecimal value) {
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void healthcheck() {
+    String indicator = ' (Offline)'
     childDevices.each { device ->
-        int elapsed = (now() - lastHeard.getOrDefault(device.id, now())) / 1000
-        if (elapsed > settings.telePeriod) {
-            log.warn "${device} has not been heard from in ${elapsed} seconds"
+        if (lastHeard.containsKey(device.id)) {
+            int elapsed = (now() - lastHeard[device.id]) / 1000
+            if (elapsed > settings.telePeriod) {
+                log.warn "${device} has not been heard from in ${elapsed} seconds"
+                if (!device.label.endsWith(indicator)) {
+                    device.label += indicator
+                }
+            } else if (device.label.endsWith(indicator)) {
+                device.label -= indicator
+                log.info "${device} is now reporting data again"
+            }
         }
     }
 
@@ -603,7 +614,6 @@ private void restoreState(ChildDeviceWrapper device) {
     String sw = device.currentValue('switch')
     BigDecimal level = device.currentValue('level')
     BigDecimal colorTemperature = device.currentValue('colorTemperature')
-    String color = device.currentValue('color')
     BigDecimal hue = device.currentValue('hue')
     BigDecimal saturation = device.currentValue('saturation')
     String colorMode = device.currentValue('colorMode')
@@ -613,7 +623,7 @@ private void restoreState(ChildDeviceWrapper device) {
     if (colorMode == 'CT' && colorTemperature != null) {
         componentSetColorTemperature(device, colorTemperature)
         if (level != null) { componentSetLevel(device, level) }
-    } else if (colorMode == 'RGB' && color != null) {
+    } else if (colorMode == 'RGB' && hue != null && saturation != null) {
         componentSetColor(device, [ hue: hue, saturation: saturation, level: level])
     } else if (level != null) {
         componentSetLevel(device, level)
@@ -622,12 +632,13 @@ private void restoreState(ChildDeviceWrapper device) {
 
 private void parseLWT(ChildDeviceWrapper device, String payload) {
     String indicator = ' (Offline)'
-    if (device.label.contains(indicator)) {
-        device.label = device.label.replace(indicator, '')
+    if (device.label.endsWith(indicator)) {
+        device.label -= indicator
     }
 
     if (payload == 'Offline') {
         device.label += indicator
+        sendEvent(newEvent(device, 'switch', 'off'))
     } else if (settings.restoreState) {
         restoreState(device)
     }
@@ -672,7 +683,7 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
                 }
                 break
             case 'CT':
-                if (device.currentValue('colorTemperature') != kv.value) {
+                if (Math.abs(device.currentValue('colorTemperature') - kv.value) > 10) {
                     events << newEvent(device, 'colorTemperature', toKelvin(kv.value), [unit: 'K'])
                 }
                 break
@@ -681,9 +692,6 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
                 String colorMode = kv.value.startsWith('0,0,0') ? 'CT' : 'RGB'
                 String colorName = getGenericName(rgbToHSV(kv.value))
                 List<Integer> hsv = rgbToHSV(kv.value)
-                if (device.currentValue('color') != hex) {
-                    events << newEvent(device, 'color', hex)
-                }
                 if (device.currentValue('hue') != hsv[0]) {
                     events << newEvent(device, 'hue', hsv[0])
                 }
@@ -737,7 +745,10 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
         }
     }
 
-    if (events) { device.parse(events) }
+    if (events) {
+        if (logEnable) { log.debug "Sending ${events} to ${device}" }
+        device.parse(events)
+    }
 }
 
 /**
@@ -913,4 +924,3 @@ private void logsOff() {
     device.updateSetting('logEnable', [value: 'false', type: 'bool'] )
     log.info "debug logging disabled for ${device.displayName}"
 }
-
