@@ -229,14 +229,12 @@ private void levelUpdate() {
         int min = settings.minimumLevel ?: 1
         int max = calculateLevel(1)
         int range = max - min
-        if (currentTime < midNight) {
+        if (currentTime > after.sunset.time && currentTime < midNight) {
             if (logEnable) { log.debug 'Current time is after sunset and before midnight' }
-            log.debug "${currentTime - after.sunset.time} / ${midNight - after.sunset.time}"
             level = max - ((currentTime - after.sunset.time) / (midNight - after.sunset.time) * range)
         } else {
             if (logEnable) { log.debug 'Current time is after midnight and before sunrise' }
-            log.debug "${currentTime - midnight} / ${after.sunrise.time - midNight}"
-            level = min + ((currentTime - midNight) / (after.sunrise.time - midNight) * range)
+            level = min
         }
         log.info "${app.name} Brightness level calculated at ${level}% based on current night time"
     }
