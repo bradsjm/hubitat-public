@@ -107,12 +107,12 @@ metadata {
 
 // List of topic to child device mappings for lookup for received messages
 @Field static final Map<String, Set> subscriptions = [:]
-
 // Cache of device configuration data for performance
 @Field static final Map<Integer, Map> configCache = [:]
-
 // Track of last heard from time for each device
 @Field static final Map<Integer, Long> lastHeard = [:]
+// Track for dimming operations
+@Field static final Map<String, Integer> levelChanges = [:]
 
 /**
  *  Hubitat Driver Event Handlers
@@ -244,27 +244,20 @@ void componentSetLevel(DeviceWrapper device, BigDecimal level, BigDecimal durati
     mqttPublish(topic, fadeCommand + "Dimmer${config.index ?: 1} ${level}")
 }
 
-// void componentStartLevelChange(device, direction) {
-//     if (settings.changeLevelStep && settings.changeLevelEvery) {
-//         int delta = (direction == "down") ? -settings.changeLevelStep : settings.changeLevelStep
-//         doLevelChange(limit(delta, -10, 10))
-//         log.info "${device.displayName} Starting level change ${direction}"
-//     }
-// }
+void componentStartLevelChange(DeviceWrapper device, String direction) {
+    if (settings.changeLevelStep && settings.changeLevelEvery) {
+        int delta = limit((direction == 'down') ? -settings.changeLevelStep : settings.changeLevelStep, -10, 10)
+        log.info "${device.displayName} Starting level change ${direction}"
+        levelChanges[device.deviceNetworkId] = delta
+        int delay = limit(settings.changeLevelEvery, 100, 1000)
+        runInMillis(delay, 'doLevelChange')
+    }
+}
 
-// void componentStopLevelChange(device) {
-//     unschedule("doLevelChange")
-//     log.info "${device.displayName} Stopping level change"
-// }
-
-// private void doLevelChange(device, delta) {
-//     int newLevel = limit(device.currentValue("level").toInteger() + delta)
-//     componentSetLevel(device, newLevel)
-//     if (newLevel > 0 && newLevel < 99) {
-//         int delay = limit(settings.changeLevelEvery, 100, 1000)
-//         runInMillis(delay, "doLevelChange", [ data: [device, delta] ])
-//     }
-// }
+void componentStopLevelChange(DeviceWrapper device) {
+    log.info "${device.displayName} Stopping level change"
+    levelChanges.remove(device.deviceNetworkId)
+}
 
 void componentSetColorTemperature(DeviceWrapper device, BigDecimal value) {
     Map config = getDeviceConfig(device)
@@ -406,14 +399,26 @@ private static List<Integer> rgbToHSV(String rgb) {
     return ColorUtils.rgbToHSV(rgb.tokenize(',')*.asType(int).take(3))
 }
 
-// Convert rgb to HEX value
-private static String rgbToHEX(String rgb) {
-    return ColorUtils.rgbToHEX(rgb.tokenize(',')*.asType(int).take(3))
-}
-
 // Convert mireds to kelvin
 private static int toKelvin(BigDecimal value) {
     return 1000000f / value as int
+}
+
+/* groovylint-disable-next-line UnusedPrivateMethod */
+private void doLevelChange() {
+    deviceNetworkId.each { kv ->
+        ChildDeviceWrapper device = getChildDevice(kv.key)
+        int newLevel = limit(device.currentValue('level').toInteger() + kv.value)
+        componentSetLevel(device, newLevel)
+        if (newLevel <= 0 && newLevel >= 100) {
+            componentStopLevelChange(device)
+        }
+    }
+
+    if (!levelChanges.isEmpty()) {
+        int delay = limit(settings.changeLevelEvery, 100, 1000)
+        runInMillis(delay, 'doLevelChange')
+    }
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
@@ -650,14 +655,10 @@ private void parseLWT(ChildDeviceWrapper device, String payload) {
 private void parseTopicPayload(ChildDeviceWrapper device, String topic, String payload) {
     List<Map> events = []
 
-    // Process online/offline notifications
     if (topic.endsWith('LWT')) {
-        parseLWT(device, payload)
+        parseLWT(device, payload)     // Process online/offline notifications
         return
-    }
-
-    // Detect json payload
-    if (!payload.startsWith('{') || !payload.endsWith('}')) {
+    } else if (!payload.startsWith('{') || !payload.endsWith('}')) {
         if (logEnable) { log.debug "${device} ${topic}: Ignoring non JSON payload (${payload})" }
         return
     }
@@ -688,7 +689,6 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
                 }
                 break
             case 'Color':
-                String hex = rgbToHEX(kv.value)
                 String colorMode = kv.value.startsWith('0,0,0') ? 'CT' : 'RGB'
                 String colorName = getGenericName(rgbToHSV(kv.value))
                 List<Integer> hsv = rgbToHSV(kv.value)
@@ -706,8 +706,9 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
                 }
                 break
             case 'ENERGY':
-                if (device.currentValue('power') != kv.value) {
-                    events << newEvent(device, 'power', kv.value['Power'], [unit: 'W'])
+            int power = kv.value['Power']
+                if (device.currentValue('power') != power) {
+                    events << newEvent(device, 'power', power, [unit: 'W'])
                 }
                 break
             case 'Uptime':
@@ -862,7 +863,7 @@ private Map getDeviceConfig(DeviceWrapper device) {
 private String getDeviceDriver(int relaytype, Map config) {
     switch (relaytype) {
         case 1:
-            return 'Generic Component Switch'
+            return 'Generic Component Metering Switch'
         case 2: // light or light fan
             if (config['if']) {
                 log.warn 'Light Fan not implemented'

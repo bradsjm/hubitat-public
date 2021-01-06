@@ -18,6 +18,9 @@
         },
         "MethodCount": {
             "enabled": false
+        },
+        "UnnecessaryGetter": {
+            "enabled": false
         }
     }
 }
