@@ -79,20 +79,22 @@ preferences {
 
             input name: 'offset',
                   type: 'number',
-                  title: '<a href="https://www.desmos.com/calculator/vi0qou21ol" target=”_blank”>Logarithm offset</a> - Moves the lighting curve up and down, without changing the curve shape',
+                  title: '<a href="https://www.desmos.com/calculator/vi0qou21ol" target=”_blank”>Logarithm offset</a> - (a) Moves the lighting curve up and down, without changing the curve shape',
                   required: true,
+                  range: '3..10000'
                   defaultValue: 4500
 
             input name: 'base',
                   type: 'decimal',
-                  title: '<a href="https://www.desmos.com/calculator/vi0qou21ol" target=”_blank”>Logarithm base</a> - Changes the shape of the curve by making it slightly stipper or flatter',
+                  title: '<a href="https://www.desmos.com/calculator/vi0qou21ol" target=”_blank”>Logarithm base</a> - (b) Changes the shape of the curve by making it slightly stipper or flatter',
                   required: true,
                   defaultValue: 1.5
 
             input name: 'multiplier',
                   type: 'number',
-                  title: '<a href="https://www.desmos.com/calculator/vi0qou21ol" target=”_blank”>Logarithm multiplier</a> - Changes the curve shape more drastically',
+                  title: '<a href="https://www.desmos.com/calculator/vi0qou21ol" target=”_blank”>Logarithm multiplier</a> - (c) Changes the curve shape more drastically',
                   required: true,
+                  range: '3..3000'
                   defaultValue: 200
         }
 
