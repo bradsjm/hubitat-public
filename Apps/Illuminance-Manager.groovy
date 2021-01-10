@@ -293,12 +293,13 @@ private void updateLamp(Event evt) {
         return
     }
 
-    if (location.mode in disabledModes) {
+    if (logEnable) { log.debug "Checking ${location.mode} is in ${settings.disabledModes}" }
+    if (location.mode in settings.disabledModes) {
         log.info "${app.name} Manager is disabled due to mode ${location.mode}"
         return
     }
 
-    if (disabledSwitch && disabledSwitch.currentValue('switch') == disabledSwitchValue) {
+    if (settings.disabledSwitch && settings.disabledSwitch.currentValue('switch') == settings.disabledSwitchValue) {
         log.info "${app.name} Manager is disabled due to switch ${disabledSwitch} set to ${disabledSwitchValue}"
         return
     }

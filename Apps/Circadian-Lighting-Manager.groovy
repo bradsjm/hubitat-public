@@ -246,12 +246,13 @@ private boolean checkEnabled() {
         return false
     }
 
-    if (location.mode in disabledModes) {
+    if (logEnable) { log.debug "Checking ${location.mode} is in ${settings.disabledModes}" }
+    if (location.mode in settings.disabledModes) {
         log.info "Manager is disabled due to mode ${location.mode}"
         return false
     }
 
-    if (disabledSwitch && disabledSwitch.currentValue('switch') == disabledSwitchValue) {
+    if (settings.disabledSwitch && settings.disabledSwitch.currentValue('switch') == settings.disabledSwitchValue) {
         log.info "Manager is disabled due to switch ${disabledSwitch} set to ${disabledSwitchValue}"
         return false
     }
@@ -331,7 +332,7 @@ private void deviceEvent(Event evt) {
             }
             break
         case 'hue':
-            int value = evt.value as int
+            BigDecimal value = evt.value as BigDecimal
             int hue = state.current.hsv[0] as int
             if (diff(value, hue) > 10 && !state.disabledDevices.containsKey(device.id)) {
                 log.info "Disabling ${device} for circadian management due to manual hue change"
@@ -380,13 +381,15 @@ private void updateLamp(DeviceWrapper device) {
     if (device.id in settings.colorTemperatureOnDevices*.id &&
         device.currentValue('switch') == 'on' &&
         Math.abs(device.currentValue('colorTemperature') - current.colorTemperature) > 30) {
-        log.info "Setting ${device} color temperature from ${device.currentValue('colorTemperature')}K to ${current.colorTemperature}K"
+        log.info "Setting ${device} color temperature from ${device.currentValue('colorTemperature')}K " +
+                 "to ${current.colorTemperature}K"
         device.setColorTemperature(current.colorTemperature)
     }
 
     if (device.id in settings.colorTemperatureDevices*.id &&
         Math.abs(device.currentValue('colorTemperature') - current.colorTemperature) > 30) {
-        log.info "Setting ${device} color temperature from ${device.currentValue('colorTemperature')}K to ${current.colorTemperature}K"
+        log.info "Setting ${device} color temperature from ${device.currentValue('colorTemperature')}K " +
+                 "to ${current.colorTemperature}K"
         device.setColorTemperature(current.colorTemperature)
     }
 }

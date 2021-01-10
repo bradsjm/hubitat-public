@@ -306,9 +306,9 @@ void componentSetSaturation(DeviceWrapper device, BigDecimal saturation) {
 void componentRefresh(DeviceWrapper device) {
     Map config = getDeviceConfig(device)
     if (config) {
-        String topic = getCommandTopic(config) + 'STATE'
+        subscribeDeviceTopics(device)
         log.info "Refreshing ${device}"
-        mqttPublish(topic, '')
+        mqttPublish(getCommandTopic(config) + 'STATE', '')
     }
 }
 
@@ -323,6 +323,7 @@ void mqttClientStatus(String status) {
             switch (parts[1]) {
                 case 'Connection lost':
                 case 'send error':
+                    mqttDisconnect()
                     runIn(30, 'initialize')
                     break
             }
@@ -444,7 +445,9 @@ private void healthcheck() {
 
 private Map newEvent(ChildDeviceWrapper device, String name, Object value, Map params = [:]) {
     String splitName = splitCamelCase(name).toLowerCase()
-    String description = "${device.displayName} ${splitName} is ${value}${params.unit ?: ''}"
+    String oldValue = device.currentValue(name)
+    String unit = params.unit ?: ''
+    String description = "${device.displayName} ${splitName} is ${value}${unit} (was ${oldValue}${unit})"
     return [
         name: name,
         value: value,
@@ -635,6 +638,16 @@ private void restoreState(ChildDeviceWrapper device) {
     }
 }
 
+private void scanChildDevices() {
+    log.info 'Scanning child devices to build subscription topic cache'
+    subscriptions.clear()
+    childDevices.each { device -> componentRefresh(device) }
+    log.info "Completed caching ${childDevices.size()} devices with ${subscriptions.size()} topics"
+}
+
+/**
+ *  Message Parsing logic
+ */
 private void parseLWT(ChildDeviceWrapper device, String payload) {
     String indicator = ' (Offline)'
     if (device.label.endsWith(indicator)) {
@@ -649,9 +662,6 @@ private void parseLWT(ChildDeviceWrapper device, String payload) {
     }
 }
 
-/**
- *  Message Parsing logic
- */
 private void parseTopicPayload(ChildDeviceWrapper device, String topic, String payload) {
     List<Map> events = []
 
@@ -674,40 +684,42 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
             case 'POWER':
             case "POWER${index}":
                 String value = kv.value.toLowerCase()
-                if (device.currentValue('switch') != value) {
+                if (device.hasAttribute('switch') && device.currentValue('switch') != value) {
                     events << newEvent(device, 'switch', value)
                 }
                 break
             case 'Dimmer':
-                if (device.currentValue('level') != kv.value) {
+                if (device.hasAttribute('level') && device.currentValue('level') != kv.value) {
                     events << newEvent(device, 'level', kv.value, [unit: '%'])
                 }
                 break
             case 'CT':
-                if (Math.abs(device.currentValue('colorTemperature') - kv.value) > 10) {
-                    events << newEvent(device, 'colorTemperature', toKelvin(kv.value), [unit: 'K'])
+                BigDecimal value = toKelvin(kv.value)
+                if (device.hasAttribute('colorTemperature') &&
+                    Math.abs(device.currentValue('colorTemperature') - value) > 10) {
+                    events << newEvent(device, 'colorTemperature', value, [unit: 'K'])
                 }
                 break
             case 'Color':
                 String colorMode = kv.value.startsWith('0,0,0') ? 'CT' : 'RGB'
                 String colorName = getGenericName(rgbToHSV(kv.value))
                 List<Integer> hsv = rgbToHSV(kv.value)
-                if (device.currentValue('hue') != hsv[0]) {
+                if (device.hasAttribute('hue') && device.currentValue('hue') != hsv[0]) {
                     events << newEvent(device, 'hue', hsv[0])
                 }
-                if (device.currentValue('saturation') != hsv[1]) {
+                if (device.hasAttribute('saturation') && device.currentValue('saturation') != hsv[1]) {
                     events << newEvent(device, 'saturation', hsv[1])
                 }
-                if (device.currentValue('colorMode') != colorMode) {
+                if (device.hasAttribute('colorMode') && device.currentValue('colorMode') != colorMode) {
                     events << newEvent(device, 'colorMode', colorMode)
                 }
-                if (device.currentValue('colorName') != colorName) {
+                if (device.hasAttribute('colorName') && device.currentValue('colorName') != colorName) {
                     events << newEvent(device, 'colorName', colorName)
                 }
                 break
             case 'ENERGY':
             int power = kv.value['Power']
-                if (device.currentValue('power') != power) {
+                if (device.hasAttribute('power') && device.currentValue('power') != power) {
                     events << newEvent(device, 'power', power, [unit: 'W'])
                 }
                 break
@@ -727,16 +739,22 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
                 if (logEnable) { log.debug "${device} button number ${number} ${action}" }
                 switch (action) {
                     case 'SINGLE':
-                        events << newEvent(device, 'pushed', number, [type: physical, isStateChange: true])
+                        if (device.hasAttribute('pushed')) {
+                            events << newEvent(device, 'pushed', number, [type: physical, isStateChange: true])
+                        }
                         break
                     case 'DOUBLE':
-                        events << newEvent(device, 'doubleTapped', number, [type: physical, isStateChange: true])
+                        if (device.hasAttribute('doubleTapped')) {
+                            events << newEvent(device, 'doubleTapped', number, [type: physical, isStateChange: true])
+                        }
                         break
                     // case 'TRIPLE':
                     // case 'QUAD':
                     // case 'PENTA':
                     case 'HOLD':
-                        events << newEvent(device, 'held', number, [type: physical, isStateChange: true])
+                        if (device.hasAttribute('held')) {
+                            events << newEvent(device, 'held', number, [type: physical, isStateChange: true])
+                        }
                         break
                 }
                 break
@@ -780,7 +798,6 @@ private void mqttDisconnect() {
     }
 
     sendEvent(name: 'presence', value: 'not present', descriptionText: "${device.displayName} is not connected")
-    subscriptions.clear()
 }
 
 private void mqttPublish(String topic, String payload = '', int qos = 0) {
@@ -795,17 +812,14 @@ private void mqttReceive(Map message) {
     String payload = message.get('payload')
     if (logEnable) { log.debug "RCV: ${topic} = ${payload}" }
 
-    // Check if subscription map is complete
-    if (subscriptions.size() < childDevices.size()) {
-        log.info 'Scanning child devices to build subscription topic cache'
-        childDevices.each { device -> subscribeDeviceTopics(device) }
-        log.info "Completed caching ${childDevices.size()} devices with ${subscriptions.size()} topics"
-    }
-
     if (topic.startsWith(settings.discoveryPrefix) && payload.startsWith('{')) {
         // Parse Home Assistant Discovery topic
         parseAutoDiscovery(topic, parseJson(payload))
         return
+    }
+
+    if (!subscriptions.containsKey(topic)) {
+        scanChildDevices()
     }
 
     if (subscriptions.containsKey(topic)) {
@@ -821,7 +835,7 @@ private void mqttReceive(Map message) {
             }
         }
     } else {
-        log.warn "Unhandled topic ${topic} received - removing subscription"
+        log.warn "Unhandled topic ${topic} received, rebuilding subscriptions"
         mqttUnsubscribe(topic)
     }
 }
@@ -835,7 +849,9 @@ private void mqttSubscribe(String topic) {
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void mqttSubscribeDiscovery() {
+    log.info "Subscribing to discovery topic at ${settings.discoveryPrefix}"
     mqttSubscribe("${settings.discoveryPrefix}/#")
+    scanChildDevices()
 }
 
 private void mqttUnsubscribe(String topic) {
