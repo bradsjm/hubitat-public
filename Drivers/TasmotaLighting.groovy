@@ -656,7 +656,7 @@ private void parseLWT(ChildDeviceWrapper device, String payload) {
 
     if (payload == 'Offline') {
         device.label += indicator
-        sendEvent(newEvent(device, 'switch', 'off'))
+        device.parse([ newEvent(device, 'switch', 'off') ])
     } else if (settings.restoreState) {
         restoreState(device)
     }
