@@ -21,6 +21,9 @@
         },
         "UnnecessaryGetter": {
             "enabled": false
+        },
+        "UnnecessarySetter": {
+            "enabled": false
         }
     }
 }
