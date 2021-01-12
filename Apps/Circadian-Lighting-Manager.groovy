@@ -319,16 +319,10 @@ private void deviceEvent(Event evt) {
             if (diff(value, ct) > 100 && !state.disabledDevices.containsKey(device.id)) {
                 log.info "Disabling ${device} for circadian management due to manual CT change"
                 state.disabledDevices.put(device.id, now())
-            } else if (device.id in state.disabledDevices) {
+            } else if (diff(value, ct) <= 100 && device.id in state.disabledDevices) {
                 log.info "Re-enabling ${device} for circadian management"
                 state.disabledDevices.remove(device.id)
                 if (checkEnabled()) { updateLamp(device) }
-            }
-            break
-        case 'colorMode':
-            if (evt.value == 'RGB') {
-                log.info "Disabling ${device} for circadian management due to color mode change to ${evt.value}"
-                state.disabledDevices.put(device.id, now())
             }
             break
         case 'hue':
@@ -337,7 +331,7 @@ private void deviceEvent(Event evt) {
             if (diff(value, hue) > 10 && !state.disabledDevices.containsKey(device.id)) {
                 log.info "Disabling ${device} for circadian management due to manual hue change"
                 state.disabledDevices.put(device.id, now())
-            } else if (device.id in state.disabledDevices) {
+            } else if (diff(value, hue) <= 10 && device.id in state.disabledDevices) {
                 log.info "Re-enabling ${device} for circadian management"
                 state.disabledDevices.remove(device.id)
                 if (checkEnabled()) { updateLamp(device) }
@@ -349,7 +343,7 @@ private void deviceEvent(Event evt) {
             if (diff(value, saturation) > 10 && !state.disabledDevices.containsKey(device.id)) {
                 log.info "Disabling ${device} for circadian management due to manual hue change"
                 state.disabledDevices.put(device.id, now())
-            } else if (device.id in state.disabledDevices) {
+            } else if (diff(value, saturation) <= 10 && device.id in state.disabledDevices) {
                 log.info "Re-enabling ${device} for circadian management"
                 state.disabledDevices.remove(device.id)
                 if (checkEnabled()) { updateLamp(device) }
@@ -359,6 +353,8 @@ private void deviceEvent(Event evt) {
 }
 
 private void updateLamp(DeviceWrapper device) {
+    if (device.id in state.disabledDevices) { return }
+
     Map current = state.current
 
     if (device.id in settings.colorOnDevices*.id &&
@@ -396,12 +392,10 @@ private void updateLamp(DeviceWrapper device) {
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void updateLamps() {
-    Map disabled = state.disabledDevices
-
     // Remove disabled devices that have timed out
     if (settings.reenableDelay) {
         long expire = now() - (settings.reenableDelay * 60000)
-        disabled.values().removeIf { v -> v <= expire }
+        state.disabledDevices.values().removeIf { v -> v <= expire }
     }
 
     if (!checkEnabled()) { return }
