@@ -612,6 +612,7 @@ private void configureDeviceSettings(Map config) {
     payload += 'Longitude ' + location.longitude + ';'
     payload += 'so17 1;' // use RGB not HEX results
     payload += 'so20 ' + (settings['so20'] ? '1' : '0') + ';'
+    payload += 'so59 0'; // do not send state for power command
     payload += 'teleperiod ' + settings['telePeriod'] + ';'
 
     mqttPublish(topic, payload)
