@@ -197,12 +197,14 @@ void initialize() {
     state.brightness = 0
     state.disabledDevices = [:]
     state.lastUpdate = 0
+    state.lux = 0
 
     if (masterEnable) {
         subscribe(dimmableOnDevices, 'switch', 'updateLamp')
         subscribe(dimmableDevices, 'switch', 'updateLamp')
         subscribe(dimmableOnDevices, 'level', 'levelCheck')
         subscribe(dimmableDevices, 'level', 'levelCheck')
+        subscribe(luxDevices, 'illuminance', 'illuminanceUpdate')
 
         // Update lamps on defined schedule
         int interval = settings.updateInterval as int
@@ -230,13 +232,13 @@ private int calculateLevel(Integer illum) {
 private void levelUpdate() {
     long currentTime = now()
     int level = state.brightness
+    int lux = currentLuxValue()
     Map after = getSunriseAndSunset(
         sunriseOffset: settings.sunriseOffset ?: 0,
         sunsetOffset: settings.sunsetOffset ?: 0
     )
 
     if (currentTime >= after.sunrise.time && currentTime <= after.sunset.time) {
-        int lux = currentLuxValue()
         level = calculateLevel(lux)
         if (level < settings.minimumLevel) { level = settings.minimumLevel }
         log.info "${app.name} Brightness level calculated at ${level}% based on ${lux} lux reading"
@@ -257,7 +259,18 @@ private void levelUpdate() {
 
     state.brightness = level
     state.lastUpdate = now()
+    state.lux = lux
     updateLamps()
+}
+
+/* groovylint-disable-next-line UnusedPrivateMethod */
+private void illuminanceUpdate(Event evt) {
+    int value = evt.value as int
+    int lux = state.lux ?: 0
+    if (value < lux - 1000 || value > lux + 1000) {
+        log.info "${app.name} Lux change over 1000, forcing level update"
+        runIn(5, 'levelUpdate')
+    }
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
