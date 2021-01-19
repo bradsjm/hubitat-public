@@ -24,34 +24,14 @@ import groovy.json.JsonOutput
 import hubitat.scheduling.AsyncResponse
 
 metadata {
-    definition(name: 'Modern Forms - Fan with Light', namespace: 'nrgup', author: 'jb@nrgup.net') {
+    definition(name: 'Modern Forms - Fan Light', namespace: 'nrgup', author: 'jb@nrgup.net') {
         capability 'Actuator'
         capability 'Initialize'
-        capability 'FanControl'
         capability 'Light'
         capability 'SwitchLevel'
         capability 'Refresh'
 
-        attribute 'direction', 'string'
-        attribute 'fanSleepTimer', 'string'
         attribute 'lightSleepTimer', 'string'
-        attribute 'breeze', 'string'
-
-        command 'setDirection', [
-            [
-                name: 'Fan direction',
-                type: 'ENUM',
-                constraints: [ 'forward', 'reverse' ]
-            ]
-        ]
-
-        command 'setBreeze', [
-            [
-                name: 'Breeze speed',
-                type: 'ENUM',
-                constraints: [ 'off', 'on', 'low', 'medium', 'high' ]
-            ]
-        ]
     }
 }
 
@@ -66,13 +46,6 @@ preferences {
     }
 
     section {
-        input name: 'autoOn',
-            type: 'bool',
-            title: 'Automatic fan on',
-            description: 'Turn on when fan speed set',
-            required: true,
-            defaultValue: true
-
         input name: 'autoLightOn',
             type: 'bool',
             title: 'Automatic light on',
@@ -119,72 +92,10 @@ void refresh() {
     sendCommand([ 'queryDynamicShadowData': 1 ])
 }
 
-void setBreeze(String mode) {
-    log.info "${device.displayName} Setting breeze mode to ${speed}"
-    Map payload = settings.autoOn ? [ 'wind': true ] : [:]
-    switch (mode) {
-        case 'on':
-            payload['wind'] = true
-            break
-        case 'off':
-            payload['wind'] = false
-            break
-        case 'low':
-            payload['windSpeed'] = 1
-            break
-        case 'medium':
-            payload['windSpeed'] = 2
-            break
-        case 'high':
-            payload['windSpeed'] = 3
-            break
-    }
-
-    sendCommand(payload)
-}
-
-void setDirection(String direction) {
-    log.info "${device.displayName} Setting fan direction to ${direction}"
-    sendCommand([ 'fanDirection': direction])
-}
-
 void setLevel(BigDecimal level) {
     log.info "${device.displayName} Set light level to ${level}"
     Map payload = settings.autoLightOn ? [ 'lightOn': true ] : [:]
     payload['lightBrightness'] = level
-    sendCommand(payload)
-}
-
-void setSpeed(String speed) {
-    log.info "${device.displayName} Setting fan speed to ${speed}"
-
-    Map payload = settings.autoOn ? [ 'fanOn': true ] : [:]
-
-    switch (speed) {
-        case 'auto':
-        case 'on':
-            payload['fanOn'] = true
-            break
-        case 'off':
-            payload['fanOn'] = false
-            break
-        case 'low':
-            payload['fanSpeed'] = 2
-            break
-        case 'medium-low':
-            payload['fanSpeed'] = 3
-            break
-        case 'medium':
-            payload['fanSpeed'] = 4
-            break
-        case 'medium-high':
-            payload['fanSpeed'] = 5
-            break
-        case 'high':
-            payload['fanSpeed'] = 6
-            break
-    }
-
     sendCommand(payload)
 }
 
@@ -197,16 +108,6 @@ void updated() {
     if (logEnable) { runIn(1800, 'logsOff') }
 }
 
-private String breezeName(int speed) {
-    switch (speed) {
-        case 1: return 'low'
-        case 2: return 'medium'
-        case 3: return 'high'
-    }
-
-    return 'unknown'
-}
-
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
 private void handler(AsyncResponse response, Object data) {
     int status = response.status
@@ -216,32 +117,15 @@ private void handler(AsyncResponse response, Object data) {
         if (json.containsKey('clientId')) {
             device.updateDataValue('model', json.clientId)
         }
-        if (json.containsKey('fanOn') && json.fanOn == false) {
-            sendEvent(newEvent('speed', 'off'))
-        } else if (json.containsKey('fanSpeed')) {
-            sendEvent(newEvent('speed', speedName(json.fanSpeed)))
-        }
-        if (json.containsKey('fanDirection')) {
-            sendEvent(newEvent('direction', json.fanDirection))
-        }
         if (json.containsKey('lightOn')) {
             sendEvent(newEvent('switch', json.lightOn ? 'on' : 'off'))
         }
         if (json.containsKey('lightBrightness')) {
             sendEvent(newEvent('level', json.lightBrightness))
         }
-        if (json.containsKey('fanSleepTimer') && json.fanSleepTimer > 0) {
-            String sleepUntil = new Date((json.fanSleepTimer as long) * 1000).format( 'M-d-yyyy HH:mm-ss' )
-            sendEvent(newEvent('fanSleepTimer', sleepUntil))
-        }
         if (json.containsKey('lightSleepTimer') && json.lightSleepTimer > 0) {
             String sleepUntil = new Date((json.lightSleepTimer as long) * 1000).format( 'M-d-yyyy HH:mm-ss' )
             sendEvent(newEvent('lightSleepTimer', sleepUntil))
-        }
-        if (json.containsKey('wind') && json.wind == false) {
-            sendEvent(newEvent('breeze', 'off'))
-        } else if (json.containsKey('windSpeed')) {
-            sendEvent(newEvent('breeze', breezeName(json.windSpeed)))
         }
     } else {
         log.error "Modern Fans returned HTTP status ${status}"
@@ -278,19 +162,6 @@ private void sendCommand(Map payload) {
     ]
 
     asynchttpPost('handler', params)
-}
-
-private String speedName(int speed) {
-    switch (speed) {
-        case 1:
-        case 2: return 'low'
-        case 3: return 'medium-low'
-        case 4: return 'medium'
-        case 5: return 'medium-high'
-        case 6: return 'high'
-    }
-
-    return 'unknown'
 }
 
 private String splitCamelCase(String s) {
