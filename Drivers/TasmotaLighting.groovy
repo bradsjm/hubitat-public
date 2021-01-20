@@ -455,7 +455,7 @@ private Map newEvent(ChildDeviceWrapper device, String name, Object value, Map p
     ] + params
 }
 
-private void subscribeDeviceTopics(ChildDeviceWrapper device) {
+private void subscribeDeviceTopics(DeviceWrapper device) {
     Map config = getDeviceConfig(device)
     String dni = device.deviceNetworkId
 
