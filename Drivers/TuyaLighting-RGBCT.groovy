@@ -35,7 +35,7 @@ metadata {
         capability 'ColorMode'
         capability 'ColorTemperature'
         capability 'Initialize'
-        capability 'Switch'
+        capability 'Light'
         capability 'SwitchLevel'
         capability 'Refresh'
     }
