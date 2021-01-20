@@ -36,7 +36,7 @@ metadata {
         capability 'Initialize'
         capability "LightEffects"
         capability 'PresenceSensor'
-        capability 'Switch'
+        capability 'Light'
         capability 'SwitchLevel'
         capability 'Refresh'
 
