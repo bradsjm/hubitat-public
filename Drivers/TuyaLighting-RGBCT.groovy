@@ -198,10 +198,18 @@ void off() {
  */
 void setLevel(BigDecimal level, BigDecimal duration = 0) {
     log.info "Setting ${device.displayName} brightness to ${level}%"
-    // the brightness scale does not start at 0 but starts at 25 - 255
-    int value = Math.round(2.3206 * level + 22.56)
-    Map payload = control(devId, [ '3': value ])
-    queue('CONTROL', payload)
+    if (colorMode == 'CT') {
+        // the brightness scale does not start at 0 but starts at 25 - 255
+        int value = Math.round(2.3206 * level + 22.56)
+        Map payload = control(devId, [ '3': value ])
+        queue('CONTROL', payload)
+    } else {
+        setColor([
+            hue: device.currentValue('hue'),
+            saturation: device.currentValue('saturation'),
+            level: level
+        ])
+    }
 }
 
 /*
