@@ -220,7 +220,7 @@ void componentOn(DeviceWrapper device) {
     Map config = getDeviceConfig(device)
     String topic = getCommandTopic(config) + 'Backlog'
     boolean isTuyaMcu = config['ty']
-    String fadeCommand = isTuyaMcu ? '' : fadeCommand(settings.fadeTime)
+    String fadeCommand = fadeCommand(isTuyaMcu ? 0 : settings.fadeTime)
     log.info "Turning ${device} on"
     mqttPublish(topic, fadeCommand + "POWER${config.index ?: 1} 1")
 }
@@ -229,7 +229,7 @@ void componentOff(DeviceWrapper device) {
     Map config = getDeviceConfig(device)
     String topic = getCommandTopic(config) + 'Backlog'
     boolean isTuyaMcu = config['ty']
-    String fadeCommand = isTuyaMcu ? '' : fadeCommand(settings.fadeTime)
+    String fadeCommand = fadeCommand(isTuyaMcu ? 0 : settings.fadeTime)
     log.info "Turning ${device} off"
     mqttPublish(topic, fadeCommand + "POWER${config.index ?: 1} 0")
 }
@@ -239,7 +239,7 @@ void componentSetLevel(DeviceWrapper device, BigDecimal level, BigDecimal durati
     String topic = getCommandTopic(config) + 'Backlog'
     int seconds = duration >= 0 ? duration : settings.fadeTime
     boolean isTuyaMcu = config['ty']
-    String fadeCommand = isTuyaMcu ? '' : fadeCommand(seconds)
+    String fadeCommand = fadeCommand(isTuyaMcu ? 0 : settings.fadeTime)
     log.info "Setting ${device} level to ${level}%" + (isTuyaMcu ? '' : " over ${seconds}s")
     mqttPublish(topic, fadeCommand + "Dimmer${config.index ?: 1} ${level}")
 }
@@ -607,12 +607,13 @@ private void parseAutoDiscoveryRelay(int idx, int relaytype, Map config) {
 private void configureDeviceSettings(Map config) {
     String topic = getCommandTopic(config) + 'BACKLOG'
     String payload = ''
+    boolean isTuyaMcu = config['ty']
 
     payload += 'Latitude ' + location.latitude + ';'
     payload += 'Longitude ' + location.longitude + ';'
     payload += 'so17 1;' // use RGB not HEX results
-    payload += 'so20 ' + (settings['so20'] ? '1' : '0') + ';'
-    payload += 'so59 0'; // do not send state for power command
+    payload += 'so20 ' + (!isTuyaMcu && settings['so20'] ? '1' : '0') + ';'
+    payload += 'so59 0;' // do not send state for power command
     payload += 'teleperiod ' + settings['telePeriod'] + ';'
 
     mqttPublish(topic, payload)
