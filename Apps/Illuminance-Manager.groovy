@@ -221,11 +221,11 @@ private int calculateLevel(Integer illum) {
     BigDecimal a = settings.offset
     BigDecimal b = settings.base
     BigDecimal c = settings.multiplier
-    BigDecimal y = ( Math.log10(1 / x) / Math.log10(b) ) * c + a
+    int y = ( Math.log10(1 / x) / Math.log10(b) ) * c + a
     if (logEnable) { log.debug "calculateLevel: x=${x} a=${a} b=${b} c=${c} y=${y}" }
     if (y < 1) { y = 1 }
     if (y > 100) { y = 100 }
-    return y as int
+    return y
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
