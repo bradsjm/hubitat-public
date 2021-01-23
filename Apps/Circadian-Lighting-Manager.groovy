@@ -194,7 +194,7 @@ void initialize() {
         // Update circadian calculation and update lamps on defined schedule
         int interval = settings.updateInterval as int
         log.info "Scheduling periodic updates every ${interval} minute(s)"
-        schedule("0 */${interval} * * * ?", 'circadianUpdate')
+        schedule("20 */${interval} * * * ?", 'circadianUpdate')
         circadianUpdate()
     }
 }
@@ -242,18 +242,18 @@ private static int diff(BigDecimal value1, BigDecimal value2) {
 
 private boolean checkEnabled() {
     if (!settings.masterEnable) {
-        log.info 'Manager is disabled'
+        log.info "${app.name} is disabled"
         return false
     }
 
     if (logEnable) { log.debug "Checking ${location.mode} is in ${settings.disabledModes}" }
     if (location.mode in settings.disabledModes) {
-        log.info "Manager is disabled due to mode ${location.mode}"
+        log.info "${app.name} is disabled due to mode ${location.mode}"
         return false
     }
 
     if (settings.disabledSwitch && settings.disabledSwitch.currentValue('switch') == settings.disabledSwitchValue) {
-        log.info "Manager is disabled due to switch ${disabledSwitch} set to ${disabledSwitchValue}"
+        log.info "${app.name} is disabled due to switch ${disabledSwitch} set to ${disabledSwitchValue}"
         return false
     }
 

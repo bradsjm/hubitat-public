@@ -200,16 +200,16 @@ void initialize() {
     state.lux = 0
 
     if (masterEnable) {
-        subscribe(dimmableOnDevices, 'switch', 'updateLamp')
-        subscribe(dimmableDevices, 'switch', 'updateLamp')
-        subscribe(dimmableOnDevices, 'level', 'levelCheck')
-        subscribe(dimmableDevices, 'level', 'levelCheck')
+        subscribe(dimmableOnDevices, 'switch', 'switchEvent')
+        subscribe(dimmableDevices, 'switch', 'switchEvent')
+        subscribe(dimmableOnDevices, 'level', 'levelEvent')
+        subscribe(dimmableDevices, 'level', 'levelEvent')
         subscribe(luxDevices, 'illuminance', 'illuminanceUpdate')
 
         // Update lamps on defined schedule
         int interval = settings.updateInterval as int
         log.info "Scheduling periodic updates every ${interval} minute(s)"
-        schedule("0 */${interval} * * * ?", 'levelUpdate')
+        schedule("10 */${interval} * * * ?", 'levelUpdate')
         levelUpdate()
     }
 }
@@ -226,6 +226,26 @@ private int calculateLevel(Integer illum) {
     if (y < 1) { y = 1 }
     if (y > 100) { y = 100 }
     return y
+}
+
+private boolean checkEnabled() {
+    if (!settings.masterEnable) {
+        log.info "${app.name} is disabled"
+        return false
+    }
+
+    if (logEnable) { log.debug "Checking ${location.mode} is in ${settings.disabledModes}" }
+    if (location.mode in settings.disabledModes) {
+        log.info "${app.name} is disabled due to mode ${location.mode}"
+        return false
+    }
+
+    if (settings.disabledSwitch && settings.disabledSwitch.currentValue('switch') == settings.disabledSwitchValue) {
+        log.info "${app.name} is disabled due to switch ${disabledSwitch} set to ${disabledSwitchValue}"
+        return false
+    }
+
+    return true
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
@@ -274,7 +294,7 @@ private void illuminanceUpdate(Event evt) {
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
-private void levelCheck(Event evt) {
+private void levelEvent(Event evt) {
     DeviceWrapper device = evt.device
     int value = evt.value as int
     int brightness = state.brightness
@@ -298,7 +318,7 @@ private void levelCheck(Event evt) {
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
-private void updateLamp(Event evt) {
+private void switchEvent(Event evt) {
     int brightness = state.brightness
     DeviceWrapper device = evt.device
 
@@ -308,18 +328,7 @@ private void updateLamp(Event evt) {
         return
     }
 
-    if (logEnable) { log.debug "Checking ${location.mode} is in ${settings.disabledModes}" }
-    if (location.mode in settings.disabledModes) {
-        log.info "${app.name} Manager is disabled due to mode ${location.mode}"
-        return
-    }
-
-    if (settings.disabledSwitch && settings.disabledSwitch.currentValue('switch') == settings.disabledSwitchValue) {
-        log.info "${app.name} Manager is disabled due to switch ${disabledSwitch} set to ${disabledSwitchValue}"
-        return
-    }
-
-    if (device.currentValue('level') != brightness) {
+    if (checkEnabled() && evt.value == 'on' && device.currentValue('level') != brightness) {
         log.info "${app.name} Setting ${device} level to ${brightness}%"
         device.setLevel(brightness, settings.transitionSeconds as int)
     }
@@ -330,16 +339,13 @@ private void updateLamps() {
     int brightness = state.brightness
     Map disabled = state.disabledDevices
 
-    if (location.mode in disabledModes) {
-        log.info "${app.name} Manager is disabled due to mode ${location.mode}"
-        return
-    }
-
     // Remove disabled devices that have timed out
     if (settings.reenableDelay) {
         long expire = now() - (settings.reenableDelay * 60000)
         disabled.values().removeIf { v -> v <= expire }
     }
+
+    if (!checkEnabled()) { return }
 
     log.info "${app.name} Starting illuminance level updates to lights"
 
