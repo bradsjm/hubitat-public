@@ -627,6 +627,7 @@ private Map newEvent(String name, Object value, String unit = null) {
 }
 
 private void parseDps(Map dps) {
+    if (logEnable) { log.debug "parsing dps ${dps}"}
     String colorMode = device.currentValue('colorMode')
     List<Map> events = []
 
@@ -634,8 +635,15 @@ private void parseDps(Map dps) {
         events << newEvent('switch', dps['1'] ? 'on' : 'off')
     }
 
+    // Determine if we are in RGB or CT mode either explicitly or implicitly
     if (dps.containsKey('2')) {
         colorMode = dps['2'] == 'colour' ? 'RGB' : 'CT'
+        events << newEvent('colorMode', colorMode)
+    } else if (dps.containsKey('4')) {
+        colorMode = 'CT'
+        events << newEvent('colorMode', colorMode)
+    } else if (dps.containsKey('5')) {
+        colorMode = 'RGB'
         events << newEvent('colorMode', colorMode)
     }
 
@@ -644,11 +652,13 @@ private void parseDps(Map dps) {
         int value = Math.round(((int)dps['3'] - 22.56) / 2.3206)
         events << newEvent('level', value, '%')
     }
+
     if (dps.containsKey('4')) {
         int range = settings.coldColorTemp - settings.warmColorTemp
         int value = settings.warmColorTemp + Math.round(range * (dps['4'] / 255))
         events << newEvent('colorTemperature', value, 'K')
     }
+
     if (dps.containsKey('5') && colorMode == 'RGB') {
         String value = dps['5']
         // first six characters are RGB values which we ignore and use HSB instead
