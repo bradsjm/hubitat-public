@@ -198,6 +198,7 @@ void off() {
  */
 void setLevel(BigDecimal level, BigDecimal duration = 0) {
     log.info "Setting ${device.displayName} brightness to ${level}%"
+    String colorMode = device.currentValue('colorMode')
     if (colorMode == 'CT') {
         // the brightness scale does not start at 0 but starts at 25 - 255
         int value = Math.round(2.3206 * level + 22.56)
