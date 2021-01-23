@@ -698,7 +698,7 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
             case 'CT':
                 BigDecimal value = toKelvin(kv.value)
                 if (device.hasAttribute('colorTemperature') &&
-                    Math.abs(device.currentValue('colorTemperature') - value) > 10) {
+                    Math.abs((device.currentValue('colorTemperature') ?: 0) - value) > 10) {
                     events << newEvent(device, 'colorTemperature', value, [unit: 'K'])
                 }
                 break

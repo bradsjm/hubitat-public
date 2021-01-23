@@ -301,7 +301,7 @@ private void levelEvent(Event evt) {
     int transition = settings.transitionSeconds
 
     // ignore any changes shortly after making an update
-    if (value != brightness && now() - (state.lastUpdate as long) <= transition * 1100) {
+    if (value != brightness && now() - (state.lastUpdate as long) <= transition * 2000) {
         if (logEnable) {
             log.debug "Ignoring ${device} level change to ${value}% (within ${transition}s change window)"
         }

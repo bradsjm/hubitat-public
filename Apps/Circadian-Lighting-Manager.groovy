@@ -353,7 +353,7 @@ private void deviceEvent(Event evt) {
 }
 
 private void updateLamp(DeviceWrapper device) {
-    if (device.id in state.disabledDevices) { return }
+    if (!device || device.id in state.disabledDevices) { return }
 
     Map current = state.current
 
@@ -376,14 +376,16 @@ private void updateLamp(DeviceWrapper device) {
 
     if (device.id in settings.colorTemperatureOnDevices*.id &&
         device.currentValue('switch') == 'on' &&
-        Math.abs(device.currentValue('colorTemperature') - current.colorTemperature) > 30) {
+        device.currentValue('colorTemperature') &&
+        Math.abs(device.currentValue('colorTemperature') - current.colorTemperature) > 100) {
         log.info "Setting ${device} color temperature from ${device.currentValue('colorTemperature')}K " +
                  "to ${current.colorTemperature}K"
         device.setColorTemperature(current.colorTemperature)
     }
 
     if (device.id in settings.colorTemperatureDevices*.id &&
-        Math.abs(device.currentValue('colorTemperature') - current.colorTemperature) > 30) {
+        device.currentValue('colorTemperature') &&
+        Math.abs(device.currentValue('colorTemperature') - current.colorTemperature) > 100) {
         log.info "Setting ${device} color temperature from ${device.currentValue('colorTemperature')}K " +
                  "to ${current.colorTemperature}K"
         device.setColorTemperature(current.colorTemperature)
