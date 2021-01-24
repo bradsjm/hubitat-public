@@ -1,6 +1,6 @@
 /**
  *  MIT License
- *  Copyright 2020 Jonathan Bradshaw (jb@nrgup.net)
+ *  Copyright 2021 Jonathan Bradshaw (jb@nrgup.net)
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy
  *  of this software and associated documentation files (the "Software"), to deal
@@ -51,30 +51,30 @@ preferences {
                   defaultValue: true
         }
 
-        section('Active Managed Lights (only when on)', hideable: true, hidden: true) {
+        section('Color Temperature Managed Lights', hideable: true, hidden: true) {
+            input name: 'colorTemperatureDevices',
+                  type: 'capability.colorTemperature',
+                  title: 'Select lights to adjust color temperature',
+                  multiple: true,
+                  required: false
+
             input name: 'colorTemperatureOnDevices',
                   type: 'capability.colorTemperature',
-                  title: 'Circadian Color Temperature Adjustment Devices',
+                  title: 'Select lights to adjust color temperature when on',
+                  multiple: true,
+                  required: false
+        }
+
+        section('RGB Color Managed Lights', hideable: true, hidden: true) {
+            input name: 'colorDevices',
+                  type: 'capability.colorControl',
+                  title: 'Select lights to adjust RGB color',
                   multiple: true,
                   required: false
 
             input name: 'colorOnDevices',
                   type: 'capability.colorControl',
-                  title: 'Circadian RGB Color Adjustment Devices',
-                  multiple: true,
-                  required: false
-        }
-
-        section('Fully Managed Lights (even when off)', hideable: true, hidden: true) {
-            input name: 'colorTemperatureDevices',
-                  type: 'capability.colorTemperature',
-                  title: 'Circadian Color Temperature Adjustment Devices',
-                  multiple: true,
-                  required: false
-
-            input name: 'colorDevices',
-                  type: 'capability.colorControl',
-                  title: 'Circadian RGB Color Adjustment Devices',
+                  title: 'Select lights to adjust RGB color when on',
                   multiple: true,
                   required: false
         }
@@ -119,10 +119,11 @@ preferences {
         section('Overrides', hideable: true, hidden: true) {
             input name: 'disabledSwitch',
                   type: 'capability.switch',
-                  title: 'Select switch to enable/disable manager'
+                  title: 'Select switch(s) to enable/disable manager',
+                  multiple: true
 
             input name: 'disabledSwitchValue',
-                    title: 'Disable lighting manager when switch is',
+                    title: 'Disable lighting manager when any switch is',
                     type: 'enum',
                     defaultValue: 'off',
                     options: [
@@ -252,8 +253,11 @@ private boolean checkEnabled() {
         return false
     }
 
-    if (settings.disabledSwitch && settings.disabledSwitch.currentValue('switch') == settings.disabledSwitchValue) {
-        log.info "${app.name} is disabled due to switch ${disabledSwitch} set to ${disabledSwitchValue}"
+    if (settings.disabledSwitch &&
+        settings.disabledSwitch.any({
+            device -> device.currentValue('switch') == settings.disabledSwitchValue
+        })) {
+        log.info "${app.name} is disabled due to a switch set to ${disabledSwitchValue}"
         return false
     }
 
