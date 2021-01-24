@@ -27,7 +27,7 @@ import groovy.transform.Field
 import hubitat.helper.ColorUtils
 
 metadata {
-    definition (name: 'MQTT - Tasmota Lighting', namespace: 'nrgup', author: 'Jonathan Bradshaw') {
+    definition (name: 'MQTT - Tasmota Discovery', namespace: 'nrgup', author: 'Jonathan Bradshaw') {
         capability 'Initialize'
         capability 'PresenceSensor'
         capability 'Refresh'
@@ -89,6 +89,17 @@ metadata {
                   title: 'Interval for telemetry updates in seconds (0 to disable)',
                   required: false,
                   defaultValue: 300
+
+            input name: 'energyReportingMode',
+                    title: 'Energy Reporting Mode',
+                    type: 'enum',
+                    required: true,
+                    defaultValue: 1,
+                    options: [
+                    1: 'Today',
+                    2: 'Yesterday',
+                    3: 'Total'
+                ]
 
             input name: 'fadeTime',
                   type: 'number',
@@ -308,7 +319,7 @@ void componentRefresh(DeviceWrapper device) {
     if (config) {
         subscribeDeviceTopics(device)
         log.info "Refreshing ${device}"
-        mqttPublish(getCommandTopic(config) + 'STATE', '')
+        mqttPublish(getCommandTopic(config) + 'TELEPERIOD', '')
     }
 }
 
@@ -720,9 +731,18 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
                 }
                 break
             case 'ENERGY':
-            int power = kv.value['Power']
+                int power = kv.value['Power'] as int
                 if (device.hasAttribute('power') && device.currentValue('power') != power) {
                     events << newEvent(device, 'power', power, [unit: 'W'])
+                }
+                String energy = '0'
+                switch (settings.energyReportingMode as int) {
+                    case 1: energy = kv.value['Today']; break;
+                    case 2: energy = kv.value['Yesterday']; break;
+                    case 3: energy = kv.value['Total']; break;
+                }
+                if (device.hasAttribute('energy') && device.currentValue('energy') != energy) {
+                    events << newEvent(device, 'energy', energy, [unit: 'kWh'])
                 }
                 break
             case 'Uptime':
