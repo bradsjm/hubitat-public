@@ -21,12 +21,15 @@
  *  SOFTWARE.
 */
 
+import hubitat.device.HubAction
+import hubitat.helper.HexUtils
+import java.util.regex.Matcher
+
 metadata {
     definition (name: 'BenQ Projector', namespace: 'nrgup', author: 'Jonathan Bradshaw', importUrl: '') {
         capability 'Actuator'
         capability 'Initialize'
         capability 'Polling'
-        capability 'PresenceSensor'
         capability 'Switch'
 
         attribute '3dMode', 'string'
@@ -53,13 +56,13 @@ metadata {
                       description: '',
                       required: true,
                       defaultValue: ''
+
                 input name: 'networkPort',
                       type: 'number',
                       title: 'Port',
                       description: '',
                       required: true,
                       defaultValue: 5000
-//input name: "pollingInterval", type: "number", title: "Poll Interval", description: "Seconds", required: true, defaultValue: 15
             }
 
             section('Misc') {
@@ -87,14 +90,13 @@ metadata {
 // Called when the device is started.
 void initialize() {
     log.info "${device.displayName} driver initializing"
-    unschedule()
 
-    if (!settings.networkHost) {
+    if (!settings.networkHost || !settings.networkPort) {
         log.error 'Unable to connect because host setting not configured'
         return
     }
 
-    connect()
+    poll()
 }
 
 // Called when the device is first created.
@@ -102,35 +104,11 @@ void installed() {
     log.info "${device.displayName} driver installed"
 }
 
-// Called with socket status messages
-void socketStatus(String status) {
-    if (status.contains('error')) {
-        log.error status
-        sendEvent(name: 'presence', value: 'not present', descriptionText: "${device.displayName} {$parts[1]}")
-        state.connected = false
-        runInMillis(new Random(now()).nextInt(90000), 'connect')
-    } else if (logEnable) {
-        log.debug status
-    }
-}
-
-void connected() {
-    log.info "Connected to serial bridge at ${settings.networkHost}:${settings.networkPort}"
-    sendEvent(name: 'presence', value: 'present', descriptionText: "${device.displayName} is connected")
-    state.connected = true
-    // get model name
-    send('modelname', '?')
-    // response takes around 500ms
-    pauseExecution(1000)
-    // do a single poll for values
-    poll()
-}
-
 // Called to parse received socket data
 void parse(String data) {
     // rawSocket and socket interfaces return Hex encoded string data
-    String response = new String(hubitat.helper.HexUtils.hexStringToByteArray(data))
-    Match match = response =~ /(?m)^\*(.+)#/
+    String response = new String(HexUtils.hexStringToByteArray(data))
+    Matcher match = response =~ /(?m)^\*(.+)#/
     if (!match.find()) { return }
     String payload = match.group(1)
     if (logEnable) { log.debug "Receive: ${payload}" }
@@ -143,7 +121,6 @@ void parse(String data) {
 // Called when the device is removed.
 void uninstalled() {
     log.info "${device.displayName} driver v${version()} uninstalled"
-    disconnect()
 }
 
 // Called when the settings are updated.
@@ -158,6 +135,7 @@ void updated() {
 void on() {
     log.info "${device.displayName} Switching On"
     send('pow', 'on')
+    // takes time for the projector to actually switch on
     runIn(20, 'poll')
 }
 
@@ -165,6 +143,7 @@ void off() {
     log.info "${device.displayName} Switching Off"
     send('pow', 'off')
     sendEvent(newEvent('switch', 'off'))
+    // takes time for the projector to actually switch off
     runIn(20, 'poll')
 }
 
@@ -177,7 +156,7 @@ void poll() {
     unschedule('poll')
     if (!state.connected) { return }
 
-    List<String> cmds = ['pow']
+    List<String> cmds = ['modelname', 'pow']
     if (device.currentValue('switch') == 'on') {
         cmds += ['sour', 'ltim', 'lampm', 'blank', 'appmod', 'asp', '3d']
     }
@@ -187,10 +166,6 @@ void poll() {
         // response takes around 500ms
         pauseExecution(1000)
     }
-
-    //if (pollingInterval > 0) {
-    //    runIn(pollingInterval, "poll")
-    //}
 }
 
 private void updateState(String cmd, String value) {
@@ -247,38 +222,38 @@ private void logsOff() {
     device.updateSetting('logEnable', [value: 'false', type: 'bool'] )
 }
 
-private boolean connect() {
-    disconnect()
-    unschedule('connect')
+private void send(String cmd, String value, String callback = 'parse') {
+    if (logEnable) { log.debug "Sending: ${cmd}=${value} to ${settings.networkHost} using callback ${callback}" }
     try {
-        log.info "Connecting to serial bridge at ${settings.networkHost}:${settings.networkPort}"
-        state.connectCount = (state?.connectCount ?: 0) + 1
-        interfaces.rawSocket.socket.connect(
-            settings.networkHost,
-            settings.networkPort as int,
-        )
-        connected()
-        return true
+        sendHubCommand(new HubAction(
+            HexUtils.byteArrayToHexString("\r*${cmd}=${value}#\r"),
+            hubitat.device.Protocol.LAN,
+            [
+                callback: callback,
+                destinationAddress: settings.networkHost + ":" + networkPort,
+                type: HubAction.Type.LAN_TYPE_RAW,
+                encoding: HubAction.Encoding.HEX_STRING,
+                timeout: 10
+            ]))
     } catch (e) {
-        log.error "connect error: ${e}"
-        runInMillis(new Random(now()).nextInt(90000), 'connect')
+        log.error 'sendMessage: ' + e
     }
-
-    return false
 }
 
-private void disconnect() {
-    log.info "Disconnecting from ${settings?.networkHost}"
-    interfaces.rawSocket.close()
-    state.connected = false
-}
-
-private void send(String cmd, String value) {
-    if (state.connected) {
-        if (logEnable) { log.debug "Sending: ${cmd}=${value}" }
-        interfaces.rawSocket.sendMessage("\r*${cmd}=${value}#\r")
-    } else {
-        if (logEnable) { log.warn "Not Sending: ${cmd}=${value} (not connected)" }
+private void send(byte[] packet, String callback = 'parse') {
+    if (logEnable) { log.debug "sendHubCommand to ${settings.networkHost} using callback ${callback}" }
+    try {
+        sendHubCommand(new HubAction(
+            HexUtils.byteArrayToHexString(packet),
+            hubitat.device.Protocol.LAN,
+            [
+                callback: callback,
+                destinationAddress: settings.networkHost,
+                type: HubAction.Type.LAN_TYPE_UDPCLIENT,
+                encoding: HubAction.Encoding.HEX_STRING
+            ]))
+    } catch (e) {
+        log.error 'sendMessage: ' + e
     }
 }
 
@@ -292,4 +267,3 @@ private String splitCamelCase(String s) {
       ' '
    )
 }
-

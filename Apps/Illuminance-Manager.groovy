@@ -1,6 +1,6 @@
 /**
  *  MIT License
- *  Copyright 2020 Jonathan Bradshaw (jb@nrgup.net)
+ *  Copyright 2021 Jonathan Bradshaw (jb@nrgup.net)
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy
  *  of this software and associated documentation files (the "Software"), to deal
@@ -131,10 +131,11 @@ preferences {
         section('Override Settings', hideable: true, hidden: true) {
             input name: 'disabledSwitch',
                   type: 'capability.switch',
-                  title: 'Select switch to enable/disable manager'
+                  title: 'Select switch(s) to enable/disable manager',
+                  multiple: true
 
             input name: 'disabledSwitchValue',
-                    title: 'Disable lighting manager when switch is',
+                    title: 'Disable lighting manager when any switch is',
                     type: 'enum',
                     required: true,
                     defaultValue: 'off',
@@ -240,8 +241,11 @@ private boolean checkEnabled() {
         return false
     }
 
-    if (settings.disabledSwitch && settings.disabledSwitch.currentValue('switch') == settings.disabledSwitchValue) {
-        log.info "${app.name} is disabled due to switch ${disabledSwitch} set to ${disabledSwitchValue}"
+    if (settings.disabledSwitch &&
+        settings.disabledSwitch.any({
+            device -> device.currentValue('switch') == settings.disabledSwitchValue
+        })) {
+        log.info "${app.name} is disabled due to a switch set to ${disabledSwitchValue}"
         return false
     }
 
