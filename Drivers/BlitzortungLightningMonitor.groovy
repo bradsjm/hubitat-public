@@ -66,6 +66,7 @@ metadata {
                 input name: 'historyPeriod',
                       type: 'enum',
                       title: 'History Period',
+                      description: 'Rolling time window for state',
                       required: true,
                       defaultValue: 60,
                       options: [
@@ -79,6 +80,7 @@ metadata {
                 input name: 'updateInterval',
                       type: 'enum',
                       title: 'Update Interval',
+                      description: 'How often to update driver state',
                       required: true,
                       defaultValue: 15,
                       options: [
@@ -178,7 +180,7 @@ void parse(String data) {
 
     List history = dataCache.computeIfAbsent(device.id) { k -> [] }
     if (!history.size()) {
-        schedule('*/${settings.updateInterval} * * ? * * *', 'updateStats')
+        schedule("*/${settings.updateInterval} * * ? * * *", 'updateStats')
     }
 
     history.add([ time: (payload.time / 1000000) as long, distance: distance, bearing: bearing ])
