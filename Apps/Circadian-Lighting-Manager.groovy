@@ -117,19 +117,15 @@ preferences {
         }
 
         section('Overrides', hideable: true, hidden: true) {
-            input name: 'disabledSwitch',
+            input name: 'disabledSwitchWhenOn',
                   type: 'capability.switch',
-                  title: 'Select switch(s) to enable/disable manager',
+                  title: 'Select switch(s) to disable manager when ON',
                   multiple: true
 
-            input name: 'disabledSwitchValue',
-                    title: 'Disable lighting manager when any switch is',
-                    type: 'enum',
-                    defaultValue: 'off',
-                    options: [
-                        on: 'on',
-                        off: 'off'
-                    ]
+            input name: 'disabledSwitchWhenOff',
+                  type: 'capability.switch',
+                  title: 'Select switch(s) to disable manager when OFF',
+                  multiple: true
 
             input name: 'disabledModes',
                   type: 'mode',
@@ -253,11 +249,15 @@ private boolean checkEnabled() {
         return false
     }
 
-    if (settings.disabledSwitch &&
-        settings.disabledSwitch.any({
-            device -> device.currentValue('switch') == settings.disabledSwitchValue
-        })) {
-        log.info "${app.name} is disabled due to a switch set to ${disabledSwitchValue}"
+    if (settings.disabledSwitchWhenOn &&
+        settings.disabledSwitchWhenOn.any({device -> device.currentValue('switch') == 'on'})) {
+        log.info "${app.name} is disabled due to a switch set to ON"
+        return false
+    }
+
+    if (settings.disabledSwitchWhenOff &&
+        settings.disabledSwitchWhenOff.any({device -> device.currentValue('switch') == 'off'})) {
+        log.info "${app.name} is disabled due to a switch set to OFF"
         return false
     }
 
