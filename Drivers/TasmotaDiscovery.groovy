@@ -631,23 +631,11 @@ private void configureDeviceSettings(Map config) {
 }
 
 private void restoreState(ChildDeviceWrapper device) {
-    log.info "Attempting to restore ${device} previous state"
     String sw = device.currentValue('switch')
-    BigDecimal level = device.currentValue('level')
-    BigDecimal colorTemperature = device.currentValue('colorTemperature')
-    BigDecimal hue = device.currentValue('hue')
-    BigDecimal saturation = device.currentValue('saturation')
-    String colorMode = device.currentValue('colorMode')
 
-    if (sw == 'on') { componentOn(device) }
-    if (sw == 'off') { componentOff(device) }
-    if (colorMode == 'CT' && colorTemperature != null) {
-        componentSetColorTemperature(device, colorTemperature)
-        if (level != null) { componentSetLevel(device, level) }
-    } else if (colorMode == 'RGB' && hue != null && saturation != null) {
-        componentSetColor(device, [ hue: hue, saturation: saturation, level: level])
-    } else if (level != null) {
-        componentSetLevel(device, level)
+    if (sw == 'off') {
+        log.info "Attempting to restore ${device} previous state of 'off'"
+        componentOff(device)
     }
 }
 
