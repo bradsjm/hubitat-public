@@ -45,12 +45,13 @@ preferences {
 
 @Field static final List<Map<String,String>> activeActions = [
    [on: 'Turn on lights'],
-   [onColor: 'Turn on lights and set color'],
+   //[onColor: 'Turn on lights and set color'],
    [none: 'No action (do not turn on)']
 ]
 
 @Field static final List<Map<String,String>> inactiveActions = [
    [off: 'Turn off lights'],
+   //[dim: 'Dim lights'],
    [none: 'No action (do not turn off)']
 ]
 
@@ -258,9 +259,9 @@ Map pageMode(Map params) {
             section {
                 input name: "mode.${modeID}.lights",
                     title: 'Choose lights to turn on/off/dim',
+                    description: modeID == 0 ? 'Click to set' : 'Click to override default lights',
                     type: 'capability.light',
-                    multiple: true,
-                    required: true
+                    multiple: true
 
                 input name: "mode.${modeID}.active",
                     title: 'When activity is detected...',
@@ -404,6 +405,7 @@ String getModeDescription(Long modeID) {
     if (!settings["mode.${modeID}.enable"]) { return '' }
 
     List lights = settings["mode.${modeID}.lights"]
+    if (!lights && modeID > 0) { lights = settings["mode.0.lights"] }
     if (!lights) { return '' }
 
     String description = ''
@@ -498,8 +500,9 @@ void modeChangeHandler(Event evt) {
     Map lastMode = getModeSettings(state.lastMode)
     state.lastMode = mode.id
     log.trace "modeChangeHandler: location mode = ${evt.value}, active mode = ${mode.name}"
-
-    performTransitionAction(lastMode, mode)
+    if (state.triggered.running == true) {
+        performTransitionAction(lastMode, mode)
+    }
 }
 
 // Called when a subscribed motion sensor changes
@@ -601,6 +604,11 @@ private int currentLuxLevel() {
     return count ? Math.round(total / count) : 0
 }
 
+// Puts light in the disabled devices list which will stop it being updated
+private void disableLight(DeviceWrapper device) {
+    state.disabledDevices.put(device.id, now())
+}
+
 // Returns the currently active mode (which may be default if not overridden)
 private Map getActiveMode() {
     Long id = location.currentMode.id
@@ -625,6 +633,11 @@ private Map getModeSettings(Long id) {
         mode.inactive = settings["mode.${mode.id}.inactive"] as String
         mode.inactiveMinutes = settings["mode.${mode.id}.inactiveMinutes"] as int
         mode.lights = settings["mode.${mode.id}.lights"] ?: []
+
+        // If mode has no lights use the default mode values
+        if (mode.id > 0 && !mode.lights) {
+            mode.lights = settings["mode.0.lights"] ?: []
+        }
     }
 
     return mode
