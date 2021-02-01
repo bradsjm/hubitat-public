@@ -22,7 +22,7 @@
 */
 
 definition (
-    name: 'Motion Lighting Manager',
+    name: 'Motion Lighting',
     namespace: 'nrgup',
     author: 'Jonathan Bradshaw',
     category: 'Lighting',
@@ -50,7 +50,7 @@ preferences {
 
         section {
             app name: 'childApps',
-                appName: 'Motion Lighting (Child)',
+                appName: 'Motion Lighting Controller',
                 namespace: 'nrgup',
                 title: 'Add new motion lighting controller',
                 multiple: true
@@ -66,6 +66,7 @@ void installed() {
 // Called when the app is removed.
 void uninstalled() {
     log.info "${app.name} uninstalled"
+    childApps.each { childApp -> deleteChildApp(childApp.id) }
 }
 
 // Called when the settings are updated.
