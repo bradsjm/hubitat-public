@@ -54,27 +54,42 @@ preferences {
    [none: 'No action (do not turn off)']
 ]
 
-// Main configuration page
+/*
+ * Configuration UI
+ */
 Map pageMain() {
-   state.remove('pageModeName')
-   state.remove('pageModeID')
-   return dynamicPage(name: 'pageMain', title: 'Motion Lighting Controller',
+    state.remove('pageModeName')
+    state.remove('pageModeID')
+
+    return dynamicPage(name: 'pageMain', title: 'Motion Lighting Controller',
                       install: true, uninstall: true, hideWhenEmpty: true) {
         section {
             label title: 'Application Label',
                   required: false
 
-            input name: 'masterEnable',
-                  title: 'Controller enabled',
-                  type: 'bool',
-                  required: false,
-                  defaultValue: true
+            if (parent.enabled()) {
+                input name: 'masterEnable',
+                    title: 'Controller enabled',
+                    type: 'bool',
+                    required: false,
+                    defaultValue: true,
+                    submitOnChange: true
+            } else {
+                paragraph '<span style=\'font-weight: bold; color: red\'>Controller disabled - enable the parent application</span>'
+            }
         }
 
         section {
-            if (state.triggered) {
-                int ago = (now() - state.triggered.start) / 1000
-                paragraph "Last triggered by: ${state.triggered.device} <i>(${ago} seconds ago)</i>"
+            if (state.triggered?.running == true && state.triggered.active) {
+                String ago
+                int elapsed = (now() - state.triggered.active) / 1000
+                if (elapsed > 1 && elapsed < 120) {
+                    ago = "${elapsed} seconds ago"
+                } else {
+                    elapsed /= 60
+                    ago = "${elapsed} minutes ago"
+                }
+                paragraph "<b>Triggered ${ago} by ${state.triggered?.device}</b>"
             }
 
             href name: 'pageTriggers',
@@ -151,7 +166,7 @@ Map pageMain() {
                   required: false,
                   defaultValue: true
         }
-                      }
+    }
 }
 
 // Trigger devices configuration page
@@ -326,11 +341,11 @@ void appButtonHandler(String buttonName) {
     switch (buttonName) {
         case 'btnTestActive':
             log.info "${app.name} testing ${state.pageModeName} mode activity detected"
-            performActiveAction(getMode(state.pageModeID))
+            performActiveAction(getModeSettings(state.pageModeID))
             break
         case 'btnTestInactive':
             log.info "${app.name} testing ${state.pageModeName} mode activity stopped"
-            performInactiveAction(getMode(state.pageModeID))
+            performInactiveAction(getModeSettings(state.pageModeID))
             break
     }
 }
@@ -413,21 +428,50 @@ String getModeDescription(Long modeID) {
     return description
 }
 
+/*
+ * Application Logic
+ */
+
+// Called when a button is pressed on the settings page
+void buttonHandler(Event evt) {
+    Map mode = getActiveMode()
+    log.trace "buttonHandler: ${evt.device} ${evt.value} (mode ${mode.name})"
+    if (!checkEnabled()) { return }
+
+    if (evt.value == settings.activationButtonNumber) {
+        state.triggered = [
+            type: 'button',
+            device: evt.device.displayName,
+            value: evt.value
+        ]
+        performActiveAction(mode)
+        scheduleInactiveAction(mode)
+    }
+}
+
+// Called when a subscribed contact sensor changes
+void contactHandler(Event evt) {
+    Map mode = getActiveMode()
+    log.trace "contactHandler: ${evt.device} ${evt.value} (mode ${mode.name})"
+    if (!checkEnabled() || evt.value != 'open') { return }
+
+    if (
+        (evt.device.id in settings.activationContactSensors*.id) ||
+        (state.triggered?.running == true && evt.device.id in settings.additionalContactSensors*.id)
+    ) {
+        state.triggered = [
+            type: 'contact',
+            device: evt.device.displayName,
+            value: evt.value
+        ]
+        performActiveAction(mode)
+        scheduleInactiveAction(mode)
+    }
+}
+
 // Called when the app is first created.
 void installed() {
     log.info "${app.name} installed"
-}
-
-// Called when the app is removed.
-void uninstalled() {
-    log.info "${app.name} uninstalled"
-}
-
-// Called when the settings are updated.
-void updated() {
-    log.info "${app.name} configuration updated"
-    log.debug settings
-    initialize()
 }
 
 // Called when the driver is initialized.
@@ -442,92 +486,90 @@ void initialize() {
     subscribe(settings.activationOffSwitches, 'switch', switchHandler)
     subscribe(settings.activationButtons, 'pushed', buttonHandler)
     subscribe(location, 'mode', modeChangeHandler)
-    state.lastMode = getActiveMode()
+
     state.disabledDevices = [:]
+    if (!state.lastMode) { state.lastMode = getActiveMode().id }
+    if (!state.triggered) { state.triggered = [ running: false ] }
 }
 
-void buttonHandler(Event evt) {
-    Map mode = getActiveMode()
-    log.trace "buttonHandler: ${evt.device} ${evt.value} (mode ${mode.name})"
-    if (!checkEnabled()) { return }
-
-    if (evt.value == settings.activationButtonNumber) {
-        state.triggered = [
-            type: 'button',
-            device: evt.device,
-            start: now()
-        ]
-        performActiveAction(mode)
-    }
-}
-
-void contactHandler(Event evt) {
-    Map mode = getActiveMode()
-    log.trace "contactHandler: ${evt.device} ${evt.value} (mode ${mode.name})"
-    if (!checkEnabled()) { return }
-
-    if (evt.value == 'open' && evt.device in settings.activationContactSensors) {
-        state.triggered = [
-            type: 'contact',
-            device: evt.device,
-            start: now()
-        ]
-        performActiveAction(mode)
-    }
-}
-
+// Called when a the mode changes
 void modeChangeHandler(Event evt) {
-    Map lastMode = state.lastMode
     Map mode = getActiveMode()
-    state.lastMode = mode
+    Map lastMode = getModeSettings(state.lastMode)
+    state.lastMode = mode.id
     log.trace "modeChangeHandler: location mode = ${evt.value}, active mode = ${mode.name}"
 
     performTransitionAction(lastMode, mode)
 }
 
+// Called when a subscribed motion sensor changes
 void motionHandler(Event evt) {
     Map mode = getActiveMode()
     log.trace "motionHandler: ${evt.device} ${evt.value} (mode ${mode.name})"
-    if (!checkEnabled()) { return }
+    if (!checkEnabled() || evt.value != 'active') { return }
 
-    if (evt.value == 'motion' && evt.device in settings.activationMotionSensors) {
+    if (
+        (evt.device.id in settings.activationMotionSensors*.id) ||
+        (state.triggered?.running == true && evt.device.id in settings.additionalMotionSensors*.id)
+    ) {
         state.triggered = [
             type: 'motion',
-            device: evt.device,
-            start: now()
+            device: evt.device.displayName,
+            value: evt.value
         ]
         performActiveAction(mode)
+        scheduleInactiveAction(mode)
     }
 }
 
+// Called when a subscribed switch changes
 void switchHandler(Event evt) {
     Map mode = getActiveMode()
     log.trace "switchHandler: ${evt.device} ${evt.value} (mode ${mode.name})"
     if (!checkEnabled()) { return }
 
-    if ((evt.device in settings.activationOnSwitches && evt.value == 'on') ||
-        (evt.device in settings.activationOffSwitches && evt.value == 'off')) {
+    if ((evt.device.id in settings.activationOnSwitches*.id && evt.value == 'on') ||
+        (evt.device.id in settings.activationOffSwitches*.id && evt.value == 'off')) {
         state.triggered = [
             type: 'switch',
             device: evt.device.displayName,
-            start: now()
+            value: evt.value
         ]
         performActiveAction(mode)
+        scheduleInactiveAction(mode)
     }
 }
 
+// Called when the app is removed.
+void uninstalled() {
+    log.info "${app.name} uninstalled"
+}
+
+// Called when the settings are updated.
+void updated() {
+    log.info "${app.name} configuration updated"
+    log.debug settings
+    initialize()
+}
+
+/*
+ * Internal Application Logic
+ */
+
+// Returns true if the controller is enabled
 private boolean checkEnabled() {
     if (!settings.masterEnable) {
         log.info "${app.name} is disabled"
         return false
     }
 
-    if (!app.parent.enabled()) {
-        log.info "${parent.name} is disabled"
+    if (!parent.enabled()) {
+        log.info "${parent.name} (parent) is disabled"
         return false
     }
 
-    if (currentLuxLevel() > settings.luxNumber) {
+    if (settings.luxSensors && settings.luxNumber &&
+        currentLuxLevel() > (int)settings.luxNumber) {
         log.info "${app.name} is disabled due to lux level"
         return false
     }
@@ -547,6 +589,7 @@ private boolean checkEnabled() {
     return true
 }
 
+// Returns the average lux level
 private int currentLuxLevel() {
     int total = 0
     int count = 0
@@ -558,16 +601,18 @@ private int currentLuxLevel() {
     return count ? Math.round(total / count) : 0
 }
 
+// Returns the currently active mode (which may be default if not overridden)
 private Map getActiveMode() {
     Long id = location.currentMode.id
     if (settings["mode.${id}.enable"] != true) {
         id = 0
     }
 
-    return getMode(id)
+    return getModeSettings(id)
 }
 
-private Map getMode(Long id) {
+// Returns a map with the mode settings
+private Map getModeSettings(Long id) {
     Map mode = [
         id: id,
         name: id > 0 ? location.getModes().find { m -> m.id == id }.name : 'Default'
@@ -585,18 +630,21 @@ private Map getMode(Long id) {
     return mode
 }
 
+// Performs the configured actions when specified mode triggered
 private void performActiveAction(Map mode) {
-    if (logEnable) { log.debug "Performing active action for ${mode.name}" }
+    if (logEnable) { log.debug "Performing active action for mode ${mode.name}" }
 
     if (!mode.enable) {
         log.info "${app.name} ${mode.name} mode is disabled"
         return
     }
 
+    state.triggered.running = true
+    state.triggered.active = now()
+
     switch (mode.active) {
         case 'on':
             setLights(mode.lights, 'on')
-            scheduleInactiveAction(mode)
             break
         case 'onColor':
             break
@@ -606,11 +654,19 @@ private void performActiveAction(Map mode) {
     }
 }
 
+// Performs the configured actions when specified mode becomes inactive
+private void performInactiveAction() {
+    performInactiveAction( getActiveMode() )
+}
+
 private void performInactiveAction(Map mode) {
-    unschedule('performInactiveAction')
     if (logEnable) { log.debug "Performing inactive action for mode ${mode.name}" }
 
-    List lights = mode.lights.addAll(mode.additionalOffLights)
+    List lights = mode.lights
+    lights.addAll(mode.additionalOffLights ?: [])
+
+    state.triggered.running = false
+    state.triggered.inactive = now()
 
     switch (mode.inactive) {
         case 'off':
@@ -622,32 +678,38 @@ private void performInactiveAction(Map mode) {
     }
 }
 
+// Performs the configured actions when changing between modes
 private void performTransitionAction(Map oldMode, Map newMode) {
-    List newLights = newMode.lights*.id
-    if (newLights) {
-        oldMode.lights = oldMode.lights.findAll { device -> !(device.id in newLights) }
-        oldMode.additionalOffLights = oldMode.additionalOffLights.findAll { device -> !(device.id in newLights) }
+    if (state.triggered?.running == true) {
+        List newLights = newMode.lights*.id
+        if (newLights) {
+            oldMode.lights = oldMode.lights.findAll { device -> !(device.id in newLights) }
+            oldMode.additionalOffLights = oldMode.additionalOffLights.findAll { device -> !(device.id in newLights) }
+        }
+        unschedule('performInactiveAction')
+        performInactiveAction(oldMode)
+        performActiveAction(newMode)
     }
-
-    performInactiveAction(oldMode)
 }
 
+// Schedules the inactive action to be executed
 private void scheduleInactiveAction(Map mode) {
     if (mode.inactiveMinutes) {
         if (logEnable) { log.debug "Scheduling inaction activity in ${mode.inactiveMinutes} minutes" }
-        runIn(60 * mode.inactiveMinutes, 'performInactiveAction', [data: mode])
+        runIn(60 * mode.inactiveMinutes, 'performInactiveAction')
     }
 }
 
+// Sets the specified lights using the provided action and optional value
 private void setLights(List lights, String action, String value = null) {
-    if (logEnable) { log.debug "setLights: ${action} ${value} ${lights}" }
+    if (logEnable) { log.debug "set ${lights} to ${action} ${value ?: ''}" }
 
-    if (settings.reenableDelay) {
+    if (settings.reenableDelay && settings.disabledDevices) {
         long expire = now() - (settings.reenableDelay * 60000)
-        disabled.values().removeIf { v -> v <= expire }
+        settings.disabledDevices.values().removeIf { v -> v <= expire }
     }
 
-    lights.findAll { device -> !disabled.containsKey(device.id) }.each { device ->
+    lights.findAll { device -> !settings.disabledDevices?.containsKey(device.id) }.each { device ->
         if (value) {
             device."$action"(value)
         } else {
@@ -655,4 +717,3 @@ private void setLights(List lights, String action, String value = null) {
         }
     }
 }
-

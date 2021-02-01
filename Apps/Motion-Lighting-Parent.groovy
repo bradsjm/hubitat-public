@@ -45,7 +45,8 @@ preferences {
                   type: 'bool',
                   title: 'Application enabled',
                   required: false,
-                  defaultValue: true
+                  defaultValue: true,
+                  submitOnChange: true
         }
 
         section {
@@ -86,5 +87,5 @@ void initialize() {
 
 // Called from child apps to check master switch is enabled
 boolean enabled() {
-    return this.masterEnable
+    return settings.masterEnable
 }
