@@ -250,13 +250,15 @@ private boolean checkEnabled() {
     }
 
     if (settings.disabledSwitchWhenOn &&
-        settings.disabledSwitchWhenOn.any({device -> device.currentValue('switch') == 'on'})) {
+        settings.disabledSwitchWhenOn.any { device -> device.currentValue('switch') == 'on' }
+    ) {
         log.info "${app.name} is disabled due to a switch set to ON"
         return false
     }
 
     if (settings.disabledSwitchWhenOff &&
-        settings.disabledSwitchWhenOff.any({device -> device.currentValue('switch') == 'off'})) {
+        settings.disabledSwitchWhenOff.any { device -> device.currentValue('switch') == 'off' }
+    ) {
         log.info "${app.name} is disabled due to a switch set to OFF"
         return false
     }
