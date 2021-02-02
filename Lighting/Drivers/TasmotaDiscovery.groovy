@@ -294,7 +294,7 @@ void componentSetColor(DeviceWrapper device, Map colormap) {
     String fadeCommand = fadeCommand(duration ?: settings.fadeTime)
     log.info "Setting ${device} color to ${colormap}"
     mqttPublish(topic, fadeCommand +
-        "HsbColor ${Math.round(colormap.hue * 3.6)},${colormap.saturation},${colormap.level}")
+        "HsbColor ${colormap.hue * 3.6},${colormap.saturation},${colormap.level}")
 }
 
 void componentSetHue(DeviceWrapper device, BigDecimal hue) {
@@ -303,7 +303,7 @@ void componentSetHue(DeviceWrapper device, BigDecimal hue) {
     String fadeCommand = fadeCommand(duration ?: settings.fadeTime)
     log.info "Setting ${device} hue to ${colormap}"
     mqttPublish(topic, fadeCommand +
-        "HsbColor1 ${Math.round(hue * 3.6)}")
+        "HsbColor1 ${hue * 3.6}")
 }
 
 void componentSetSaturation(DeviceWrapper device, BigDecimal saturation) {
