@@ -115,14 +115,14 @@ preferences {
 
             input name: 'sunriseOffset',
                   type: 'number',
-                  title: 'Sunrise Offset (+/-)',
+                  title: 'Sunrise Offset (+/-) minutes',
                   range: '-600..600',
                   required: false,
                   defaultValue: 0
 
             input name: 'sunsetOffset',
                   type: 'number',
-                  title: 'Sunset Offset (+/-)',
+                  title: 'Sunset Offset (+/-) minutes',
                   range: '-600..600',
                   required: false,
                   defaultValue: 0
@@ -190,10 +190,10 @@ void initialize() {
     log.info "${app.name} initializing"
     unschedule()
     unsubscribe()
-    state.brightness = 0
     state.disabledDevices = [:]
-    state.lastUpdate = 0
-    state.lux = 0
+    atomicState.brightness = 0
+    atomicState.lastUpdate = 0
+    atomicState.lux = 0
 
     if (masterEnable) {
         subscribe(dimmableOnDevices, 'switch', 'switchEvent')
@@ -254,7 +254,7 @@ private boolean checkEnabled() {
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void levelUpdate() {
     long currentTime = now()
-    int level = state.brightness
+    int level = atomicState.brightness
     int lux = currentLuxValue()
     Map after = getSunriseAndSunset(
         sunriseOffset: settings.sunriseOffset ?: 0,
@@ -275,21 +275,21 @@ private void levelUpdate() {
             level = max - ((currentTime - after.sunset.time) / (midNight - after.sunset.time) * range)
         } else {
             if (logEnable) { log.debug 'Current time is after midnight and before sunrise' }
-            level = min
+            level = max - ((after.sunrise.time - currentTime) / (midNight - after.sunset.time) * range)
         }
         log.info "${app.name} Brightness level calculated at ${level}% based on current night time"
     }
 
-    state.brightness = level
-    state.lastUpdate = now()
-    state.lux = lux
+    atomicState.brightness = level
+    atomicState.lastUpdate = now()
+    atomicState.lux = lux
     updateLamps()
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void illuminanceUpdate(Event evt) {
     int value = evt.value as int
-    int lux = state.lux ?: 0
+    int lux = atomicState.lux ?: 0
     if (value < lux - 1000 || value > lux + 1000) {
         log.info "${app.name} Lux change over 1000, forcing level update"
         runIn(5, 'levelUpdate')
@@ -300,11 +300,11 @@ private void illuminanceUpdate(Event evt) {
 private void levelEvent(Event evt) {
     DeviceWrapper device = evt.device
     int value = evt.value as int
-    int brightness = state.brightness
+    int brightness = atomicState.brightness
     int transition = settings.transitionSeconds
 
     // ignore any changes shortly after making an update
-    if (value != brightness && now() - (state.lastUpdate as long) <= transition * 2000) {
+    if (value != brightness && now() - (atomicState.lastUpdate as long) <= transition * 2000) {
         if (logEnable) {
             log.debug "Ignoring ${device} level change to ${value}% (within ${transition}s change window)"
         }
@@ -312,17 +312,17 @@ private void levelEvent(Event evt) {
     }
 
     if ((value > brightness + 5 || value < brightness - 5) && !state.disabledDevices.containsKey(device.id)) {
-        log.info "${app.name} disabling ${device} for illuminance management (light now at ${value}%)"
+        log.info "${app.name} disabling ${device} for management (brightness ${brightness}%, light ${value}%)"
         state.disabledDevices.put(device.id, now())
     } else if (value < brightness + 5 && value > brightness - 5 && device.id in state.disabledDevices) {
-        log.info "${app.name} re-enabling ${device} for illuminance management (light now at ${value}%)"
+        log.info "${app.name} re-enabling ${device} for management (brightness ${brightness}%, light ${value}%)"
         state.disabledDevices.remove(device.id)
     }
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void switchEvent(Event evt) {
-    int brightness = state.brightness
+    int brightness = atomicState.brightness
     DeviceWrapper device = evt.device
 
     if (evt.value == 'off' && device.id in state.disabledDevices) {
@@ -339,7 +339,7 @@ private void switchEvent(Event evt) {
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void updateLamps() {
-    int brightness = state.brightness
+    int brightness = atomicState.brightness
     Map disabled = state.disabledDevices
 
     // Remove disabled devices that have timed out
