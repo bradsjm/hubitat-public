@@ -289,29 +289,30 @@ void componentSetColorTemperature(DeviceWrapper device, BigDecimal value) {
 }
 
 void componentSetColor(DeviceWrapper device, Map colormap) {
-    def (int r, int g, int b) = ColorUtils.hsvToRGB([colormap.hue, colormap.saturation, colormap.level])
     Map config = getDeviceConfig(device)
     String topic = getCommandTopic(config) + 'Backlog'
     String fadeCommand = fadeCommand(duration ?: settings.fadeTime)
-    String color = "${r},${g},${b}"
-    log.info "Setting ${device} color (RGB) to ${color}"
-    mqttPublish(topic, fadeCommand + "Color ${color}")
+    log.info "Setting ${device} color to ${colormap}"
+    mqttPublish(topic, fadeCommand +
+        "HsbColor ${Math.round(colormap.hue * 3.6)},${colormap.saturation},${colormap.level}")
 }
 
 void componentSetHue(DeviceWrapper device, BigDecimal hue) {
-    componentSetColor(device, [
-        hue: hue,
-        saturation: device.currentValue('saturation') ?: 100,
-        level: device.currentValue('level') ?: 100
-    ])
+    Map config = getDeviceConfig(device)
+    String topic = getCommandTopic(config) + 'Backlog'
+    String fadeCommand = fadeCommand(duration ?: settings.fadeTime)
+    log.info "Setting ${device} hue to ${colormap}"
+    mqttPublish(topic, fadeCommand +
+        "HsbColor1 ${Math.round(hue * 3.6)}")
 }
 
 void componentSetSaturation(DeviceWrapper device, BigDecimal saturation) {
-    componentSetColor(device, [
-        hue: device.currentValue('hue') ?: 100,
-        saturation: saturation,
-        level: device.currentValue('level') ?: 100
-    ])
+    Map config = getDeviceConfig(device)
+    String topic = getCommandTopic(config) + 'Backlog'
+    String fadeCommand = fadeCommand(duration ?: settings.fadeTime)
+    log.info "Setting ${device} hue to ${colormap}"
+    mqttPublish(topic, fadeCommand +
+        "HsbColor2 ${saturation}")
 }
 
 void componentRefresh(DeviceWrapper device) {
