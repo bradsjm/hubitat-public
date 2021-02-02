@@ -268,26 +268,35 @@ Map pageMode(Map params) {
         }
 
         if (settings["mode.${modeID}.enable"] != false) {
-            section {
-                input name: "mode.${modeID}.active",
-                    title: 'When activity is detected...',
-                    type: 'enum',
-                    options: activeActions,
-                    defaultValue: 'on',
-                    required: true,
-                    submitOnChange: true
+            pageModeSectionActive(modeID)
+            pageModeSectionInactive(modeID)
+            pageModeSectionTest(modeID)
+        }
+    }
+}
 
-                if (settings["mode.${modeID}.active"] != 'none') {
-                    input name: "mode.${modeID}.lights",
-                        title: 'Choose lights to turn on/off/dim',
-                        description: modeID == 0 ? 'Click to set' : 'Click to override default lights',
-                        type: 'capability.light',
-                        multiple: true
-                } else {
-                    app.removeSetting("mode.${modeID}.lights")
-                }
+Map pageModeSectionActive(Long modeID) {
+    return section {
+        input name: "mode.${modeID}.active",
+            title: 'When activity is detected...',
+            type: 'enum',
+            options: activeActions,
+            defaultValue: 'on',
+            required: true,
+            submitOnChange: true
 
-                if (settings["mode.${modeID}.active"] == 'onLevel') {
+        if (settings["mode.${modeID}.active"] == 'none') {
+            app.removeSetting("mode.${modeID}.lights")
+            app.removeSetting("mode.${modeID}.color")
+            app.removeSetting("mode.${modeID}.level")
+        } else {
+            input name: "mode.${modeID}.lights",
+                title: 'Choose lights to turn on/off/dim',
+                description: modeID == 0 ? 'Click to set' : 'Click to override default lights',
+                type: 'capability.light',
+                multiple: true
+            switch (settings["mode.${modeID}.active"]) {
+                case 'onLevel':
                     app.removeSetting("mode.${modeID}.color")
                     input name: "mode.${modeID}.level",
                         title: 'Set brightness (1-100)',
@@ -295,7 +304,8 @@ Map pageMode(Map params) {
                         range: '1..100',
                         width: 5,
                         required: true
-                } else if (settings["mode.${modeID}.active"] == 'onColor') {
+                    break
+                case 'onColor':
                     app.removeSetting("mode.${modeID}.level")
                     input name: "mode.${modeID}.color",
                         title: 'Select light color',
@@ -309,76 +319,80 @@ Map pageMode(Map params) {
                         title: 'Test Color',
                         width: 4,
                         type: 'button'
-                } else {
-                    app.removeSetting("mode.${modeID}.color")
-                    app.removeSetting("mode.${modeID}.level")
-                }
-
-                if (settings["mode.${modeID}.active"] != 'none') {
-                    input name: "mode.${modeID}.inactive",
-                        title: 'When activity stops...',
-                        type: 'enum',
-                        options: inactiveActions,
-                        defaultValue: 'off',
-                        required: true,
-                        submitOnChange: true
-
-                    if (settings["mode.${modeID}.inactive"] == 'onLevel') {
-                        input name: "mode.${modeID}.level2",
-                            title: 'Set brightness (1-100)',
-                            type: 'number',
-                            range: '1..100',
-                            width: 5,
-                            required: true
-                    } else {
-                        app.removeSetting("mode.${modeID}.level2")
-                    }
-
-                    if (settings["mode.${modeID}.inactive"] != 'none') {
-                        input name: "mode.${modeID}.inactiveMinutes",
-                            title: 'Minutes to wait after motion stops',
-                            description: 'number of minutes',
-                            type: 'number',
-                            range: '1..3600',
-                            width: 5,
-                            required: true
-                    } else {
-                        app.removeSetting("mode.${modeID}.inactiveMinutes")
-                    }
-
-                    if (settings["mode.${modeID}.inactive"] == 'off') {
-                        input name: "mode.${modeID}.additionalOffLights",
-                              title: '<i>Additional lights to turn off (optional)</i>',
-                              type: 'capability.switch',
-                              multiple: true
-                    } else {
-                        app.removeSetting("mode.${modeID}.additionalOffLights")
-                    }
-                } else {
-                    app.removeSetting("mode.${modeID}.inactive")
-                    app.removeSetting("mode.${modeID}.level2")
-                    app.removeSetting("mode.${modeID}.inactiveMinutes")
-                    app.removeSetting("mode.${modeID}.additionalOffLights")
-                }
-            }
-
-            section('<u>Activity Testing</u>') {
-                paragraph 'Use buttons below to emulate activity starting and stopping'
-                input name: 'btnTestActive',
-                      title: 'Test Activity Detected',
-                      width: 4,
-                      type: 'button'
-                input name: 'btnTestInactive',
-                      title: 'Test Activity Stopped',
-                      width: 4,
-                      type: 'button'
+                    break
             }
         }
     }
 }
 
-Map test() {
-    return section { paragraph 'Test' }
+Map pageModeSectionInactive(Long modeID) {
+    if (settings["mode.${modeID}.active"] == 'none') {
+        app.removeSetting("mode.${modeID}.inactive")
+        app.removeSetting("mode.${modeID}.level2")
+        app.removeSetting("mode.${modeID}.inactiveMinutes")
+        app.removeSetting("mode.${modeID}.additionalOffLights")
+        return [:]
+    }
+
+    return section {
+        input name: "mode.${modeID}.inactive",
+            title: 'When activity stops...',
+            type: 'enum',
+            options: inactiveActions,
+            defaultValue: 'off',
+            required: true,
+            submitOnChange: true
+
+        if (settings["mode.${modeID}.inactive"] == 'onLevel') {
+            input name: "mode.${modeID}.level2",
+                title: 'Set brightness (1-100)',
+                type: 'number',
+                range: '1..100',
+                width: 5,
+                required: true
+        } else {
+            app.removeSetting("mode.${modeID}.level2")
+        }
+
+        if (settings["mode.${modeID}.inactive"] != 'none') {
+            input name: "mode.${modeID}.inactiveMinutes",
+                title: 'Minutes to wait after motion stops',
+                description: 'number of minutes',
+                type: 'number',
+                range: '1..3600',
+                width: 5,
+                required: true
+        } else {
+            app.removeSetting("mode.${modeID}.inactiveMinutes")
+        }
+
+        if (settings["mode.${modeID}.inactive"] == 'off') {
+            input name: "mode.${modeID}.additionalOffLights",
+                    title: '<i>Additional lights to turn off (optional)</i>',
+                    type: 'capability.switch',
+                    multiple: true
+        } else {
+            app.removeSetting("mode.${modeID}.additionalOffLights")
+        }
+    }
+}
+
+Map pageModeSectionTest(Long modeID) {
+    if (settings["mode.${modeID}.active"] != 'none') {
+        return section('<u>Activity Testing</u>') {
+            paragraph 'Use buttons below to emulate actions'
+            input name: 'btnTestActive',
+                title: 'Test Activity Detected',
+                width: 4,
+                type: 'button'
+            if (settings["mode.${modeID}.inactive"] != 'none') {
+                input name: 'btnTestInactive',
+                    title: 'Test Activity Stopped',
+                    width: 4,
+                    type: 'button'
+            }
+        }
+    }
 }
 
 // Page button handler
@@ -707,20 +721,22 @@ private Map getModeSettings(Long id) {
 }
 
 // Performs the action on the specified lights
-private void performAction(String action, List lights) {
-    switch (action) {
+private void performAction(Map mode, String action) {
+    switch (mode[action]) {
         case 'on':
             setLights(mode.lights, 'on')
             break
         case 'onLevel':
-            setLights(mode.lights, 'setLevel', mode.level)
+            setLights(lights, 'setLevel', mode.level)
             if (settings.sendOn) { setLights(mode.lights, 'on') }
             break
         case 'onColor':
-            setLights(mode.lights, 'setColor', getColorByRGB(mode.color))
+            setLights(lights, 'setColor', getColorByRGB(mode.color))
             if (settings.sendOn) { setLights(mode.lights, 'on') }
             break
         case 'off':
+            List lights = mode.lights
+            lights.addAll(mode.additionalOffLights ?: [])
             setLights(lights, 'off')
             break
     }
@@ -729,11 +745,12 @@ private void performAction(String action, List lights) {
 // Performs the configured actions when specified mode triggered
 private void performActiveAction(Map mode) {
     if (logEnable) { log.debug "Performing active action for mode ${mode.name}" }
+    if (!mode.lights || mode.active == 'none') { return }
 
     state.triggered.running = true
     state.triggered.active = now()
 
-    performAction(mode.active, mode.lights)
+    performAction(mode, 'active')
 }
 
 // Performs the configured actions when specified mode becomes inactive
@@ -743,15 +760,12 @@ private void performInactiveAction() {
 
 private void performInactiveAction(Map mode) {
     if (logEnable) { log.debug "Performing inactive action for mode ${mode.name}" }
-    if (mode.active == 'none' || mode.inactive == 'none') { return }
-
-    List lights = mode.lights
-    lights.addAll(mode.additionalOffLights ?: [])
+    if (!mode.lights || mode.active == 'none' || mode.inactive == 'none') { return }
 
     state.triggered.running = false
     state.triggered.inactive = now()
 
-    performAction(mode.active, mode.lights)
+    performAction(mode, 'inactive')
 }
 
 // Performs the configured actions when changing between modes
