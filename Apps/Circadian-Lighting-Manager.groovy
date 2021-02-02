@@ -178,7 +178,7 @@ void initialize() {
     log.info "${app.name} initializing"
     unschedule()
     unsubscribe()
-    state.current = [:]
+    atomicState.current = [:]
     state.disabledDevices = [:]
 
     if (settings.masterEnable) {
@@ -266,8 +266,8 @@ private boolean checkEnabled() {
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void circadianUpdate() {
-    state.current = currentCircadianValues()
-    log.info "Circadian State now: ${state.current}"
+    atomicState.current = currentCircadianValues()
+    log.info "Circadian State now: ${atomicState.current}"
     updateLamps()
 }
 
@@ -319,7 +319,7 @@ private void deviceEvent(Event evt) {
             break
         case 'colorTemperature':
             int value = evt.value as int
-            int ct = state.current.colorTemperature as int
+            int ct = atomicState.current.colorTemperature as int
             if (diff(value, ct) > 100 && !state.disabledDevices.containsKey(device.id)) {
                 log.info "Disabling ${device} for circadian management due to manual CT change"
                 state.disabledDevices.put(device.id, now())
@@ -331,7 +331,7 @@ private void deviceEvent(Event evt) {
             break
         case 'hue':
             BigDecimal value = evt.value as BigDecimal
-            int hue = state.current.hsv[0] as int
+            int hue = atomicState.current.hsv[0] as int
             if (diff(value, hue) > 10 && !state.disabledDevices.containsKey(device.id)) {
                 log.info "Disabling ${device} for circadian management due to manual hue change"
                 state.disabledDevices.put(device.id, now())
@@ -343,7 +343,7 @@ private void deviceEvent(Event evt) {
             break
         case 'saturation':
             BigDecimal value = evt.value as BigDecimal
-            BigDecimal saturation = state.current.hsv[1] as BigDecimal
+            BigDecimal saturation = atomicState.current.hsv[1] as BigDecimal
             if (diff(value, saturation) > 10 && !state.disabledDevices.containsKey(device.id)) {
                 log.info "Disabling ${device} for circadian management due to manual hue change"
                 state.disabledDevices.put(device.id, now())
@@ -359,7 +359,7 @@ private void deviceEvent(Event evt) {
 private void updateLamp(DeviceWrapper device) {
     if (!device || device.id in state.disabledDevices) { return }
 
-    Map current = state.current
+    Map current = atomicState.current
 
     if (device.id in settings.colorOnDevices*.id &&
         device.currentValue('switch') == 'on' && (
