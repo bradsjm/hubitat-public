@@ -47,15 +47,15 @@ preferences {
 
 @Field static final List<Map<String,String>> activeActions = [
    [on: 'Turn on lights'],
-   [onLevel: 'Turn on and set level'],
-   //[onCT: 'Turn on and set color temperature'],
-   [onColor: 'Turn on and set color'],
+   [onLevel: 'Turn on and set brightness'],
+   [onCT: 'Turn on and set color temperature'],
+   [onColor: 'Turn on and set light color'],
    [none: 'No action (do not turn on)']
 ]
 
 @Field static final List<Map<String,String>> inactiveActions = [
    [off: 'Turn off lights'],
-   [onLevel: 'Set light level'],
+   [dimLevel: 'Dim light level'],
    [none: 'No action (do not turn off)']
 ]
 
@@ -90,8 +90,8 @@ Map pageMain() {
             if (state.triggered?.running == true && state.triggered.active) {
                 String ago
                 int elapsed = (now() - state.triggered.active) / 1000
-                if (elapsed > 1 && elapsed < 120) {
-                    ago = "${elapsed} seconds ago"
+                if (elapsed < 120) {
+                    ago = "${elapsed} second(s) ago"
                 } else {
                     elapsed /= 60
                     ago = "${elapsed} minutes ago"
@@ -286,28 +286,46 @@ Map pageModeSectionActive(Long modeID) {
             submitOnChange: true
 
         if (settings["mode.${modeID}.active"] == 'none') {
-            app.removeSetting("mode.${modeID}.lights")
-            app.removeSetting("mode.${modeID}.color")
-            app.removeSetting("mode.${modeID}.level")
+            app.removeSetting("mode.${modeID}.activeLights")
+            app.removeSetting("mode.${modeID}.activeColor")
+            app.removeSetting("mode.${modeID}.activeCT")
+            app.removeSetting("mode.${modeID}.activeLevel")
+            app.removeSetting("mode.${modeID}.activeTransitionTime")
         } else {
-            input name: "mode.${modeID}.lights",
+            input name: "mode.${modeID}.activeLights",
                 title: 'Choose lights to turn on/off/dim',
                 description: modeID == 0 ? 'Click to set' : 'Click to override default lights',
                 type: 'capability.light',
-                multiple: true
+                multiple: true,
+                submitOnChange: true
+
             switch (settings["mode.${modeID}.active"]) {
                 case 'onLevel':
-                    app.removeSetting("mode.${modeID}.color")
-                    input name: "mode.${modeID}.level",
-                        title: 'Set brightness (1-100)',
+                    input name: "mode.${modeID}.activeLevel",
+                        title: 'Set brightness (1-100) %',
                         type: 'number',
                         range: '1..100',
                         width: 5,
-                        required: true
+                        required: true,
+                        submitOnChange: true
+                    input name: "mode.${modeID}.activeTransitionTime",
+                        title: 'Transition seconds (optional)',
+                        type: 'number',
+                        range: '1..600',
+                        width: 5,
+                        submitOnChange: true
+                    break
+                case 'onCT':
+                    input name: "mode.${modeID}.activeCT",
+                        title: 'Set color temperature (K)',
+                        type: 'number',
+                        range: '2000..6000',
+                        width: 5,
+                        required: true,
+                        submitOnChange: true
                     break
                 case 'onColor':
-                    app.removeSetting("mode.${modeID}.level")
-                    input name: "mode.${modeID}.color",
+                    input name: "mode.${modeID}.activeColor",
                         title: 'Select light color',
                         type: 'enum',
                         options: colors.collect { c -> [ (c.rgb):c.name ] },
@@ -328,9 +346,9 @@ Map pageModeSectionActive(Long modeID) {
 Map pageModeSectionInactive(Long modeID) {
     if (settings["mode.${modeID}.active"] == 'none') {
         app.removeSetting("mode.${modeID}.inactive")
-        app.removeSetting("mode.${modeID}.level2")
-        app.removeSetting("mode.${modeID}.inactiveMinutes")
-        app.removeSetting("mode.${modeID}.additionalOffLights")
+        app.removeSetting("mode.${modeID}.inactiveLevel")
+        app.removeSetting("mode.${modeID}.inactiveLights")
+        app.removeSetting("mode.${modeID}.inactiveTransitionTime")
         return [:]
     }
 
@@ -343,36 +361,45 @@ Map pageModeSectionInactive(Long modeID) {
             required: true,
             submitOnChange: true
 
-        if (settings["mode.${modeID}.inactive"] == 'onLevel') {
-            input name: "mode.${modeID}.level2",
-                title: 'Set brightness (1-100)',
-                type: 'number',
-                range: '1..100',
-                width: 5,
-                required: true
-        } else {
-            app.removeSetting("mode.${modeID}.level2")
-        }
-
         if (settings["mode.${modeID}.inactive"] != 'none') {
             input name: "mode.${modeID}.inactiveMinutes",
-                title: 'Minutes to wait after motion stops',
-                description: 'number of minutes',
-                type: 'number',
-                range: '1..3600',
-                width: 5,
-                required: true
-        } else {
-            app.removeSetting("mode.${modeID}.inactiveMinutes")
+                  title: 'Delay after activity stops',
+                  description: 'number of minutes',
+                  type: 'number',
+                  range: '1..3600',
+                  width: 4,
+                  required: true
         }
 
-        if (settings["mode.${modeID}.inactive"] == 'off') {
-            input name: "mode.${modeID}.additionalOffLights",
-                    title: '<i>Additional lights to turn off (optional)</i>',
-                    type: 'capability.switch',
-                    multiple: true
-        } else {
-            app.removeSetting("mode.${modeID}.additionalOffLights")
+        switch (settings["mode.${modeID}.inactive"]) {
+            case 'dimLevel':
+                input name: "mode.${modeID}.inactiveLevel",
+                      title: 'Dim to level (0-100) %',
+                      type: 'number',
+                      range: '0..100',
+                      width: 4,
+                      required: true,
+                      submitOnChange: true
+                input name: "mode.${modeID}.inactiveTransitionTime",
+                      title: 'Transition seconds (optional)',
+                      type: 'number',
+                      range: '1..600',
+                      width: 4,
+                      submitOnChange: true
+                break
+            case 'off':
+                input name: "mode.${modeID}.inactiveLights",
+                      title: '<i>Additional lights to turn off (optional)</i>',
+                      type: 'capability.switch',
+                      multiple: true,
+                      submitOnChange: true
+                break
+            case 'none':
+                app.removeSetting("mode.${modeID}.inactiveLevel")
+                app.removeSetting("mode.${modeID}.inactiveLights")
+                app.removeSetting("mode.${modeID}.inactiveMinutes")
+                app.removeSetting("mode.${modeID}.inactiveTransitionTime")
+                break
         }
     }
 }
@@ -400,15 +427,23 @@ void appButtonHandler(String buttonName) {
     Map mode = getModeSettings(state.pageModeID)
     switch (buttonName) {
         case 'btnTestColor':
-            setLights(mode.lights, 'setColor', getColorByRGB(mode.color))
-            if (settings.sendOn) { setLights(mode.lights, 'on') }
+            setLights(mode.activeLights, 'setColor', getColorByRGB(mode.color))
+            if (settings.sendOn) { setLights(mode.activeLights, 'on') }
             break
         case 'btnTestActive':
-            log.info "${app.name} testing ${state.pageModeName} mode activity detected"
+            log.info "${app.name} testing ${mode.name} mode activity detected"
+            state.triggered = [
+                type: 'test',
+                device: "${mode.name} mode test"
+            ]
             performActiveAction(mode)
             break
         case 'btnTestInactive':
-            log.info "${app.name} testing ${state.pageModeName} mode activity stopped"
+            log.info "${app.name} testing ${mode.name} mode activity stopped"
+            state.triggered = [
+                type: 'test',
+                device: "${mode.name} mode test"
+            ]
             performInactiveAction(mode)
             break
     }
@@ -465,32 +500,39 @@ String getTriggerDescription() {
 
 // Returns String summary of per-mode settings, or empty string if that mode is not configured
 String getModeDescription(Long modeID) {
-    if (!settings["mode.${modeID}.enable"]) { return '' }
+    Map mode = getModeSettings(modeID)
+    if (!mode.enable) { return '' }
 
-    List lights = settings["mode.${modeID}.lights"]
-    if (!lights && modeID > 0) { lights = settings['mode.0.lights'] }
-    if (!lights) { return '' }
+    if (!mode.activeLights) { return '' }
 
     String description = ''
-    if (settings["mode.${modeID}.active"] != 'none') {
-        if (lights.size() <= 10) {
-            lights.eachWithIndex { element, index ->
-                if (index > 0 && index < lights.size() - 1) { description += ', ' }
-                else if (index > 0 && index == lights.size() - 1) { description += ' and ' }
+    if (mode.active != 'none') {
+        if (mode.activeLights.size() <= 10) {
+            mode.activeLights.eachWithIndex { element, index ->
+                if (index > 0 && index < mode.activeLights.size() - 1) { description += ', ' }
+                else if (index > 0 && index == mode.activeLights.size() - 1) { description += ' and ' }
                 description += element
             }
         } else {
-            description = "${lights.size()} lights configured"
+            description = "${mode.activeLights.size()} lights configured"
         }
         description += '\n'
     }
 
-    String action = activeActions.findResult { m -> m.get(settings["mode.${modeID}.active"]) }
-    description += "When active: ${action}\n"
-    action = inactiveActions.findResult { m -> m.get(settings["mode.${modeID}.inactive"]) }
-    description += "When inactive: ${action}"
-    if (settings["mode.${modeID}.additionalOffLights"]) {
-        description += ' (plus additional lights)'
+    String action = activeActions.findResult { m -> m.get(mode.active) }
+    if (action) {
+        description += "When active: ${action}\n"
+        action = inactiveActions.findResult { m -> m.get(mode.inactive) }
+        if (action) {
+            description += "When inactive: ${action}"
+            if (mode.inactiveMinutes) {
+                description += " after ${mode.inactiveMinutes} minute"
+                if (mode.inactiveMinutes > 1) { description += 's' }
+            }
+            if (mode.inactiveLights) {
+                description += ' (plus additional lights)'
+            }
+        }
     }
 
     return description
@@ -703,17 +745,21 @@ private Map getModeSettings(Long id) {
     mode.enable = settings["mode.${mode.id}.enable"] as Boolean
     if (mode.enable == true) {
         mode.active = settings["mode.${mode.id}.active"] as String
-        mode.additionalOffLights = settings["mode.${mode.id}.additionalOffLights"] ?: []
-        mode.color = settings["mode.${mode.id}.color"] as String
+        mode.activeColor = settings["mode.${mode.id}.activeColor"] as String
+        mode.activeColorTemperature = settings["mode.${mode.id}.activeCT"] as BigDecimal
+        mode.activeLevel = settings["mode.${mode.id}.activeLevel"] as BigDecimal
+        mode.activeLights = settings["mode.${mode.id}.activeLights"] ?: []
+        mode.activeTransitionTime = settings["mode.${mode.id}.activeTransitionTime"] as BigDecimal
+
         mode.inactive = settings["mode.${mode.id}.inactive"] as String
+        mode.inactiveLevel = settings["mode.${mode.id}.inactiveLevel"] as BigDecimal
+        mode.inactiveLights = settings["mode.${mode.id}.inactiveLights"] ?: []
         mode.inactiveMinutes = settings["mode.${mode.id}.inactiveMinutes"] as Integer
-        mode.level = settings["mode.${mode.id}.level"] as BigDecimal
-        mode.level2 = settings["mode.${mode.id}.level2"] as BigDecimal
-        mode.lights = settings["mode.${mode.id}.lights"] ?: []
+        mode.inactiveTransitionTime = settings["mode.${mode.id}.inactiveTransitionTime"] as BigDecimal
 
         // If mode has no lights use the default mode values
-        if (mode.id > 0 && !mode.lights) {
-            mode.lights = settings['mode.0.lights'] ?: []
+        if (mode.id > 0 && !mode.activeLights) {
+            mode.activeLights = settings['mode.0.activeLights'] ?: []
         }
     }
 
@@ -723,21 +769,29 @@ private Map getModeSettings(Long id) {
 // Performs the action on the specified lights
 private void performAction(Map mode, String action) {
     switch (mode[action]) {
-        case 'on':
-            setLights(mode.lights, 'on')
-            break
-        case 'onLevel':
-            setLights(lights, 'setLevel', mode.level)
-            if (settings.sendOn) { setLights(mode.lights, 'on') }
-            break
-        case 'onColor':
-            setLights(lights, 'setColor', getColorByRGB(mode.color))
-            if (settings.sendOn) { setLights(mode.lights, 'on') }
+        case 'dimLevel':
+            setLights(mode.activeLights, 'setLevel', mode.inactiveLevel, mode.inactiveTransitionTime)
+            if (settings.sendOn) { setLights(mode.activeLights, 'on') }
             break
         case 'off':
-            List lights = mode.lights
-            lights.addAll(mode.additionalOffLights ?: [])
+            List lights = mode.activeLights
+            lights.addAll(mode.inactiveLights ?: [])
             setLights(lights, 'off')
+            break
+        case 'on':
+            setLights(mode.activeLights, 'on')
+            break
+        case 'onColor':
+            setLights(lights, 'setColor', getColorByRGB(mode.activeColor))
+            if (settings.sendOn) { setLights(mode.activeLights, 'on') }
+            break
+        case 'onCT':
+            setLights(lights, 'setColorTemperature', mode.activeColorTemperature)
+            if (settings.sendOn) { setLights(mode.activeLights, 'on') }
+            break
+        case 'onLevel':
+            setLights(mode.activeLights, 'setLevel', mode.activeLevel, mode.activeTransitionTime)
+            if (settings.sendOn) { setLights(mode.activeLights, 'on') }
             break
     }
 }
@@ -745,7 +799,7 @@ private void performAction(Map mode, String action) {
 // Performs the configured actions when specified mode triggered
 private void performActiveAction(Map mode) {
     if (logEnable) { log.debug "Performing active action for mode ${mode.name}" }
-    if (!mode.lights || mode.active == 'none') { return }
+    if (!mode.activeLights || mode.active == 'none') { return }
 
     state.triggered.running = true
     state.triggered.active = now()
@@ -760,7 +814,7 @@ private void performInactiveAction() {
 
 private void performInactiveAction(Map mode) {
     if (logEnable) { log.debug "Performing inactive action for mode ${mode.name}" }
-    if (!mode.lights || mode.active == 'none' || mode.inactive == 'none') { return }
+    if (!mode.activeLights || mode.active == 'none' || mode.inactive == 'none') { return }
 
     state.triggered.running = false
     state.triggered.inactive = now()
@@ -771,10 +825,10 @@ private void performInactiveAction(Map mode) {
 // Performs the configured actions when changing between modes
 private void performTransitionAction(Map oldMode, Map newMode) {
     if (state.triggered?.running == true) {
-        List newLights = newMode.activity == 'none' ? [] : newMode.lights*.id
+        List newLights = newMode.activity == 'none' ? [] : newmode.activeLights*.id
         if (newLights) {
-            oldMode.lights = oldMode.lights.findAll { device -> !(device.id in newLights) }
-            oldMode.additionalOffLights = oldMode.additionalOffLights.findAll { device -> !(device.id in newLights) }
+            oldmode.activeLights = oldmode.activeLights.findAll { device -> !(device.id in newLights) }
+            oldMode.inactiveLights = oldMode.inactiveLights.findAll { device -> !(device.id in newLights) }
         }
         unschedule('performInactiveAction')
         performInactiveAction(oldMode)
@@ -791,8 +845,8 @@ private void scheduleInactiveAction(Map mode) {
 }
 
 // Sets the specified lights using the provided action and optional value
-private void setLights(List lights, String action, Object value = null) {
-    if (logEnable) { log.debug "set ${lights} to ${action} ${value ?: ''}" }
+private void setLights(List lights, String action, Object[] value) {
+    if (logEnable) { log.debug "${lights} ${action} ${value ?: ''}" }
 
     if (settings.reenableDelay && settings.disabledDevices) {
         long expire = now() - (settings.reenableDelay * 60000)
@@ -808,7 +862,7 @@ private void setLights(List lights, String action, Object value = null) {
     }
 }
 
-@Field static final List colors = [
+@Field static final List<Map<String, String>> colors = [
     [name:'Alice Blue', rgb:'#F0F8FF'],
     [name:'Antique White', rgb:'#FAEBD7'],
     [name:'Aqua', rgb:'#00FFFF'],
@@ -951,4 +1005,4 @@ private void setLights(List lights, String action, Object value = null) {
     [name:'White Smoke', rgb:'#F5F5F5'],
     [name:'Yellow', rgb:'#FFFF00'],
     [name:'Yellow Green', rgb:'#9ACD32']
-]
+].asImmutable()
