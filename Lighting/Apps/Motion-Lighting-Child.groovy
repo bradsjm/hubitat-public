@@ -613,7 +613,7 @@ void initialize() {
 void lightHandler(Event evt) {
     if (!state.triggered.running || evt.value == 'on') { return }
     log.info "${app.name} disabling ${evt.device} as it was manually switched off"
-    state.disabledDevices.put(evt.device.id, now())
+    disableLight(evt.device)
 }
 
 // Called when a the mode changes
