@@ -56,6 +56,7 @@ preferences {
 @Field static final List<Map<String,String>> inactiveActions = [
    [off: 'Turn off lights'],
    [dimLevel: 'Dim light level'],
+   [restore: 'Restore previous state'],
    [none: 'No action (do not turn off)']
 ]
 
@@ -87,7 +88,7 @@ Map pageMain() {
         }
 
         section {
-            if (state.triggered?.running == true && state.triggered.active) {
+            if (state.triggered?.running == true && state.triggered?.active) {
                 String ago
                 int elapsed = (now() - state.triggered.active) / 1000
                 if (elapsed < 120) {
@@ -158,6 +159,13 @@ Map pageMain() {
             input name: 'luxNumber',
                   title: 'Disable controller if average illuminance is above this value',
                   type: 'number'
+
+            input name: 'reenableDelay',
+                  type: 'number',
+                  title: 'Automatically re-enable control after specified minutes',
+                  range: '1..600',
+                  required: false,
+                  defaultValue: 60
         }
 
         section {
@@ -602,6 +610,12 @@ void initialize() {
     state.triggered = state.triggered ?: [ running: false ]
 }
 
+void lightHandler(Event evt) {
+    if (!state.triggered.running || evt.value == 'on') { return }
+    log.info "${app.name} disabling ${evt.device} as it was manually switched off"
+    state.disabledDevices.put(evt.device.id, now())
+}
+
 // Called when a the mode changes
 void modeChangeHandler(Event evt) {
     Map mode = getActiveMode()
@@ -666,6 +680,24 @@ void updated() {
 /*
  * Internal Application Logic
  */
+
+// Capture state of lights
+private void captureLightState(List lights) {
+    state.capture = [:]
+    lights.each { device ->
+        String colorMode = device.currentValue('colorMode')
+        List<String> captureAttributes = []
+        if (colorMode == 'RGB') { captureAttributes += ['color'] }
+        if (colorMode == 'CT') { captureAttributes += ['colorTemperature'] }
+        captureAttributes += [ 'level', 'switch' ]
+        state.capture[device.id] = [:]
+        captureAttributes.each { attr ->
+            if (device.hasAttribute(attr)) {
+                state.capture[device.id][attr] = device.currentValue(attr)
+            }
+        }
+    }
+}
 
 // Returns true if the controller is enabled
 private boolean checkEnabled(Map mode) {
@@ -793,6 +825,9 @@ private void performAction(Map mode, String action) {
             setLights(mode.activeLights, 'setLevel', mode.activeLevel, mode.activeTransitionTime)
             if (settings.sendOn) { setLights(mode.activeLights, 'on') }
             break
+        case 'restore':
+            restoreLightState(map.activeLights)
+            break
     }
 }
 
@@ -804,7 +839,9 @@ private void performActiveAction(Map mode) {
     state.triggered.running = true
     state.triggered.active = now()
 
+    if (mode.inactive == 'restore') { captureLightState(mode.activeLights) }
     performAction(mode, 'active')
+    subscribe(mode.activeLights, 'switch', lightHandler)
 }
 
 // Performs the configured actions when specified mode becomes inactive
@@ -818,6 +855,7 @@ private void performInactiveAction(Map mode) {
 
     state.triggered.running = false
     state.triggered.inactive = now()
+    unsubscribe(mode.activeLights)
 
     performAction(mode, 'inactive')
 }
@@ -833,6 +871,25 @@ private void performTransitionAction(Map oldMode, Map newMode) {
         unschedule('performInactiveAction')
         performInactiveAction(oldMode)
         performActiveAction(newMode)
+    }
+}
+
+// Restore state of lights
+private void restoreLightState(List lights) {
+    if (!state.capture) { return }
+
+    lights.each { device ->
+        if (state.capture[device.id]) {
+            state.capture[device.id].each { attr ->
+                Object value = state.capture[device.id][attr]
+                switch (attr) {
+                    case 'color': device.setColor(value); break
+                    case 'colorTemperature': device.setColorTemperature(value); break
+                    case 'level': device.setLevel(value); break
+                    case 'switch': if (value == 'on') { device.on() } else { device.off() } ; break
+                }
+            }
+        }
     }
 }
 
