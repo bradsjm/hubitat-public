@@ -372,11 +372,11 @@ Map pageModeSectionInactive(Long modeID) {
         if (settings["mode.${modeID}.inactive"] != 'none') {
             input name: "mode.${modeID}.inactiveMinutes",
                   title: 'Delay after activity stops',
-                  description: 'number of minutes',
+                  description: mode == 0 ? 'number of minutes' : 'override default mode minutes',
                   type: 'number',
                   range: '1..3600',
                   width: 4,
-                  required: true
+                  required: modeID == 0
         }
 
         switch (settings["mode.${modeID}.inactive"]) {
@@ -489,6 +489,7 @@ String getTriggerDescription() {
     devices.addAll(settings.activationButtons*.displayName ?: [])
     devices.addAll(settings.activationOnSwitches*.displayName ?: [])
     devices.addAll(settings.activationOffSwitches*.displayName ?: [])
+    devices.sort()
 
     if (!devices) { return '' }
 
@@ -515,14 +516,16 @@ String getModeDescription(Long modeID) {
 
     String description = ''
     if (mode.active != 'none') {
-        if (mode.activeLights.size() <= 10) {
-            mode.activeLights.eachWithIndex { element, index ->
-                if (index > 0 && index < mode.activeLights.size() - 1) { description += ', ' }
-                else if (index > 0 && index == mode.activeLights.size() - 1) { description += ' and ' }
+        List lights = mode.activeLights*.displayName
+        lights.sort()
+        if (lights.size() <= 10) {
+            lights.eachWithIndex { element, index ->
+                if (index > 0 && index < lights.size() - 1) { description += ', ' }
+                else if (index > 0 && index == lights.size() - 1) { description += ' and ' }
                 description += element
             }
         } else {
-            description = "${mode.activeLights.size()} lights configured"
+            description = "${lights.size()} lights configured"
         }
         description += '\n'
     }
@@ -790,8 +793,9 @@ private Map getModeSettings(Long id) {
         mode.inactiveTransitionTime = settings["mode.${mode.id}.inactiveTransitionTime"] as BigDecimal
 
         // If mode has no lights use the default mode values
-        if (mode.id > 0 && !mode.activeLights) {
-            mode.activeLights = settings['mode.0.activeLights'] ?: []
+        if (mode.id > 0) {
+            mode.activeLights = mode.activeLights ?: settings['mode.0.activeLights'] ?: []
+            mode.inactiveMinutes = mode.inactiveMinutes ?: settings['mode.0.inactiveMinutes'] as Integer
         }
     }
 
