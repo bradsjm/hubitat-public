@@ -372,7 +372,7 @@ Map pageModeSectionInactive(Long modeID) {
         if (settings["mode.${modeID}.inactive"] != 'none') {
             input name: "mode.${modeID}.inactiveMinutes",
                   title: 'Delay after activity stops',
-                  description: mode == 0 ? 'number of minutes' : 'override default mode minutes',
+                  description: modeID == 0 ? 'number of minutes' : 'override default mode minutes',
                   type: 'number',
                   range: '1..3600',
                   width: 4,
@@ -636,6 +636,8 @@ void motionHandler(Event evt) {
     log.trace "motionHandler: ${evt.device} ${evt.value} (mode ${mode.name})"
     if (!checkEnabled(mode) || evt.value != 'active') { return }
 
+    // evt.value inactive should extend schedule?
+
     if (
         (evt.device.id in settings.activationMotionSensors*.id) ||
         (state.triggered?.running == true && evt.device.id in settings.additionalMotionSensors*.id)
@@ -818,7 +820,7 @@ private void performAction(Map mode, String action) {
             setLights(mode.activeLights, 'on')
             break
         case 'onColor':
-            setLights(lights, 'setColor', getColorByRGB(mode.activeColor))
+            setLights(mode.activeLights, 'setColor', getColorByRGB(mode.activeColor))
             if (settings.sendOn) { setLights(mode.activeLights, 'on') }
             break
         case 'onCT':
@@ -843,6 +845,8 @@ private void performActiveAction(Map mode) {
     state.triggered.running = true
     state.triggered.active = now()
 
+    sendEvent name: 'active', value: mode.name, description: "Triggered by ${state.triggered.device}"
+
     if (mode.inactive == 'restore') { captureLightState(mode.activeLights) }
     performAction(mode, 'active')
     subscribe(mode.activeLights, 'switch', lightHandler)
@@ -859,20 +863,21 @@ private void performInactiveAction(Map mode) {
 
     state.triggered.running = false
     state.triggered.inactive = now()
-    unsubscribe(mode.activeLights)
 
+    sendEvent name: 'inactive', value: mode.name
+
+    unsubscribe(mode.activeLights)
     performAction(mode, 'inactive')
 }
 
 // Performs the configured actions when changing between modes
 private void performTransitionAction(Map oldMode, Map newMode) {
-    if (state.triggered?.running == true) {
-        List newLights = newMode.activity == 'none' ? [] : newmode.activeLights*.id
+    if (state.triggered.running == true) {
+        List newLights = newMode.activity == 'none' ? [] : newMode.activeLights*.id
         if (newLights) {
-            oldmode.activeLights = oldmode.activeLights.findAll { device -> !(device.id in newLights) }
+            oldMode.activeLights = oldMode.activeLights.findAll { device -> !(device.id in newLights) }
             oldMode.inactiveLights = oldMode.inactiveLights.findAll { device -> !(device.id in newLights) }
         }
-        unschedule('performInactiveAction')
         performInactiveAction(oldMode)
         performActiveAction(newMode)
     }
