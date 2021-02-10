@@ -36,6 +36,9 @@ metadata {
 
         command 'stop'
 
+        command 'setOpen'
+        command 'setClosed'
+
         command 'storeCode', [
             [
                 name: 'Name',
@@ -168,6 +171,14 @@ void close() {
 
     log.info "${device.displayName} closing"
     sendCode(state.codes.close, 'parseCloseResponse')
+}
+
+void setClosed() {
+    updateState('closed')
+}
+
+void setOpen() {
+    updateState('open')
 }
 
 void stop() {
@@ -507,7 +518,7 @@ private void sendCode(String code, String callback) {
     )
 
     int iterations = settings.sendIterations as int
-    if (iterations > 1) { log.info "Repeating code ${iterations-1} times" }
+    if (iterations > 1) { log.info "Repeating code ${iterations - 1} times" }
     iterations.times {
         send(packet, callback)
         pauseExecution(100)
