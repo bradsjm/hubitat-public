@@ -560,12 +560,14 @@ void buttonHandler(Event evt) {
     if (!checkEnabled(mode)) { return }
 
     if (evt.value == settings.activationButtonNumber) {
-        state.triggered = [
-            type: 'button',
-            device: evt.device.displayName,
-            value: evt.value
-        ]
-        performActiveAction(mode)
+        if (!state.triggered.active) {
+            state.triggered = [
+                type: 'button',
+                device: evt.device.displayName,
+                value: evt.value
+            ]
+            performActiveAction(mode)
+        }
         scheduleInactiveAction(mode)
     }
 }
@@ -580,12 +582,14 @@ void contactHandler(Event evt) {
         (evt.device.id in settings.activationContactSensors*.id) ||
         (state.triggered?.running == true && evt.device.id in settings.additionalContactSensors*.id)
     ) {
-        state.triggered = [
-            type: 'contact',
-            device: evt.device.displayName,
-            value: evt.value
-        ]
-        performActiveAction(mode)
+        if (!state.triggered.active) {
+            state.triggered = [
+                type: 'contact',
+                device: evt.device.displayName,
+                value: evt.value
+            ]
+            performActiveAction(mode)
+        }
         scheduleInactiveAction(mode)
     }
 }
@@ -611,6 +615,11 @@ void initialize() {
     state.disabledDevices = [:]
     state.lastMode = state.lastMode ?: getActiveMode().id
     state.triggered = state.triggered ?: [ running: false ]
+
+    if (!settings.masterEnable || !parent.enabled()) {
+        unschedule()
+        state.triggered = [ running: false ]
+    }
 }
 
 void lightHandler(Event evt) {
@@ -640,12 +649,14 @@ void motionHandler(Event evt) {
         (evt.device.id in settings.activationMotionSensors*.id) ||
         (state.triggered?.running == true && evt.device.id in settings.additionalMotionSensors*.id)
     ) {
-        state.triggered = [
-            type: 'motion',
-            device: evt.device.displayName,
-            value: evt.value
-        ]
-        performActiveAction(mode)
+        if (!state.triggered.active) {
+            state.triggered = [
+                type: 'motion',
+                device: evt.device.displayName,
+                value: evt.value
+            ]
+            performActiveAction(mode)
+        }
         scheduleInactiveAction(mode)
     }
 }
@@ -658,12 +669,14 @@ void switchHandler(Event evt) {
 
     if ((evt.device.id in settings.activationOnSwitches*.id && evt.value == 'on') ||
         (evt.device.id in settings.activationOffSwitches*.id && evt.value == 'off')) {
-        state.triggered = [
-            type: 'switch',
-            device: evt.device.displayName,
-            value: evt.value
-        ]
-        performActiveAction(mode)
+        if (!state.triggered.active) {
+            state.triggered = [
+                type: 'switch',
+                device: evt.device.displayName,
+                value: evt.value
+            ]
+            performActiveAction(mode)
+        }
         scheduleInactiveAction(mode)
     }
 }
