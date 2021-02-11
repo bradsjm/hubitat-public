@@ -90,7 +90,7 @@ Map pageMain() {
         section {
             if (state.triggered?.running == true && state.triggered?.active) {
                 String ago
-                int elapsed = (now() - state.triggered.active) / 1000
+                int elapsed = (now() - state.triggered.running) / 1000
                 if (elapsed < 120) {
                     ago = "${elapsed} second(s) ago"
                 } else {
@@ -560,7 +560,7 @@ void buttonHandler(Event evt) {
     if (!checkEnabled(mode)) { return }
 
     if (evt.value == settings.activationButtonNumber) {
-        if (!state.triggered.active) {
+        if (!state.triggered.running) {
             state.triggered = [
                 type: 'button',
                 device: evt.device.displayName,
@@ -582,7 +582,7 @@ void contactHandler(Event evt) {
         (evt.device.id in settings.activationContactSensors*.id) ||
         (state.triggered?.running == true && evt.device.id in settings.additionalContactSensors*.id)
     ) {
-        if (!state.triggered.active) {
+        if (!state.triggered.running) {
             state.triggered = [
                 type: 'contact',
                 device: evt.device.displayName,
@@ -651,7 +651,7 @@ void motionHandler(Event evt) {
         (evt.device.id in settings.activationMotionSensors*.id) ||
         (state.triggered?.running == true && evt.device.id in settings.additionalMotionSensors*.id)
     ) {
-        if (!state.triggered.active) {
+        if (!state.triggered.running) {
             state.triggered = [
                 type: 'motion',
                 device: evt.device.displayName,
@@ -671,7 +671,7 @@ void switchHandler(Event evt) {
 
     if ((evt.device.id in settings.activationOnSwitches*.id && evt.value == 'on') ||
         (evt.device.id in settings.activationOffSwitches*.id && evt.value == 'off')) {
-        if (!state.triggered.active) {
+        if (!state.triggered.running) {
             state.triggered = [
                 type: 'switch',
                 device: evt.device.displayName,
@@ -856,7 +856,7 @@ private void performActiveAction(Map mode) {
     if (!mode.activeLights || mode.active == 'none') { return }
 
     state.triggered.running = true
-    state.triggered.active = now()
+    state.triggered.running = now()
 
     sendEvent name: 'active', value: mode.name, description: "Triggered by ${state.triggered.device}"
 
