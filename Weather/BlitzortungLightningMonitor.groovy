@@ -23,6 +23,13 @@
 import groovy.transform.Field
 import java.util.concurrent.ConcurrentHashMap
 
+/*
+ * MQTT data broker provided by Mariusz Kryński
+ * https://github.com/mrk-its/homeassistant-blitzortung
+ * Please consider buying him coffee for his work at https://www.buymeacoffee.com/emrk
+ */
+@Field String broker = 'tcp://blitzortung.ha.sed.pl:1883'
+
 @Field int[] bits = [16, 8, 4, 2, 1]
 @Field char[] base32 = ['0', '1', '2', '3', '4', '5', '6',
             '7', '8', '9', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'j', 'k', 'm', 'n',
@@ -43,12 +50,13 @@ metadata {
         attribute 'direction', 'string'
 
         command 'reset'
+        command 'test'
 
         preferences {
             section {
                 input name: 'precisionLevel',
                       type: 'enum',
-                      title: 'Monitor Distance',
+                      title: 'Monitor Range',
                       required: true,
                       defaultValue: 6,
                       options: [
@@ -66,15 +74,17 @@ metadata {
                 input name: 'historyPeriod',
                       type: 'enum',
                       title: 'History Period',
-                      description: 'Rolling time window for state',
+                      description: 'Rolling time window for stats',
                       required: true,
                       defaultValue: 60,
                       options: [
                         10: '10 seconds',
                         30: '30 seconds',
                         60: '1 minute',
+                        120: '2 minutes',
                         300: '5 minutes',
-                        600: '10 minutes'
+                        600: '10 minutes',
+                        900: '15 minutes'
                       ]
 
                 input name: 'updateInterval',
@@ -84,6 +94,7 @@ metadata {
                       required: true,
                       defaultValue: 15,
                       options: [
+                        5: '5 seconds',
                         10: '10 seconds',
                         15: '15 seconds',
                         30: '30 seconds',
@@ -179,15 +190,27 @@ void parse(String data) {
     }
 
     List history = dataCache.computeIfAbsent(device.id) { k -> [] }
-    if (!history.size()) {
-        schedule("*/${settings.updateInterval} * * ? * * *", 'updateStats')
+    history.add([ time: (payload.time / 1000000) as long, distance: distance, bearing: bearing ])
+
+    // Immediate update if the distance gets closer or this is the first report of distance
+    if (distance < device.currentValue('distance') || device.currentValue('distance') == 0) {
+        updateStats()
     }
 
-    history.add([ time: (payload.time / 1000000) as long, distance: distance, bearing: bearing ])
+    // Scheduled task to update stats
+    if (history.size() == 1) {
+        schedule("*/${settings.updateInterval} * * ? * * *", 'updateStats')
+    }
 }
 
 void reset() {
     dataCache[device.id] = []
+    updateStats()
+}
+
+void test() {
+    List history = dataCache.computeIfAbsent(device.id) { k -> [] }
+    history.add([ time: now(), distance: 1.609, bearing: 99 ])
     updateStats()
 }
 
@@ -213,8 +236,9 @@ private void updateStats() {
 
 // Called with MQTT client status messages
 void mqttClientStatus(String status) {
-    // The string that is passed to this method with start with "Error" if an error occurred
+    // The string that is passed to this method starts with "Error" if an error occurred
     // or "Status" if this is just a status message.
+    state.mqttStatus = status
     List<String> parts = status.split(': ')
     switch (parts[0]) {
         case 'Error':
@@ -275,7 +299,7 @@ private static int calcBearing(BigDecimal lat1, BigDecimal long1, BigDecimal lat
 
 public static String headingToString(int heading)
 {
-    String[] directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW", "N"]
+    String[] directions = ["North", "North East", "East", "South East", "South", "South West", "West", "North West", "North"]
     return directions[ (int)Math.round((  (heading % 360) / 45)) ]
 }
 
@@ -344,12 +368,11 @@ private String geoEncode(BigDecimal latitude, BigDecimal longitude, int precisio
 }
 
 /**
- *  Common Tasmota MQTT communication methods
+ *  Common MQTT communication methods
  */
 
 private void mqttConnect() {
     unschedule('mqttConnect')
-    String broker = 'tcp://blitzortung.ha.sed.pl:1883'
     try {
         String clientId = device.hub.hardwareID + '-' + device.id
         log.info "Connecting to MQTT broker at ${broker}"
