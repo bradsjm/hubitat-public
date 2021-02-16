@@ -88,7 +88,7 @@ Map pageMain() {
         }
 
         section {
-            if (state.triggered?.running == true && state.triggered?.active) {
+            if (state.triggered?.active) {
                 String ago
                 int elapsed = (now() - state.triggered.active) / 1000
                 if (elapsed < 120) {
@@ -97,7 +97,11 @@ Map pageMain() {
                     elapsed /= 60
                     ago = "${elapsed} minutes ago"
                 }
-                paragraph "<b>Triggered ${ago} by ${state.triggered?.device}</b>"
+                if (state.triggered.running) {
+                    paragraph "Triggered ${ago} by ${state.triggered.device}"
+                } else {
+                    paragraph "Last triggered ${ago} by ${state.triggered.device}"
+                }
             }
 
             href name: 'pageTriggers',
@@ -303,7 +307,7 @@ Map pageModeSectionActive(Long modeID) {
             input name: "mode.${modeID}.activeLights",
                 title: 'Choose lights to turn on/off/dim',
                 description: modeID == 0 ? 'Click to set' : 'Click to override default lights',
-                type: 'capability.light',
+                type: 'capability.switch',
                 multiple: true,
                 submitOnChange: true
 
