@@ -28,10 +28,10 @@ import java.util.concurrent.ConcurrentHashMap
  * https://github.com/mrk-its/homeassistant-blitzortung
  * Please consider buying him coffee for his work at https://www.buymeacoffee.com/emrk
  */
-@Field String broker = 'tcp://blitzortung.ha.sed.pl:1883'
+@Field static String broker = 'tcp://blitzortung.ha.sed.pl:1883'
 
-@Field int[] bits = [16, 8, 4, 2, 1]
-@Field char[] base32 = ['0', '1', '2', '3', '4', '5', '6',
+@Field static int[] bits = [16, 8, 4, 2, 1]
+@Field static List base32 = ['0', '1', '2', '3', '4', '5', '6',
             '7', '8', '9', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'j', 'k', 'm', 'n',
             'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z']
 
@@ -46,6 +46,7 @@ metadata {
 
         attribute 'strikes', 'number'
         attribute 'distance', 'number'
+        attribute 'delta', 'number'
         attribute 'bearing', 'number'
         attribute 'direction', 'string'
 
@@ -54,22 +55,13 @@ metadata {
 
         preferences {
             section {
-                input name: 'precisionLevel',
-                      type: 'enum',
-                      title: 'Monitor Range',
-                      required: true,
-                      defaultValue: 6,
-                      options: [
-                        1: '± 1500 miles',
-                        2: '± 400 miles',
-                        3: '± 50 miles',
-                        4: '± 10 miles',
-                        5: '± 1.5 miles',
-                        6: '± 600 yards',
-                        7: '± 80 yards',
-                        8: '± 60 feet',
-                        9: '± 8 feet'
-                      ]
+                input name: 'maxRange',
+                      type: 'number',
+                      title: 'Monitor Range (miles)',
+                      description: 'Range for presence indicator',
+                      range: '1..1500',
+                      defaultValue: 5,
+                      required: true
 
                 input name: 'historyPeriod',
                       type: 'enum',
@@ -85,20 +77,6 @@ metadata {
                         300: '5 minutes',
                         600: '10 minutes',
                         900: '15 minutes'
-                      ]
-
-                input name: 'updateInterval',
-                      type: 'enum',
-                      title: 'Update Interval',
-                      description: 'How often to update driver state',
-                      required: true,
-                      defaultValue: 15,
-                      options: [
-                        5: '5 seconds',
-                        10: '10 seconds',
-                        15: '15 seconds',
-                        30: '30 seconds',
-                        45: '45 seconds'
                       ]
             }
 
@@ -130,7 +108,9 @@ metadata {
 // Called when the device is started.
 void initialize() {
     log.info "${device.displayName} driver initializing"
+    unschedule()
     mqttDisconnect()
+    reset()
     mqttConnect()
 }
 
@@ -175,7 +155,8 @@ void updated() {
     pol = polarity, -1 or +1
     mds = maximal deviation span in nano seconds
     mcg = maximal circular gap in degree (ex: 210 = the detectors are in a sector of 150 degree from impact position)
-    status = status, optional
+    status = status
+    region = 1 - 7 are Europe, Oceania, North America, Asia, South America, Africa, and Japan
 */
 void parse(String data) {
     Map message = interfaces.mqtt.parseMessage(data)
@@ -183,23 +164,20 @@ void parse(String data) {
     Map payload = parseJson(message.get('payload'))
     if (!payload.lat || !payload.lon) { return }
 
+    List history = dataCache.computeIfAbsent(device.id) { k -> [] }
+    Map closest = history ? history.min { h -> h.distance } : [:]
+
     long distance = Math.round(calcDistance(location.latitude, location.longitude, payload.lat, payload.lon))
     int bearing = calcBearing(location.latitude, location.longitude, payload.lat, payload.lon)
     if (logEnable) {
         log.debug "Strike ${distance} km away at ${bearing} degrees"
     }
 
-    List history = dataCache.computeIfAbsent(device.id) { k -> [] }
     history.add([ time: (payload.time / 1000000) as long, distance: distance, bearing: bearing ])
 
-    // Immediate update if the distance gets closer or this is the first report of distance
-    if (distance < device.currentValue('distance') || device.currentValue('distance') == 0) {
+    // Immediate update if the distance gets closer or this is the first report
+    if (history.size() == 1 || distance < closest.distance) {
         updateStats()
-    }
-
-    // Scheduled task to update stats
-    if (history.size() == 1) {
-        schedule("*/${settings.updateInterval} * * ? * * *", 'updateStats')
     }
 }
 
@@ -216,19 +194,26 @@ void test() {
 
 private void updateStats() {
     List history = dataCache.computeIfAbsent(device.id) { k -> [] }
-    history.removeAll { d -> d.time < now() - ((settings.historyPeriod as int) * 1000) }
+    int historyPeriod = settings.historyPeriod as int
+    history.removeAll { d -> d.time < now() - (historyPeriod * 1000) }
     int size = history.size()
-    if (!size) {
-        unschedule('updateStats')
-    }
+    if (size) { runIn(60, 'updateStats') }
 
-    Map min = history.min { d -> d.distance }
-    int bearing = size ? min.bearing : 0
-    int distance = size ? Math.round(min.distance / 1.609) : 0
-    String direction = size ? headingToString(min.bearing) : 'N/A'
-    String presence = size ? 'present' : 'not present'
-    sendEvent(newEvent('strikes', size))
-    sendEvent(newEvent('distance', distance, [ unit: 'm' ]))
+    // Calculate number of strikes within the specified range setting
+    int rangeKm = Math.round((settings.maxRange as int) * 1.609)
+    int strikes = history.count { h -> h.distance <= rangeKm }
+    String presence = strikes ? 'present' : 'not present'
+
+    // Calculate the closest strike direction and distance
+    Map closest = size ? history.min { h -> h.distance } : [:]
+    int bearing = closest?.bearing ?: 0
+    String direction = closest ? headingToString(closest.bearing) : 'n/a'
+    int distance = closest?.distance ?: 0
+    int delta = (device.currentValue('distance') ?: 0) - distance
+
+    sendEvent(newEvent('strikes', strikes))
+    sendEvent(newEvent('distance', Math.round(distance / 1.609), [ unit: 'miles' ]))
+    sendEvent(newEvent('delta', Math.round(delta / 1.609), [ unit: 'miles' ]))
     sendEvent(newEvent('bearing', bearing, [ unit: '°' ]))
     sendEvent(newEvent('direction', direction))
     sendEvent(newEvent('presence', presence))
@@ -297,21 +282,35 @@ private static int calcBearing(BigDecimal lat1, BigDecimal long1, BigDecimal lat
     return brng;
 }
 
+private static char encode(int x, int y) {
+    return base32[((x & 1) + ((y & 1) * 2) + ((x & 2) * 2) + ((y & 2) * 4) + ((x & 4) * 4)) % 32]
+}
+
 public static String headingToString(int heading)
 {
-    String[] directions = ["North", "North East", "East", "South East", "South", "South West", "West", "North West", "North"]
+    String[] directions = ["North", "North East", "East", "South East", "South",
+                           "South West", "West", "North West", "North"]
     return directions[ (int)Math.round((  (heading % 360) / 45)) ]
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void connected() {
     if (logEnable) { log.debug 'Connected to MQTT broker' }
-    String geohash = geoEncode(location.latitude, location.longitude, settings.precisionLevel as int)
-    if (logEnable) { log.debug "Geohash: ${geohash}" }
 
-    String hash = geohash.chars.join('/')
-    String topic = "blitzortung/1.1/${hash}/#"
-    mqttSubscribe(topic)
+    int range = settings.maxRange as int
+    int precision = getPrecision(range)
+
+    String geohash = geoEncode(location.latitude, location.longitude, precision)
+    List tiles = geoNeighbors(geohash, precision).plus(geohash)
+
+    log.info "Using Geohash precision level ${precision} for ${range} mile range using ${tiles.size()} tiles"
+    if (logEnable) { log.debug "Geohash tiles: ${tiles}" }
+
+    tiles.each { tile ->
+        String hash = tile.chars.join('/')
+        String topic = "blitzortung/1.1/${hash}/#"
+        mqttSubscribe(topic)
+    }
 }
 
 /**
@@ -365,6 +364,104 @@ private String geoEncode(BigDecimal latitude, BigDecimal longitude, int precisio
     }
 
     return geohash.toString()
+}
+
+/**
+ * Calculate the geohash of a neighbor of a geohash
+ *
+ * @param geohash the geohash of a cell
+ * @param level   level of the geohash
+ * @param dx      delta of the first grid coordinate (must be -1, 0 or +1)
+ * @param dy      delta of the second grid coordinate (must be -1, 0 or +1)
+ * @return geohash of the defined cell
+ */
+private String geoNeighbor(String geohash, int level, int dx, int dy) {
+    int cell = base32.indexOf(geohash.charAt(level - 1))
+
+    // Decoding the Geohash bit pattern to determine grid coordinates
+    int x0 = cell & 1  // first bit of x
+    int y0 = cell & 2  // first bit of y
+    int x1 = cell & 4  // second bit of x
+    int y1 = cell & 8  // second bit of y
+    int x2 = cell & 16 // third bit of x
+
+    // combine the bitpattern to grid coordinates.
+    // note that the semantics of x and y are swapping
+    // on each level
+    int x = x0 + (x1 / 2) + (x2 / 4)
+    int y = (y0 / 2) + (y1 / 4)
+
+    if (level == 1) {
+        // Root cells at north (namely "bcfguvyz") or at
+        // south (namely "0145hjnp") do not have neighbors
+        // in north/south direction
+        if ((dy < 0 && y == 0) || (dy > 0 && y == 3)) {
+            return null
+        } else {
+            return encode(x + dx, y + dy) as String
+        }
+    } else {
+        // define grid coordinates for next level
+        final int nx = ((level % 2) == 1) ? (x + dx) : (x + dy)
+        final int ny = ((level % 2) == 1) ? (y + dy) : (y + dx)
+
+        // if the defined neighbor has the same parent a the current cell
+        // encode the cell directly. Otherwise find the cell next to this
+        // cell recursively. Since encoding wraps around within a cell
+        // it can be encoded here.
+        // xLimit and YLimit must always be respectively 7 and 3
+        // since x and y semantics are swapping on each level.
+        if (nx >= 0 && nx <= 7 && ny >= 0 && ny <= 3) {
+            return geohash.substring(0, level - 1) + encode(nx, ny)
+        } else {
+            String neighbor = geoNeighbor(geohash, level - 1, dx, dy)
+            if(neighbor != null) {
+                return neighbor + encode(nx, ny)
+            } else {
+                return null
+            }
+        }
+    }
+}
+
+/**
+    * Add all geohashes of the cells next to a given geohash to a list.
+    *
+    * @param geohash   Geohash of a specified cell
+    * @param level     level of the given geohash
+    * @return the given list
+    */
+public List geoNeighbors(String geohash, int level) {
+    Set neighbors = []
+    String north = geoNeighbor(geohash, level, 0, +1)
+    String south = geoNeighbor(geohash, level, 0, -1)
+    if (north != null) {
+        neighbors.add(geoNeighbor(north, level, -1, 0))
+        neighbors.add(north)
+        neighbors.add(geoNeighbor(north, level, +1, 0))
+    }
+
+    neighbors.add(geoNeighbor(geohash, level, -1, 0))
+    neighbors.add(geoNeighbor(geohash, level, +1, 0))
+
+    if (south != null) {
+        neighbors.add(geoNeighbor(south, level, -1, 0))
+        neighbors.add(south)
+        neighbors.add(geoNeighbor(south, level, +1, 0))
+    }
+
+    return neighbors as List
+}
+
+private int getPrecision(int miles) {
+    int km = miles * 1.609
+    switch (km) {
+        case 0..2.4: return 5
+        case 2.5..20: return 4
+        case 21..78: return 3
+        case 79..630: return 2
+        default: return 1
+    }
 }
 
 /**

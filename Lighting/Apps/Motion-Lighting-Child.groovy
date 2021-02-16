@@ -90,7 +90,7 @@ Map pageMain() {
         section {
             if (state.triggered?.running == true && state.triggered?.active) {
                 String ago
-                int elapsed = (now() - state.triggered.running) / 1000
+                int elapsed = (now() - state.triggered.active) / 1000
                 if (elapsed < 120) {
                     ago = "${elapsed} second(s) ago"
                 } else {
@@ -856,9 +856,9 @@ private void performActiveAction(Map mode) {
     if (!mode.activeLights || mode.active == 'none') { return }
 
     state.triggered.running = true
-    state.triggered.running = now()
+    state.triggered.active = now()
 
-    sendEvent name: 'active', value: mode.name, description: "Triggered by ${state.triggered.device}"
+    sendEvent name: 'active', value: mode.name, descriptionText: "Triggered by ${state.triggered.device}"
 
     if (mode.inactive == 'restore') { captureLightState(mode.activeLights) }
     performAction(mode, 'active')
