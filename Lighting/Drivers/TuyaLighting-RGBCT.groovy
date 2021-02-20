@@ -164,7 +164,7 @@ void parse(String message) {
         disconnect()
     } else if (queue.peek()) {
         log.info "${device.displayName} queue processing continues"
-        runInMillis(10, 'processQueue')
+        runInMillis(1000, 'processQueue')
     }
 }
 
@@ -530,7 +530,7 @@ private void connect() {
             readDelay: 500
         )
         log.info "${device.displayName} connected"
-        runInMillis(10, 'processQueue')
+        runInMillis(1000, 'processQueue')
         return
     } catch (e) {
         log.error "Connect Error: $e"
@@ -725,7 +725,7 @@ private void queue(String command, Map payload = [:]) {
 
     if (!size) {
         log.info "${device.displayName} starting queue processing"
-        runInMillis(10, 'connect')
+        runInMillis(1000, 'connect')
     }
 }
 
