@@ -97,9 +97,7 @@ void initialize() {
     unschedule()
     tuyaQueues.remove(device.id)
 
-    if(device.currentValue('notPresentCounter') == null) {
-        sendEvent(name: "notPresentCounter", value: 0, descriptionText: "Initialized" )
-    }
+    sendEvent(name: "notPresentCounter", value: 0, descriptionText: "Initialized" )
 
     connect()
     schedule('*/15 * * ? * * *', 'heartbeat')

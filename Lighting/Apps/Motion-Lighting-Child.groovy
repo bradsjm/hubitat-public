@@ -98,9 +98,9 @@ Map pageMain() {
                     ago = "${elapsed} minutes ago"
                 }
                 if (state.triggered.running) {
-                    paragraph "Triggered ${ago} by ${state.triggered.device}"
+                    paragraph "<b>Triggered</b>: ${ago} by ${state.triggered.device} ${state.triggered.type} sensor"
                 } else {
-                    paragraph "Last triggered ${ago} by ${state.triggered.device}"
+                    paragraph "Last triggered: ${ago} by ${state.triggered.device} ${state.triggered.type} sensor"
                 }
             }
 
@@ -163,13 +163,28 @@ Map pageMain() {
             input name: 'luxNumber',
                   title: 'Disable controller if average illuminance is above this value',
                   type: 'number'
+        }
+
+        section('Lamp Override Settings', hideable: true, hidden: true) {
+            String disabled = getDisabledDescription()
+            if (disabled) {
+                paragraph "Disabled lights: ${disabled}"
+            }
+
+            input name: 'autoDisable',
+                  title: 'Disable lamp control if turned off manually (after turned on by controller)',
+                  type: 'bool',
+                  required: false,
+                  defaultValue: true
 
             input name: 'reenableDelay',
                   type: 'number',
-                  title: 'Automatically re-enable control after specified minutes',
+                  title: 'Minutes to wait to re-enable automatic lamp control',
+                  description: 'minutes',
                   range: '1..600',
                   required: false,
-                  defaultValue: 60
+                  defaultValue: 60,
+                  width: 7
         }
 
         section {
@@ -485,6 +500,25 @@ List getAvailableModes() {
     return availableModes
 }
 
+String getDisabledDescription() {
+    Map mode = getActiveMode()
+    List lights = mode.lights.findAll { device -> settings.disabledDevices?.containsKey(device.id) }*.displayName
+    if (!lights) { return '' }
+    lights.sort()
+    String description = ''
+    if (lights.size() <= 10) {
+        lights.eachWithIndex { element, index ->
+            if (index > 0 && index < lights.size() - 1) { description += ', ' }
+            else if (index > 0 && index == lights.size() - 1) { description += ' and ' }
+            description += element
+        }
+    } else {
+        description = "${lights.size()} lights"
+    }
+
+    return description
+}
+
 // Returns String summary of device settings, or empty string if that mode is not configured
 String getTriggerDescription() {
     List devices = []
@@ -773,7 +807,9 @@ private int currentLuxLevel() {
 
 // Puts light in the disabled devices list which will stop it being updated
 private void disableLight(DeviceWrapper device) {
-    state.disabledDevices.put(device.id, now())
+    if (settings.autoDisable == true) {
+        state.disabledDevices.put(device.id, now())
+    }
 }
 
 // Returns the currently active mode (which may be default if not overridden)
