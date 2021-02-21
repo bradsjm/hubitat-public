@@ -21,7 +21,6 @@
  *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  *  SOFTWARE.
 */
-import com.hubitat.app.DeviceWrapper
 import com.hubitat.hub.domain.Event
 import groovy.transform.Field
 import hubitat.helper.ColorUtils
@@ -102,6 +101,11 @@ Map pageMain() {
                 } else {
                     paragraph "Last triggered: ${ago} by ${state.triggered.device} ${state.triggered.type} sensor"
                 }
+
+                String disabled = getDisabledDescription()
+                if (disabled) {
+                    paragraph "<b>Disabled lights</b>: ${disabled}"
+                }
             }
 
             href name: 'pageTriggers',
@@ -166,11 +170,6 @@ Map pageMain() {
         }
 
         section('Lamp Override Settings', hideable: true, hidden: true) {
-            String disabled = getDisabledDescription()
-            if (disabled) {
-                paragraph "Disabled lights: ${disabled}"
-            }
-
             input name: 'autoDisable',
                   title: 'Disable lamp control if turned off manually (after turned on by controller)',
                   type: 'bool',
@@ -200,7 +199,7 @@ Map pageMain() {
                   required: false,
                   defaultValue: true
         }
-    }
+                      }
 }
 
 // Trigger devices configuration page
@@ -272,7 +271,7 @@ Map pageTriggers() {
                 app.removeSetting('activationButtonNumber')
             }
         }
-    }
+                      }
 }
 
 // Mode configuration page
@@ -299,7 +298,7 @@ Map pageMode(Map params) {
             pageModeSectionInactive(modeID)
             pageModeSectionTest(modeID)
         }
-    }
+                       }
 }
 
 Map pageModeSectionActive(Long modeID) {
@@ -500,9 +499,12 @@ List getAvailableModes() {
     return availableModes
 }
 
+// Returns a description of lights that are currently disabled
 String getDisabledDescription() {
     Map mode = getActiveMode()
-    List lights = mode.lights.findAll { device -> settings.disabledDevices?.containsKey(device.id) }*.displayName
+    List lights = mode.activeLights.findAll {
+        device -> state.disabledDevices.containsKey(device.id)
+    }*.displayName
     if (!lights) { return '' }
     lights.sort()
     String description = ''
@@ -662,8 +664,11 @@ void initialize() {
 
 void lightHandler(Event evt) {
     if (!state.triggered.running || evt.value == 'on') { return }
-    log.info "${app.name} disabling ${evt.device} as it was manually switched off"
-    disableLight(evt.device)
+    log.info "${app.name} ${evt.device} was manually switched off"
+    if (settings.autoDisable == true) {
+        sendEvent name: 'disable', value: evt.device, descriptionText: 'Disabling light control (turned off manually)'
+        state.disabledDevices.put(device.id, now())
+    }
 }
 
 // Called when a the mode changes
@@ -718,7 +723,7 @@ void switchHandler(Event evt) {
             performActiveAction(mode)
         }
         scheduleInactiveAction(mode)
-    }
+        }
 }
 
 // Called when the app is removed.
@@ -776,13 +781,13 @@ private boolean checkEnabled(Map mode) {
         currentLuxLevel() > (int)settings.luxNumber) {
         log.info "${app.name} is disabled (lux exceeds ${settings.luxNumber})"
         return false
-    }
+        }
 
     if (settings.disabledSwitchWhenOn &&
         settings.disabledSwitchWhenOn.any { device -> device.currentValue('switch') == 'on' }) {
         log.info "${app.name} is disabled (disable switch is ON)"
         return false
-    }
+}
 
     if (settings.disabledSwitchWhenOff &&
         settings.disabledSwitchWhenOff.any { device -> device.currentValue('switch') == 'off' }) {
@@ -803,13 +808,6 @@ private int currentLuxLevel() {
         total += value
     }
     return count ? Math.round(total / count) : 0
-}
-
-// Puts light in the disabled devices list which will stop it being updated
-private void disableLight(DeviceWrapper device) {
-    if (settings.autoDisable == true) {
-        state.disabledDevices.put(device.id, now())
-    }
 }
 
 // Returns the currently active mode (which may be default if not overridden)
@@ -885,7 +883,7 @@ private void performAction(Map mode, String action) {
             if (settings.sendOn) { setLights(mode.activeLights, 'on') }
             break
         case 'restore':
-            restoreLightState(map.activeLights)
+            restoreLightState(mode.activeLights)
             break
     }
 }
@@ -931,6 +929,9 @@ private void performTransitionAction(Map oldMode, Map newMode) {
             oldMode.activeLights = oldMode.activeLights.findAll { device -> !(device.id in newLights) }
             oldMode.inactiveLights = oldMode.inactiveLights.findAll { device -> !(device.id in newLights) }
         }
+        sendEvent name: 'transition',
+                  value: oldMode.name,
+                  descriptionText: "Transitioning from ${oldMode.name} to ${newMode.name}"
         performInactiveAction(oldMode)
         performActiveAction(newMode)
     }
@@ -967,18 +968,18 @@ private void scheduleInactiveAction(Map mode) {
 private void setLights(List lights, String action, Object[] value) {
     if (logEnable) { log.debug "${lights} ${action} ${value ?: ''}" }
 
-    if (settings.reenableDelay && settings.disabledDevices) {
+    if (settings.reenableDelay && state.disabledDevices) {
         long expire = now() - (settings.reenableDelay * 60000)
-        settings.disabledDevices.values().removeIf { v -> v <= expire }
+        state.disabledDevices.values().removeIf { v -> v <= expire }
     }
 
-    lights.findAll { device -> !settings.disabledDevices?.containsKey(device.id) }.each { device ->
+    lights.findAll { device -> !state.disabledDevices.containsKey(device.id) }.each { device ->
         if (value) {
             device."$action"(value)
         } else {
             device."$action"()
         }
-    }
+}
 }
 
 @Field static final List<Map<String, String>> colors = [
