@@ -667,7 +667,7 @@ void lightHandler(Event evt) {
     log.info "${app.name} ${evt.device} was manually switched off"
     if (settings.autoDisable == true) {
         sendEvent name: 'disable', value: evt.device, descriptionText: 'Disabling light control (turned off manually)'
-        state.disabledDevices.put(device.id, now())
+        state.disabledDevices.put(evt.device.id, now())
     }
 }
 
@@ -677,9 +677,7 @@ void modeChangeHandler(Event evt) {
     Map lastMode = getModeSettings(state.lastMode)
     state.lastMode = mode.id
     log.trace "modeChangeHandler: location mode = ${evt.value}, active mode = ${mode.name}"
-    if (state.triggered.running == true) {
-        performTransitionAction(lastMode, mode)
-    }
+    performTransitionAction(lastMode, mode)
 }
 
 // Called when a subscribed motion sensor changes
@@ -787,7 +785,7 @@ private boolean checkEnabled(Map mode) {
         settings.disabledSwitchWhenOn.any { device -> device.currentValue('switch') == 'on' }) {
         log.info "${app.name} is disabled (disable switch is ON)"
         return false
-}
+    }
 
     if (settings.disabledSwitchWhenOff &&
         settings.disabledSwitchWhenOff.any { device -> device.currentValue('switch') == 'off' }) {
@@ -910,7 +908,6 @@ private void performInactiveAction() {
 
 private void performInactiveAction(Map mode) {
     if (logEnable) { log.debug "Performing inactive action for mode ${mode.name}" }
-    if (!mode.activeLights || mode.active == 'none' || mode.inactive == 'none') { return }
 
     state.triggered.running = false
     state.triggered.inactive = now()
