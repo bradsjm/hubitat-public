@@ -128,12 +128,12 @@ void parse(String data) {
 
 // Called when the device is removed.
 void uninstalled() {
-    log.info "${device.displayName} driver v${version()} uninstalled"
+    log.info "${device.displayName} driver uninstalled"
 }
 
 // Called when the settings are updated.
 void updated() {
-    log.info "${device.displayName} driver v${version()} configuration updated"
+    log.info "${device.displayName} driver configuration updated"
     log.debug settings
     initialize()
 
