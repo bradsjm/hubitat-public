@@ -34,10 +34,9 @@ metadata {
         capability 'Initialize'
         capability 'WindowShade'
 
-        command 'stop'
-
         command 'setOpen'
         command 'setClosed'
+        command 'stop'
 
         command 'storeCode', [
             [
@@ -155,6 +154,17 @@ void updated() {
     if (logEnable) { runIn(1800, 'logsOff') }
 }
 
+void startPositionChange(String direction) {
+    switch (direction) {
+        case 'open':
+            open()
+            break
+        case 'close':
+            close()
+            break
+    }
+}
+
 void open() {
     if (!state.codes?.open) {
         log.error "${device.displayName} Open code not defined"
@@ -173,6 +183,10 @@ void close() {
     sendCode(state.codes.close, 'parseCloseResponse')
 }
 
+void stop() {
+    stopPositionChange()
+}
+
 void setClosed() {
     updateState('closed')
 }
@@ -181,7 +195,7 @@ void setOpen() {
     updateState('open')
 }
 
-void stop() {
+void stopPositionChange() {
     if (!state.codes?.stop) {
         log.error "${device.displayName} Stop code not defined"
     }
