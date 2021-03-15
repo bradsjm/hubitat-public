@@ -622,14 +622,12 @@ void contactHandler(Event evt) {
         (evt.device.id in settings.activationContactSensors*.id) ||
         (state.triggered?.running == true && evt.device.id in settings.additionalContactSensors*.id)
     ) {
-        if (!state.triggered.running) {
-            state.triggered = [
-                type: 'contact',
-                device: evt.device.displayName,
-                value: evt.value
-            ]
-            performActiveAction(mode)
-        }
+        state.triggered = [
+            type: 'contact',
+            device: evt.device.displayName,
+            value: evt.value
+        ]
+        performActiveAction(mode)
         scheduleInactiveAction(mode)
     }
 }
@@ -686,20 +684,16 @@ void motionHandler(Event evt) {
     log.trace "motionHandler: ${evt.device} ${evt.value} (mode ${mode.name})"
     if (!checkEnabled(mode) || evt.value != 'active') { return }
 
-    // evt.value inactive should extend schedule?
-
     if (
         (evt.device.id in settings.activationMotionSensors*.id) ||
         (state.triggered?.running == true && evt.device.id in settings.additionalMotionSensors*.id)
     ) {
-        if (!state.triggered.running) {
-            state.triggered = [
-                type: 'motion',
-                device: evt.device.displayName,
-                value: evt.value
-            ]
-            performActiveAction(mode)
-        }
+        state.triggered = [
+            type: 'motion',
+            device: evt.device.displayName,
+            value: evt.value
+        ]
+        performActiveAction(mode)
         scheduleInactiveAction(mode)
     }
 }
@@ -712,16 +706,14 @@ void switchHandler(Event evt) {
 
     if ((evt.device.id in settings.activationOnSwitches*.id && evt.value == 'on') ||
         (evt.device.id in settings.activationOffSwitches*.id && evt.value == 'off')) {
-        if (!state.triggered.running) {
-            state.triggered = [
-                type: 'switch',
-                device: evt.device.displayName,
-                value: evt.value
-            ]
-            performActiveAction(mode)
-        }
+        state.triggered = [
+            type: 'switch',
+            device: evt.device.displayName,
+            value: evt.value
+        ]
+        performActiveAction(mode)
         scheduleInactiveAction(mode)
-        }
+    }
 }
 
 // Called when the app is removed.
