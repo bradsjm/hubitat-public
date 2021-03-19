@@ -38,7 +38,7 @@ metadata {
         capability 'SwitchLevel'
         capability 'Polling'
 
-        attribute 'effect', 'number'
+        attribute 'status', 'string'
     }
 }
 
@@ -335,7 +335,7 @@ private void parse(Map dps) {
     }
 
     if (dps.containsKey('state')) {
-        events << newEvent('switch', dps['state'] ? 'on' : 'off')
+        events << newEvent('switch', dps['state'] == 'true' ? 'on' : 'off')
     }
 
     // Determine if we are in RGB or CT mode either explicitly or implicitly
