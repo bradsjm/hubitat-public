@@ -24,6 +24,7 @@
 import com.hubitat.hub.domain.Event
 import groovy.transform.Field
 import hubitat.helper.ColorUtils
+import java.util.concurrent.ConcurrentHashMap
 
 definition (
     name: 'Motion Lighting Controller',
@@ -58,6 +59,9 @@ preferences {
    [restore: 'Restore previous state'],
    [none: 'No action (do not turn off)']
 ]
+
+// Shared command queue map among all instances of this driver
+@Field static final ConcurrentHashMap<Integer, Long> disabledDevices = new ConcurrentHashMap<>()
 
 /*
  * Configuration UI
@@ -503,7 +507,7 @@ List getAvailableModes() {
 String getDisabledDescription() {
     Map mode = getActiveMode()
     List lights = mode.activeLights.findAll {
-        device -> state.disabledDevices.containsKey(device.id)
+        device -> disabledDevices.containsKey(device.id)
     }*.displayName
     if (!lights) { return '' }
     lights.sort()
@@ -650,7 +654,6 @@ void initialize() {
     subscribe(settings.activationButtons, 'pushed', buttonHandler)
     subscribe(location, 'mode', modeChangeHandler)
 
-    state.disabledDevices = [:]
     state.lastMode = state.lastMode ?: getActiveMode().id
     state.triggered = state.triggered ?: [ running: false ]
 
@@ -665,7 +668,7 @@ void lightHandler(Event evt) {
     log.info "${app.name} ${evt.device} was manually switched off"
     if (settings.autoDisable == true) {
         sendEvent name: 'disable', value: evt.device, descriptionText: 'Disabling light control (turned off manually)'
-        state.disabledDevices.put(evt.device.id, now())
+        disabledDevices.put(evt.device.id, now())
     }
 }
 
@@ -955,14 +958,17 @@ private void scheduleInactiveAction(Map mode) {
 
 // Sets the specified lights using the provided action and optional value
 private void setLights(List lights, String action, Object[] value) {
-    if (logEnable) { log.debug "${lights} ${action} ${value ?: ''}" }
-
-    if (settings.reenableDelay && state.disabledDevices) {
-        long expire = now() - (settings.reenableDelay * 60000)
-        state.disabledDevices.values().removeIf { v -> v <= expire }
+    if (logEnable) {
+        log.debug "${lights} ${action} ${value ?: ''}"
+        log.debug "disabledDevices (before): ${disabledDevices}"
     }
 
-    lights.findAll { device -> !state.disabledDevices.containsKey(device.id) }.each { device ->
+    if (settings.reenableDelay && disabledDevices) {
+        long expire = now() - (settings.reenableDelay * 60000)
+        disabledDevices.values().removeIf { v -> v <= expire }
+    }
+
+    lights.findAll { device -> !disabledDevices.containsKey(device.id) }.each { device ->
         if (value) {
             device."$action"(value)
         } else {
