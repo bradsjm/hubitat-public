@@ -916,7 +916,7 @@ private void performInactiveAction(Map mode) {
 // Performs the configured actions when changing between modes
 private void performTransitionAction(Map oldMode, Map newMode) {
     if (state.triggered.running == true) {
-        List newLights = newMode.activity == 'none' ? [] : newMode.activeLights*.id
+        List newLights = newMode.active == 'none' ? [] : newMode.activeLights*.id
         if (newLights) {
             oldMode.activeLights = oldMode.activeLights.findAll { device -> !(device.id in newLights) }
             oldMode.inactiveLights = oldMode.inactiveLights.findAll { device -> !(device.id in newLights) }
