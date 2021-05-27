@@ -28,6 +28,7 @@ metadata {
         capability 'Actuator'
         capability 'Initialize'
         capability 'Light'
+        capability 'Switch'
         capability 'SwitchLevel'
         capability 'Refresh'
 
