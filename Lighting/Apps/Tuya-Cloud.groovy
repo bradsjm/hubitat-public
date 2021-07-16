@@ -193,8 +193,7 @@ void componentSetLevel(DeviceWrapper device, BigDecimal level, BigDecimal durati
  * Color Temperature Capability
  */
 void componentSetColorTemperature(DeviceWrapper device, BigDecimal kelvin) {
-    int value = kelvin >= settings.coldColorTemp ? settings.coldColorTemp :
-                kelvin <= settings.warmColorTemp ? settings.warmColorTemp : kelvin
+    int value = kelvin
     log.info "Setting ${device.displayName} temperature to ${value}K"
     skill(
         'control',
@@ -379,6 +378,7 @@ private ChildDeviceWrapper getOrCreateDevice(String driverName, String deviceNet
     }
 
     if (childDevice.name != name) { childDevice.name = name }
+    if (childDevice.label == null) { childDevice.label = name }
 
     return childDevice
 }
@@ -401,6 +401,10 @@ private void parse(String dni, Map dps) {
 
     if (dps.containsKey('state')) {
         events << newEvent('switch', dps['state'] == 'true' ? 'on' : 'off')
+    }
+
+    if (dps.containsKey('online')) {
+        setOnline(device, dps['online'])
     }
 
     // Determine if we are in RGB or CT mode either explicitly or implicitly
@@ -429,6 +433,21 @@ private void parse(String dni, Map dps) {
         if (device.currentValue(e.name) != e.value) {
             device.parse(e)
         }
+    }
+}
+
+private void setOnline(ChildDeviceWrapper device, Boolean online) {
+    String indicator = ' (Offline)'
+    if (online && device.label && device.label.endsWith(indicator)) {
+        device.label -= indicator
+        log.info "${device} being marked as online"
+        return
+    }
+
+    if (!online && device.label && !device.label.endsWith(indicator)) {
+        device.label += indicator
+        log.info "${device} being marked as offline"
+        device.parse([ newEvent(device, 'switch', 'off') ])
     }
 }
 
