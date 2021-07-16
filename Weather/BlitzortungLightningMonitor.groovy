@@ -194,6 +194,8 @@ void test() {
 
 private void updateStats() {
     List history = dataCache.computeIfAbsent(device.id) { k -> [] }
+    if (!history) { return }
+
     int historyPeriod = settings.historyPeriod as int
     history.removeAll { d -> d.time < now() - (historyPeriod * 1000) }
     int size = history.size()
@@ -211,12 +213,14 @@ private void updateStats() {
     int distance = closest?.distance ?: 0
     int delta = (device.currentValue('distance') ?: 0) - distance
 
-    sendEvent(newEvent('strikes', strikes))
-    sendEvent(newEvent('distance', Math.round(distance / 1.609), [ unit: 'miles' ]))
-    sendEvent(newEvent('delta', Math.round(delta / 1.609), [ unit: 'miles' ]))
-    sendEvent(newEvent('bearing', bearing, [ unit: '°' ]))
-    sendEvent(newEvent('direction', direction))
     sendEvent(newEvent('presence', presence))
+    if (distance <= rangeKm) {
+        sendEvent(newEvent('strikes', strikes))
+        sendEvent(newEvent('distance', Math.round(distance / 1.609), [ unit: 'miles' ]))
+        sendEvent(newEvent('delta', Math.round(delta / 1.609), [ unit: 'miles' ]))
+        sendEvent(newEvent('bearing', bearing, [ unit: '°' ]))
+        sendEvent(newEvent('direction', direction))
+    }
 }
 
 // Called with MQTT client status messages
