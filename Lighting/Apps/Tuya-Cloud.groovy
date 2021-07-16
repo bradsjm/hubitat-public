@@ -191,10 +191,13 @@ void componentSetLevel(DeviceWrapper device, BigDecimal level, BigDecimal durati
 
 /*
  * Color Temperature Capability
+ * Value range is 1000 to 10000
  */
 void componentSetColorTemperature(DeviceWrapper device, BigDecimal kelvin) {
-    int value = kelvin
-    log.info "Setting ${device.displayName} temperature to ${value}K"
+    log.info "Setting ${device.displayName} temperature to ${kelvin}K"
+    int value = ( (kelvin - 2000) / (6500 - 2000) ) * 10000
+    if (value < 1000) { value = 1000 }
+    if (value > 10000) { value = 10000 }
     skill(
         'control',
         'colorTemperatureSet',
@@ -203,7 +206,7 @@ void componentSetColorTemperature(DeviceWrapper device, BigDecimal kelvin) {
             value: value
         ],
         [
-            colorTemperature: newEvent('colorTemperature', value),
+            colorTemperature: newEvent('colorTemperature', kelvin),
             colorMode: newEvent('colorMode', 'CT')
         ]
     )
@@ -318,7 +321,7 @@ private void authHandler(AsyncResponse response, Object data) {
         if (logEnable) { log.debug "Tuya API returned: ${response.data}" }
         if (response.json && response.json.expires_in) {
             state.token = response.json
-            runIn((state.token.expires_in as int) / 2, 'authenticate')
+            runIn((state.token.expires_in / 2) as long, 'authenticate')
             discovery()
         } else if (response.json && response.json.errorMsg) {
             log.error response.json.errorMsg
@@ -358,6 +361,45 @@ private String getDeviceDriver(String type) {
         case 'light':
             return 'Generic Component RGBW'
     }
+}
+
+private String getGenericName(List<Integer> hsv) {
+    String colorName
+
+    if (!hsv[0] && !hsv[1]) {
+        colorName = 'White'
+    } else {
+        switch (hsv[0] * 3.6 as int) {
+            case 0..15: colorName = 'Red'
+                break
+            case 16..45: colorName = 'Orange'
+                break
+            case 46..75: colorName = 'Yellow'
+                break
+            case 76..105: colorName = 'Chartreuse'
+                break
+            case 106..135: colorName = 'Green'
+                break
+            case 136..165: colorName = 'Spring'
+                break
+            case 166..195: colorName = 'Cyan'
+                break
+            case 196..225: colorName = 'Azure'
+                break
+            case 226..255: colorName = 'Blue'
+                break
+            case 256..285: colorName = 'Violet'
+                break
+            case 286..315: colorName = 'Magenta'
+                break
+            case 316..345: colorName = 'Rose'
+                break
+            case 346..360: colorName = 'Red'
+                break
+        }
+    }
+
+    return colorName
 }
 
 private ChildDeviceWrapper getOrCreateDevice(String driverName, String deviceNetworkId, String name) {
@@ -426,6 +468,7 @@ private void parse(String dni, Map dps) {
 
     if (dps.containsKey('color_temp')) {
         int value = dps['color_temp'] as int
+        value = (((value - 1000) / (10000 - 1000)) * (6500 - 2000)) + 2000
         events << newEvent('colorTemperature', value, 'K')
     }
 
