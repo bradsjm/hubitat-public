@@ -270,22 +270,26 @@ void componentStopLevelChange(DeviceWrapper device) {
     levelChanges.remove(device.deviceNetworkId)
 }
 
-void componentSetColorTemperature(DeviceWrapper device, BigDecimal value) {
+void componentSetColorTemperature(DeviceWrapper device, BigDecimal kelvin,
+    BigDecimal level = null, BigDecimal transitionTime = null) {
     Map config = getDeviceConfig(device)
     String topic = getCommandTopic(config) + 'Backlog'
-    String fadeCommand = fadeCommand(duration ?: settings.fadeTime)
+    String fadeCommand = fadeCommand(transitionTime ?: settings.fadeTime)
 
     if (config['lt_st'] == 2 || config['lt_st'] == 5) {
-        int level = 1000000f / value
-        log.info "Setting ${device} color temperature to ${value}K (${level} mireds)"
-        mqttPublish(topic, fadeCommand + "CT ${level}")
+        int mireds = 1000000f / kelvin
+        log.info "Setting ${device} color temperature to ${value}K (${mireds} mireds)"
+        mqttPublish(topic, fadeCommand + "CT ${mireds}")
+        if (level != null) {
+            componentSetLevel(device, level, transitionTime)
+        }
         return
     }
 
     // ignore value of color temperature as there is only one white for this device
-    String level = device.currentValue('level')
+    int value = level ?: device.currentValue('level')
     log.info "Setting ${device} white channel to WHITE"
-    mqttPublish(topic, fadeCommand + "WHITE ${level}")
+    mqttPublish(topic, fadeCommand + "WHITE ${value}")
 }
 
 void componentSetColor(DeviceWrapper device, Map colormap) {
@@ -664,6 +668,7 @@ private void parseLWT(ChildDeviceWrapper device, String payload) {
     }
 }
 
+/* groovylint-disable-next-line MethodSize */
 private void parseTopicPayload(ChildDeviceWrapper device, String topic, String payload) {
     List<Map> events = []
 
@@ -726,9 +731,9 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
                 }
                 String energy = '0'
                 switch (settings.energyReportingMode as int) {
-                    case 1: energy = kv.value['Today']; break;
-                    case 2: energy = kv.value['Yesterday']; break;
-                    case 3: energy = kv.value['Total']; break;
+                    case 1: energy = kv.value['Today']; break
+                    case 2: energy = kv.value['Yesterday']; break
+                    case 3: energy = kv.value['Total']; break
                 }
                 if (device.hasAttribute('energy') && device.currentValue('energy') != energy) {
                     events << newEvent(device, 'energy', energy, [unit: 'kWh'])

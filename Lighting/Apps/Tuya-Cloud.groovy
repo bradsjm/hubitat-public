@@ -193,7 +193,8 @@ void componentSetLevel(DeviceWrapper device, BigDecimal level, BigDecimal durati
  * Color Temperature Capability
  * Value range is 1000 to 10000
  */
-void componentSetColorTemperature(DeviceWrapper device, BigDecimal kelvin) {
+void componentSetColorTemperature(DeviceWrapper device, BigDecimal kelvin,
+    BigDecimal level = null, BigDecimal transitionTime = null) {
     log.info "Setting ${device.displayName} temperature to ${kelvin}K"
     int value = ( (kelvin - 2000) / (6500 - 2000) ) * 10000
     if (value < 1000) { value = 1000 }
@@ -210,6 +211,10 @@ void componentSetColorTemperature(DeviceWrapper device, BigDecimal kelvin) {
             colorMode: newEvent('colorMode', 'CT')
         ]
     )
+
+    if (level != null) {
+        componentSetLevel(device, level, transitionTime)
+    }
 }
 
 /*
