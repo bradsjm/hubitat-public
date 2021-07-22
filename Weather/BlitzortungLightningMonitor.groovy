@@ -458,14 +458,12 @@ public List geoNeighbors(String geohash, int level) {
 }
 
 private int getPrecision(int miles) {
-    int km = miles * 1.609
-    switch (km) {
-        case 0..2.4: return 5
-        case 2.5..20: return 4
-        case 21..78: return 3
-        case 79..630: return 2
-        default: return 1
-    }
+    float km = miles * 1.609
+    if (km > 630) { return 1 }
+    if (km > 79) { return 2 }
+    if (km > 78) { return 3 }
+    if (km > 20) { return 2 }
+    return 5
 }
 
 /**
