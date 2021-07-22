@@ -24,8 +24,9 @@
 metadata {
     definition (name: 'MQTT - Pushable Button', namespace: 'nrgup', author: 'Jonathan Bradshaw') {
         capability 'Initialize'
-        capability 'PresenceSensor'
         capability 'PushableButton'
+
+        attribute 'status', 'string'
     }
 
     preferences {
@@ -130,8 +131,8 @@ void parse(String data) {
     if (logEnable) { log.debug "RCV: ${message}" }
 
     if (message.topic == settings.availabilityTopic) {
-        boolean isOnline = message.payload.toLowerCase() in ['online','on','1','true']
-        sendEvent(newEvent('presence', isOnline ? 'present' : 'not present'))
+        boolean isOnline = message.payload.toLowerCase() in ['online', 'on', '1', 'true']
+        sendEvent(newEvent('presence', isOnline ? 'online' : 'offline'))
         return
     }
 
@@ -225,7 +226,7 @@ private void mqttDisconnect() {
         interfaces.mqtt.disconnect()
     }
 
-    sendEvent(newEvent('presence', 'not present'))
+    sendEvent(newEvent('presence', 'offline'))
 }
 
 private void mqttSubscribe(String topic) {
@@ -253,7 +254,7 @@ private void mqttParseStatus(String status) {
             log.info "MQTT ${status}"
             switch (parts[1]) {
                 case 'Connection succeeded':
-                    sendEvent(newEvent('presence', 'present'))
+                    sendEvent(newEvent('presence', 'connected'))
                     // without this delay the `parse` method is never called
                     // (it seems that there needs to be some delay after connection to subscribe)
                     runIn(1, 'subscribe')
