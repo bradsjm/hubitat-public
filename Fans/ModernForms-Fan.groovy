@@ -35,6 +35,8 @@ metadata {
         attribute 'fanSleepTimer', 'string'
         attribute 'breeze', 'string'
 
+        command 'reboot'
+
         command 'setDirection', [
             [
                 name: 'Fan direction',
@@ -132,6 +134,20 @@ void setBreeze(String mode) {
     }
 
     sendCommand(payload)
+}
+
+void reboot() {
+    if (logEnable) { log.trace "sending reboot to ${settings.networkHost}" }
+
+    Map params = [
+        uri: 'http://' + settings.networkHost,
+        path: '/mf',
+        contentType: 'application/json',
+        body: JsonOutput.toJson(['reboot', true]),
+        timeout: 1
+    ]
+
+    asynchttpPost('nullHandler', params)
 }
 
 void setDirection(String direction) {
@@ -240,6 +256,11 @@ private Map newEvent(String name, Object value, String unit = null) {
         unit: unit,
         descriptionText: settings.logTextEnable ? description : ''
     ]
+}
+
+/* groovylint-disable-next-line EmptyMethod, UnusedPrivateMethod, UnusedPrivateMethodParameter */
+private void nullHandler(AsyncResponse response, Object data) {
+    // Do nothing
 }
 
 private void sendCommand(Map payload) {
