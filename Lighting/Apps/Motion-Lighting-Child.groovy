@@ -663,12 +663,18 @@ void initialize() {
     }
 }
 
+// Called when a monitored light changes state
 void lightHandler(Event evt) {
-    if (!state.triggered.running || evt.value == 'on') { return }
-    log.info "${app.name} ${evt.device} was manually switched off"
-    if (settings.autoDisable == true) {
+    if (!state.triggered.running) { return }
+    Map mode = getActiveMode()
+    if (evt.value == 'off' && settings.autoDisable == true && checkEnabled(mode)) {
+        log.info "${app.name} ${evt.device} disabling light control (turned off manually)"
         sendEvent name: 'disable', value: evt.device, descriptionText: 'Disabling light control (turned off manually)'
         disabledDevices.put(evt.device.id, now())
+    } else if (evt.value == 'on' && disabledDevices.containsKey(evt.device.id)) {
+        log.info "${app.name} ${evt.device} re-enabling light control (turned on)"
+        sendEvent name: 'enable', value: evt.device, descriptionText: 'Re-Enabling light control (now turned on)'
+        disabledDevices.remove(evt.device.id)
     }
 }
 
