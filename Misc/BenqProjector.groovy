@@ -92,10 +92,8 @@ void initialize() {
         return
     }
 
-    if (connect()) {
-        send('modelname', '?')
-        disconnect()
-    }
+    state.connected = false
+    send('modelname', '?')
 }
 
 // Called when the device is first created.
@@ -107,6 +105,7 @@ void installed() {
 void socketStatus(String status) {
     if (status.contains('error')) {
         log.error status
+        disconnect()
     } else if (logEnable) {
         log.debug status
     }
@@ -142,29 +141,20 @@ void updated() {
 
 void on() {
     log.info "${device.displayName} Switching On"
-    if (connect()) {
-        send('pow', 'on')
-        disconnect()
-    }
+    send('pow', 'on')
     runIn(20, 'poll')
 }
 
 void off() {
     log.info "${device.displayName} Switching Off"
-    if (connect()) {
-        send('pow', 'off')
-        disconnect()
-    }
+    send('pow', 'off')
     sendEvent(newEvent('switch', 'off'))
     runIn(20, 'poll')
 }
 
 void setSource(String name) {
     log.info "${device.displayName} Setting source to ${name}"
-    if (connect()) {
-        send('sour', name)
-        disconnect()
-    }
+    send('sour', name)
 }
 
 void poll() {
@@ -174,11 +164,8 @@ void poll() {
     }
 
     if (logEnable) { log.info "Polling ${device.displayName} for ${cmds}" }
-    if (connect()) {
-        cmds.each { cmd ->
-            send(cmd, '?')
-        }
-        disconnect()
+    cmds.each { cmd ->
+        send(cmd, '?')
     }
 }
 
@@ -244,9 +231,11 @@ private boolean connect() {
             settings.networkHost,
             settings.networkPort as int,
         )
+        state.connected = true
         return true
     } catch (e) {
         log.error "connect error: ${e}"
+        state.connected = true
     }
 
     return false
@@ -255,9 +244,14 @@ private boolean connect() {
 private void disconnect() {
     if (logEnable) { log.debug "Disconnecting from ${settings?.networkHost}" }
     interfaces.rawSocket.close()
+    state.connected = false
 }
 
 private void send(String cmd, String value) {
+    if (!state.connected) {
+        if (!connect()) { return }
+    }
+
     if (logEnable) { log.debug "Sending: ${cmd}=${value}" }
     interfaces.rawSocket.sendMessage("\r*${cmd}=${value}#\r")
     pauseExecution(1000)
