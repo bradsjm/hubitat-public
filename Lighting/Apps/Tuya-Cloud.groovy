@@ -477,10 +477,9 @@ private void parse(String dni, Map dps) {
         events << newEvent('colorTemperature', value, 'K')
     }
 
-    events.each { e ->
-        if (device.currentValue(e.name) != e.value) {
-            device.parse(e)
-        }
+    if (events) {
+        if (logEnable) { log.debug "Sending ${events} to ${device}" }
+        device.parse(events)
     }
 }
 
