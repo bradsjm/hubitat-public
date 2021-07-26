@@ -235,7 +235,7 @@ private boolean connect() {
         return true
     } catch (e) {
         log.error "connect error: ${e}"
-        state.connected = true
+        state.connected = false
     }
 
     return false
@@ -255,6 +255,7 @@ private void send(String cmd, String value) {
     if (logEnable) { log.debug "Sending: ${cmd}=${value}" }
     interfaces.rawSocket.sendMessage("\r*${cmd}=${value}#\r")
     pauseExecution(1000)
+    runIn(60, 'disconnect')
 }
 
 private String splitCamelCase(String s) {
