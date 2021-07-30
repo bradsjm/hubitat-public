@@ -302,7 +302,7 @@ Map pageMode(Map params) {
             pageModeSectionInactive(modeID)
             pageModeSectionTest(modeID)
         }
-                       }
+    }
 }
 
 Map pageModeSectionActive(Long modeID) {
@@ -529,7 +529,9 @@ String getDisabledDescription() {
 String getTriggerDescription() {
     List devices = []
     devices.addAll(settings.activationMotionSensors*.displayName ?: [])
+    devices.addAll(settings.additionalMotionSensors*.displayName ?: [])
     devices.addAll(settings.activationContactSensors*.displayName ?: [])
+    devices.addAll(settings.additionalContactSensors*.displayName ?: [])
     devices.addAll(settings.activationButtons*.displayName ?: [])
     devices.addAll(settings.activationOnSwitches*.displayName ?: [])
     devices.addAll(settings.activationOffSwitches*.displayName ?: [])
