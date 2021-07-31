@@ -359,7 +359,7 @@ private void deviceEvent(Event evt) {
 }
 
 private void updateLamp(DeviceWrapper device) {
-    if (!device || device.id in state.disabledDevices) { return }
+    if (!device || (state.reenableDelay && device.id in state.disabledDevices)) { return }
 
     Map current = atomicState.current
 
