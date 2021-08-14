@@ -173,22 +173,22 @@ Map pageMain() {
                   type: 'number'
         }
 
-        section('Lamp Override Settings', hideable: true, hidden: true) {
-            input name: 'autoDisable',
-                  title: 'Disable lamp control if turned off manually (after turned on by controller)',
-                  type: 'bool',
-                  required: false,
-                  defaultValue: true
+        // section('Lamp Override Settings', hideable: true, hidden: true) {
+        //     input name: 'autoDisable',
+        //           title: 'Disable lamp control if turned off manually (after turned on by controller)',
+        //           type: 'bool',
+        //           required: false,
+        //           defaultValue: true
 
-            input name: 'reenableDelay',
-                  type: 'number',
-                  title: 'Minutes to wait to re-enable automatic lamp control',
-                  description: 'minutes',
-                  range: '1..600',
-                  required: false,
-                  defaultValue: 60,
-                  width: 7
-        }
+        //     input name: 'reenableDelay',
+        //           type: 'number',
+        //           title: 'Minutes to wait to re-enable automatic lamp control',
+        //           description: 'minutes',
+        //           range: '1..600',
+        //           required: false,
+        //           defaultValue: 60,
+        //           width: 7
+        // }
 
         section {
             input name: 'sendOn',
@@ -686,7 +686,9 @@ void modeChangeHandler(Event evt) {
     Map lastMode = getModeSettings(state.lastMode)
     state.lastMode = mode.id
     log.trace "modeChangeHandler: location mode = ${evt.value}, active mode = ${mode.name}"
-    performTransitionAction(lastMode, mode)
+    if (lastMode.id != mode.id) {
+        performTransitionAction(lastMode, mode)
+    }
 }
 
 // Called when a subscribed motion sensor changes
