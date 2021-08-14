@@ -48,10 +48,17 @@ metadata {
                   required: false,
                   defaultValue: false
 
-            input name: 'delayTime',
+            input name: 'delayTimePresent',
                   type: 'number',
-                  title: 'Debounce Time (ms)',
-                  description: 'Use 0 for no delay',
+                  title: 'Present State Change Delay',
+                  description: 'Seconds (0 for no delay)',
+                  required: false,
+                  defaultValue: 0
+
+            input name: 'delayTimeNotPresent',
+                  type: 'number',
+                  title: 'Not Present State Change Delay',
+                  description: 'Seconds (0 for no delay)',
                   required: false,
                   defaultValue: 0
         }
@@ -129,14 +136,17 @@ void parse(String data) {
     if (message.topic == settings.stateTopic) {
         boolean match = message.payload == settings.presentValue
         if (settings.reverseState) { match = !match }
+
         String value = match ? 'present' : 'not present'
-        if (device.currentValue('presence') != value) {
-            if (settings.delayTime) {
-                if (logEnable) { log.debug "Delaying ${settings.delayTime}ms (debouncing)" }
-                runInMillis(settings.delayTime, 'setPresence', [data: value])
-            } else {
-                setPresence(value)
-            }
+        if (device.currentValue('presence') == value) { return }
+
+        int delaySeconds = (value == 'present') ? settings.delayTimePresent : settings.delayTimeNotPresent
+
+        if (delaySeconds) {
+            if (logEnable) { log.debug "${device.displayName} Debounce delaying ${value} for ${delaySeconds} seconds" }
+            runIn(delaySeconds, 'setPresence', [data: value])
+        } else {
+            setPresence(value)
         }
     }
 }
@@ -161,9 +171,7 @@ void updated() {
  */
 
 private void setPresence(String value) {
-    if (device.currentValue('presence') != value) {
-        sendEvent(newEvent('presence', value))
-    }
+    sendEvent(newEvent('presence', value))
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
