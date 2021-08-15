@@ -134,6 +134,7 @@ void parse(String data) {
     if (logEnable) { log.debug "RCV: ${message}" }
 
     if (message.topic == settings.stateTopic) {
+        unschedule('setPresence')
         boolean match = message.payload == settings.presentValue
         if (settings.reverseState) { match = !match }
 
