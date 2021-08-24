@@ -246,6 +246,7 @@ private void mqttParseStatus(String status) {
                 case 'Connection lost':
                 case 'send error':
                     runIn(30, 'initialize')
+                    sendEvent(newEvent('status', 'offline'))
                     break
             }
             break
@@ -253,7 +254,7 @@ private void mqttParseStatus(String status) {
             log.info "MQTT ${status}"
             switch (parts[1]) {
                 case 'Connection succeeded':
-                    sendEvent(newEvent('presence', 'connected'))
+                    sendEvent(newEvent('status', 'connected'))
                     // without this delay the `parse` method is never called
                     // (it seems that there needs to be some delay after connection to subscribe)
                     runIn(1, 'subscribe')
