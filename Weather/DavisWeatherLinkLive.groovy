@@ -37,7 +37,8 @@ metadata {
         capability 'Sensor'
         capability 'Temperature Measurement'
         capability 'Ultraviolet Index'
-
+        capability "WaterSensor"
+        
         attribute 'avgWindDirectionLast10min', 'number'
         attribute 'avgWindDirectionLast2min', 'number'
         attribute 'avgWindDirectionLastMin', 'number'
@@ -62,7 +63,6 @@ metadata {
         attribute 'rainfallStormStart', 'string'
         attribute 'rainfallStormTotal', 'string'
         attribute 'rainfallYearly', 'number'
-        attribute 'raining', 'string'
         attribute 'rainRateLast15min', 'number'
         attribute 'rainRateLastMin', 'number'
         attribute 'rxState', 'number'
@@ -246,7 +246,7 @@ private void parseWeatherData(Map json) {
                 events << newEvent('windGustLast2min', c.wind_speed_hi_last_2_min, 'mph')
                 events << newEvent('windGustLast10min', c.wind_speed_hi_last_10_min, 'mph')
 
-                events << newEvent('raining', (c.rainfall_last_15_min ?: 0) > 0 ? 'true' : 'false')
+                events << newEvent('water', (c.rainfall_last_15_min ?: 0) > 0 ? 'wet' : 'dry')
                 events << newEvent('rainfallStormTotal', c.rain_storm_last ?: 0 * rainMultiplier, rainUnit)
                 events << newEvent('rainfallStormStart', c.rain_storm_last_start_at ?
                     new Date((long)c.rain_storm_last_start_at * 1000).toString() : '')
