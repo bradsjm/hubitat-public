@@ -193,6 +193,9 @@ void initialize() {
         log.info "Scheduling periodic updates every ${interval} minute(s)"
         schedule("20 */${interval} * * * ?", 'circadianUpdate')
         circadianUpdate()
+
+        // Subscribe to mode changes and trigger an update
+        subscribe(location, 'mode', 'circadianUpdate')
     }
 }
 
