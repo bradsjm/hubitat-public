@@ -20,8 +20,8 @@
  *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  *  SOFTWARE.
 */
-//import com.hubitat.app.ChildDeviceWrapper
-//import com.hubitat.app.DeviceWrapper
+import com.hubitat.app.ChildDeviceWrapper
+import com.hubitat.app.DeviceWrapper
 import groovy.json.JsonOutput
 //import groovy.transform.Field
 import java.security.MessageDigest
@@ -90,6 +90,9 @@ metadata {
 /**
  *  Hubitat Driver Event Handlers
  */
+void componentRefresh(DeviceWrapper d) {
+    log.debug "${d.displayName} refresh (not implemented)"
+}
 
 // Called when the device is started.
 void initialize() {
@@ -131,6 +134,7 @@ void parse(String data) {
     cipher.init(Cipher.DECRYPT_MODE, key)
     Map result = parseJson(new String(cipher.doFinal(payload.data.decodeBase64())))
     log.info result
+    updateChildDevice(result)
 }
 
 // Called to parse MQTT status changes
@@ -151,7 +155,6 @@ void mqttClientStatus(String status) {
 /**
  *  Custom Commands
  */
-
 void refresh() {
     log.info "${device.displayName} refreshing devices"
     tuyaGetDevices()
@@ -166,6 +169,61 @@ void removeDevices() {
 /**
  *  Driver Implementation Code
  */
+private Map getDeviceDriver(String category) {
+    switch (category) {
+        case 'dj':
+        case 'dd':
+        case 'fwd':
+        case 'tgq':
+        case 'xdd':
+        case 'dc':
+        case 'tgkg':
+            return [ namespace: 'hubitat', name: 'Generic Component RGBW' ]
+    }
+}
+
+private ChildDeviceWrapper createChildDevice(Map d) {
+    ChildDeviceWrapper childDevice = getChildDevice(device.id + '-' + d.id)
+    if (!childDevice) {
+        Map driver = getDeviceDriver(d.category)
+        log.info "TuyaOpenAPI: Creating device ${d.name} using ${driver.name}"
+        childDevice = addChildDevice(
+            driver.namespace,
+            driver.name,
+            device.id + '-' + d.id,
+            [
+                name: d.name
+            ]
+        )
+    }
+
+    if (childDevice.name != d.name) { childDevice.name = d.name }
+    if (childDevice.label == null) { childDevice.label = d.name }
+
+    return childDevice
+}
+
+private void updateChildDevice(Map d) {
+    String id = d.id ?: d.devId
+    if (!id) { return }
+    ChildDeviceWrapper childDevice = getChildDevice(device.id + '-' + id)
+    if (!childDevice || !d.status) { return }
+
+    List<Map> events = []
+    d.status.each { s ->
+        switch (s.code) {
+            case 'switch_led':
+            case 'switch_led_1':
+                events << [ name: 'switch', value: s.value ? 'on' : 'off' ]
+                break
+        }
+    }
+
+    if (events) {
+        childDevice.parse(events)
+    }
+}
+
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void logsOff() {
     device.updateSetting('logEnable', [value: 'false', type: 'bool'] )
@@ -186,11 +244,9 @@ private void tuyaGetDevicesResponse(AsyncResponse response, Object data) {
     if (!tuyaCheckResponse(response)) { return }
     Map result = response.json.result
     log.info "TuyaOpenAPI received ${result.devices.size()} devices"
-    state.devices = result.devices
-
     result.devices.each { d ->
-        log.info "${d.name} (${d.product_name})"
-        if (logEnable) { log.debug 'TuyaOpenAPI device: ' + d }
+        createChildDevice(d)
+        updateChildDevice(d)
     }
 }
 

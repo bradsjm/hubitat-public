@@ -13,6 +13,9 @@
         "DuplicateStringLiteral": {
             "enabled": false
         },
+        "FactoryMethodName": {
+            "enabled": false
+        },
         "InsecureRandom": {
             "enabled": false
         },
