@@ -23,7 +23,7 @@
 import com.hubitat.app.ChildDeviceWrapper
 import com.hubitat.app.DeviceWrapper
 import groovy.json.JsonOutput
-//import groovy.transform.Field
+import groovy.transform.Field
 import java.security.MessageDigest
 import javax.crypto.spec.SecretKeySpec
 import javax.crypto.Cipher
@@ -33,7 +33,7 @@ import hubitat.helper.HexUtils
 import hubitat.scheduling.AsyncResponse
 
 metadata {
-    definition (name: 'Tuya Cloud', namespace: 'tuya', author: 'Jonathan Bradshaw') {
+    definition (name: 'Tuya IOT Cloud Bridge', namespace: 'tuya', author: 'Jonathan Bradshaw') {
         capability 'Initialize'
         capability 'Refresh'
 
@@ -87,6 +87,9 @@ metadata {
     }
 }
 
+// Cache of device configuration data
+@Field static final Map<Integer, Map> devicesCache = [:]
+
 /**
  *  Hubitat Driver Event Handlers
  */
@@ -120,6 +123,7 @@ void componentRefresh(DeviceWrapper d) {
 void initialize() {
     log.info "${device.displayName} driver initializing"
     state.clear()
+    devicesCache.clear()
     unschedule()
 
     state.endPoint = 'https://openapi.tuyaus.com' // default US endpoint
@@ -155,17 +159,14 @@ void parse(String data) {
     Cipher cipher = Cipher.getInstance('AES/ECB/PKCS5Padding')
     cipher.init(Cipher.DECRYPT_MODE, key)
     Map result = parseJson(new String(cipher.doFinal(payload.data.decodeBase64())))
-    log.info result
-    updateChildDevice(result)
+    parseDeviceUpdate(result)
 }
 
 // Called to parse MQTT status changes
 void mqttClientStatus(String status) {
     switch (status) {
         case 'Status: Connection succeeded':
-            // without this delay the `parse` method is never called
-            // (it seems that there needs to be some delay after connection to subscribe)
-            runIn(1, 'tuyaSubscribeTopics')
+            runInMillis(1000, 'tuyaSubscribeTopics')
             break
         case 'Error: Connection lost':
         case 'Error: send error':
@@ -205,36 +206,37 @@ private Map getDeviceDriver(String category) {
 }
 
 private ChildDeviceWrapper createChildDevice(Map d) {
-    ChildDeviceWrapper childDevice = getChildDevice(device.id + '-' + d.id)
+    ChildDeviceWrapper childDevice = getChildDevice(d.dni)
     if (!childDevice) {
         Map driver = getDeviceDriver(d.category)
         log.info "TuyaOpenAPI: Creating device ${d.name} using ${driver.name}"
         childDevice = addChildDevice(
             driver.namespace,
             driver.name,
-            device.id + '-' + d.id,
+            d.dni,
             [
-                name: d.name
+                name: d.product_name,
+                label: d.name
             ]
         )
     }
 
-    if (childDevice.name != d.name) { childDevice.name = d.name }
-    if (childDevice.label == null) { childDevice.label = d.name }
+    if (childDevice.label == null || childDevice.label == '') {
+        childDevice.label = d.name
+    }
+
     childDevice.with {
         updateDataValue 'id', d.id
         updateDataValue 'local_key', d.local_key
-        updateDataValue 'product_name', d.product_name
         updateDataValue 'category', d.category
     }
 
     return childDevice
 }
 
-private void updateChildDevice(Map d) {
-    String id = d.id ?: d.devId
-    if (!id) { return }
-    ChildDeviceWrapper childDevice = getChildDevice(device.id + '-' + id)
+private void parseDeviceUpdate(Map d) {
+    String dni = devicesCache[d.id ?: d.devId]?.dni
+    ChildDeviceWrapper childDevice = getChildDevice(dni)
     if (!childDevice || !d.status) { return }
 
     List<Map> events = []
@@ -273,8 +275,32 @@ private void tuyaGetDevicesResponse(AsyncResponse response, Object data) {
     Map result = response.json.result
     log.info "TuyaOpenAPI received ${result.devices.size()} devices"
     result.devices.each { d ->
+        d.dni = device.id + '-' + d.id
+        devicesCache[d.id] = d
         createChildDevice(d)
-        updateChildDevice(d)
+        parseDeviceUpdate(d)
+    }
+
+    // Get device functions in batches of 20
+    result.devices.collate(20).each { c ->
+        tuyaGetDeviceFunctions(c)
+        pauseExecution(1000)
+    }
+}
+
+private void tuyaGetDeviceFunctions(List<Map> devices) {
+    log.info 'TuyaOpenAPI requesting device functions'
+    tuyaGet('/v1.0/devices/functions', [ 'device_ids': devices*.id.join(',') ], 'tuyaGetDeviceFunctionsResponse')
+}
+
+/* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
+private void tuyaGetDeviceFunctionsResponse(AsyncResponse response, Object data) {
+    if (!tuyaCheckResponse(response)) { return }
+    List result = response.json.result
+    log.info "TuyaOpenAPI received ${result.size()} device function definitions"
+    log.info response.data
+    result.each { group ->
+        group.devices.each { id -> devicesCache[id].functions = group.functions }
     }
 }
 
@@ -284,8 +310,11 @@ private void tuyaSendCommand(String deviceID, Map params) {
 
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
 private void tuyaSendCommandResponse(AsyncResponse response, Object data) {
-    if (!tuyaCheckResponse(response)) { return }
-    log.debug response.json
+    if (tuyaCheckResponse(response)) {
+        return
+    }
+
+    log.error 'TuyaOpenAPI response ' + response.json
 }
 
 /**
