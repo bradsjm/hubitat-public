@@ -90,6 +90,28 @@ metadata {
 /**
  *  Hubitat Driver Event Handlers
  */
+void componentOn(DeviceWrapper d) {
+    tuyaSendCommand(d.getDataValue('id'), [
+      'commands': [
+        [
+          'code': 'switch_led',
+          'value': true
+        ]
+      ]
+    ])
+}
+
+void componentOff(DeviceWrapper d) {
+    tuyaSendCommand(d.getDataValue('id'), [
+      'commands': [
+        [
+          'code': 'switch_led',
+          'value': false
+        ]
+      ]
+    ])
+}
+
 void componentRefresh(DeviceWrapper d) {
     log.debug "${d.displayName} refresh (not implemented)"
 }
@@ -199,6 +221,12 @@ private ChildDeviceWrapper createChildDevice(Map d) {
 
     if (childDevice.name != d.name) { childDevice.name = d.name }
     if (childDevice.label == null) { childDevice.label = d.name }
+    childDevice.with {
+        updateDataValue 'id', d.id
+        updateDataValue 'local_key', d.local_key
+        updateDataValue 'product_name', d.product_name
+        updateDataValue 'category', d.category
+    }
 
     return childDevice
 }
@@ -248,6 +276,16 @@ private void tuyaGetDevicesResponse(AsyncResponse response, Object data) {
         createChildDevice(d)
         updateChildDevice(d)
     }
+}
+
+private void tuyaSendCommand(String deviceID, Map params) {
+    tuyaPost("/v1.0/devices/${deviceID}/commands", params, 'tuyaSendCommandResponse')
+}
+
+/* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
+private void tuyaSendCommandResponse(AsyncResponse response, Object data) {
+    if (!tuyaCheckResponse(response)) { return }
+    log.debug response.json
 }
 
 /**
