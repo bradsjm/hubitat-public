@@ -112,8 +112,12 @@ void componentOff(DeviceWrapper dw) {
     tuyaSendCommand(id, [ 'commands': [ [ 'code': code, 'value': false ] ] ])
 }
 
-void componentRefresh(DeviceWrapper d) {
-    if (logEnable) { log.debug "${d.displayName} refresh (not implemented)" }
+void componentRefresh(DeviceWrapper dw) {
+    String id = dw.getDataValue('id')
+    if (id && dw.getDataValue('functions')) {
+        log.info "${dw.displayName} refreshing state"
+        tuyaGetState(id)
+    }
 }
 
 /* groovylint-disable-next-line UnusedMethodParameter */
@@ -181,7 +185,6 @@ void parse(String data) {
     Cipher cipher = Cipher.getInstance('AES/ECB/PKCS5Padding')
     cipher.init(Cipher.DECRYPT_MODE, key)
     Map result = parseJson(new String(cipher.doFinal(payload.data.decodeBase64())))
-    if (logEnable) { log.debug "${device.displayName} mqtt ${result}" }
     parseDeviceUpdate(result)
 }
 
@@ -304,13 +307,25 @@ private void logsOff() {
  *  Tuya OpenAPI
  *  https://developer.tuya.com/en/docs/cloud/
 */
+
+private void tuyaGetState(String deviceID) {
+    tuyaGet("/v1.0/devices/${deviceID}/status", null, 'tuyaGetStateResponse', [ id: deviceID ])
+}
+
+/* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
+private void tuyaGetStateResponse(AsyncResponse response, Map data) {
+    if (!tuyaCheckResponse(response)) { return }
+    data.status = response.json.result
+    parseDeviceUpdate(data)
+}
+
 private void tuyaGetDevices() {
     log.info "${device.displayName} requesting cloud devices (maximum 100)"
     tuyaGet('/v1.0/iot-01/associated-users/devices', [ 'size': 100 ], 'tuyaGetDevicesResponse')
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
-private void tuyaGetDevicesResponse(AsyncResponse response, Object data) {
+private void tuyaGetDevicesResponse(AsyncResponse response, Map data) {
     if (!tuyaCheckResponse(response)) { return }
     Map result = response.json.result
     log.info "${device.displayName} received ${result.devices.size()} cloud devices"
@@ -334,7 +349,7 @@ private void tuyaGetDeviceFunctions(List<Map> devices) {
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
-private void tuyaGetDeviceFunctionsResponse(AsyncResponse response, Object data) {
+private void tuyaGetDeviceFunctionsResponse(AsyncResponse response, Map data) {
     if (!tuyaCheckResponse(response)) { return }
     List result = response.json.result
     log.info "${device.displayName} received ${result.size()} cloud function groups"
@@ -357,11 +372,12 @@ private void tuyaGetDeviceFunctionsResponse(AsyncResponse response, Object data)
 }
 
 private void tuyaSendCommand(String deviceID, Map params) {
+    log.info "${device.displayName} ${deviceID} ${params}"
     tuyaPost("/v1.0/devices/${deviceID}/commands", params, 'tuyaSendCommandResponse')
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
-private void tuyaSendCommandResponse(AsyncResponse response, Object data) {
+private void tuyaSendCommandResponse(AsyncResponse response, Map data) {
     tuyaCheckResponse(response)
 }
 
@@ -387,7 +403,7 @@ private void tuyaAuthenticate() {
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
-private void tuyaAuthenticateResponse(AsyncResponse response, Object data) {
+private void tuyaAuthenticateResponse(AsyncResponse response, Map data) {
     if (!tuyaCheckResponse(response)) { return }
 
     Map result = response.json.result
@@ -425,7 +441,7 @@ private void tuyaGetHubConfig() {
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
-private void tuyaGetHubConfigResponse(AsyncResponse response, Object data) {
+private void tuyaGetHubConfigResponse(AsyncResponse response, Map data) {
     if (!tuyaCheckResponse(response)) { return }
     Map result = response.json.result
     state.mqttInfo = result
@@ -455,17 +471,17 @@ private void tuyaSubscribeTopics() {
 /**
  * Tuya Open API REST Endpoints Implementation
  */
-private void tuyaGet(String path, Map params, String callback) {
-    tuyaRequest('get', path, callback, params, null)
+private void tuyaGet(String path, Map query, String callback, Map data = null) {
+    tuyaRequest('get', path, callback, query, null, data)
 }
 
-private void tuyaPost(String path, Map params, String callback) {
-    tuyaRequest('post', path, callback, null, params)
+private void tuyaPost(String path, Map body, String callback, Map data = null) {
+    tuyaRequest('post', path, callback, null, body, data)
 }
 
-private void tuyaRequest(String method, String path, String callback, Map params = null, Map body = null) {
+private void tuyaRequest(String method, String path, String callback, Map query = null, Map body = null, Map data = null) {
     String accessToken = state.tokenInfo.access_token
-    String stringToSign = tuyaGetStringToSign(method, path, params, body)
+    String stringToSign = tuyaGetStringToSign(method, path, query, body)
     long now = now()
     Map headers = [
       't': now,
@@ -480,7 +496,7 @@ private void tuyaRequest(String method, String path, String callback, Map params
     Map request = [
         uri: state.endPoint,
         path: path,
-        query: params,
+        query: query,
         contentType: 'application/json',
         headers: headers,
         body: JsonOutput.toJson(body),
@@ -492,8 +508,8 @@ private void tuyaRequest(String method, String path, String callback, Map params
     }
 
     switch (method) {
-        case 'get': asynchttpGet(callback, request); break
-        case 'post': asynchttpPost(callback, request); break
+        case 'get': asynchttpGet(callback, request, data); break
+        case 'post': asynchttpPost(callback, request, data); break
     }
 }
 
@@ -522,8 +538,8 @@ private String tuyaGetSignature(String accessToken, long timestamp, String strin
     return HexUtils.byteArrayToHexString(sha256HMAC.doFinal(message.bytes))
 }
 
-private String tuyaGetStringToSign(String method, String path, Map params, Map body) {
-    String url = params ? path + '?' + params.collect { key, value -> "${key}=${value}" }.join('&') : path
+private String tuyaGetStringToSign(String method, String path, Map query, Map body) {
+    String url = query ? path + '?' + query.collect { key, value -> "${key}=${value}" }.join('&') : path
     String headers = 'client_id:' + access_id + '\n'
     String bodyStream = (body == null) ? '' : JsonOutput.toJson(body)
     MessageDigest sha256 = MessageDigest.getInstance('SHA-256')
