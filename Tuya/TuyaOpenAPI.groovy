@@ -28,6 +28,7 @@ import java.security.MessageDigest
 import javax.crypto.spec.SecretKeySpec
 import javax.crypto.Cipher
 import javax.crypto.Mac
+import java.util.concurrent.ConcurrentLinkedQueue
 //import hubitat.helper.ColorUtils
 import hubitat.helper.HexUtils
 import hubitat.scheduling.AsyncResponse
@@ -87,43 +88,64 @@ metadata {
     }
 }
 
-// Cache of device configuration data
-@Field static final Map<Integer, Map> devicesCache = [:]
+// Constants
+@Field static final List<String> switchFunctions = [ 'switch_led', 'switch_led_1' ]
+@Field static final List<String> brightnessFunctions = [ 'bright_value', 'bright_value_v2', 'bright_value_1' ]
+
+// In-Memory status
+@Field static final ConcurrentLinkedQueue<Map> statusQueue = new ConcurrentLinkedQueue<>()
 
 /**
  *  Hubitat Driver Event Handlers
  */
-void componentOn(DeviceWrapper d) {
-    tuyaSendCommand(d.getDataValue('id'), [
-      'commands': [
-        [
-          'code': 'switch_led',
-          'value': true
-        ]
-      ]
-    ])
+void componentOn(DeviceWrapper dw) {
+    String id = dw.getDataValue('id')
+    Map functions = parseJson(dw.getDataValue('functions'))
+    String code = getFunctionCode(functions, switchFunctions)
+    tuyaSendCommand(id, [ 'commands': [ [ 'code': code, 'value': true ] ] ])
 }
 
-void componentOff(DeviceWrapper d) {
-    tuyaSendCommand(d.getDataValue('id'), [
-      'commands': [
-        [
-          'code': 'switch_led',
-          'value': false
-        ]
-      ]
-    ])
+void componentOff(DeviceWrapper dw) {
+    String id = dw.getDataValue('id')
+    Map functions = parseJson(dw.getDataValue('functions'))
+    String code = getFunctionCode(functions, switchFunctions)
+    tuyaSendCommand(id, [ 'commands': [ [ 'code': code, 'value': false ] ] ])
 }
 
 void componentRefresh(DeviceWrapper d) {
-    log.debug "${d.displayName} refresh (not implemented)"
+    if (logEnable) { log.debug "${d.displayName} refresh (not implemented)" }
+}
+
+/* groovylint-disable-next-line UnusedMethodParameter */
+void componentSetLevel(DeviceWrapper dw, BigDecimal level, BigDecimal duration = 0) {
+    String id = dw.getDataValue('id')
+    Map functions = parseJson(dw.getDataValue('functions'))
+    String code = getFunctionCode(functions, brightnessFunctions)
+    Integer value = Math.ceil((d.functions.bright_value.max - d.functions.bright_value.min) * level / 100
+        + d.functions.bright_value.min)
+    tuyaSendCommand(id, [ 'commands': [ [ 'code': code, 'value': value ] ] ])
+
+    // if ((!this.workMode || this.workMode.value === 'white' || this.workMode.value === 'light_white')
+    // && this._isHaveDPCodeOfBrightValue()) {
+    // code = this.brightValue.code;
+    // value = percentage;
+    // } else {
+    // var saturation;
+    // saturation = Math.floor((this.function_dp_range.saturation_range.max - this.function_dp_range.saturation_range.min) * 
+    // this.getCachedState(Characteristic.Saturation) / 100 + this.function_dp_range.saturation_range.min); // value 0~100
+    // var hue = this.getCachedState(Characteristic.Hue);; // 0-359
+    // code = this.colourData.code;
+    // value = {
+    //     "h": hue,
+    //     "s": saturation,
+    //     "v": percentage
+    // };
 }
 
 // Called when the device is started.
 void initialize() {
     log.info "${device.displayName} driver initializing"
     state.clear()
-    devicesCache.clear()
     unschedule()
 
     state.endPoint = 'https://openapi.tuyaus.com' // default US endpoint
@@ -159,6 +181,7 @@ void parse(String data) {
     Cipher cipher = Cipher.getInstance('AES/ECB/PKCS5Padding')
     cipher.init(Cipher.DECRYPT_MODE, key)
     Map result = parseJson(new String(cipher.doFinal(payload.data.decodeBase64())))
+    if (logEnable) { log.debug "${device.displayName} mqtt ${result}" }
     parseDeviceUpdate(result)
 }
 
@@ -192,8 +215,30 @@ void removeDevices() {
 /**
  *  Driver Implementation Code
  */
+private List<Map> parseFunction(Map status, Map functions) {
+    if (status.code in switchFunctions) {
+        return [ [ name: 'switch', value: status.value ? 'on' : 'off' ] ]
+    }
+
+    if (status.code in brightnessFunctions) {
+        Integer value = Math.ceil(
+                (status.value - functions.bright_value.min) * 100 /
+                (functions.bright_value.max - functions.bright_value.min)
+        )
+        return [ [ name: 'level', value: value, unit: '%' ] ]
+    }
+
+    return []
+}
+
 private Map getDeviceDriver(String category) {
     switch (category) {
+        case 'cz':
+        case 'pc':
+            return [ namespace: 'hubitat', name: 'Generic Component Switch' ] // Outlet
+        case 'kg':
+        case 'tdq':
+            return [ namespace: 'hubitat', name: 'Generic Component Switch' ]
         case 'dj':
         case 'dd':
         case 'fwd':
@@ -205,15 +250,28 @@ private Map getDeviceDriver(String category) {
     }
 }
 
+private void parseDeviceUpdate(Map d) {
+    List<Map> events = []
+    ChildDeviceWrapper dw = getChildDevice("${device.id}-${d.id ?: d.devId}")
+    if (logEnable) { log.debug "${device.displayName} updating ${dw.displayName} with ${d.status}" }
+
+    Map functions = parseJson(dw.getDataValue('functions'))
+    d.status.each { s -> events += parseFunction(s, functions) }
+    if (events) {
+        if (logEnable) { log.debug "${device.displayName} sending events ${events}" }
+        dw.parse(events)
+    }
+}
+
 private ChildDeviceWrapper createChildDevice(Map d) {
-    ChildDeviceWrapper childDevice = getChildDevice(d.dni)
-    if (!childDevice) {
+    ChildDeviceWrapper dw = getChildDevice("${device.id}-${d.id}")
+    if (!dw) {
         Map driver = getDeviceDriver(d.category)
-        log.info "TuyaOpenAPI: Creating device ${d.name} using ${driver.name}"
-        childDevice = addChildDevice(
+        log.info "${device.displayName} creating device ${d.name} using ${driver.name} driver"
+        dw = addChildDevice(
             driver.namespace,
             driver.name,
-            d.dni,
+            "${device.id}-${d.id}",
             [
                 name: d.product_name,
                 label: d.name
@@ -221,43 +279,25 @@ private ChildDeviceWrapper createChildDevice(Map d) {
         )
     }
 
-    if (childDevice.label == null || childDevice.label == '') {
-        childDevice.label = d.name
-    }
-
-    childDevice.with {
+    dw.label = dw.label ?: d.name
+    dw.with {
         updateDataValue 'id', d.id
         updateDataValue 'local_key', d.local_key
         updateDataValue 'category', d.category
+        updateDataValue 'online', d.online as String
     }
 
     return childDevice
 }
 
-private void parseDeviceUpdate(Map d) {
-    String dni = devicesCache[d.id ?: d.devId]?.dni
-    ChildDeviceWrapper childDevice = getChildDevice(dni)
-    if (!childDevice || !d.status) { return }
-
-    List<Map> events = []
-    d.status.each { s ->
-        switch (s.code) {
-            case 'switch_led':
-            case 'switch_led_1':
-                events << [ name: 'switch', value: s.value ? 'on' : 'off' ]
-                break
-        }
-    }
-
-    if (events) {
-        childDevice.parse(events)
-    }
+private String getFunctionCode(Map functions, List codes) {
+    return codes.find { c -> functions.containsKey(c) } ?: codes.first()
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void logsOff() {
     device.updateSetting('logEnable', [value: 'false', type: 'bool'] )
-    log.info "debug logging disabled for ${device.displayName}"
+    log.info "${device.displayName} debug logging disabled"
 }
 
 /**
@@ -265,7 +305,7 @@ private void logsOff() {
  *  https://developer.tuya.com/en/docs/cloud/
 */
 private void tuyaGetDevices() {
-    log.info 'TuyaOpenAPI requesting devices'
+    log.info "${device.displayName} requesting cloud devices (maximum 100)"
     tuyaGet('/v1.0/iot-01/associated-users/devices', [ 'size': 100 ], 'tuyaGetDevicesResponse')
 }
 
@@ -273,12 +313,12 @@ private void tuyaGetDevices() {
 private void tuyaGetDevicesResponse(AsyncResponse response, Object data) {
     if (!tuyaCheckResponse(response)) { return }
     Map result = response.json.result
-    log.info "TuyaOpenAPI received ${result.devices.size()} devices"
+    log.info "${device.displayName} received ${result.devices.size()} cloud devices"
+
+    // Create Hubitat devices from Tuya results
     result.devices.each { d ->
-        d.dni = device.id + '-' + d.id
-        devicesCache[d.id] = d
         createChildDevice(d)
-        parseDeviceUpdate(d)
+        statusQueue.add([ devId: d.id, status: d.status ])
     }
 
     // Get device functions in batches of 20
@@ -289,7 +329,7 @@ private void tuyaGetDevicesResponse(AsyncResponse response, Object data) {
 }
 
 private void tuyaGetDeviceFunctions(List<Map> devices) {
-    log.info 'TuyaOpenAPI requesting device functions'
+    log.info "${device.displayName} requesting cloud device functions"
     tuyaGet('/v1.0/devices/functions', [ 'device_ids': devices*.id.join(',') ], 'tuyaGetDeviceFunctionsResponse')
 }
 
@@ -297,11 +337,23 @@ private void tuyaGetDeviceFunctions(List<Map> devices) {
 private void tuyaGetDeviceFunctionsResponse(AsyncResponse response, Object data) {
     if (!tuyaCheckResponse(response)) { return }
     List result = response.json.result
-    log.info "TuyaOpenAPI received ${result.size()} device function definitions"
-    log.info response.data
+    log.info "${device.displayName} received ${result.size()} cloud function groups"
     result.each { group ->
-        group.devices.each { id -> devicesCache[id].functions = group.functions }
+        Map functions = group.functions.collectEntries { f ->
+            String code = f.code
+            Map values = parseJson(f.values)
+            values.type = f.type
+            [ (code): values ]
+        }
+        String json = JsonOutput.toJson(functions)
+        group.devices.each { id ->
+            ChildDeviceWrapper dw = getChildDevice("${device.id}-${id}")
+            dw.updateDataValue('functions', json)
+        }
     }
+
+    // Process status updates
+    statusQueue.forEach { i -> parseDeviceUpdate(i) }
 }
 
 private void tuyaSendCommand(String deviceID, Map params) {
@@ -310,18 +362,57 @@ private void tuyaSendCommand(String deviceID, Map params) {
 
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
 private void tuyaSendCommandResponse(AsyncResponse response, Object data) {
-    if (tuyaCheckResponse(response)) {
-        return
-    }
+    tuyaCheckResponse(response)
+}
 
-    log.error 'TuyaOpenAPI response ' + response.json
+/**
+ * Tuya Open API Authentication Implementation
+ */
+private void tuyaAuthenticate() {
+    if (username && password && appSchema) {
+        log.info "${device.displayName} starting Tuya cloud authentication for ${username}"
+        state.tokenInfo.access_token = ''
+        MessageDigest digest = MessageDigest.getInstance('MD5')
+        String md5pwd = HexUtils.byteArrayToHexString(digest.digest(password.bytes)).toLowerCase()
+        Map body = [
+        'country_code': countryCode,
+        'username': username,
+        'password': md5pwd,
+        'schema': appSchema
+        ]
+        tuyaPost('/v1.0/iot-01/associated-users/actions/authorized-login', body, 'tuyaAuthenticateResponse')
+    } else {
+        log.error "${device.displayName} Error - Device must be configured before authentication is enabled"
+    }
+}
+
+/* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
+private void tuyaAuthenticateResponse(AsyncResponse response, Object data) {
+    if (!tuyaCheckResponse(response)) { return }
+
+    Map result = response.json.result
+    log.info "${device.displayName} received access token valid for ${result.expire_time} seconds"
+
+    state.endPoint = result.platform_url
+    state.tokenInfo = [
+        access_token: result.access_token,
+        refresh_token: result.refresh_token,
+        uid: result.uid,
+        expire: result.expire_time * 1000 + now(),
+    ]
+
+    // Schedule next authentication
+    runIn(result.expire_time - 60, 'tuyaAuthenticate')
+
+    // Get MQTT details
+    tuyaGetHubConfig()
 }
 
 /**
  * Tuya Open API MQTT Hub Implementation
  */
 private void tuyaGetHubConfig() {
-    log.info 'TuyaOpenAPI requesting MQTT configuration'
+    log.info "${device.displayName} requesting Tuya MQTT configuration"
     Map body = [
         'uid': state.tokenInfo.uid,
         'link_id': state.uuid,
@@ -337,13 +428,12 @@ private void tuyaGetHubConfig() {
 private void tuyaGetHubConfigResponse(AsyncResponse response, Object data) {
     if (!tuyaCheckResponse(response)) { return }
     Map result = response.json.result
-    log.info 'TuyaOpenAPI received MQTT configuration'
     state.mqttInfo = result
     tuyaConnectHub()
 }
 
 private void tuyaConnectHub() {
-    log.info 'TuyaOpenAPI connecting to MQTT hub'
+    log.info "${device.displayName} connecting to Tuya MQTT hub at ${state.mqttInfo.url}"
     interfaces.mqtt.connect(
         state.mqttInfo.url,
         state.mqttInfo.client_id,
@@ -354,48 +444,12 @@ private void tuyaConnectHub() {
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void tuyaSubscribeTopics() {
-    log.info 'TuyaOpenAPI connected to MQTT hub'
-    interfaces.mqtt.subscribe(state.mqttInfo.source_topic.device)
-}
+    state.mqttInfo.source_topic.each { t ->
+        log.info "${device.displayName} subscribing to Tuya MQTT hub ${t.key} topic"
+        interfaces.mqtt.subscribe(t.value)
+    }
 
-/**
- * Tuya Open API Authentication Implementation
- */
-private void tuyaAuthenticate() {
-    state.tokenInfo.access_token = ''
-    MessageDigest digest = MessageDigest.getInstance('MD5')
-    String md5pwd = HexUtils.byteArrayToHexString(digest.digest(password.bytes)).toLowerCase()
-    Map body = [
-      'country_code': countryCode,
-      'username': username,
-      'password': md5pwd,
-      'schema': appSchema
-    ]
-
-    if (logEnable) { log.info "TuyaOpenAPI sending authorization request for ${username}" }
-    tuyaPost('/v1.0/iot-01/associated-users/actions/authorized-login', body, 'tuyaAuthenticateResponse')
-}
-
-/* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
-private void tuyaAuthenticateResponse(AsyncResponse response, Object data) {
-    if (!tuyaCheckResponse(response)) { return }
-
-    Map result = response.json.result
-    if (logEnable) { log.info "TuyaOpenAPI received access token ${result.access_token}" }
-
-    state.endPoint = result.platform_url
-    state.tokenInfo = [
-        access_token: result.access_token,
-        refresh_token: result.refresh_token,
-        uid: result.uid,
-        expire: result.expire_time * 1000 + now(),
-    ]
-
-    // Schedule next authentication
-    runIn(result.expire_time - 60, 'tuyaAuthenticate')
-
-    // Get MQTT details
-    tuyaGetHubConfig()
+    tuyaGetDevices()
 }
 
 /**
@@ -434,7 +488,7 @@ private void tuyaRequest(String method, String path, String callback, Map params
     ]
 
     if (logEnable) {
-        log.trace("TuyaOpenAPI ${method} request: ${request}")
+        log.debug("${device.displayName} API ${method} request: ${request}")
     }
 
     switch (method) {
@@ -445,13 +499,17 @@ private void tuyaRequest(String method, String path, String callback, Map params
 
 private boolean tuyaCheckResponse(AsyncResponse response) {
     if (response.status != 200) {
-        log.error "TuyaOpenAPI request returned HTTP status ${response.status}"
+        log.error "${device.displayName} cloud request returned HTTP status ${response.status}"
         return false
     }
 
     if (response.json?.success != true) {
-        log.warn "TuyaOpenAPI request failed: ${response.data}"
+        log.warn "${device.displayName} cloud request failed: ${response.data}"
         return false
+    }
+
+    if (logEnable) {
+        log.debug "${device.displayName} API response: ${response.data}"
     }
 
     return true
