@@ -181,7 +181,7 @@ void componentSetLevel(DeviceWrapper device, BigDecimal level, BigDecimal durati
             [ level: newEvent('level', level) ]
         )
     } else {
-        setColor([
+        componentSetColor(device, [
             hue: device.currentValue('hue') ?: 0,
             saturation: device.currentValue('saturation') ?: 0,
             level: level
