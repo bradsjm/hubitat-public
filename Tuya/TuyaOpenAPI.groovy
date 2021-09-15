@@ -23,12 +23,12 @@
 import com.hubitat.app.ChildDeviceWrapper
 import com.hubitat.app.DeviceWrapper
 import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
 import groovy.transform.Field
 import java.security.MessageDigest
 import javax.crypto.spec.SecretKeySpec
 import javax.crypto.Cipher
 import javax.crypto.Mac
-//import hubitat.helper.ColorUtils
 import hubitat.helper.HexUtils
 import hubitat.scheduling.AsyncResponse
 
@@ -90,19 +90,22 @@ metadata {
 // Tuya Function Categories
 @Field static final List<String> brightnessFunctions = [ 'bright_value', 'bright_value_v2', 'bright_value_1' ]
 @Field static final List<String> colourFunctions = [ 'colour_data', 'colour_data_v2' ]
-@Field static final List<String> switchFunctions = [ 'switch_led', 'switch_led_1' ]
+@Field static final List<String> switchFunctions = [ 'switch_led', 'switch_led_1', 'light' ]
 @Field static final List<String> temperatureFunctions = [ 'temp_value', 'temp_value_v2' ]
+
+// Constants
+@Field static final Integer maxMireds = 500
+@Field static final Integer minMireds = 153
 
 /**
  *  Hubitat Driver Event Handlers
- *
  */
 // Component command to turn on device
 void componentOn(DeviceWrapper dw) {
     String id = dw.getDataValue('id')
     Map functions = parseJson(dw.getDataValue('functions'))
     String code = getFunctionCode(functions, switchFunctions)
-    tuyaSendDeviceCommand(id, [ 'commands': [ [ 'code': code, 'value': true ] ] ])
+    tuyaSendDeviceCommands(id, [ 'code': code, 'value': true ])
 }
 
 // Component command to turn off device
@@ -110,7 +113,7 @@ void componentOff(DeviceWrapper dw) {
     String id = dw.getDataValue('id')
     Map functions = parseJson(dw.getDataValue('functions'))
     String code = getFunctionCode(functions, switchFunctions)
-    tuyaSendDeviceCommand(id, [ 'commands': [ [ 'code': code, 'value': false ] ] ])
+    tuyaSendDeviceCommands(id, [ 'code': code, 'value': false ])
 }
 
 // Component command to refresh device
@@ -131,7 +134,7 @@ void componentSetLevel(DeviceWrapper dw, BigDecimal level, BigDecimal duration =
         String code = getFunctionCode(functions, brightnessFunctions)
         Map bright = functions[code]
         Integer value = Math.ceil(remap(level, 0, 100, bright.min, bright.max))
-        tuyaSendDeviceCommand(id, [ 'commands': [ [ 'code': code, 'value': value ] ] ])
+        tuyaSendDeviceCommands(id, [ 'code': code, 'value': value ])
     } else {
         String code = getFunctionCode(functions, colourFunctions)
         Map f = functions[code]
@@ -140,20 +143,36 @@ void componentSetLevel(DeviceWrapper dw, BigDecimal level, BigDecimal duration =
             s: device.currentValue('saturation') ?: 0,
             v: Math.ceil(remap(level, 0, 100, f.v.min, f.v.max))
         ]
-        tuyaSendDeviceCommand(id, [ 'commands': [ [ 'code': code, 'value': value ] ] ])
+        tuyaSendDeviceCommands(id, [ 'code': code, 'value': value ])
     }
 }
 
 // Component command to set color temperature
-void componentSetColorTemperature(DeviceWrapper device, BigDecimal kelvin, BigDecimal level = null, BigDecimal duration = null) {
+void componentSetColorTemperature(DeviceWrapper dw, BigDecimal kelvin,
+                                  BigDecimal level = null, BigDecimal duration = null) {
+    String id = dw.getDataValue('id')
+    Map functions = parseJson(dw.getDataValue('functions'))
+    String code = getFunctionCode(functions, temperatureFunctions)
+    Map temp = functions[code]
+    Integer value = Math.ceil(remap(1000000 / kelvin, minMireds, maxMireds, temp.min, temp.max))
+    tuyaSendDeviceCommands(id, [ 'code': code, 'value': value ])
+    if (level != null) {
+        componentSetLevel(dw, level, duration)
+    }
+}
+
+// Component command to set color temperature
+void componentSetColor(DeviceWrapper dw, Map colorMap) {
     String id = dw.getDataValue('id')
     Map functions = parseJson(dw.getDataValue('functions'))
     String code = getFunctionCode(functions, colourFunctions)
-    Map bright = functions[code]
-
-    if (level != null) {
-        componentSetLevel(device, level, duration)
-    }
+    Map color = functions[code]
+    Map value = [
+        h: remap(colorMap.hue, 0, 100, color.h.min, color.h.max),
+        s: remap(colorMap.saturation, 0, 100, color.s.min, color.s.max),
+        v: remap(colorMap.level, 0, 100, color.v.min, color.v.max)
+    ]
+    tuyaSendDeviceCommands(id, [ 'code': code, 'value': value ])
 }
 
 // Called when the device is started
@@ -164,7 +183,7 @@ void initialize() {
 
     state.endPoint = 'https://openapi.tuyaus.com' // default US endpoint
     state.tokenInfo = [ access_token: '', expire: now() ] // initialize token
-    state.uuid = UUID.randomUUID().toString()
+    state.uuid = state?.uuid ?: UUID.randomUUID().toString()
 
     tuyaAuthenticate()
 }
@@ -225,9 +244,8 @@ void removeDevices() {
 
 /**
  *  Driver Capabilities Implementation
- *
  */
-private static List<Map> parseFunction(Map status, Map functions) {
+private static List<Map> parseTuyaFunction(Map status, Map functions) {
     if (status.code in brightnessFunctions) {
         Map f = functions[status.code]
         Integer value = Math.ceil(remap(status.value, f.min, f.max, 0, 100))
@@ -240,44 +258,95 @@ private static List<Map> parseFunction(Map status, Map functions) {
 
     if (status.code in temperatureFunctions) {
         Map f = functions[status.code]
-        Integer value = Math.ceil(1000000 / remap(status.value, f.min, f.max, 153, 500))
+        Integer value = Math.ceil(1000000 / remap(status.value, f.min, f.max, minMireds, maxMireds))
         return [ [ name: 'colorTemperature', value: value ] ]
+    }
+
+    if (status.code in colourFunctions) {
+        JsonSlurper jsonParser = new JsonSlurper()
+        Map f = functions[status.code]
+        Map value = jsonParser.parseText(status.value)
+        Integer hue = remap(value.h, f.h.min, f.h.max, 0, 100)
+        Integer saturation = remap(value.s, f.s.min, f.s.max, 0, 100)
+        Integer level = remap(value.v, f.v.min, f.v.max, 0, 100)
+        return [
+            [ name: 'hue', value: hue ],
+            [ name: 'saturation', value: saturation ],
+            [ name: 'level', value: level ],
+            [ name: 'colorName', value: translateColor(hue, saturation) ]
+        ]
     }
 
     return []
 }
 
-private static Map getDeviceDriver(String category) {
+private static String translateColor(Integer hue, Integer saturation) {
+    if (!hue && !saturation) {
+        return 'White'
+    }
+
+    switch (hue * 3.6 as int) {
+        case 0..15: return 'Red'
+        case 16..45: return 'Orange'
+        case 46..75: return 'Yellow'
+        case 76..105: return 'Chartreuse'
+        case 106..135: return 'Green'
+        case 136..165: return 'Spring'
+        case 166..195: return 'Cyan'
+        case 196..225: return 'Azure'
+        case 226..255: return 'Blue'
+        case 256..285: return 'Violet'
+        case 286..315: return 'Magenta'
+        case 316..345: return 'Rose'
+        case 346..360: return 'Red'
+    }
+
+    return ''
+}
+
+/**
+  *  Tuya Standard Instruction Set Category Mapping to Hubitat Drivers
+  *  https://developer.tuya.com/en/docs/iot/standarddescription?id=K9i5ql6waswzq
+  */
+private static Map mapTuyaCategory(String category) {
     switch (category) {
-        case 'cz':
-        case 'pc':
-            return [ namespace: 'hubitat', name: 'Generic Component Switch' ] // Outlet
-        case 'kg':
-        case 'tdq':
+        case 'cz':    // Socket
+        case 'pc':    // Power Switch
             return [ namespace: 'hubitat', name: 'Generic Component Switch' ]
-        case 'dj':
-        case 'dd':
-        case 'fwd':
-        case 'tgq':
-        case 'xdd':
-        case 'dc':
-        case 'tgkg':
+        case 'kg':    // Switch
+        case 'tdq':   // Unknown?
+            return [ namespace: 'hubitat', name: 'Generic Component Switch' ]
+        case 'ykq':   // Remote Control
+        case 'tyndj': // Solar Light
+            return [ namespace: 'hubitat', name: 'Generic Component CT' ]
+        case 'tgq':   // Dimmer Light
+        case 'tgkg':  // Dimmer Switch
+            return [ namespace: 'hubitat', name: 'Generic Component Dimmer' ]
+        case 'dc':    // String Lights
+        case 'dd':    // Strip Lights
+        case 'dj':    // Light
+        case 'fsd':   // Ceiling Fan Light
+        case 'fwd':   // Ambient Light
+        case 'gyd':   // Motion Sensor Light
+        case 'xdd':   // Ceiling Light
             return [ namespace: 'hubitat', name: 'Generic Component RGBW' ]
     }
 }
 
 private static String getFunctionCode(Map functions, List codes) {
     return codes.find { c -> functions.containsKey(c) } ?: codes.first()
+    // TODO: Include default function values
 }
 
-private static BigDecimal remap(BigDecimal old_value, BigDecimal old_min, BigDecimal old_max, BigDecimal new_min, BigDecimal new_max) {
-    return ( (old_value - old_min) / (old_max - old_min) ) * (new_max - new_min) + new_min
+private static BigDecimal remap(BigDecimal oldValue, BigDecimal oldMin, BigDecimal oldMax,
+                                BigDecimal newMin, BigDecimal newMax) {
+    return ( (oldValue - oldMin) / (oldMax - oldMin) ) * (newMax - newMin) + newMin
 }
 
 private ChildDeviceWrapper createChildDevice(Map d) {
     ChildDeviceWrapper dw = getChildDevice("${device.id}-${d.id}")
     if (!dw) {
-        Map driver = getDeviceDriver(d.category)
+        Map driver = mapTuyaCategory(d.category)
         log.info "${device.displayName} creating device ${d.name} using ${driver.name} driver"
         dw = addChildDevice(
             driver.namespace,
@@ -313,7 +382,7 @@ private void parseDeviceUpdate(Map d) {
     if (logEnable) { log.debug "${device.displayName} updating ${dw.displayName} with ${d.status}" }
 
     Map functions = parseJson(dw.getDataValue('functions'))
-    d.status.each { s -> events += parseFunction(s, functions) }
+    d.status.each { s -> events += parseTuyaFunction(s, functions) }
     if (events) {
         if (logEnable) { log.debug "${device.displayName} sending events ${events}" }
         dw.parse(events)
@@ -323,7 +392,6 @@ private void parseDeviceUpdate(Map d) {
 /**
  *  Tuya Open API Authentication
  *  https://developer.tuya.com/en/docs/cloud/
- *
 */
 private void tuyaAuthenticate() {
     if (username && password && appSchema) {
@@ -368,7 +436,6 @@ private void tuyaAuthenticateResponse(AsyncResponse response, Map data) {
 /**
  *  Tuya Open API Device Management
  *  https://developer.tuya.com/en/docs/cloud/
- *
  */
 private void tuyaGetDevices() {
     log.info "${device.displayName} requesting cloud devices (maximum 100)"
@@ -384,7 +451,7 @@ private void tuyaGetDevicesResponse(AsyncResponse response, Map data) {
 
     // Create Hubitat devices from Tuya results
     result.devices.each { d ->
-        createChildDevice(d)        
+        createChildDevice(d)
     }
 
     // Get device functions in batches of 20
@@ -434,20 +501,19 @@ private void tuyaGetStateResponse(AsyncResponse response, Map data) {
     parseDeviceUpdate(data)
 }
 
-private void tuyaSendDeviceCommand(String deviceID, Map params) {
+private void tuyaSendDeviceCommands(String deviceID, Map...params) {
     log.info "${device.displayName} ${deviceID} ${params}"
-    tuyaPost("/v1.0/devices/${deviceID}/commands", params, 'tuyaSendDeviceCommandResponse')
+    tuyaPost("/v1.0/devices/${deviceID}/commands", [ 'commands': params ], 'tuyaSendDeviceCommandsResponse')
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
-private void tuyaSendDeviceCommandResponse(AsyncResponse response, Map data) {
+private void tuyaSendDeviceCommandsResponse(AsyncResponse response, Map data) {
     tuyaCheckResponse(response)
 }
 
 /**
  *  Tuya Open API MQTT Hub
  *  https://developer.tuya.com/en/docs/cloud/
- *
  */
 private void tuyaGetHubConfig() {
     log.info "${device.displayName} requesting Tuya MQTT configuration"
@@ -493,7 +559,6 @@ private void tuyaHubSubscribe() {
 /**
  *  Tuya Open API HTTP REST Implementation
  *  https://developer.tuya.com/en/docs/cloud/
- *
  */
 private void tuyaGet(String path, Map query, String callback, Map data = [:]) {
     tuyaRequest('get', path, callback, query, null, data)
@@ -503,6 +568,7 @@ private void tuyaPost(String path, Map body, String callback, Map data = [:]) {
     tuyaRequest('post', path, callback, null, body, data)
 }
 
+/* groovylint-disable-next-line ParameterCount */
 private void tuyaRequest(String method, String path, String callback, Map query, Map body, Map data) {
     String accessToken = state.tokenInfo.access_token ?: ''
     String stringToSign = tuyaGetStringToSign(method, path, query, body)
