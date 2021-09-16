@@ -26,6 +26,7 @@ import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import groovy.transform.Field
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 import javax.crypto.spec.SecretKeySpec
 import javax.crypto.Cipher
 import javax.crypto.Mac
@@ -97,13 +98,16 @@ metadata {
 @Field static final Integer maxMireds = 500
 @Field static final Integer minMireds = 153
 
+// Jason Parsing Cache
+@Field static final ConcurrentHashMap<String, Map> jsonCache = new ConcurrentHashMap<>()
+
 /**
  *  Hubitat Driver Event Handlers
  */
 // Component command to turn on device
 void componentOn(DeviceWrapper dw) {
     String id = dw.getDataValue('id')
-    Map functions = parseJson(dw.getDataValue('functions'))
+    Map functions = jsonCache.computeIfAbsent(dw.getDataValue('functions')) { k -> parseJson(k) }
     String code = getFunctionCode(functions, switchFunctions)
     tuyaSendDeviceCommands(id, [ 'code': code, 'value': true ])
 }
@@ -111,7 +115,7 @@ void componentOn(DeviceWrapper dw) {
 // Component command to turn off device
 void componentOff(DeviceWrapper dw) {
     String id = dw.getDataValue('id')
-    Map functions = parseJson(dw.getDataValue('functions'))
+    Map functions = jsonCache.computeIfAbsent(dw.getDataValue('functions')) { k -> parseJson(k) }
     String code = getFunctionCode(functions, switchFunctions)
     tuyaSendDeviceCommands(id, [ 'code': code, 'value': false ])
 }
@@ -128,7 +132,7 @@ void componentRefresh(DeviceWrapper dw) {
 /* groovylint-disable-next-line UnusedMethodParameter */
 void componentSetLevel(DeviceWrapper dw, BigDecimal level, BigDecimal duration = 0) {
     String id = dw.getDataValue('id')
-    Map functions = parseJson(dw.getDataValue('functions'))
+    Map functions = jsonCache.computeIfAbsent(dw.getDataValue('functions')) { k -> parseJson(k) }
     String colorMode = device.currentValue('colorMode') ?: 'CT'
     if (colorMode == 'CT') {
         String code = getFunctionCode(functions, brightnessFunctions)
@@ -151,7 +155,7 @@ void componentSetLevel(DeviceWrapper dw, BigDecimal level, BigDecimal duration =
 void componentSetColorTemperature(DeviceWrapper dw, BigDecimal kelvin,
                                   BigDecimal level = null, BigDecimal duration = null) {
     String id = dw.getDataValue('id')
-    Map functions = parseJson(dw.getDataValue('functions'))
+    Map functions = jsonCache.computeIfAbsent(dw.getDataValue('functions')) { k -> parseJson(k) }
     String code = getFunctionCode(functions, temperatureFunctions)
     Map temp = functions[code]
     Integer value = Math.ceil(remap(1000000 / kelvin, minMireds, maxMireds, temp.min, temp.max))
@@ -164,7 +168,7 @@ void componentSetColorTemperature(DeviceWrapper dw, BigDecimal kelvin,
 // Component command to set color temperature
 void componentSetColor(DeviceWrapper dw, Map colorMap) {
     String id = dw.getDataValue('id')
-    Map functions = parseJson(dw.getDataValue('functions'))
+    Map functions = jsonCache.computeIfAbsent(dw.getDataValue('functions')) { k -> parseJson(k) }
     String code = getFunctionCode(functions, colourFunctions)
     Map color = functions[code]
     Map value = [
@@ -265,7 +269,7 @@ private static List<Map> parseTuyaFunction(Map status, Map functions) {
     if (status.code in colourFunctions) {
         JsonSlurper jsonParser = new JsonSlurper()
         Map f = functions[status.code]
-        Map value = jsonParser.parseText(status.value)
+        Map value = jsonCache.computeIfAbsent(status.value) { k -> jsonParser.parseText(k) }
         Integer hue = remap(value.h, f.h.min, f.h.max, 0, 100)
         Integer saturation = remap(value.s, f.s.min, f.s.max, 0, 100)
         Integer level = remap(value.v, f.v.min, f.v.max, 0, 100)
@@ -381,7 +385,7 @@ private void parseDeviceUpdate(Map d) {
     ChildDeviceWrapper dw = getChildDevice("${device.id}-${d.id ?: d.devId}")
     if (logEnable) { log.debug "${device.displayName} updating ${dw.displayName} with ${d.status}" }
 
-    Map functions = parseJson(dw.getDataValue('functions'))
+    Map functions = jsonCache.computeIfAbsent(dw.getDataValue('functions')) { k -> parseJson(k) }
     d.status.each { s -> events += parseTuyaFunction(s, functions) }
     if (events) {
         if (logEnable) { log.debug "${device.displayName} sending events ${events}" }
@@ -405,6 +409,7 @@ private void tuyaAuthenticate() {
             'password': md5pwd,
             'schema': appSchema
         ]
+        jsonCache.clear()
         tuyaPost('/v1.0/iot-01/associated-users/actions/authorized-login', body, 'tuyaAuthenticateResponse')
     } else {
         log.error "${device.displayName} Error - Device must be configured before authentication is enabled"
