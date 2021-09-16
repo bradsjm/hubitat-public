@@ -20,6 +20,15 @@
  *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  *  SOFTWARE.
 */
+
+/*
+ * TODO:
+ *   - Fix color mode when refreshing device
+ *   - Reconnection for MQTT hub
+ *   - Handle API failure (no internet)
+ *   - Handle access token failure (command while authenticating)
+ *   - Add local control where possible
+ */
 import com.hubitat.app.ChildDeviceWrapper
 import com.hubitat.app.DeviceWrapper
 import groovy.json.JsonOutput
@@ -100,7 +109,7 @@ metadata {
 @Field static final List<String> workModeFunctions = [ 'work_mode' ]
 
 // Constants
-@Field static final Integer maxMireds = 500
+@Field static final Integer maxMireds = 500 // should this be 370?
 @Field static final Integer minMireds = 153
 
 // Jason Parsing Cache
@@ -133,41 +142,20 @@ void componentRefresh(DeviceWrapper dw) {
     }
 }
 
-// Component command to set color temperature
+// Component command to set color
 void componentSetColor(DeviceWrapper dw, Map colorMap) {
     String id = dw.getDataValue('id')
     Map functions = jsonCache.computeIfAbsent(dw.getDataValue('functions')) { k -> parseJson(k) }
     String code = getFunctionCode(functions, colourFunctions)
     Map color = functions[code]
+    // An oddity and workaround for mapping brightness values
+    Map bright = functions['bright_value'] ?: functions['bright_value_v2'] ?: color.v
     Map value = [
         h: remap(colorMap.hue, 0, 100, color.h.min, color.h.max),
         s: remap(colorMap.saturation, 0, 100, color.s.min, color.s.max),
-        v: remap(colorMap.level, 0, 100, color.v.min, color.v.max)
+        v: remap(colorMap.level, 0, 100, bright.min, bright.max)
     ]
     tuyaSendDeviceCommands(id, [ 'code': code, 'value': value ])
-}
-
-// Component command to set level
-/* groovylint-disable-next-line UnusedMethodParameter */
-void componentSetLevel(DeviceWrapper dw, BigDecimal level, BigDecimal duration = 0) {
-    String id = dw.getDataValue('id')
-    Map functions = jsonCache.computeIfAbsent(dw.getDataValue('functions')) { k -> parseJson(k) }
-    String colorMode = device.currentValue('colorMode') ?: 'CT'
-    if (colorMode == 'CT') {
-        String code = getFunctionCode(functions, brightnessFunctions)
-        Map bright = functions[code]
-        Integer value = Math.ceil(remap(level, 0, 100, bright.min, bright.max))
-        tuyaSendDeviceCommands(id, [ 'code': code, 'value': value ])
-    } else {
-        String code = getFunctionCode(functions, colourFunctions)
-        Map f = functions[code]
-        Map value = [
-            h: device.currentValue('hue') ?: 0,
-            s: device.currentValue('saturation') ?: 0,
-            v: remap(level, 0, 100, f.v.min, f.v.max)
-        ]
-        tuyaSendDeviceCommands(id, [ 'code': code, 'value': value ])
-    }
 }
 
 // Component command to set color temperature
@@ -184,6 +172,54 @@ void componentSetColorTemperature(DeviceWrapper dw, BigDecimal kelvin,
     }
 }
 
+void componentSetEffect(DeviceWrapper dw, BigDecimal index) {
+    log.warn "${device.displayName} Set effect command not supported"
+}
+
+void componentSetHue(DeviceWrapper dw, BigDecimal hue) {
+    componentSetColor(dw, [
+        hue: hue,
+        saturation: dw.currentValue('saturation'),
+        level: dw.currentValue('level') ?: 100
+    ])
+}
+
+// Component command to set level
+/* groovylint-disable-next-line UnusedMethodParameter */
+void componentSetLevel(DeviceWrapper dw, BigDecimal level, BigDecimal duration = 0) {
+    String id = dw.getDataValue('id')
+    Map functions = jsonCache.computeIfAbsent(dw.getDataValue('functions')) { k -> parseJson(k) }
+    String colorMode = dw.currentValue('colorMode') ?: 'CT'
+    if (colorMode == 'CT') {
+        String code = getFunctionCode(functions, brightnessFunctions)
+        Map bright = functions[code]
+        Integer value = Math.ceil(remap(level, 0, 100, bright.min, bright.max))
+        tuyaSendDeviceCommands(id, [ 'code': code, 'value': value ])
+    } else {
+        componentSetColor(dw, [
+            hue: dw.currentValue('hue') ?: 100,
+            saturation: dw.currentValue('saturation') ?: 100,
+            level: level
+        ])
+    }
+}
+
+void componentSetNextEffect(DeviceWrapper device) {
+    log.warn "${device.displayName} Set next effect command not supported"
+}
+
+void componentSetPreviousEffect(DeviceWrapper device) {
+    log.warn "${device.displayName} Set previous effect command not supported"
+}
+
+void componentSetSaturation(DeviceWrapper dw, BigDecimal saturation) {
+    componentSetColor(dw, [
+        hue: dw.currentValue('hue') ?: 100,
+        saturation: saturation,
+        level: dw.currentValue('level') ?: 100
+    ])
+}
+
 // Component command to start level change (up or down)
 void componentStartLevelChange(DeviceWrapper dw, String direction) {
     doLevelChange([ dni: dw.deviceNetworkId, delta: (direction == 'down') ? -10 : 10 ])
@@ -195,6 +231,7 @@ void componentStopLevelChange(DeviceWrapper dw) {
 }
 
 void doLevelChange(Map data) {
+    // TODO: Handle multiple light changes
     DeviceWrapper dw = getChildDevice(data.dni)
     int newLevel = (dw.currentValue('level') as int) + data.delta
     if (newLevel < 0) { newLevel = 0 }
@@ -240,12 +277,13 @@ void updated() {
 
 // Called to parse received MQTT data
 void parse(String data) {
-    Map payload = parseJson(interfaces.mqtt.parseMessage(data).payload)
+    JsonSlurper parser = new JsonSlurper()
+    Map payload = parser.parseText(interfaces.mqtt.parseMessage(data).payload)
     SecretKeySpec key = new SecretKeySpec(state.mqttInfo.password[8..23].bytes, 'AES')
     Cipher cipher = Cipher.getInstance('AES/ECB/PKCS5Padding')
     cipher.init(Cipher.DECRYPT_MODE, key)
-    Map result = parseJson(new String(cipher.doFinal(payload.data.decodeBase64())))
-    parseDeviceUpdate(result)
+    Map result = parser.parse(cipher.doFinal(payload.data.decodeBase64()), 'UTF-8')
+    parseDeviceState(result)
 }
 
 // Called to parse MQTT status changes
@@ -280,33 +318,35 @@ private static List<Map> parseTuyaFunction(DeviceWrapper dw, Map status, Map fun
     if (status.code in brightnessFunctions) {
         Map f = functions[status.code]
         Integer value = Math.ceil(remap(status.value, f.min, f.max, 0, 100))
-        return [ [ name: 'level', value: value, unit: '%' ] ]
+        return [ [ name: 'level', value: value, unit: '%', descriptionText: "level is ${value}%" ] ]
     }
 
     if (status.code in colourFunctions + sceneFunctions) {
-        JsonSlurper jsonParser = new JsonSlurper()
-        Map f = functions[status.code]
-        Map b = functions['bright_value'] ?: functions['bright_value_v2'] ?: f.v
-        Map value = jsonCache.computeIfAbsent(status.value) { k -> jsonParser.parseText(k) }
-        Integer hue = Math.ceil(remap(value.h, f.h.min, f.h.max, 0, 100))
-        Integer saturation = Math.ceil(remap(value.s, f.s.min, f.s.max, 0, 100))
-        Integer level = Math.ceil(remap(value.v, b.min, b.max, 0, 100))
+        JsonSlurper parser = new JsonSlurper()
+        Map code = functions[status.code]
+        Map bright = functions['bright_value'] ?: functions['bright_value_v2'] ?: code.v
+        Map value = jsonCache.computeIfAbsent(status.value) { k -> parser.parseText(k) }
+        Integer hue = Math.ceil(remap(value.h, code.h.min, code.h.max, 0, 100))
+        Integer saturation = Math.ceil(remap(value.s, code.s.min, code.s.max, 0, 100))
+        Integer level = Math.ceil(remap(value.v, bright.min, bright.max, 0, 100))
+        String colorName = translateColor(hue, saturation)
         return [
-            [ name: 'hue', value: hue ],
-            [ name: 'saturation', value: saturation ],
-            [ name: 'level', value: level ],
-            [ name: 'colorName', value: translateColor(hue, saturation) ]
+            [ name: 'hue', value: hue, descriptionText: "hue is ${hue}" ],
+            [ name: 'saturation', value: saturation, descriptionText: "saturation is ${saturation}" ],
+            [ name: 'level', value: level, descriptionText: "level is ${level}%" ],
+            [ name: 'colorName', value: colorName, descriptionText: "color name is ${colorName}" ]
         ]
     }
 
     if (status.code in switchFunctions) {
-        return [ [ name: 'switch', value: status.value ? 'on' : 'off' ] ]
+        String value = status.value ? 'on' : 'off'
+        return [ [ name: 'switch', value: value, descriptionText: "switch is ${value}" ] ]
     }
 
     if (status.code in temperatureFunctions) {
-        Map f = functions[status.code]
-        Integer value = Math.ceil(1000000 / remap(status.value, f.min, f.max, minMireds, maxMireds))
-        return [ [ name: 'colorTemperature', value: value ] ]
+        Map code = functions[status.code]
+        Integer value = Math.ceil(1000000 / remap(status.value, code.min, code.max, minMireds, maxMireds))
+        return [ [ name: 'colorTemperature', value: value, unit: 'K', descriptionText: "color temperature is ${value}K" ] ]
     }
 
     if (status.code in workModeFunctions) {
@@ -314,13 +354,23 @@ private static List<Map> parseTuyaFunction(DeviceWrapper dw, Map status, Map fun
             case 'white':
             case 'light_white':
                 return [
-                    [ name: 'colorMode', value: 'CT' ],
-                    [ name: 'colorName', value: 'White' ]
+                    [ name: 'colorMode', value: 'CT', descriptionText: "color mode is CT" ],
+                    [ name: 'colorName', value: 'White', descriptionText: "color name is White" ]
                 ]
             case 'colour':
+                String colorName = translateColor(dw.currentValue('hue') as Integer, dw.currentValue('saturation') as Integer)
                 return [
-                    [ name: 'colorMode', value: 'RGB' ],
-                    [ name: 'colorName', value: translateColor(dw.currentValue('hue') as Integer, dw.currentValue('saturation') as Integer) ]
+                    [ name: 'colorMode', value: 'RGB', descriptionText: "color mode is RGB" ],
+                    [ name: 'colorName', value: colorName, descriptionText: "color name is ${colorName}"]
+                ]
+            case 'scene_1':
+            case 'scene_2':
+            case 'scene_3':
+            case 'scene_4':
+                String value = status.value[-1]
+                return [
+                    [ name: 'colorMode', value: 'RGB', descriptionText: "color mode is RGB" ],
+                    [ name: 'effect', value: value, descriptionText: "effect mode is ${value}" ]
                 ]
         }
     }
@@ -425,15 +475,13 @@ private void logsOff() {
     log.info "${device.displayName} debug logging disabled"
 }
 
-private void parseDeviceUpdate(Map d) {
+private void parseDeviceState(Map d) {
     List<Map> events = []
     ChildDeviceWrapper dw = getChildDevice("${device.id}-${d.id ?: d.devId}")
-    if (logEnable) { log.debug "${device.displayName} updating ${dw.displayName} with ${d.status}" }
-
     Map functions = jsonCache.computeIfAbsent(dw.getDataValue('functions')) { k -> parseJson(k) }
     d.status.each { s -> events += parseTuyaFunction(dw, s, functions) }
     if (events) {
-        if (logEnable) { log.debug "${device.displayName} sending events ${events}" }
+        if (logEnable) { log.debug "${device.displayName} [${dw.displayName}] ${d.status} -> ${events}" }
         dw.parse(events)
     }
 }
@@ -524,12 +572,13 @@ private void tuyaGetDeviceFunctions(List<Map> devices, Map data = [:]) {
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
 private void tuyaGetDeviceFunctionsResponse(AsyncResponse response, Map data) {
     if (!tuyaCheckResponse(response)) { return }
+    JsonSlurper parser = new JsonSlurper()
     List result = response.json.result
     log.info "${device.displayName} received ${result.size()} cloud function groups"
     result.each { group ->
         Map functions = group.functions.collectEntries { f ->
             String code = f.code
-            Map values = parseJson(f.values)
+            Map values = parser.parseText(f.values)
             values.type = f.type
             [ (code): values ]
         }
@@ -541,7 +590,7 @@ private void tuyaGetDeviceFunctionsResponse(AsyncResponse response, Map data) {
     }
 
     // Process status updates
-    data.devices.each { d -> parseDeviceUpdate(d) }
+    data.devices.each { d -> parseDeviceState(d) }
 }
 
 private void tuyaGetState(String deviceID) {
@@ -553,11 +602,11 @@ private void tuyaGetState(String deviceID) {
 private void tuyaGetStateResponse(AsyncResponse response, Map data) {
     if (!tuyaCheckResponse(response)) { return }
     data.status = response.json.result
-    parseDeviceUpdate(data)
+    parseDeviceState(data)
 }
 
 private void tuyaSendDeviceCommands(String deviceID, Map...params) {
-    log.info "${device.displayName} ${deviceID} ${params}"
+    log.info "${device.displayName} device ${deviceID} command ${params}"
     tuyaPost("/v1.0/devices/${deviceID}/commands", [ 'commands': params ], 'tuyaSendDeviceCommandsResponse')
 }
 
@@ -649,7 +698,7 @@ private void tuyaRequest(String method, String path, String callback, Map query,
     ]
 
     if (logEnable) {
-        log.debug("${device.displayName} API ${method} request: ${request}")
+        log.debug("${device.displayName} API ${method.toUpperCase()} ${request}")
     }
 
     switch (method) {
@@ -670,7 +719,7 @@ private boolean tuyaCheckResponse(AsyncResponse response) {
     }
 
     if (logEnable) {
-        log.debug "${device.displayName} API response: ${response.json ?: response.data}"
+        log.debug "${device.displayName} API response ${response.json ?: response.data}"
     }
 
     return true
