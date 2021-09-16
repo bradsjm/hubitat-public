@@ -39,6 +39,8 @@ metadata {
         capability 'Refresh'
 
         command 'removeDevices'
+
+        attribute "deviceCount", "Integer"
     }
 
     preferences {
@@ -128,6 +130,20 @@ void componentRefresh(DeviceWrapper dw) {
     }
 }
 
+// Component command to set color temperature
+void componentSetColor(DeviceWrapper dw, Map colorMap) {
+    String id = dw.getDataValue('id')
+    Map functions = jsonCache.computeIfAbsent(dw.getDataValue('functions')) { k -> parseJson(k) }
+    String code = getFunctionCode(functions, colourFunctions)
+    Map color = functions[code]
+    Map value = [
+        h: remap(colorMap.hue, 0, 100, color.h.min, color.h.max),
+        s: remap(colorMap.saturation, 0, 100, color.s.min, color.s.max),
+        v: remap(colorMap.level, 0, 100, color.v.min, color.v.max)
+    ]
+    tuyaSendDeviceCommands(id, [ 'code': code, 'value': value ])
+}
+
 // Component command to set level
 /* groovylint-disable-next-line UnusedMethodParameter */
 void componentSetLevel(DeviceWrapper dw, BigDecimal level, BigDecimal duration = 0) {
@@ -165,18 +181,26 @@ void componentSetColorTemperature(DeviceWrapper dw, BigDecimal kelvin,
     }
 }
 
-// Component command to set color temperature
-void componentSetColor(DeviceWrapper dw, Map colorMap) {
-    String id = dw.getDataValue('id')
-    Map functions = jsonCache.computeIfAbsent(dw.getDataValue('functions')) { k -> parseJson(k) }
-    String code = getFunctionCode(functions, colourFunctions)
-    Map color = functions[code]
-    Map value = [
-        h: remap(colorMap.hue, 0, 100, color.h.min, color.h.max),
-        s: remap(colorMap.saturation, 0, 100, color.s.min, color.s.max),
-        v: remap(colorMap.level, 0, 100, color.v.min, color.v.max)
-    ]
-    tuyaSendDeviceCommands(id, [ 'code': code, 'value': value ])
+// Component command to start level change (up or down)
+void componentStartLevelChange(DeviceWrapper dw, String direction) {
+    doLevelChange([ dni: dw.deviceNetworkId, delta: (direction == 'down') ? -10 : 10 ])
+}
+
+// Component command to stop level change
+void componentStopLevelChange(DeviceWrapper dw) {
+    unschedule('doLevelChange')
+}
+
+void doLevelChange(Map data) {
+    DeviceWrapper dw = getChildDevice(data.dni)
+    int newLevel = (dw.currentValue('level') as int) + data.delta
+    if (newLevel < 0) { newLevel = 0 }
+    if (newLevel > 100) { newLevel = 100 }
+    componentSetLevel(dw, newLevel)
+
+    if (newLevel > 0 && newLevel < 100) {
+        runInMillis(1000, 'doLevelChange', [ data: data ])
+    }
 }
 
 // Called when the device is started
@@ -279,6 +303,16 @@ private static List<Map> parseTuyaFunction(Map status, Map functions) {
             [ name: 'level', value: level ],
             [ name: 'colorName', value: translateColor(hue, saturation) ]
         ]
+    }
+
+    if (status.code == 'work_mode') {
+        switch (status.value) {
+            case 'white':
+            case 'light_white':
+                return [ [ name: 'colorMode', value: 'CT' ] ]
+            case 'colour':
+                return [ [ name: 'colorMode', value: 'RGB' ] ]
+        }
     }
 
     return []
@@ -409,7 +443,6 @@ private void tuyaAuthenticate() {
             'password': md5pwd,
             'schema': appSchema
         ]
-        jsonCache.clear()
         tuyaPost('/v1.0/iot-01/associated-users/actions/authorized-login', body, 'tuyaAuthenticateResponse')
     } else {
         log.error "${device.displayName} Error - Device must be configured before authentication is enabled"
@@ -443,6 +476,11 @@ private void tuyaAuthenticateResponse(AsyncResponse response, Map data) {
  *  https://developer.tuya.com/en/docs/cloud/
  */
 private void tuyaGetDevices() {
+    if (!jsonCache.isEmpty()) {
+        log.info "${device.displayName} clearing json cache"
+        jsonCache.clear()
+    }
+
     log.info "${device.displayName} requesting cloud devices (maximum 100)"
     tuyaGet('/v1.0/iot-01/associated-users/devices', [ 'size': 100 ], 'tuyaGetDevicesResponse')
 }
@@ -453,6 +491,7 @@ private void tuyaGetDevicesResponse(AsyncResponse response, Map data) {
     Map result = response.json.result
     data.devices = result.devices
     log.info "${device.displayName} received ${result.devices.size()} cloud devices"
+    sendEvent([ name: 'deviceCount', value: result.devices.size() as String ])
 
     // Create Hubitat devices from Tuya results
     result.devices.each { d ->
