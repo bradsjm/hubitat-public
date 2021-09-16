@@ -93,8 +93,11 @@ metadata {
 // Tuya Function Categories
 @Field static final List<String> brightnessFunctions = [ 'bright_value', 'bright_value_v2', 'bright_value_1' ]
 @Field static final List<String> colourFunctions = [ 'colour_data', 'colour_data_v2' ]
+@Field static final List<String> flashSceneFunctions = [ 'flash_scene_1', 'flash_scene_2', 'flash_scene_3', 'flash_scene_4' ]
 @Field static final List<String> switchFunctions = [ 'switch_led', 'switch_led_1', 'light' ]
 @Field static final List<String> temperatureFunctions = [ 'temp_value', 'temp_value_v2' ]
+@Field static final List<String> sceneFunctions = [ 'scene_data' ]
+@Field static final List<String> workModeFunctions = [ 'work_mode' ]
 
 // Constants
 @Field static final Integer maxMireds = 500
@@ -161,7 +164,7 @@ void componentSetLevel(DeviceWrapper dw, BigDecimal level, BigDecimal duration =
         Map value = [
             h: device.currentValue('hue') ?: 0,
             s: device.currentValue('saturation') ?: 0,
-            v: Math.ceil(remap(level, 0, 100, f.v.min, f.v.max))
+            v: remap(level, 0, 100, f.v.min, f.v.max)
         ]
         tuyaSendDeviceCommands(id, [ 'code': code, 'value': value ])
     }
@@ -273,11 +276,27 @@ void removeDevices() {
 /**
  *  Driver Capabilities Implementation
  */
-private static List<Map> parseTuyaFunction(Map status, Map functions) {
+private static List<Map> parseTuyaFunction(DeviceWrapper dw, Map status, Map functions) {
     if (status.code in brightnessFunctions) {
         Map f = functions[status.code]
         Integer value = Math.ceil(remap(status.value, f.min, f.max, 0, 100))
         return [ [ name: 'level', value: value, unit: '%' ] ]
+    }
+
+    if (status.code in colourFunctions + sceneFunctions) {
+        JsonSlurper jsonParser = new JsonSlurper()
+        Map f = functions[status.code]
+        Map b = functions['bright_value'] ?: functions['bright_value_v2'] ?: f.v
+        Map value = jsonCache.computeIfAbsent(status.value) { k -> jsonParser.parseText(k) }
+        Integer hue = Math.ceil(remap(value.h, f.h.min, f.h.max, 0, 100))
+        Integer saturation = Math.ceil(remap(value.s, f.s.min, f.s.max, 0, 100))
+        Integer level = Math.ceil(remap(value.v, b.min, b.max, 0, 100))
+        return [
+            [ name: 'hue', value: hue ],
+            [ name: 'saturation', value: saturation ],
+            [ name: 'level', value: level ],
+            [ name: 'colorName', value: translateColor(hue, saturation) ]
+        ]
     }
 
     if (status.code in switchFunctions) {
@@ -290,28 +309,19 @@ private static List<Map> parseTuyaFunction(Map status, Map functions) {
         return [ [ name: 'colorTemperature', value: value ] ]
     }
 
-    if (status.code in colourFunctions) {
-        JsonSlurper jsonParser = new JsonSlurper()
-        Map f = functions[status.code]
-        Map value = jsonCache.computeIfAbsent(status.value) { k -> jsonParser.parseText(k) }
-        Integer hue = remap(value.h, f.h.min, f.h.max, 0, 100)
-        Integer saturation = remap(value.s, f.s.min, f.s.max, 0, 100)
-        Integer level = remap(value.v, f.v.min, f.v.max, 0, 100)
-        return [
-            [ name: 'hue', value: hue ],
-            [ name: 'saturation', value: saturation ],
-            [ name: 'level', value: level ],
-            [ name: 'colorName', value: translateColor(hue, saturation) ]
-        ]
-    }
-
-    if (status.code == 'work_mode') {
+    if (status.code in workModeFunctions) {
         switch (status.value) {
             case 'white':
             case 'light_white':
-                return [ [ name: 'colorMode', value: 'CT' ] ]
+                return [
+                    [ name: 'colorMode', value: 'CT' ],
+                    [ name: 'colorName', value: 'White' ]
+                ]
             case 'colour':
-                return [ [ name: 'colorMode', value: 'RGB' ] ]
+                return [
+                    [ name: 'colorMode', value: 'RGB' ],
+                    [ name: 'colorName', value: translateColor(dw.currentValue('hue') as Integer, dw.currentValue('saturation') as Integer) ]
+                ]
         }
     }
 
@@ -319,7 +329,7 @@ private static List<Map> parseTuyaFunction(Map status, Map functions) {
 }
 
 private static String translateColor(Integer hue, Integer saturation) {
-    if (!hue && !saturation) {
+    if (saturation < 1) {
         return 'White'
     }
 
@@ -378,7 +388,8 @@ private static String getFunctionCode(Map functions, List codes) {
 
 private static BigDecimal remap(BigDecimal oldValue, BigDecimal oldMin, BigDecimal oldMax,
                                 BigDecimal newMin, BigDecimal newMax) {
-    return ( (oldValue - oldMin) / (oldMax - oldMin) ) * (newMax - newMin) + newMin
+    BigDecimal newValue = ( (oldValue - oldMin) / (oldMax - oldMin) ) * (newMax - newMin) + newMin
+    return newValue.setScale(1, BigDecimal.ROUND_HALF_UP)
 }
 
 private ChildDeviceWrapper createChildDevice(Map d) {
@@ -420,7 +431,7 @@ private void parseDeviceUpdate(Map d) {
     if (logEnable) { log.debug "${device.displayName} updating ${dw.displayName} with ${d.status}" }
 
     Map functions = jsonCache.computeIfAbsent(dw.getDataValue('functions')) { k -> parseJson(k) }
-    d.status.each { s -> events += parseTuyaFunction(s, functions) }
+    d.status.each { s -> events += parseTuyaFunction(dw, s, functions) }
     if (events) {
         if (logEnable) { log.debug "${device.displayName} sending events ${events}" }
         dw.parse(events)
