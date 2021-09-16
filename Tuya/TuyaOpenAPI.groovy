@@ -120,18 +120,16 @@ metadata {
  */
 // Component command to turn on device
 void componentOn(DeviceWrapper dw) {
-    String id = dw.getDataValue('id')
-    Map functions = jsonCache.computeIfAbsent(dw.getDataValue('functions')) { k -> parseJson(k) }
+    Map functions = getFunctions(dw)
     String code = getFunctionCode(functions, switchFunctions)
-    tuyaSendDeviceCommands(id, [ 'code': code, 'value': true ])
+    tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': true ])
 }
 
 // Component command to turn off device
 void componentOff(DeviceWrapper dw) {
-    String id = dw.getDataValue('id')
-    Map functions = jsonCache.computeIfAbsent(dw.getDataValue('functions')) { k -> parseJson(k) }
+    Map functions = getFunctions(dw)
     String code = getFunctionCode(functions, switchFunctions)
-    tuyaSendDeviceCommands(id, [ 'code': code, 'value': false ])
+    tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': false ])
 }
 
 // Component command to refresh device
@@ -144,8 +142,7 @@ void componentRefresh(DeviceWrapper dw) {
 
 // Component command to set color
 void componentSetColor(DeviceWrapper dw, Map colorMap) {
-    String id = dw.getDataValue('id')
-    Map functions = jsonCache.computeIfAbsent(dw.getDataValue('functions')) { k -> parseJson(k) }
+    Map functions = getFunctions(dw)
     String code = getFunctionCode(functions, colourFunctions)
     Map color = functions[code]
     // An oddity and workaround for mapping brightness values
@@ -155,31 +152,29 @@ void componentSetColor(DeviceWrapper dw, Map colorMap) {
         s: remap(colorMap.saturation, 0, 100, color.s.min, color.s.max),
         v: remap(colorMap.level, 0, 100, bright.min, bright.max)
     ]
-    tuyaSendDeviceCommands(id, [ 'code': code, 'value': value ])
+    tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': value ])
 }
 
 // Component command to set color temperature
 void componentSetColorTemperature(DeviceWrapper dw, BigDecimal kelvin,
                                   BigDecimal level = null, BigDecimal duration = null) {
-    String id = dw.getDataValue('id')
-    Map functions = jsonCache.computeIfAbsent(dw.getDataValue('functions')) { k -> parseJson(k) }
+    Map functions = getFunctions(dw)
     String code = getFunctionCode(functions, temperatureFunctions)
     Map temp = functions[code]
-    Integer value = Math.ceil(remap(1000000 / kelvin, minMireds, maxMireds, temp.min, temp.max))
-    tuyaSendDeviceCommands(id, [ 'code': code, 'value': value ])
-    if (level != null) {
-        componentSetLevel(dw, level, duration)
-    }
+    Integer value = temp.max - Math.ceil(maxMireds - remap(1000000 / kelvin, minMireds, maxMireds, temp.min, temp.max))
+    tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': value ])
+    componentSetLevel(dw, level ?: dw.currentValue('level'), duration)
 }
 
 void componentSetEffect(DeviceWrapper dw, BigDecimal index) {
     log.warn "${device.displayName} Set effect command not supported"
+    tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': 'scene_select', 'value': "${index}" ])
 }
 
 void componentSetHue(DeviceWrapper dw, BigDecimal hue) {
     componentSetColor(dw, [
         hue: hue,
-        saturation: dw.currentValue('saturation'),
+        saturation: dw.currentValue('saturation') ?: 100,
         level: dw.currentValue('level') ?: 100
     ])
 }
@@ -187,14 +182,13 @@ void componentSetHue(DeviceWrapper dw, BigDecimal hue) {
 // Component command to set level
 /* groovylint-disable-next-line UnusedMethodParameter */
 void componentSetLevel(DeviceWrapper dw, BigDecimal level, BigDecimal duration = 0) {
-    String id = dw.getDataValue('id')
-    Map functions = jsonCache.computeIfAbsent(dw.getDataValue('functions')) { k -> parseJson(k) }
     String colorMode = dw.currentValue('colorMode') ?: 'CT'
     if (colorMode == 'CT') {
+        Map functions = getFunctions(dw)
         String code = getFunctionCode(functions, brightnessFunctions)
         Map bright = functions[code]
         Integer value = Math.ceil(remap(level, 0, 100, bright.min, bright.max))
-        tuyaSendDeviceCommands(id, [ 'code': code, 'value': value ])
+        tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': value ])
     } else {
         componentSetColor(dw, [
             hue: dw.currentValue('hue') ?: 100,
@@ -295,6 +289,7 @@ void mqttClientStatus(String status) {
         case 'Error: Connection lost':
         case 'Error: send error':
             log.error "${device.displayName} MQTT connection error: " + status
+            runIn(30, 'tuyaGetHubConfig')
             break
     }
 }
@@ -321,7 +316,7 @@ private static List<Map> parseTuyaFunction(DeviceWrapper dw, Map status, Map fun
         return [ [ name: 'level', value: value, unit: '%', descriptionText: "level is ${value}%" ] ]
     }
 
-    if (status.code in colourFunctions + sceneFunctions) {
+    if (status.code in colourFunctions) {
         JsonSlurper parser = new JsonSlurper()
         Map code = functions[status.code]
         Map bright = functions['bright_value'] ?: functions['bright_value_v2'] ?: code.v
@@ -333,7 +328,7 @@ private static List<Map> parseTuyaFunction(DeviceWrapper dw, Map status, Map fun
         return [
             [ name: 'hue', value: hue, descriptionText: "hue is ${hue}" ],
             [ name: 'saturation', value: saturation, descriptionText: "saturation is ${saturation}" ],
-            [ name: 'level', value: level, descriptionText: "level is ${level}%" ],
+            [ name: 'level', value: level, unit: '%', descriptionText: "level is ${level}%" ],
             [ name: 'colorName', value: colorName, descriptionText: "color name is ${colorName}" ]
         ]
     }
@@ -345,7 +340,7 @@ private static List<Map> parseTuyaFunction(DeviceWrapper dw, Map status, Map fun
 
     if (status.code in temperatureFunctions) {
         Map code = functions[status.code]
-        Integer value = Math.ceil(1000000 / remap(status.value, code.min, code.max, minMireds, maxMireds))
+        Integer value = Math.ceil(1000000 / remap(code.max - status.value, code.min, code.max, minMireds, maxMireds))
         return [ [ name: 'colorTemperature', value: value, unit: 'K', descriptionText: "color temperature is ${value}K" ] ]
     }
 
@@ -353,25 +348,9 @@ private static List<Map> parseTuyaFunction(DeviceWrapper dw, Map status, Map fun
         switch (status.value) {
             case 'white':
             case 'light_white':
-                return [
-                    [ name: 'colorMode', value: 'CT', descriptionText: "color mode is CT" ],
-                    [ name: 'colorName', value: 'White', descriptionText: "color name is White" ]
-                ]
+                return [ [ name: 'colorMode', value: 'CT', descriptionText: "color mode is CT" ] ]
             case 'colour':
-                String colorName = translateColor(dw.currentValue('hue') as Integer, dw.currentValue('saturation') as Integer)
-                return [
-                    [ name: 'colorMode', value: 'RGB', descriptionText: "color mode is RGB" ],
-                    [ name: 'colorName', value: colorName, descriptionText: "color name is ${colorName}"]
-                ]
-            case 'scene_1':
-            case 'scene_2':
-            case 'scene_3':
-            case 'scene_4':
-                String value = status.value[-1]
-                return [
-                    [ name: 'colorMode', value: 'RGB', descriptionText: "color mode is RGB" ],
-                    [ name: 'effect', value: value, descriptionText: "effect mode is ${value}" ]
-                ]
+                return [ [ name: 'colorMode', value: 'RGB', descriptionText: "color mode is RGB" ] ]
         }
     }
 
@@ -431,6 +410,12 @@ private static Map mapTuyaCategory(String category) {
     }
 }
 
+private static Map getFunctions(DeviceWrapper dw) {
+    return jsonCache.computeIfAbsent(dw.getDataValue('functions')) {
+        k -> new JsonSlurper().parseText(k)
+    }
+}
+
 private static String getFunctionCode(Map functions, List codes) {
     return codes.find { c -> functions.containsKey(c) } ?: codes.first()
     // TODO: Include default function values
@@ -478,7 +463,7 @@ private void logsOff() {
 private void parseDeviceState(Map d) {
     List<Map> events = []
     ChildDeviceWrapper dw = getChildDevice("${device.id}-${d.id ?: d.devId}")
-    Map functions = jsonCache.computeIfAbsent(dw.getDataValue('functions')) { k -> parseJson(k) }
+    Map functions = getFunctions(dw)
     d.status.each { s -> events += parseTuyaFunction(dw, s, functions) }
     if (events) {
         if (logEnable) { log.debug "${device.displayName} [${dw.displayName}] ${d.status} -> ${events}" }
@@ -493,7 +478,6 @@ private void parseDeviceState(Map d) {
 private void tuyaAuthenticate() {
     if (username && password && appSchema) {
         log.info "${device.displayName} starting Tuya cloud authentication for ${username}"
-        state.tokenInfo.access_token = ''
         MessageDigest digest = MessageDigest.getInstance('MD5')
         String md5pwd = HexUtils.byteArrayToHexString(digest.digest(password.bytes)).toLowerCase()
         Map body = [
@@ -502,6 +486,7 @@ private void tuyaAuthenticate() {
             'password': md5pwd,
             'schema': appSchema
         ]
+        state.tokenInfo.access_token = ''
         tuyaPost('/v1.0/iot-01/associated-users/actions/authorized-login', body, 'tuyaAuthenticateResponse')
     } else {
         log.error "${device.displayName} Error - Device must be configured before authentication is enabled"
@@ -607,6 +592,10 @@ private void tuyaGetStateResponse(AsyncResponse response, Map data) {
 
 private void tuyaSendDeviceCommands(String deviceID, Map...params) {
     log.info "${device.displayName} device ${deviceID} command ${params}"
+    if (!state?.tokenInfo?.access_token) {
+        log.error "${device.displayName} tuyaSendDeviceCommands Error - Access token is null"
+        return
+    }
     tuyaPost("/v1.0/devices/${deviceID}/commands", [ 'commands': params ], 'tuyaSendDeviceCommandsResponse')
 }
 
@@ -642,12 +631,16 @@ private void tuyaGetHubConfigResponse(AsyncResponse response, Map data) {
 
 private void tuyaHubConnect() {
     log.info "${device.displayName} connecting to Tuya MQTT hub at ${state.mqttInfo.url}"
-    interfaces.mqtt.connect(
-        state.mqttInfo.url,
-        state.mqttInfo.client_id,
-        state.mqttInfo.username,
-        state.mqttInfo.password
-    )
+    try {
+        interfaces.mqtt.connect(
+            state.mqttInfo.url,
+            state.mqttInfo.client_id,
+            state.mqttInfo.username,
+            state.mqttInfo.password)
+    } catch (e) {
+        log.error "${device.displayName} MQTT connection error: " + e
+        runIn(30, 'tuyaGetHubConfig')
+    }
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
@@ -674,7 +667,7 @@ private void tuyaPost(String path, Map body, String callback, Map data = [:]) {
 
 /* groovylint-disable-next-line ParameterCount */
 private void tuyaRequest(String method, String path, String callback, Map query, Map body, Map data) {
-    String accessToken = state.tokenInfo.access_token ?: ''
+    String accessToken = state?.tokenInfo?.access_token ?: ''
     String stringToSign = tuyaGetStringToSign(method, path, query, body)
     long now = now()
     Map headers = [
