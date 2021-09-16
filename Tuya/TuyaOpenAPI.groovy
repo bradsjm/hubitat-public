@@ -23,10 +23,8 @@
 
 /*
  * TODO:
- *   - Fix color mode when refreshing device
- *   - Reconnection for MQTT hub
  *   - Handle API failure (no internet)
- *   - Handle access token failure (command while authenticating)
+ *   - Handle access token failure (command while authenticating)?
  *   - Add local control where possible
  */
 import com.hubitat.app.ChildDeviceWrapper
@@ -102,10 +100,8 @@ metadata {
 // Tuya Function Categories
 @Field static final List<String> brightnessFunctions = [ 'bright_value', 'bright_value_v2', 'bright_value_1' ]
 @Field static final List<String> colourFunctions = [ 'colour_data', 'colour_data_v2' ]
-@Field static final List<String> flashSceneFunctions = [ 'flash_scene_1', 'flash_scene_2', 'flash_scene_3', 'flash_scene_4' ]
 @Field static final List<String> switchFunctions = [ 'switch_led', 'switch_led_1', 'light' ]
 @Field static final List<String> temperatureFunctions = [ 'temp_value', 'temp_value_v2' ]
-@Field static final List<String> sceneFunctions = [ 'scene_data' ]
 @Field static final List<String> workModeFunctions = [ 'work_mode' ]
 
 // Constants
