@@ -21,12 +21,6 @@
  *  SOFTWARE.
 */
 
-/*
- * TODO:
- *   - Handle API failure (no internet)
- *   - Handle access token failure (command while authenticating)?
- *   - Add local control where possible
- */
 import com.hubitat.app.ChildDeviceWrapper
 import com.hubitat.app.DeviceWrapper
 import groovy.json.JsonOutput
@@ -117,14 +111,14 @@ metadata {
 // Component command to turn on device
 void componentOn(DeviceWrapper dw) {
     Map functions = getFunctions(dw)
-    String code = getFunctionCode(functions, switchFunctions)
+    String code = getFunctionByCode(functions, switchFunctions)
     tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': true ])
 }
 
 // Component command to turn off device
 void componentOff(DeviceWrapper dw) {
     Map functions = getFunctions(dw)
-    String code = getFunctionCode(functions, switchFunctions)
+    String code = getFunctionByCode(functions, switchFunctions)
     tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': false ])
 }
 
@@ -139,7 +133,7 @@ void componentRefresh(DeviceWrapper dw) {
 // Component command to set color
 void componentSetColor(DeviceWrapper dw, Map colorMap) {
     Map functions = getFunctions(dw)
-    String code = getFunctionCode(functions, colourFunctions)
+    String code = getFunctionByCode(functions, colourFunctions)
     Map color = functions[code]
     // An oddity and workaround for mapping brightness values
     Map bright = functions['bright_value'] ?: functions['bright_value_v2'] ?: color.v
@@ -155,18 +149,19 @@ void componentSetColor(DeviceWrapper dw, Map colorMap) {
 void componentSetColorTemperature(DeviceWrapper dw, BigDecimal kelvin,
                                   BigDecimal level = null, BigDecimal duration = null) {
     Map functions = getFunctions(dw)
-    String code = getFunctionCode(functions, temperatureFunctions)
+    String code = getFunctionByCode(functions, temperatureFunctions)
     Map temp = functions[code]
     Integer value = temp.max - Math.ceil(maxMireds - remap(1000000 / kelvin, minMireds, maxMireds, temp.min, temp.max))
     tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': value ])
     componentSetLevel(dw, level ?: dw.currentValue('level'), duration)
 }
 
+// Component command to set effect
 void componentSetEffect(DeviceWrapper dw, BigDecimal index) {
     log.warn "${device.displayName} Set effect command not supported"
-    tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': 'scene_select', 'value': "${index}" ])
 }
 
+// Component command to set hue
 void componentSetHue(DeviceWrapper dw, BigDecimal hue) {
     componentSetColor(dw, [
         hue: hue,
@@ -181,7 +176,7 @@ void componentSetLevel(DeviceWrapper dw, BigDecimal level, BigDecimal duration =
     String colorMode = dw.currentValue('colorMode') ?: 'CT'
     if (colorMode == 'CT') {
         Map functions = getFunctions(dw)
-        String code = getFunctionCode(functions, brightnessFunctions)
+        String code = getFunctionByCode(functions, brightnessFunctions)
         Map bright = functions[code]
         Integer value = Math.ceil(remap(level, 0, 100, bright.min, bright.max))
         tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': value ])
@@ -202,6 +197,7 @@ void componentSetPreviousEffect(DeviceWrapper device) {
     log.warn "${device.displayName} Set previous effect command not supported"
 }
 
+// Component command to set saturation
 void componentSetSaturation(DeviceWrapper dw, BigDecimal saturation) {
     componentSetColor(dw, [
         hue: dw.currentValue('hue') ?: 100,
@@ -273,7 +269,13 @@ void parse(String data) {
     Cipher cipher = Cipher.getInstance('AES/ECB/PKCS5Padding')
     cipher.init(Cipher.DECRYPT_MODE, key)
     Map result = parser.parse(cipher.doFinal(payload.data.decodeBase64()), 'UTF-8')
-    parseDeviceState(result)
+    if (result.status) {
+        parseDeviceState(result)
+    } else if (result.bizCode && result.bizData) {
+        parseBizData(result.bizCode, result.bizData)
+    } else {
+        log.debug result
+    }
 }
 
 // Called to parse MQTT status changes
@@ -305,7 +307,7 @@ void removeDevices() {
 /**
  *  Driver Capabilities Implementation
  */
-private static List<Map> parseTuyaFunction(DeviceWrapper dw, Map status, Map functions) {
+private static List<Map> parseTuyaStatus(DeviceWrapper dw, Map status, Map functions) {
     if (status.code in brightnessFunctions) {
         Map f = functions[status.code]
         Integer value = Math.ceil(remap(status.value, f.min, f.max, 0, 100))
@@ -412,7 +414,7 @@ private static Map getFunctions(DeviceWrapper dw) {
     }
 }
 
-private static String getFunctionCode(Map functions, List codes) {
+private static String getFunctionByCode(Map functions, List codes) {
     return codes.find { c -> functions.containsKey(c) } ?: codes.first()
     // TODO: Include default function values
 }
@@ -456,13 +458,36 @@ private void logsOff() {
     log.info "${device.displayName} debug logging disabled"
 }
 
+private void parseBizData(String bizCode, Map bizData) {
+    String indicator = ' [Offline]'
+    ChildDeviceWrapper dw = getChildDevice("${device.id}-${bizData.devId}")
+    if (logEnable) { log.debug "${device.displayName} ${bizCode} ${bizData}" }
+    switch (bizCode) {
+        case 'nameUpdate':
+            dw.label = bizData.name
+            break
+        case 'online':
+            if (dw.label.endsWith(indicator)) {
+                dw.label -= indicator
+            }
+            break
+        case 'offline':
+            if (!dw.label.endsWith(indicator)) {
+                dw.label += indicator
+            }
+            break
+        case 'bindUser':
+            refresh()
+            break
+    }
+}
+
 private void parseDeviceState(Map d) {
-    List<Map> events = []
     ChildDeviceWrapper dw = getChildDevice("${device.id}-${d.id ?: d.devId}")
-    Map functions = getFunctions(dw)
-    d.status.each { s -> events += parseTuyaFunction(dw, s, functions) }
+    Map deviceFunctions = getFunctions(dw)
+    List events = d.status.collectMany { status -> parseTuyaStatus(dw, status, deviceFunctions) }
+    if (logEnable) { log.debug "${device.displayName} [${dw.displayName}] ${d.status} -> ${events}" }
     if (events) {
-        if (logEnable) { log.debug "${device.displayName} [${dw.displayName}] ${d.status} -> ${events}" }
         dw.parse(events)
     }
 }
