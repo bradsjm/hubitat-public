@@ -21,14 +21,17 @@
  *  SOFTWARE.
 */
 
+import com.hubitat.app.DeviceWrapper
 import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
 import groovy.transform.Field
 import hubitat.helper.HexUtils
 import javax.crypto.Cipher
 import javax.crypto.spec.SecretKeySpec
+import java.util.regex.Matcher
 
 metadata {
-    definition (name: 'Tuya Component RGBW', namespace: 'tuya', author: 'Jonathan Bradshaw') {
+    definition (name: 'Tuya Local RGBW', namespace: 'tuya', author: 'Jonathan Bradshaw') {
         capability 'Actuator'
         capability 'ChangeLevel'
         capability 'ColorControl'
@@ -50,14 +53,14 @@ preferences {
               required: false
 
         input name: 'sendMode',
-              title: 'Command Destination',
+              title: 'Driver Mode',
               type: 'enum',
               required: true,
               defaultValue: 'both',
               options: [
-                'local': 'Send only to device',
-                'cloud': 'Send only to Tuya cloud',
-                'both': 'Send to device and cloud'
+                'local': 'Local only (requires ip)',
+                'both': 'Local first with cloud backup',
+                'cloud': 'Tuya Cloud only'
               ]
 
         input name: 'logEnable',
@@ -73,6 +76,17 @@ preferences {
               defaultValue: true
     }
 }
+
+// Tuya Function Categories
+@Field static final List<String> brightnessFunctions = [ 'bright_value', 'bright_value_v2', 'bright_value_1' ]
+@Field static final List<String> colourFunctions = [ 'colour_data', 'colour_data_v2' ]
+@Field static final List<String> switchFunctions = [ 'switch_led', 'switch_led_1', 'light' ]
+@Field static final List<String> temperatureFunctions = [ 'temp_value', 'temp_value_v2' ]
+@Field static final List<String> workModeFunctions = [ 'work_mode' ]
+
+// Constants
+@Field static final Integer maxMireds = 500 // should this be 370?
+@Field static final Integer minMireds = 153
 
 // Called every 15 seconds to keep talking to device
 void heartbeat() {
@@ -93,6 +107,7 @@ void initialize() {
     String localKey = getDataValue('local_key')
     if (ipAddress && localKey && (sendMode in ['both', 'local'])) {
         schedule('*/15 * * ? * * *', 'heartbeat')
+        heartbeat()
     }
 }
 
@@ -118,46 +133,103 @@ void parse(String message) {
     if (logEnable) { log.debug "${device.displayName} received ${result}" }
     if (result.error) {
         log.error "${device.displayName} received error ${result.error}"
-        return
+    } else if (result.commandByte == 7) { // COMMAND ACK
+        tuyaSendCommand(getDataValue('id'), 'DP_QUERY')
+    } else if (result.commandByte == 8 || result.commandByte == 10 ) { // STATUS or QUERY RESULTS
+        Map json = new JsonSlurper().parseText(result.text)
+        parseDeviceState(json.dps)
     }
 }
 
 // parse commands from parent (cloud)
 void parse(List<Map> description) {
+    if (!(sendMode in ['cloud', 'both'])) { return }
     description.each { d ->
-        if (txtEnable) { log.info d.descriptionText }
-        sendEvent(d)
+        if (device.currentValue(d.name) != d.value) {
+            if (d.descriptionText && txtEnable) { log.info d.descriptionText }
+            sendEvent(d)
+        }
     }
 }
 
 // Component command to refresh device
 void refresh() {
-    parent?.componentRefresh(device)
+    if (!tuyaSendCommand(getDataValue('id'), 'DP_QUERY')) {
+        parent?.componentRefresh(device)
+    }
 }
 
 // Component command to set color
 void setColor(Map colorMap) {
-    parent?.setColor(device, colorMap)
+    Map functions = getFunctions(device)
+    String code = getFunctionByCode(functions, colourFunctions)
+    Map color = functions[code]
+    Map bright = functions['bright_value'] ?: functions['bright_value_v2'] ?: color.v
+    int h = remap(colorMap.hue, 0, 100, color.h.min, color.h.max)
+    int s = remap(colorMap.saturation, 0, 100, color.s.min, color.s.max)
+    int v = remap(colorMap.level, 0, 100, bright.min, bright.max)
+    def (int r, int g, int b) = ColorUtils.hsvToRGB([colormap.hue, colormap.saturation, colormap.level])
+    String rgb = Integer.toHexString(r).padLeft(2, '0') +
+                 Integer.toHexString(g).padLeft(2, '0') +
+                 Integer.toHexString(b).padLeft(2, '0')
+    String hsv = Integer.toHexString(h).padLeft(4, '0') +
+                 Integer.toHexString(s).padLeft(2, '0') +
+                 Integer.toHexString(v).padLeft(2, '0')
+    if (!tuyaSendCommand(getDataValue('id'), [ '5': rgb + hsv ])) {
+        parent?.setColor(device, colorMap)
+    }
 }
 
 // Component command to set color temperature
 void setColorTemperature(BigDecimal kelvin, BigDecimal level = null, BigDecimal duration = null) {
-    parent?.componentSetColorTemperature(device, kelvin, level, duration)
+    Map functions = getFunctions(device)
+    String code = getFunctionByCode(functions, temperatureFunctions)
+    Map temp = functions[code]
+    Integer value = temp.max - Math.ceil(maxMireds - remap(1000000 / kelvin, minMireds, maxMireds, temp.min, temp.max))
+    if (!tuyaSendCommand(getDataValue('id'), [ '5': value ])) {
+        parent?.componentSetColorTemperature(device, kelvin, level, duration)
+    }
+    if (level && device.currentValue('level') != level) {
+        setLevel(level, duration)
+    }
 }
 
 // Component command to set hue
 void setHue(BigDecimal hue) {
-    parent?.componentSetHue(device, hue)
+    setColor([
+        hue: hue,
+        saturation: device.currentValue('saturation'),
+        level: device.currentValue('level') ?: 100
+    ])
 }
 
 // Component command to set level
 void setLevel(BigDecimal level, BigDecimal duration = 0) {
-    parent?.componentSetLevel(device, level, duration)
+    String colorMode = device.currentValue('colorMode')
+    if (colorMode == 'CT') {
+        Map functions = getFunctions(device)
+        String code = getFunctionByCode(functions, brightnessFunctions)
+        Map bright = functions[code]
+        Integer value = Math.ceil(remap(level, 0, 100, bright.min, bright.max))
+        if (!tuyaSendCommand(getDataValue('id'), [ '3': value ])) {
+            parent?.componentSetLevel(device, level, duration)
+        }
+    } else {
+        setColor([
+            hue: device.currentValue('hue'),
+            saturation: device.currentValue('saturation'),
+            level: level
+        ])
+    }
 }
 
 // Component command to set saturation
 void setSaturation(BigDecimal saturation) {
-    parent?.componentSetSaturation(device, saturation)
+    setColor([
+        hue: device.currentValue('hue') ?: 100,
+        saturation: saturation,
+        level: device.currentValue('level') ?: 100
+    ])
 }
 
 // Socket status updates
@@ -171,12 +243,23 @@ void socketStatus(String message) {
 
 // Start gradual level change
 void startLevelChange(String direction) {
-    parent?.startLevelChange(device, direction)
+    doLevelChange(delta: (direction == 'down') ? -10 : 10)
 }
 
 // Stop gradual level change
 void stopLevelChange() {
-    parent?.stopLevelChange()
+    unschedule('doLevelChange')
+}
+
+void doLevelChange(Integer delta) {
+    int newLevel = (device.currentValue('level') as int) + delta
+    if (newLevel < 0) { newLevel = 0 }
+    if (newLevel > 100) { newLevel = 100 }
+    setLevel(newLevel)
+
+    if (newLevel > 0 && newLevel < 100) {
+        runInMillis(1000, 'doLevelChange', delta)
+    }
 }
 
 // Called when the device is removed
@@ -200,14 +283,13 @@ void updated() {
  * which has been adapted from the original for sandboxed Groovy execution.
  */
 private static byte[] copy(byte[] buffer, String source, int from) {
-    return copy(buffer, source.getBytes('UTF-8'), from)
+    return copy(buffer, source.bytes, from)
 }
 
 private static byte[] copy(byte[] buffer, byte[] source, int from) {
     for (int i = 0; i < source.length; i++) {
         buffer[i + from] = source[i]
     }
-
     return buffer
 }
 
@@ -216,7 +298,6 @@ private static byte[] copy(byte[] source, int from, int length) {
     for (int i = 0; i < length; i++) {
         buffer[i] = source[i + from]
     }
-
     return buffer
 }
 
@@ -224,7 +305,6 @@ private static byte[] copy(byte[] buffer, byte[] source, int from, int length) {
     for (int i = 0; i < length; i++) {
         buffer[i + from] = source[i]
     }
-
     return buffer
 }
 
@@ -251,16 +331,10 @@ private static Map tuyaDecode(byte[] buffer, String localKey) {
         return result
     }
 
-    // Get sequence number
     result.sequenceNumber = getUInt32(buffer, 4)
-
-    // Get command byte
-    result.tuyaCommandByte = getUInt32(buffer, 8)
-
-    // Get payload size
+    result.commandByte = getUInt32(buffer, 8)
     result.payloadSize = getUInt32(buffer, 12)
 
-    // Check CRC
     long expectedCrc = getUInt32(buffer, (int) (16 + result.payloadSize - 8))
     long computedCrc = tuyaCrc32(copy(buffer, 0, (int) result.payloadSize + 8))
     if (computedCrc != expectedCrc) {
@@ -279,7 +353,7 @@ private static Map tuyaDecode(byte[] buffer, String localKey) {
     boolean status = false
     if (result.returnCode != 0) {
         payload = copy(buffer, 16, (int) (result.payloadSize - 8))
-    } else if (result.tuyaCommandByte == 8) { // STATUS
+    } else if (result.commandByte == 8) { // STATUS
         status = true
         payload = copy(buffer, 16 + 3, (int) (result.payloadSize - 11))
     } else {
@@ -301,7 +375,6 @@ private static long tuyaCrc32(byte[] buffer) {
     for (byte b : buffer) {
         crc = ((crc >>> 8) & 0xFFFFFFFFL) ^ (tuyaCrc32Table[(int) ((crc ^ b) & 0xff)] & 0xFFFFFFFFL)
     }
-
     return ((crc & 0xFFFFFFFFL) ^ 0xFFFFFFFFL) & 0xFFFFFFFFL // return 0xFFFFFFFFL
 }
 
@@ -353,6 +426,14 @@ private static byte[] tuyaEncode(String command, String input, String localKey, 
     return buffer
 }
 
+private static byte[] fill(byte[] buffer, byte fill, int from, int length) {
+    for (int i = from; i < from + length; i++) {
+        buffer[i] = fill
+    }
+
+    return buffer
+}
+
 private static long getUInt32(byte[] buffer, int start) {
     long result = 0
     for (int i = start; i < start + 4; i++) {
@@ -361,14 +442,6 @@ private static long getUInt32(byte[] buffer, int start) {
     }
 
     return result
-}
-
-private static byte[] fill(byte[] buffer, byte fill, int from, int length) {
-    for (int i = from; i < from + length; i++) {
-        buffer[i] = fill
-    }
-
-    return buffer
 }
 
 private static void putUInt32(byte[] buffer, int start, long value) {
@@ -409,6 +482,115 @@ private static void putUInt32(byte[] buffer, int start, long value) {
     0xBDBDF21C, 0xCABAC28A, 0x53B39330, 0x24B4A3A6, 0xBAD03605, 0xCDD70693, 0x54DE5729, 0x23D967BF, 0xB3667A2E,
     0xC4614AB8, 0x5D681B02, 0x2A6F2B94, 0xB40BBE37, 0xC30C8EA1, 0x5A05DF1B, 0x2D02EF8D ]
 /* End of Tuya Protocol Functions */
+
+private static Map getFunctions(DeviceWrapper device) {
+    return new JsonSlurper().parseText(device.getDataValue('functions'))
+}
+
+private static String getFunctionByCode(Map functions, List codes) {
+    return codes.find { c -> functions.containsKey(c) } ?: codes.first()
+    // TODO: Include default function values
+}
+
+private static BigDecimal remap(BigDecimal oldValue, BigDecimal oldMin, BigDecimal oldMax,
+                                BigDecimal newMin, BigDecimal newMax) {
+    BigDecimal value = oldValue
+    if (value < oldMin) { value = oldMin }
+    if (value > oldMax) { value = oldMax }
+    BigDecimal newValue = ( (value - oldMin) / (oldMax - oldMin) ) * (newMax - newMin) + newMin
+    return newValue.setScale(1, BigDecimal.ROUND_HALF_UP)
+}
+
+private static String translateColor(Integer hue, Integer saturation) {
+    if (saturation < 1) {
+        return 'White'
+    }
+
+    switch (hue * 3.6 as int) {
+        case 0..15: return 'Red'
+        case 16..45: return 'Orange'
+        case 46..75: return 'Yellow'
+        case 76..105: return 'Chartreuse'
+        case 106..135: return 'Green'
+        case 136..165: return 'Spring'
+        case 166..195: return 'Cyan'
+        case 196..225: return 'Azure'
+        case 226..255: return 'Blue'
+        case 256..285: return 'Violet'
+        case 286..315: return 'Magenta'
+        case 316..345: return 'Rose'
+        case 346..360: return 'Red'
+    }
+
+    return ''
+}
+
+private void parseDeviceState(Map dps) {
+    if (logEnable) { log.debug "${device.displayName} parsing dps ${dps}" }
+    Map functions = getFunctions(device)
+
+    String colorMode = device.currentValue('colorMode')
+    List<Map> events = []
+
+    if (dps.containsKey('1')) {
+        String value = dps['1'] ? 'on' : 'off'
+        events << [ name: 'switch', value: value, descriptionText: "switch is ${value}" ]
+    }
+
+    // Determine if we are in RGB or CT mode either explicitly or implicitly
+    if (dps.containsKey('2')) {
+        colorMode = dps['2'] == 'colour' ? 'RGB' : 'CT'
+        events << [ name: 'colorMode', value: colorMode, descriptionText: "color mode is ${colorMode}" ]
+    } else if (dps.containsKey('4')) {
+        colorMode = 'CT'
+        events << [ name: 'colorMode', value: colorMode, descriptionText: "color mode is ${colorMode}" ]
+    } else if (dps.containsKey('5')) {
+        colorMode = 'RGB'
+        events << [ name: 'colorMode', value: colorMode, descriptionText: "color mode is ${colorMode}" ]
+    }
+
+    if (dps.containsKey('3') && colorMode == 'CT') {
+        Map code = functions[getFunctionByCode(functions, brightnessFunctions)]
+        Integer value = Math.floor(remap(dps[3] as Integer, code.min, code.max, 0, 100))
+        events << [ name: 'level', value: value, unit: '%', descriptionText: "level is ${value}%" ]
+    }
+
+    if (dps.containsKey('4')) {
+        Map code = functions[getFunctionByCode(functions, temperatureFunctions)]
+        Integer value = Math.floor(1000000 / remap(code.max - dps['4'] as Integer,
+                                   code.min, code.max, minMireds, maxMireds))
+        events << [ name: 'colorTemperature', value: value, unit: 'K',
+                    descriptionText: "color temperature is ${value}K" ]
+    }
+
+    if (dps.containsKey('5') && colorMode == 'RGB') {
+        String value = dps['5']
+        // first six characters are RGB values which we ignore and use HSV instead
+        Matcher match = value =~ /^.{6}([0-9a-f]{4})([0-9a-f]{2})([0-9a-f]{2})$/
+        if (match.find()) {
+            Map code = functions[getFunctionByCode(functions, colourFunctions)]
+            Map bright = functions[getFunctionByCode(functions, brightnessFunctions)]
+            int h = Integer.parseInt(match.group(1), 16)
+            int s = Integer.parseInt(match.group(2), 16)
+            int v = Integer.parseInt(match.group(3), 16)
+            Integer hue = Math.floor(remap(h, code.h.min, code.h.max, 0, 100))
+            Integer saturation = Math.floor(remap(s, code.s.min, code.s.max, 0, 100))
+            Integer level = Math.floor(remap(v, bright.min, bright.max, 0, 100))
+            String colorName = translateColor(hue, saturation)
+            events << [ name: 'hue', value: hue, descriptionText: "hue is ${hue}%" ]
+            events << [ name: 'colorName', value: colorName, descriptionText: "color name is ${colorName}%" ]
+            events << [ name: 'saturation', value: saturation, descriptionText: "saturation is ${saturation}%" ]
+            events << [ name: 'level', value: level, unit: '%', descriptionText: "level is ${level}%" ]
+        }
+    }
+
+    events.each { e ->
+        if (device.currentValue(e.name) != e.value) {
+            if (e.descriptionText && txtEnable) { log.info e.descriptionText }
+            sendEvent(e)
+        }
+    }
+}
 
 private Boolean tuyaSendCommand(String devId, String command = 'CONTROL') {
     return tuyaSendCommand(devId, null, command)

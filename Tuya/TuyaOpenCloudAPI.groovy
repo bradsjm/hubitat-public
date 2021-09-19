@@ -32,6 +32,7 @@ import javax.crypto.spec.SecretKeySpec
 import javax.crypto.Cipher
 import javax.crypto.Mac
 import hubitat.helper.HexUtils
+import hubitat.helper.NetworkUtils
 import hubitat.scheduling.AsyncResponse
 
 metadata {
@@ -153,7 +154,9 @@ void componentSetColorTemperature(DeviceWrapper dw, BigDecimal kelvin,
     Map temp = functions[code]
     Integer value = temp.max - Math.ceil(maxMireds - remap(1000000 / kelvin, minMireds, maxMireds, temp.min, temp.max))
     tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': value ])
-    componentSetLevel(dw, level ?: dw.currentValue('level'), duration)
+    if (level && dw.currentValue('level') != level) {
+        componentSetLevel(dw, level, duration)
+    }
 }
 
 // Component command to set effect
@@ -238,7 +241,6 @@ void initialize() {
     state.endPoint = 'https://openapi.tuyaus.com' // default US endpoint
     state.tokenInfo = [ access_token: '', expire: now() ] // initialize token
     state.uuid = state?.uuid ?: UUID.randomUUID().toString()
-
     tuyaAuthenticate()
 }
 
@@ -315,10 +317,9 @@ private static List<Map> parseTuyaStatus(DeviceWrapper dw, Map status, Map funct
     }
 
     if (status.code in colourFunctions) {
-        JsonSlurper parser = new JsonSlurper()
         Map code = functions[status.code]
-        Map bright = functions['bright_value'] ?: functions['bright_value_v2'] ?: code.v
-        Map value = jsonCache.computeIfAbsent(status.value) { k -> parser.parseText(k) }
+        Map bright = getFunctionByCode(functions, brightnessFunctions) ?: code.v
+        Map value = jsonCache.computeIfAbsent(status.value) { k -> new JsonSlurper().parseText(k) }
         Integer hue = Math.floor(remap(value.h, code.h.min, code.h.max, 0, 100))
         Integer saturation = Math.floor(remap(value.s, code.s.min, code.s.max, 0, 100))
         Integer level = Math.floor(remap(value.v, bright.min, bright.max, 0, 100))
