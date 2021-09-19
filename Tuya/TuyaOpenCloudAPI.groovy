@@ -310,7 +310,7 @@ void removeDevices() {
 private static List<Map> parseTuyaStatus(DeviceWrapper dw, Map status, Map functions) {
     if (status.code in brightnessFunctions) {
         Map f = functions[status.code]
-        Integer value = Math.ceil(remap(status.value, f.min, f.max, 0, 100))
+        Integer value = Math.floor(remap(status.value, f.min, f.max, 0, 100))
         return [ [ name: 'level', value: value, unit: '%', descriptionText: "level is ${value}%" ] ]
     }
 
@@ -319,9 +319,9 @@ private static List<Map> parseTuyaStatus(DeviceWrapper dw, Map status, Map funct
         Map code = functions[status.code]
         Map bright = functions['bright_value'] ?: functions['bright_value_v2'] ?: code.v
         Map value = jsonCache.computeIfAbsent(status.value) { k -> parser.parseText(k) }
-        Integer hue = Math.ceil(remap(value.h, code.h.min, code.h.max, 0, 100))
-        Integer saturation = Math.ceil(remap(value.s, code.s.min, code.s.max, 0, 100))
-        Integer level = Math.ceil(remap(value.v, bright.min, bright.max, 0, 100))
+        Integer hue = Math.floor(remap(value.h, code.h.min, code.h.max, 0, 100))
+        Integer saturation = Math.floor(remap(value.s, code.s.min, code.s.max, 0, 100))
+        Integer level = Math.floor(remap(value.v, bright.min, bright.max, 0, 100))
         String colorName = translateColor(hue, saturation)
         return [
             [ name: 'hue', value: hue, descriptionText: "hue is ${hue}" ],
@@ -338,7 +338,7 @@ private static List<Map> parseTuyaStatus(DeviceWrapper dw, Map status, Map funct
 
     if (status.code in temperatureFunctions) {
         Map code = functions[status.code]
-        Integer value = Math.ceil(1000000 / remap(code.max - status.value, code.min, code.max, minMireds, maxMireds))
+        Integer value = Math.floor(1000000 / remap(code.max - status.value, code.min, code.max, minMireds, maxMireds))
         return [ [ name: 'colorTemperature', value: value, unit: 'K', descriptionText: "color temperature is ${value}K" ] ]
     }
 
