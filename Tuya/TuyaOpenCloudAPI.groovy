@@ -467,11 +467,13 @@ private void parseBizData(String bizCode, Map bizData) {
             dw.label = bizData.name
             break
         case 'online':
+            dw.updateDataValue('online', 'true')
             if (dw.label.endsWith(indicator)) {
                 dw.label -= indicator
             }
             break
         case 'offline':
+            dw.updateDataValue('online', 'false')
             if (!dw.label.endsWith(indicator)) {
                 dw.label += indicator
             }
