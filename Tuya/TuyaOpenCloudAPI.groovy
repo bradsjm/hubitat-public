@@ -421,7 +421,10 @@ private static String getFunctionByCode(Map functions, List codes) {
 
 private static BigDecimal remap(BigDecimal oldValue, BigDecimal oldMin, BigDecimal oldMax,
                                 BigDecimal newMin, BigDecimal newMax) {
-    BigDecimal newValue = ( (oldValue - oldMin) / (oldMax - oldMin) ) * (newMax - newMin) + newMin
+    BigDecimal value = oldValue
+    if (value < oldMin) { value = oldMin }
+    if (value > oldMax) { value = oldMax }
+    BigDecimal newValue = ( (value - oldMin) / (oldMax - oldMin) ) * (newMax - newMin) + newMin
     return newValue.setScale(1, BigDecimal.ROUND_HALF_UP)
 }
 
