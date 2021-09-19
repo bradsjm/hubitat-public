@@ -31,7 +31,7 @@ import javax.crypto.spec.SecretKeySpec
 import java.util.regex.Matcher
 
 metadata {
-    definition (name: 'Tuya Local RGBW', namespace: 'tuya', author: 'Jonathan Bradshaw') {
+    definition (name: 'Tuya Generic RGBW Light', namespace: 'tuya', author: 'Jonathan Bradshaw') {
         capability 'Actuator'
         capability 'ChangeLevel'
         capability 'ColorControl'
@@ -53,14 +53,14 @@ preferences {
               required: false
 
         input name: 'sendMode',
-              title: 'Driver Mode',
+              title: 'Communications Mode',
               type: 'enum',
               required: true,
               defaultValue: 'both',
               options: [
-                'local': 'Local only (requires ip)',
-                'both': 'Local first with cloud backup',
-                'cloud': 'Tuya Cloud only'
+                'local': 'Local Preferred (requires ip)',
+                'both': 'Local with Cloud as backup',
+                'cloud': 'Cloud only'
               ]
 
         input name: 'logEnable',
@@ -143,7 +143,8 @@ void parse(String message) {
 
 // parse commands from parent (cloud)
 void parse(List<Map> description) {
-    if (!(sendMode in ['cloud', 'both'])) { return }
+    if (ipAddress && sendMode == 'local') { return }
+    if (logEnable) { log.debug description }
     description.each { d ->
         if (device.currentValue(d.name) != d.value) {
             if (d.descriptionText && txtEnable) { log.info d.descriptionText }
