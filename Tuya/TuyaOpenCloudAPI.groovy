@@ -28,6 +28,7 @@ import groovy.json.JsonSlurper
 import groovy.transform.Field
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
+import java.util.Random
 import javax.crypto.spec.SecretKeySpec
 import javax.crypto.Cipher
 import javax.crypto.Mac
@@ -42,7 +43,8 @@ metadata {
 
         command 'removeDevices'
 
-        attribute "deviceCount", "Integer"
+        attribute 'deviceCount', 'Integer'
+        attribute 'connected', 'Boolean'
     }
 
     preferences {
@@ -93,11 +95,13 @@ metadata {
 }
 
 // Tuya Function Categories
-@Field static final List<String> brightnessFunctions = [ 'bright_value', 'bright_value_v2', 'bright_value_1' ]
-@Field static final List<String> colourFunctions = [ 'colour_data', 'colour_data_v2' ]
-@Field static final List<String> switchFunctions = [ 'switch_led', 'switch_led_1', 'light' ]
-@Field static final List<String> temperatureFunctions = [ 'temp_value', 'temp_value_v2' ]
-@Field static final List<String> workModeFunctions = [ 'work_mode' ]
+@Field static final Map<String, List<String>> tuyaFunctions = [
+    'brightness': [ 'bright_value', 'bright_value_v2', 'bright_value_1' ],
+    'colour': [ 'colour_data', 'colour_data_v2' ],
+    'switch': [ 'switch_led', 'switch_led_1', 'light' ],
+    'temperature': [ 'temp_value', 'temp_value_v2' ],
+    'workMode': [ 'work_mode' ]
+]
 
 // Constants
 @Field static final Integer maxMireds = 500 // should this be 370?
@@ -106,20 +110,23 @@ metadata {
 // Jason Parsing Cache
 @Field static final ConcurrentHashMap<String, Map> jsonCache = new ConcurrentHashMap<>()
 
+// Random number generator
+@Field static final Random random = new Random()
+
 /**
  *  Hubitat Driver Event Handlers
  */
 // Component command to turn on device
 void componentOn(DeviceWrapper dw) {
     Map functions = getFunctions(dw)
-    String code = getFunctionByCode(functions, switchFunctions)
+    String code = getFunctionByCode(functions, tuyaFunctions.switch)
     tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': true ])
 }
 
 // Component command to turn off device
 void componentOff(DeviceWrapper dw) {
     Map functions = getFunctions(dw)
-    String code = getFunctionByCode(functions, switchFunctions)
+    String code = getFunctionByCode(functions, tuyaFunctions.switch)
     tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': false ])
 }
 
@@ -134,7 +141,7 @@ void componentRefresh(DeviceWrapper dw) {
 // Component command to set color
 void componentSetColor(DeviceWrapper dw, Map colorMap) {
     Map functions = getFunctions(dw)
-    String code = getFunctionByCode(functions, colourFunctions)
+    String code = getFunctionByCode(functions, tuyaFunctions.colour)
     Map color = functions[code]
     // An oddity and workaround for mapping brightness values
     Map bright = functions['bright_value'] ?: functions['bright_value_v2'] ?: color.v
@@ -150,7 +157,7 @@ void componentSetColor(DeviceWrapper dw, Map colorMap) {
 void componentSetColorTemperature(DeviceWrapper dw, BigDecimal kelvin,
                                   BigDecimal level = null, BigDecimal duration = null) {
     Map functions = getFunctions(dw)
-    String code = getFunctionByCode(functions, temperatureFunctions)
+    String code = getFunctionByCode(functions, tuyaFunctions.temperature)
     Map temp = functions[code]
     Integer value = temp.max - Math.ceil(maxMireds - remap(1000000 / kelvin, minMireds, maxMireds, temp.min, temp.max))
     tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': value ])
@@ -179,7 +186,7 @@ void componentSetLevel(DeviceWrapper dw, BigDecimal level, BigDecimal duration =
     String colorMode = dw.currentValue('colorMode') ?: 'CT'
     if (colorMode == 'CT') {
         Map functions = getFunctions(dw)
-        String code = getFunctionByCode(functions, brightnessFunctions)
+        String code = getFunctionByCode(functions, tuyaFunctions.brightness)
         Map bright = functions[code]
         Integer value = Math.ceil(remap(level, 0, 100, bright.min, bright.max))
         tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': value ])
@@ -241,6 +248,7 @@ void initialize() {
     state.endPoint = 'https://openapi.tuyaus.com' // default US endpoint
     state.tokenInfo = [ access_token: '', expire: now() ] // initialize token
     state.uuid = state?.uuid ?: UUID.randomUUID().toString()
+
     tuyaAuthenticate()
 }
 
@@ -289,7 +297,8 @@ void mqttClientStatus(String status) {
         case 'Error: Connection lost':
         case 'Error: send error':
             log.error "${device.displayName} MQTT connection error: " + status
-            runIn(30, 'tuyaGetHubConfig')
+            sendEvent([ name: 'connected', value: false, descriptionText: 'connected is false'])
+            runIn(15 + random.nextInt(45), 'tuyaGetHubConfig')
             break
     }
 }
@@ -310,18 +319,18 @@ void removeDevices() {
  *  Driver Capabilities Implementation
  */
 private static List<Map> parseTuyaStatus(DeviceWrapper dw, Map status, Map functions) {
-    if (status.code in brightnessFunctions) {
-        Map f = functions[status.code]
-        Integer value = Math.floor(remap(status.value, f.min, f.max, 0, 100))
+    if (status.code in tuyaFunctions.brightness) {
+        Map bright = functions[status.code]
+        Integer value = Math.floor(remap(status.value, bright.min, bright.max, 0, 100))
         return [ [ name: 'level', value: value, unit: '%', descriptionText: "level is ${value}%" ] ]
     }
 
-    if (status.code in colourFunctions) {
-        Map code = functions[status.code]
-        Map bright = getFunctionByCode(functions, brightnessFunctions) ?: code.v
+    if (status.code in tuyaFunctions.colour) {
+        Map colour = functions[status.code]
+        Map bright = functions[getFunctionByCode(functions, tuyaFunctions.brightness)] ?: colour.v
         Map value = jsonCache.computeIfAbsent(status.value) { k -> new JsonSlurper().parseText(k) }
-        Integer hue = Math.floor(remap(value.h, code.h.min, code.h.max, 0, 100))
-        Integer saturation = Math.floor(remap(value.s, code.s.min, code.s.max, 0, 100))
+        Integer hue = Math.floor(remap(value.h, colour.h.min, colour.h.max, 0, 100))
+        Integer saturation = Math.floor(remap(value.s, colour.s.min, colour.s.max, 0, 100))
         Integer level = Math.floor(remap(value.v, bright.min, bright.max, 0, 100))
         String colorName = translateColor(hue, saturation)
         return [
@@ -332,18 +341,19 @@ private static List<Map> parseTuyaStatus(DeviceWrapper dw, Map status, Map funct
         ]
     }
 
-    if (status.code in switchFunctions) {
+    if (status.code in tuyaFunctions.switch) {
         String value = status.value ? 'on' : 'off'
         return [ [ name: 'switch', value: value, descriptionText: "switch is ${value}" ] ]
     }
 
-    if (status.code in temperatureFunctions) {
-        Map code = functions[status.code]
-        Integer value = Math.floor(1000000 / remap(code.max - status.value, code.min, code.max, minMireds, maxMireds))
+    if (status.code in tuyaFunctions.temperature) {
+        Map temperature = functions[status.code]
+        Integer value = Math.floor(1000000 / remap(temperature.max - status.value,
+                        temperature.min, temperature.max, minMireds, maxMireds))
         return [ [ name: 'colorTemperature', value: value, unit: 'K', descriptionText: "color temperature is ${value}K" ] ]
     }
 
-    if (status.code in workModeFunctions) {
+    if (status.code in tuyaFunctions.workMode) {
         switch (status.value) {
             case 'white':
             case 'light_white':
@@ -522,6 +532,7 @@ private void tuyaAuthenticate() {
 
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
 private void tuyaAuthenticateResponse(AsyncResponse response, Map data) {
+    sendEvent([ name: 'connected', value: false, descriptionText: 'connected is false'])
     if (!tuyaCheckResponse(response)) { return }
 
     Map result = response.json.result
@@ -603,6 +614,7 @@ private void tuyaGetDeviceFunctionsResponse(AsyncResponse response, Map data) {
 
     // Process status updates
     data.devices.each { d -> parseDeviceState(d) }
+    sendEvent([ name: 'connected', value: true, descriptionText: 'connected is true'])
 }
 
 private void tuyaGetState(String deviceID) {
@@ -746,7 +758,7 @@ private boolean tuyaCheckResponse(AsyncResponse response) {
 }
 
 private String tuyaGetSignature(String accessToken, long timestamp, String stringToSign) {
-    String message = access_id + accessToken + "${timestamp}" + stringToSign
+    String message = access_id + accessToken + timestamp.toString() + stringToSign
     Mac sha256HMAC = Mac.getInstance('HmacSHA256')
     sha256HMAC.init(new SecretKeySpec(access_key.bytes, 'HmacSHA256'))
     return HexUtils.byteArrayToHexString(sha256HMAC.doFinal(message.bytes))

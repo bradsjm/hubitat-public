@@ -70,9 +70,9 @@ preferences {
               required: true,
               defaultValue: 'both',
               options: [
-                'local': 'Local Preferred (requires ip)',
-                'both': 'Local with Cloud as backup',
-                'cloud': 'Cloud only'
+                'cloud': 'Cloud (requires internet)',
+                'local': 'Local (requires ip)',
+                'both':  'Optimized (local with cloud)'
               ]
 
         input name: 'logEnable',
@@ -105,15 +105,15 @@ preferences {
 // Random number generator
 @Field static final Random random = new Random()
 
+/**
+ *  Hubitat Driver Event Handlers
+ */
 // Called every 15 - 20 seconds to keep device connection open
 void heartbeat() {
     runIn(15 + random.nextInt(5), 'heartbeat')
     tuyaSendCommand(getDataValue('id'), 'HEART_BEAT')
 }
 
-/**
- *  Hubitat Driver Event Handlers
- */
 // Called when the device is first created
 void installed() {
     log.info "${device.displayName} driver installed"
@@ -123,7 +123,7 @@ void installed() {
 void initialize() {
     unschedule('heartbeat')
     String localKey = getDataValue('local_key')
-    if (ipAddress && localKey && (sendMode in ['both', 'local'])) {
+    if (ipAddress && localKey && sendMode == 'local') {
         heartbeat()
     }
 }
@@ -150,7 +150,7 @@ void parse(String message) {
     if (logEnable) { log.debug "${device.displayName} received ${result}" }
     if (result.error) {
         log.error "${device.displayName} received error ${result.error}"
-    } else if (result.commandByte == 7) { // COMMAND ACK
+    } else if (result.commandByte == 7 && sendMode == 'local') { // COMMAND ACK
         tuyaSendCommand(getDataValue('id'), 'DP_QUERY')
     } else if (result.commandByte == 8 || result.commandByte == 10 ) { // STATUS or QUERY RESULTS
         Map json = new JsonSlurper().parseText(result.text)
@@ -298,7 +298,6 @@ void updated() {
     if (logEnable) { runIn(1800, 'logsOff') }
 }
 
-/* groovylint-disable-next-line NglParseError */
 #include tuya.tuyaProtocols
 
 private static Map getFunctions(DeviceWrapper device) {
