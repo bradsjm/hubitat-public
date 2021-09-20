@@ -662,7 +662,7 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
     if (index == 1) { lastHeard[device.id] = now() }
 
     // Iterate the json payload content
-    Map json = new JsonSlurper().parseText(k)
+    Map json = new JsonSlurper().parseText(payload)
     json.each { kv ->
         switch (kv.key) {
             case 'POWER':
