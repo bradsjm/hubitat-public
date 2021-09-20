@@ -25,6 +25,7 @@ import com.hubitat.app.DeviceWrapper
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import groovy.transform.Field
+import hubitat.helper.ColorUtils
 import hubitat.helper.HexUtils
 import javax.crypto.Cipher
 import javax.crypto.spec.SecretKeySpec
@@ -193,14 +194,14 @@ void setColor(Map colorMap) {
     int h = remap(colorMap.hue, 0, 100, color.h.min, color.h.max)
     int s = remap(colorMap.saturation, 0, 100, color.s.min, color.s.max)
     int v = remap(colorMap.level, 0, 100, bright.min, bright.max)
-    def (int r, int g, int b) = ColorUtils.hsvToRGB([colormap.hue, colormap.saturation, colormap.level])
+    def (int r, int g, int b) = ColorUtils.hsvToRGB([colorMap.hue, colorMap.saturation, colorMap.level])
     String rgb = Integer.toHexString(r).padLeft(2, '0') +
                  Integer.toHexString(g).padLeft(2, '0') +
                  Integer.toHexString(b).padLeft(2, '0')
     String hsv = Integer.toHexString(h).padLeft(4, '0') +
                  Integer.toHexString(s).padLeft(2, '0') +
                  Integer.toHexString(v).padLeft(2, '0')
-    if (!tuyaSendCommand(getDataValue('id'), [ '5': rgb + hsv ])) {
+    if (!tuyaSendCommand(getDataValue('id'), [ '5': rgb + hsv, '2': 'colour' ])) {
         parent?.setColor(device, colorMap)
     }else {
         log.info "Setting ${device} color to ${colorMap}"

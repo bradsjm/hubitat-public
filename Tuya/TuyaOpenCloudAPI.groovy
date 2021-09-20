@@ -157,7 +157,10 @@ void componentSetColor(DeviceWrapper dw, Map colorMap) {
         v: remap(colorMap.level, 0, 100, bright.min, bright.max)
     ]
     log.info "Setting ${dw} color to ${colormap}"
-    tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': value ])
+    tuyaSendDeviceCommands(dw.getDataValue('id'),
+        [ 'code': code, 'value': value ],
+        [ 'code': 'work_mode', 'value': 'colour']
+    )
 }
 
 // Component command to set color temperature
@@ -168,7 +171,10 @@ void componentSetColorTemperature(DeviceWrapper dw, BigDecimal kelvin,
     Map temp = functions[code]
     Integer value = temp.max - Math.ceil(maxMireds - remap(1000000 / kelvin, minMireds, maxMireds, temp.min, temp.max))
     log.info "Setting ${dw} color temperature to ${kelvin}K"
-    tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': value ])
+    tuyaSendDeviceCommands(dw.getDataValue('id'),
+        [ 'code': code, 'value': value ],
+        [ 'code': 'work_mode', 'value': 'white']
+    )
     if (level && dw.currentValue('level') != level) {
         componentSetLevel(dw, level, duration)
     }
