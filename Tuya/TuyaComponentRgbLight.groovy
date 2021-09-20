@@ -132,6 +132,8 @@ void initialize() {
 void on() {
     if (!tuyaSendCommand(getDataValue('id'), [ '1': true ])) {
         parent?.componentOn(device)
+    } else {
+        log.info "Turning ${device} on"
     }
 }
 
@@ -139,6 +141,8 @@ void on() {
 void off() {
     if (!tuyaSendCommand(getDataValue('id'), [ '1': false ])) {
         parent?.componentOff(device)
+    } else {
+        log.info "Turning ${device} off"
     }
 }
 
@@ -174,7 +178,10 @@ void parse(List<Map> description) {
 void refresh() {
     if (!tuyaSendCommand(getDataValue('id'), 'DP_QUERY')) {
         parent?.componentRefresh(device)
+    } else {
+        log.info "Refreshing ${device}"
     }
+
 }
 
 // Component command to set color
@@ -195,12 +202,15 @@ void setColor(Map colorMap) {
                  Integer.toHexString(v).padLeft(2, '0')
     if (!tuyaSendCommand(getDataValue('id'), [ '5': rgb + hsv ])) {
         parent?.setColor(device, colorMap)
+    }else {
+        log.info "Setting ${device} color to ${colorMap}"
     }
 }
 
 // Send custom Dps command
 void sendCustomDps(BigDecimal dps, String value) {
     tuyaSendCommand(getDataValue('id'), [ (dps): value ])
+    log.info "Sending DPS ${dps} command ${value}"
 }
 
 // Component command to set color temperature
@@ -211,8 +221,11 @@ void setColorTemperature(BigDecimal kelvin, BigDecimal level = null, BigDecimal 
     Integer value = temp.max - Math.ceil(remap(1000000 / kelvin, minMireds, maxMireds, temp.min, temp.max))
     if (!tuyaSendCommand(getDataValue('id'), [ '4': value ])) {
         parent?.componentSetColorTemperature(device, kelvin, level, duration)
-    } else if (level && device.currentValue('level') != level) {
-        setLevel(level, duration)
+    } else {
+        log.info "Setting ${device} color temperature to ${kelvin}K"
+        if (level && device.currentValue('level') != level) {
+            setLevel(level, duration)
+        }
     }
 }
 
@@ -235,6 +248,8 @@ void setLevel(BigDecimal level, BigDecimal duration = 0) {
         Integer value = Math.ceil(remap(level, 0, 100, bright.min, bright.max))
         if (!tuyaSendCommand(getDataValue('id'), [ '3': value ])) {
             parent?.componentSetLevel(device, level, duration)
+        } else {
+            log.info "Setting ${device} level to ${level}%"
         }
     } else {
         setColor([
@@ -265,11 +280,13 @@ void socketStatus(String message) {
 
 // Start gradual level change
 void startLevelChange(String direction) {
+    log.info "Starting level change ${direction} for ${device}"
     doLevelChange(delta: (direction == 'down') ? -10 : 10)
 }
 
 // Stop gradual level change
 void stopLevelChange() {
+    log.info "Stopping level change for ${device}"
     unschedule('doLevelChange')
 }
 

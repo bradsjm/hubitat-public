@@ -659,10 +659,10 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
 
     // Get the configuration from the device
     String index = getDeviceConfig(device)['index']
-    Map json = jsonCache.computeIfAbsent(payload) { k -> new JsonSlurper().parseText(k) }
     if (index == 1) { lastHeard[device.id] = now() }
 
     // Iterate the json payload content
+    Map json = new JsonSlurper().parseText(k)
     json.each { kv ->
         switch (kv.key) {
             case 'POWER':
