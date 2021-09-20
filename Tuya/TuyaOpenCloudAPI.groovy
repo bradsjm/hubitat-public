@@ -57,6 +57,16 @@ metadata {
                   title: 'Tuya API Access/Client Secret',
                   required: true
 
+            input name: 'appSchema',
+                  title: 'Tuya Application',
+                  type: 'enum',
+                  required: true,
+                  defaultValue: 'tuyaSmart',
+                  options: [
+                    'tuyaSmart': 'Tuya Smart Life App',
+                    'smartlife': 'Smart Life App'
+                ]
+
             input name: 'username',
                   type: 'text',
                   title: 'Tuya Application Login',
@@ -72,16 +82,6 @@ metadata {
                   title: 'Tuya Application Country Code',
                   required: true,
                   defaultValue: 1
-
-            input name: 'appSchema',
-                  title: 'Tuya Application',
-                  type: 'enum',
-                  required: true,
-                  defaultValue: 'tuyaSmart',
-                  options: [
-                    'tuyaSmart': 'Tuya Smart Life App',
-                    'smartlife': 'Smart Life App'
-                ]
 
             input name: 'logEnable',
                   type: 'bool',
