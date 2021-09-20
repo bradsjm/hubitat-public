@@ -110,6 +110,9 @@ metadata {
 // Jason Parsing Cache
 @Field static final ConcurrentHashMap<String, Map> jsonCache = new ConcurrentHashMap<>()
 
+// Track for dimming operations
+@Field static final ConcurrentHashMap<String, Integer> levelChanges = new ConcurrentHashMap<>()
+
 // Random number generator
 @Field static final Random random = new Random()
 
@@ -120,6 +123,7 @@ metadata {
 void componentOn(DeviceWrapper dw) {
     Map functions = getFunctions(dw)
     String code = getFunctionByCode(functions, tuyaFunctions.switch)
+    log.info "Turning ${dw} on"
     tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': true ])
 }
 
@@ -127,6 +131,7 @@ void componentOn(DeviceWrapper dw) {
 void componentOff(DeviceWrapper dw) {
     Map functions = getFunctions(dw)
     String code = getFunctionByCode(functions, tuyaFunctions.switch)
+    log.info "Turning ${dw} off"
     tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': false ])
 }
 
@@ -134,6 +139,7 @@ void componentOff(DeviceWrapper dw) {
 void componentRefresh(DeviceWrapper dw) {
     String id = dw.getDataValue('id')
     if (id && dw.getDataValue('functions')) {
+        log.info "Refreshing ${dw}"
         tuyaGetState(id)
     }
 }
@@ -150,6 +156,7 @@ void componentSetColor(DeviceWrapper dw, Map colorMap) {
         s: remap(colorMap.saturation, 0, 100, color.s.min, color.s.max),
         v: remap(colorMap.level, 0, 100, bright.min, bright.max)
     ]
+    log.info "Setting ${dw} color to ${colormap}"
     tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': value ])
 }
 
@@ -160,6 +167,7 @@ void componentSetColorTemperature(DeviceWrapper dw, BigDecimal kelvin,
     String code = getFunctionByCode(functions, tuyaFunctions.temperature)
     Map temp = functions[code]
     Integer value = temp.max - Math.ceil(maxMireds - remap(1000000 / kelvin, minMireds, maxMireds, temp.min, temp.max))
+    log.info "Setting ${dw} color temperature to ${kelvin}K"
     tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': value ])
     if (level && dw.currentValue('level') != level) {
         componentSetLevel(dw, level, duration)
@@ -189,6 +197,7 @@ void componentSetLevel(DeviceWrapper dw, BigDecimal level, BigDecimal duration =
         String code = getFunctionByCode(functions, tuyaFunctions.brightness)
         Map bright = functions[code]
         Integer value = Math.ceil(remap(level, 0, 100, bright.min, bright.max))
+        log.info "Setting ${dw} level to ${level}%"
         tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': value ])
     } else {
         componentSetColor(dw, [
@@ -218,24 +227,32 @@ void componentSetSaturation(DeviceWrapper dw, BigDecimal saturation) {
 
 // Component command to start level change (up or down)
 void componentStartLevelChange(DeviceWrapper dw, String direction) {
-    doLevelChange([ dni: dw.deviceNetworkId, delta: (direction == 'down') ? -10 : 10 ])
+    levelChanges[dw.deviceNetworkId] = (direction == 'down') ? -10 : 10
+    log.info "Starting level change ${direction} for ${dw}"
+    runInMillis(1000, 'doLevelChange')
 }
 
 // Component command to stop level change
 void componentStopLevelChange(DeviceWrapper dw) {
-    unschedule('doLevelChange')
+    log.info "Stopping level change for ${dw}"
+    levelChanges.remove(dw.deviceNetworkId)
 }
 
-void doLevelChange(Map data) {
-    // TODO: Handle multiple light changes
-    DeviceWrapper dw = getChildDevice(data.dni)
-    int newLevel = (dw.currentValue('level') as int) + data.delta
-    if (newLevel < 0) { newLevel = 0 }
-    if (newLevel > 100) { newLevel = 100 }
-    componentSetLevel(dw, newLevel)
+// Utility function to handle multiple level changes
+void doLevelChange() {
+    levelChanges.each { kv ->
+        ChildDeviceWrapper dw = getChildDevice(kv.key)
+        int newLevel = (dw.currentValue('level') as int) + kv.value
+        if (newLevel < 0) { newLevel = 0 }
+        if (newLevel > 100) { newLevel = 100 }
+        componentSetLevel(dw, newLevel)
+        if (newLevel <= 0 && newLevel >= 100) {
+            componentStopLevelChange(device)
+        }
+    }
 
-    if (newLevel > 0 && newLevel < 100) {
-        runInMillis(1000, 'doLevelChange', [ data: data ])
+    if (!levelChanges.isEmpty()) {
+        runInMillis(1000, 'doLevelChange')
     }
 }
 

@@ -23,17 +23,20 @@
 import com.hubitat.app.ChildDeviceWrapper
 import com.hubitat.app.DeviceWrapper
 import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
 import groovy.transform.Field
 import hubitat.helper.ColorUtils
+import java.util.concurrent.ConcurrentHashMap
 
 metadata {
-    definition (name: 'MQTT - Tasmota Discovery', namespace: 'nrgup', author: 'Jonathan Bradshaw') {
+    definition (name: 'Tasmota IoT Platform', namespace: 'nrgup', author: 'Jonathan Bradshaw') {
         capability 'Initialize'
-        capability 'PresenceSensor'
         capability 'Refresh'
-        capability 'Switch'
+
+        attribute 'connected', 'Boolean'
 
         command 'disconnect'
+        command 'removeDevices'
         command 'sendCommand', [
             [
                 name: 'command*',
@@ -41,7 +44,6 @@ metadata {
                 description: 'Sent to all devices'
             ]
         ]
-        command 'removeDevices'
     }
 
     preferences {
@@ -78,12 +80,6 @@ metadata {
                   required: false,
                   defaultValue: false
 
-            input name: 'restoreState',
-                  type: 'bool',
-                  title: 'Attempt to restore state when device comes online',
-                  required: false,
-                  defaultValue: false
-
             input name: 'telePeriod',
                   type: 'number',
                   title: 'Interval for telemetry updates in seconds (0 to disable)',
@@ -117,13 +113,13 @@ metadata {
 }
 
 // List of topic to child device mappings for lookup for received messages
-@Field static final Map<String, Set> subscriptions = [:]
-// Cache of device configuration data for performance
-@Field static final Map<Integer, Map> configCache = [:]
+@Field static final ConcurrentHashMap<String, Set> subscriptions = new ConcurrentHashMap<>()
 // Track of last heard from time for each device
-@Field static final Map<Integer, Long> lastHeard = [:]
+@Field static final ConcurrentHashMap<Integer, Long> lastHeard = new ConcurrentHashMap<>()
 // Track for dimming operations
-@Field static final Map<String, Integer> levelChanges = [:]
+@Field static final ConcurrentHashMap<String, Integer> levelChanges = new ConcurrentHashMap<>()
+// Jason Parsing Cache
+@Field static final ConcurrentHashMap<String, Map> jsonCache = new ConcurrentHashMap<>()
 
 /**
  *  Hubitat Driver Event Handlers
@@ -206,27 +202,8 @@ void sendCommand(String command) {
 }
 
 /**
- *  Switch Capability
- */
-
-// Turn on all devices
-void on() {
-    childDevices.findAll { device -> device.hasCommand('on') }.each { device ->
-        componentOn(device)
-    }
-}
-
-// Turn off all devices
-void off() {
-    childDevices.findAll { device -> device.hasCommand('off') }.each { device ->
-        componentOff(device)
-    }
-}
-
-/**
  *  Component child device callbacks
  */
-
 void componentOn(DeviceWrapper device) {
     Map config = getDeviceConfig(device)
     String topic = getCommandTopic(config) + 'Backlog'
@@ -258,7 +235,7 @@ void componentSetLevel(DeviceWrapper device, BigDecimal level, BigDecimal durati
 void componentStartLevelChange(DeviceWrapper device, String direction) {
     if (settings.changeLevelStep && settings.changeLevelEvery) {
         int delta = limit((direction == 'down') ? -settings.changeLevelStep : settings.changeLevelStep, -10, 10)
-        log.info "${device.displayName} Starting level change ${direction}"
+        log.info "Starting level change ${direction} for ${device}"
         levelChanges[device.deviceNetworkId] = delta
         int delay = limit(settings.changeLevelEvery, 100, 1000)
         runInMillis(delay, 'doLevelChange')
@@ -266,7 +243,7 @@ void componentStartLevelChange(DeviceWrapper device, String direction) {
 }
 
 void componentStopLevelChange(DeviceWrapper device) {
-    log.info "${device.displayName} Stopping level change"
+    log.info "Stopping level change for ${device}"
     levelChanges.remove(device.deviceNetworkId)
 }
 
@@ -348,7 +325,7 @@ void mqttClientStatus(String status) {
             log.info "MQTT ${status}"
             switch (parts[1]) {
                 case 'Connection succeeded':
-                    sendEvent(name: 'presence', value: 'present', descriptionText: "${device.displayName} is connected")
+                    sendEvent(name: 'connected', value: true, descriptionText: "${device.displayName} is connected")
                     // without this delay the `parse` method is never called
                     // (it seems that there needs to be some delay after connection to subscribe)
                     runIn(1, 'mqttSubscribeDiscovery')
@@ -423,7 +400,7 @@ private static int toKelvin(BigDecimal value) {
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void doLevelChange() {
-    deviceNetworkId.each { kv ->
+    levelChanges.each { kv ->
         ChildDeviceWrapper device = getChildDevice(kv.key)
         int newLevel = limit(device.currentValue('level').toInteger() + kv.value)
         componentSetLevel(device, newLevel)
@@ -682,7 +659,7 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
 
     // Get the configuration from the device
     String index = getDeviceConfig(device)['index']
-    Map json = parseJson(payload)
+    Map json = jsonCache.computeIfAbsent(payload) { k -> new JsonSlurper().parseText(k) }
     if (index == 1) { lastHeard[device.id] = now() }
 
     // Iterate the json payload content
@@ -792,6 +769,8 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
 
 private void mqttConnect() {
     unschedule('mqttConnect')
+    jsonCache.clear()
+
     try {
         String clientId = device.hub.hardwareID + '-' + device.id
         log.info "Connecting to MQTT broker at ${settings.mqttBroker}"
@@ -813,7 +792,7 @@ private void mqttDisconnect() {
         interfaces.mqtt.disconnect()
     }
 
-    sendEvent(name: 'presence', value: 'not present', descriptionText: "${device.displayName} is not connected")
+    sendEvent(name: 'connected', value: false, descriptionText: "${device.displayName} is not connected")
 }
 
 private void mqttPublish(String topic, String payload = '', int qos = 0) {
@@ -830,7 +809,8 @@ private void mqttReceive(Map message) {
 
     if (topic.startsWith(settings.discoveryPrefix) && payload.startsWith('{')) {
         // Parse Home Assistant Discovery topic
-        parseAutoDiscovery(topic, parseJson(payload))
+        Map json = jsonCache.computeIfAbsent(payload) { k -> new JsonSlurper().parseText(k) }
+        parseAutoDiscovery(topic, json)
         return
     }
 
@@ -886,10 +866,7 @@ private String getCommandTopic(Map config) {
 }
 
 private Map getDeviceConfig(DeviceWrapper device) {
-    return configCache.computeIfAbsent(device.id) { k ->
-        String config = device.getDataValue('config')
-        return config ? parseJson(config) : null
-    }
+    return jsonCache.computeIfAbsent(device.getDataValue('config')) { k -> new JsonSlurper().parseText(k) }
 }
 
 private String getDeviceDriver(int relaytype, Map config) {
