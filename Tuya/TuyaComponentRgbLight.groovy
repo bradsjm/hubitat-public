@@ -99,8 +99,8 @@ preferences {
 ]
 
 // Constants
-@Field static final Integer maxMireds = 500 // should this be 370?
 @Field static final Integer minMireds = 153
+@Field static final Integer maxMireds = 500 // should this be 370?
 
 // Random number generator
 @Field static final Random random = new Random()
@@ -208,11 +208,10 @@ void setColorTemperature(BigDecimal kelvin, BigDecimal level = null, BigDecimal 
     Map functions = getFunctions(device)
     String code = getFunctionByCode(functions, tuyaFunctions.temperature)
     Map temp = functions[code]
-    Integer value = temp.max - Math.ceil(maxMireds - remap(1000000 / kelvin, minMireds, maxMireds, temp.min, temp.max))
-    if (!tuyaSendCommand(getDataValue('id'), [ '5': value ])) {
+    Integer value = temp.max - Math.ceil(remap(1000000 / kelvin, minMireds, maxMireds, temp.min, temp.max))
+    if (!tuyaSendCommand(getDataValue('id'), [ '4': value ])) {
         parent?.componentSetColorTemperature(device, kelvin, level, duration)
-    }
-    if (level && device.currentValue('level') != level) {
+    } else if (level && device.currentValue('level') != level) {
         setLevel(level, duration)
     }
 }
@@ -368,7 +367,7 @@ private void parseDeviceState(Map dps) {
 
     if (dps.containsKey('3') && colorMode == 'CT') {
         Map code = functions[getFunctionByCode(functions, tuyaFunctions.brightness)]
-        Integer value = Math.floor(remap(dps[3] as Integer, code.min, code.max, 0, 100))
+        Integer value = Math.floor(remap(dps['3'] as Integer, code.min, code.max, 0, 100))
         events << [ name: 'level', value: value, unit: '%', descriptionText: "level is ${value}%" ]
     }
 
