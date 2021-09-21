@@ -29,7 +29,7 @@ import hubitat.helper.ColorUtils
 import java.util.concurrent.ConcurrentHashMap
 
 metadata {
-    definition (name: 'Tasmota IoT Platform', namespace: 'nrgup', author: 'Jonathan Bradshaw') {
+    definition (name: 'Tasmota IoT Platform', namespace: 'tasmota', author: 'Jonathan Bradshaw') {
         capability 'Initialize'
         capability 'Refresh'
 

@@ -169,7 +169,7 @@ void parse(List<Map> description) {
     if (logEnable) { log.debug description }
     description.each { d ->
         if (device.currentValue(d.name) != d.value) {
-            if (d.descriptionText && txtEnable) { log.info d.descriptionText }
+            if (d.descriptionText && txtEnable) { log.info "${device} ${d.descriptionText}" }
             sendEvent(d)
         }
     }

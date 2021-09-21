@@ -127,7 +127,7 @@ Boolean tuyaSendCommand(String devId, Map dps, String command = 'CONTROL') {
         return false
     }
 
-    return true
+    return (sendmode == 'local')
 }
 
 private static byte[] copy(byte[] buffer, String source, int from) {

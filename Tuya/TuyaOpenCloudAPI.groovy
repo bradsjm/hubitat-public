@@ -653,7 +653,7 @@ private void tuyaGetStateResponse(AsyncResponse response, Map data) {
 }
 
 private void tuyaSendDeviceCommands(String deviceID, Map...params) {
-    log.info "${device.displayName} device ${deviceID} command ${params}"
+    if (logEnable) { log.debug "${device.displayName} device ${deviceID} command ${params}" }
     if (!state?.tokenInfo?.access_token) {
         log.error "${device.displayName} tuyaSendDeviceCommands Error - Access token is null"
         return
