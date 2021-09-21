@@ -611,7 +611,7 @@ private void tuyaGetDevicesResponse(AsyncResponse response, Map data) {
 }
 
 private void tuyaGetDeviceFunctions(List<Map> devices, Map data = [:]) {
-    log.info "${device.displayName} requesting cloud device functions for ${devices}"
+    log.info "${device.displayName} requesting cloud device functions for ${devices*.displayName}"
     tuyaGet('/v1.0/devices/functions', [ 'device_ids': devices*.id.join(',') ], 'tuyaGetDeviceFunctionsResponse', data)
 }
 

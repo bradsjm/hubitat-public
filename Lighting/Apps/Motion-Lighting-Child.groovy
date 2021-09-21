@@ -602,7 +602,7 @@ String getModeDescription(Long modeID) {
 // Called when a button is pressed on the settings page
 void buttonHandler(Event evt) {
     Map mode = getActiveMode()
-    log.trace "buttonHandler: ${evt.device} ${evt.value} (mode ${mode.name})"
+    if (logEnabled) { log.trace "buttonHandler: ${evt.device} ${evt.value} (mode ${mode.name})" }
     if (!checkEnabled(mode)) { return }
 
     if (evt.value == settings.activationButtonNumber) {
@@ -621,7 +621,7 @@ void buttonHandler(Event evt) {
 // Called when a subscribed contact sensor changes
 void contactHandler(Event evt) {
     Map mode = getActiveMode()
-    log.trace "contactHandler: ${evt.device} ${evt.value} (mode ${mode.name})"
+    if (logEnabled) { log.trace "contactHandler: ${evt.device} ${evt.value} (mode ${mode.name})" }
     if (!checkEnabled(mode) || evt.value != 'open') { return }
 
     if (
@@ -683,7 +683,7 @@ void initialize() {
 // Called when a the mode changes
 void modeChangeHandler(Event evt) {
     Map mode = getActiveMode()
-    log.trace "modeChangeHandler: location mode = ${evt.value}, active mode = ${mode.name}"
+    if (logEnabled) { log.trace "modeChangeHandler: location mode = ${evt.value}, active mode = ${mode.name}" }
     if (!checkEnabled(mode)) { return }
 
     Map lastMode = getModeSettings(state.lastMode)
@@ -696,7 +696,7 @@ void modeChangeHandler(Event evt) {
 // Called when a subscribed motion sensor changes
 void motionHandler(Event evt) {
     Map mode = getActiveMode()
-    log.trace "motionHandler: ${evt.device} ${evt.value} (mode ${mode.name})"
+    if (logEnabled) { log.trace "motionHandler: ${evt.device} ${evt.value} (mode ${mode.name})" }
     if (!checkEnabled(mode) || evt.value != 'active') { return }
 
     if (
@@ -716,7 +716,7 @@ void motionHandler(Event evt) {
 // Called when a subscribed switch changes
 void switchHandler(Event evt) {
     Map mode = getActiveMode()
-    log.trace "switchHandler: ${evt.device} ${evt.value} (mode ${mode.name})"
+    if (logEnabled) { log.trace "switchHandler: ${evt.device} ${evt.value} (mode ${mode.name})" }
     if (!checkEnabled(mode)) { return }
 
     if ((evt.device.id in settings.activationOnSwitches*.id && evt.value == 'on') ||
