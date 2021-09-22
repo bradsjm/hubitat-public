@@ -341,54 +341,6 @@ void removeDevices() {
 /**
  *  Driver Capabilities Implementation
  */
-private static List<Map> parseTuyaStatus(DeviceWrapper dw, Map status, Map functions) {
-    if (status.code in tuyaFunctions.brightness) {
-        Map bright = functions[status.code]
-        Integer value = Math.floor(remap(status.value, bright.min, bright.max, 0, 100))
-        return [ [ name: 'level', value: value, unit: '%', descriptionText: "level is ${value}%" ] ]
-    }
-
-    if (status.code in tuyaFunctions.colour) {
-        Map colour = functions[status.code]
-        Map bright = functions[getFunctionByCode(functions, tuyaFunctions.brightness)] ?: colour.v
-        Map value = jsonCache.computeIfAbsent(status.value) { k -> new JsonSlurper().parseText(k) }
-        Integer hue = Math.floor(remap(value.h, colour.h.min, colour.h.max, 0, 100))
-        Integer saturation = Math.floor(remap(value.s, colour.s.min, colour.s.max, 0, 100))
-        Integer level = Math.floor(remap(value.v, bright.min, bright.max, 0, 100))
-        String colorName = translateColor(hue, saturation)
-        return [
-            [ name: 'hue', value: hue, descriptionText: "hue is ${hue}" ],
-            [ name: 'saturation', value: saturation, descriptionText: "saturation is ${saturation}" ],
-            [ name: 'level', value: level, unit: '%', descriptionText: "level is ${level}%" ],
-            [ name: 'colorName', value: colorName, descriptionText: "color name is ${colorName}" ]
-        ]
-    }
-
-    if (status.code in tuyaFunctions.switch) {
-        String value = status.value ? 'on' : 'off'
-        return [ [ name: 'switch', value: value, descriptionText: "switch is ${value}" ] ]
-    }
-
-    if (status.code in tuyaFunctions.temperature) {
-        Map temperature = functions[status.code]
-        Integer value = Math.floor(1000000 / remap(temperature.max - status.value,
-                        temperature.min, temperature.max, minMireds, maxMireds))
-        return [ [ name: 'colorTemperature', value: value, unit: 'K', descriptionText: "color temperature is ${value}K" ] ]
-    }
-
-    if (status.code in tuyaFunctions.workMode) {
-        switch (status.value) {
-            case 'white':
-            case 'light_white':
-                return [ [ name: 'colorMode', value: 'CT', descriptionText: "color mode is CT" ] ]
-            case 'colour':
-                return [ [ name: 'colorMode', value: 'RGB', descriptionText: "color mode is RGB" ] ]
-        }
-    }
-
-    return []
-}
-
 private static String translateColor(Integer hue, Integer saturation) {
     if (saturation < 1) {
         return 'White'
@@ -522,13 +474,61 @@ private void parseBizData(String bizCode, Map bizData) {
 }
 
 private void parseDeviceState(Map d) {
+    if (!d.status) { return }
     ChildDeviceWrapper dw = getChildDevice("${device.id}-${d.id ?: d.devId}")
     Map deviceFunctions = getFunctions(dw)
-    List events = d.status.collectMany { status -> parseTuyaStatus(dw, status, deviceFunctions) }
-    if (logEnable) { log.debug "${device.displayName} [${dw.displayName}] ${d.status} -> ${events}" }
-    if (events) {
-        dw.parse(events)
+    String workmode = d.status['workMode'] ?: ''
+    List<Map> events = d.status.collectMany { status ->
+        if (logEnable) { log.debug "${device.displayName} ${dw.displayName} ${status}" }
+
+        if (status.code in tuyaFunctions.brightness && workMode != 'colour') {
+            Map bright = deviceFunctions[status.code]
+            Integer value = Math.floor(remap(status.value, bright.min, bright.max, 0, 100))
+            return [ [ name: 'level', value: value, unit: '%', descriptionText: "level is ${value}%" ] ]
+        }
+
+        if (status.code in tuyaFunctions.colour) {
+            Map colour = deviceFunctions[status.code]
+            Map bright = deviceFunctions[getFunctionByCode(deviceFunctions, tuyaFunctions.brightness)] ?: colour.v
+            Map value = jsonCache.computeIfAbsent(status.value) { k -> new JsonSlurper().parseText(k) }
+            Integer hue = Math.floor(remap(value.h, colour.h.min, colour.h.max, 0, 100))
+            Integer saturation = Math.floor(remap(value.s, colour.s.min, colour.s.max, 0, 100))
+            Integer level = Math.floor(remap(value.v, bright.min, bright.max, 0, 100))
+            String colorName = translateColor(hue, saturation)
+            return [
+                [ name: 'hue', value: hue, descriptionText: "hue is ${hue}" ],
+                [ name: 'saturation', value: saturation, descriptionText: "saturation is ${saturation}" ],
+                [ name: 'colorName', value: colorName, descriptionText: "color name is ${colorName}" ]
+            ] + workMode == 'color' ? [ name: 'level', value: level, unit: '%', descriptionText: "level is ${level}%" ] : []
+        }
+
+        if (status.code in tuyaFunctions.switch) {
+            String value = status.value ? 'on' : 'off'
+            return [ [ name: 'switch', value: value, descriptionText: "switch is ${value}" ] ]
+        }
+
+        if (status.code in tuyaFunctions.temperature) {
+            Map temperature = deviceFunctions[status.code]
+            Integer value = Math.floor(1000000 / remap(temperature.max - status.value,
+                            temperature.min, temperature.max, minMireds, maxMireds))
+            return [ [ name: 'colorTemperature', value: value, unit: 'K', descriptionText: "color temperature is ${value}K" ] ]
+        }
+
+        if (status.code in tuyaFunctions.workMode) {
+            switch (status.value) {
+                case 'white':
+                case 'light_white':
+                    return [ [ name: 'colorMode', value: 'CT', descriptionText: "color mode is CT" ] ]
+                case 'colour':
+                    return [ [ name: 'colorMode', value: 'RGB', descriptionText: "color mode is RGB" ] ]
+            }
+        }
+
+        return []
     }
+
+    if (logEnable) { log.debug "${device.displayName} [${dw.displayName}] ${events}" }
+    dw.parse(events)
 }
 
 /**
@@ -611,7 +611,7 @@ private void tuyaGetDevicesResponse(AsyncResponse response, Map data) {
 }
 
 private void tuyaGetDeviceFunctions(List<Map> devices, Map data = [:]) {
-    log.info "${device.displayName} requesting cloud device functions for ${devices*.displayName}"
+    log.info "${device.displayName} requesting cloud device functions for ${devices*.name}"
     tuyaGet('/v1.0/devices/functions', [ 'device_ids': devices*.id.join(',') ], 'tuyaGetDeviceFunctionsResponse', data)
 }
 

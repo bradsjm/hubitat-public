@@ -76,6 +76,12 @@ preferences {
                 'both':  'Optimized (local with cloud)'
               ]
 
+        input name: 'enableHeartbeat',
+              title: 'Enable Heartbeat ping',
+              type: 'bool',
+              required: true,
+              defaultValue: false
+
         input name: 'logEnable',
               type: 'bool',
               title: 'Enable debug logging',
@@ -123,14 +129,15 @@ void installed() {
 // Called to initialize
 void initialize() {
     unschedule('heartbeat')
-    String localKey = getDataValue('local_key')
-    if (ipAddress && localKey && sendMode == 'local') {
+    if (ipAddress && getDataValue('local_key') && enableHeartbeat) {
         heartbeat()
     }
 }
 
 // Component command to turn on device
 void on() {
+    //tuyaSendCommand(getDataValue('id'), [ '1': true ])
+    //runIn(1, 'parentCommand', [data: [ name: 'componentOn', args: [] ]])
     if (!tuyaSendCommand(getDataValue('id'), [ '1': true ])) {
         parent?.componentOn(device)
     } else {
