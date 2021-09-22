@@ -60,7 +60,6 @@ preferences {
    [none: 'No action (do not turn off)']
 ]
 
-// Shared command queue map among all instances of this driver
 @Field static final ConcurrentHashMap<Integer, Long> disabledDevices = new ConcurrentHashMap<>()
 
 /*
@@ -173,24 +172,30 @@ Map pageMain() {
                   type: 'number'
         }
 
-        // section('Lamp Override Settings', hideable: true, hidden: true) {
-        //     input name: 'autoDisable',
-        //           title: 'Disable lamp control if turned off manually (after turned on by controller)',
-        //           type: 'bool',
-        //           required: false,
-        //           defaultValue: true
+        section('Manual Override Settings', hideable: true, hidden: true) {
+            input name: 'autoDisable',
+                  title: 'Disable lamp control if turned off manually (after turned on by controller)',
+                  type: 'bool',
+                  required: false,
+                  defaultValue: true
 
-        //     input name: 'reenableDelay',
-        //           type: 'number',
-        //           title: 'Minutes to wait to re-enable automatic lamp control',
-        //           description: 'minutes',
-        //           range: '1..600',
-        //           required: false,
-        //           defaultValue: 60,
-        //           width: 7
-        // }
+            input name: 'reenableDelay',
+                  type: 'number',
+                  title: 'Minutes to wait to re-enable automatic lamp control',
+                  description: 'minutes',
+                  range: '1..600',
+                  required: false,
+                  defaultValue: 60,
+                  width: 7
+        }
 
         section {
+            input name: 'optimize',
+                  title: 'Enable on/off optimization',
+                  type: 'bool',
+                  required: false,
+                  defaultValue: false
+
             input name: 'sendOn',
                   title: 'Send \"On\" command after \"Set Level\" or \"Set Color\" (enable if devices use pre-staging)',
                   type: 'bool',
@@ -203,7 +208,7 @@ Map pageMain() {
                   required: false,
                   defaultValue: true
         }
-                      }
+    }
 }
 
 // Trigger devices configuration page
@@ -666,19 +671,18 @@ void initialize() {
 }
 
 // Called when a monitored light changes state
-// void lightHandler(Event evt) {
-//     if (!state.triggered.running) { return }
-//     Map mode = getActiveMode()
-//     if (evt.value == 'off' && settings.autoDisable == true && checkEnabled(mode)) {
-//         log.info "${app.name} ${evt.device} disabling light control (turned off manually)"
-//         sendEvent name: 'disable', value: evt.device, descriptionText: 'Disabling light control (turned off manually)'
-//         disabledDevices.put(evt.device.id, now())
-//     } else if (evt.value == 'on' && disabledDevices.containsKey(evt.device.id)) {
-//         log.info "${app.name} ${evt.device} re-enabling light control (turned on)"
-//         sendEvent name: 'enable', value: evt.device, descriptionText: 'Re-Enabling light control (now turned on)'
-//         disabledDevices.remove(evt.device.id)
-//     }
-// }
+void lightHandler(Event evt) {
+    if (!state.triggered.running) { return }
+    if (evt.value == 'off' && settings.autoDisable == true) {
+        log.info "${app.name} Disabling control of ${evt.device} for ${reenableDelay} minutes"
+        sendEvent name: 'disable', value: evt.device, descriptionText: 'Disabling light control (turned off manually)'
+        disabledDevices.put(evt.device.id, now())
+    } else if (evt.value == 'on' && disabledDevices.containsKey(evt.device.id)) {
+        log.info "${app.name} Re-enabling light control for ${evt.device} (turned on)"
+        sendEvent name: 'enable', value: evt.device, descriptionText: 'Re-Enabling light control (now turned on)'
+        disabledDevices.remove(evt.device.id)
+    }
+}
 
 // Called when a the mode changes
 void modeChangeHandler(Event evt) {
@@ -862,34 +866,38 @@ private Map getModeSettings(Long id) {
 
 // Performs the action on the specified lights
 private void performAction(Map mode, String action) {
+    List lights = mode.activeLights ?: []
     switch (mode[action]) {
         case 'dimLevel':
-            setLights(mode.activeLights, 'setLevel', mode.inactiveLevel, mode.inactiveTransitionTime)
-            if (settings.sendOn) { setLights(mode.activeLights, 'on') }
+            lights = optimize ? lights.findAll { d -> d.currentValue('level') != mode.inactiveLevel } : lights
+            setLights(lights, 'setLevel', mode.inactiveLevel, mode.inactiveTransitionTime)
             break
         case 'off':
-            List lights = mode.activeLights
-            lights.addAll(mode.inactiveLights ?: [])
+            lights += (mode.inactiveLights ?: [])
+            lights = optimize ? lights.findAll { d -> d.currentValue('switch') !=  'off' } : lights
             setLights(lights, 'off')
             break
         case 'on':
-            setLights(mode.activeLights, 'on')
+            lights = optimize ? lights.findAll { d -> d.currentValue('switch') !=  'on' } : lights
+            setLights(lights, 'on')
             break
         case 'onColor':
-            setLights(mode.activeLights, 'setColor', getColorByRGB(mode.activeColor))
-            if (settings.sendOn) { setLights(mode.activeLights, 'on') }
+            setLights(lights, 'setColor', getColorByRGB(mode.activeColor))
             break
         case 'onCT':
+            lights = optimize ? lights.findAll { d -> d.currentValue('colorTemperature') != mode.activeColorTemperature } : lights
             setLights(lights, 'setColorTemperature', mode.activeColorTemperature)
-            if (settings.sendOn) { setLights(mode.activeLights, 'on') }
             break
         case 'onLevel':
-            setLights(mode.activeLights, 'setLevel', mode.activeLevel, mode.activeTransitionTime)
-            if (settings.sendOn) { setLights(mode.activeLights, 'on') }
+            setLights(lights, 'setLevel', mode.activeLevel, mode.activeTransitionTime)
             break
         case 'restore':
-            restoreLightState(mode.activeLights)
+            restoreLightState(lights)
             break
+    }
+
+    if (settings.sendOn && mode[action] != 'on' && mode[action] != 'off') {
+        setLights(lights, 'on')
     }
 }
 
@@ -972,7 +980,6 @@ private void scheduleInactiveAction(Map mode) {
 private void setLights(List lights, String action, Object[] value) {
     if (logEnable) {
         log.debug "${lights} ${action} ${value ?: ''}"
-        log.debug "disabledDevices (before): ${disabledDevices}"
     }
 
     if (settings.reenableDelay && disabledDevices) {
@@ -986,7 +993,7 @@ private void setLights(List lights, String action, Object[] value) {
         } else {
             device."$action"()
         }
-}
+    }
 }
 
 @Field static final List<Map<String, String>> colors = [
