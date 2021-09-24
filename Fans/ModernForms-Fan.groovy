@@ -163,6 +163,10 @@ void setSpeed(String speed) {
     switch (speed) {
         case 'auto':
         case 'on':
+            // If fan is on low, increase to avoid it having issues
+            if (device.currentValue('speed') == 'low') {
+                payload['fanSpeed'] = 3 // 50% speed
+            }
             payload['fanOn'] = true
             break
         case 'off':
