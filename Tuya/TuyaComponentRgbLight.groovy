@@ -209,7 +209,7 @@ void setColor(Map colorMap) {
                  Integer.toHexString(s).padLeft(2, '0') +
                  Integer.toHexString(v).padLeft(2, '0')
     if (!tuyaSendCommand(getDataValue('id'), [ '5': rgb + hsv, '2': 'colour' ])) {
-        parent?.setColor(device, colorMap)
+        parent?.componentSetColor(device, colorMap)
     }else {
         log.info "Setting ${device} color to ${colorMap}"
     }

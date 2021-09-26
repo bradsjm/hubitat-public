@@ -490,7 +490,7 @@ private void parseDeviceState(Map d) {
         if (status.code in tuyaFunctions.colour) {
             Map colour = deviceFunctions[status.code]
             Map bright = deviceFunctions[getFunctionByCode(deviceFunctions, tuyaFunctions.brightness)] ?: colour.v
-            Map value = jsonCache.computeIfAbsent(status.value) { k -> new JsonSlurper().parseText(k) }
+            Map value = status.value == '' ? [h: 100.0, s: 100.0, v: 100.0] : jsonCache.computeIfAbsent(status.value) { k -> new JsonSlurper().parseText(k) }
             Integer hue = Math.floor(remap(value.h, colour.h.min, colour.h.max, 0, 100))
             Integer saturation = Math.floor(remap(value.s, colour.s.min, colour.s.max, 0, 100))
             Integer level = Math.floor(remap(value.v, bright.min, bright.max, 0, 100))
