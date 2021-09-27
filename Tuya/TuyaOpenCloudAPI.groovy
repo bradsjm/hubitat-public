@@ -156,7 +156,7 @@ void componentSetColor(DeviceWrapper dw, Map colorMap) {
         s: remap(colorMap.saturation, 0, 100, color.s.min, color.s.max),
         v: remap(colorMap.level, 0, 100, bright.min, bright.max)
     ]
-    log.info "Setting ${dw} color to ${colormap}"
+    log.info "Setting ${dw} color to ${colorMap}"
     tuyaSendDeviceCommands(dw.getDataValue('id'),
         [ 'code': code, 'value': value ],
         [ 'code': 'work_mode', 'value': 'colour']
@@ -527,7 +527,7 @@ private void parseDeviceState(Map d) {
         return []
     }
 
-    if (logEnable) { log.debug "${device.displayName} [${dw.displayName}] ${events}" }
+    if (events && logEnable) { log.debug "${device.displayName} [${dw.displayName}] ${events}" }
     dw.parse(events)
 }
 

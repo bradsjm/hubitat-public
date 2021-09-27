@@ -392,13 +392,13 @@ private void parseDeviceState(Map dps) {
 
     if (dps.containsKey('3') && colorMode == 'CT') {
         Map code = functions[getFunctionByCode(functions, tuyaFunctions.brightness)]
-        Integer value = Math.floor(remap(dps['3'] as Integer, code.min, code.max, 0, 100))
+        Integer value = Math.floor(remap(dps['3'] as int, code.min, code.max, 0, 100))
         events << [ name: 'level', value: value, unit: '%', descriptionText: "level is ${value}%" ]
     }
 
     if (dps.containsKey('4')) {
         Map code = functions[getFunctionByCode(functions, tuyaFunctions.temperature)]
-        Integer value = Math.floor(1000000 / remap(code.max - dps['4'] as Integer,
+        Integer value = Math.floor(1000000 / remap(code.max - dps['4'] as int,
                                    code.min, code.max, minMireds, maxMireds))
         events << [ name: 'colorTemperature', value: value, unit: 'K',
                     descriptionText: "color temperature is ${value}K" ]
@@ -418,9 +418,9 @@ private void parseDeviceState(Map dps) {
             Integer saturation = Math.floor(remap(s, code.s.min, code.s.max, 0, 100))
             Integer level = Math.floor(remap(v, bright.min, bright.max, 0, 100))
             String colorName = translateColor(hue, saturation)
-            events << [ name: 'hue', value: hue, descriptionText: "hue is ${hue}%" ]
-            events << [ name: 'colorName', value: colorName, descriptionText: "color name is ${colorName}%" ]
-            events << [ name: 'saturation', value: saturation, descriptionText: "saturation is ${saturation}%" ]
+            events << [ name: 'hue', value: hue, descriptionText: "hue is ${hue}" ]
+            events << [ name: 'colorName', value: colorName, descriptionText: "color name is ${colorName}" ]
+            events << [ name: 'saturation', value: saturation, descriptionText: "saturation is ${saturation}" ]
             events << [ name: 'level', value: level, unit: '%', descriptionText: "level is ${level}%" ]
         }
     }
