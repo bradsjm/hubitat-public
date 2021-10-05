@@ -21,6 +21,7 @@
  *  SOFTWARE.
 */
 
+import com.hubitat.app.exception.UnknownDeviceTypeException
 import com.hubitat.app.ChildDeviceWrapper
 import com.hubitat.app.DeviceWrapper
 import groovy.json.JsonOutput
@@ -371,12 +372,6 @@ private static String translateColor(Integer hue, Integer saturation) {
   */
 private static Map mapTuyaCategory(String category) {
     switch (category) {
-        case 'cz':    // Socket
-        case 'pc':    // Power Switch
-            return [ namespace: 'hubitat', name: 'Generic Component Switch' ]
-        case 'kg':    // Switch
-        case 'tdq':   // Unknown?
-            return [ namespace: 'hubitat', name: 'Generic Component Switch' ]
         case 'ykq':   // Remote Control
         case 'tyndj': // Solar Light
             return [ namespace: 'hubitat', name: 'Generic Component CT' ]
@@ -390,7 +385,9 @@ private static Map mapTuyaCategory(String category) {
         case 'fwd':   // Ambient Light
         case 'gyd':   // Motion Sensor Light
         case 'xdd':   // Ceiling Light
-            return [ namespace: 'tuya', name: 'Tuya Generic RGBW Light' ]
+            return [ namespace: 'hubitat', name: 'Generic Component RGBW Light' ]
+        default:
+            return [ namespace: 'hubitat', name: 'Generic Component Switch' ]
     }
 }
 
@@ -419,15 +416,21 @@ private ChildDeviceWrapper createChildDevice(Map d) {
     if (!dw) {
         Map driver = mapTuyaCategory(d.category)
         log.info "${device.displayName} creating device ${d.name} using ${driver.name} driver"
-        dw = addChildDevice(
-            driver.namespace,
-            driver.name,
-            "${device.id}-${d.id}",
-            [
-                name: d.product_name,
-                label: d.name
-            ]
-        )
+        try {
+            dw = addChildDevice(
+                driver.namespace,
+                driver.name,
+                "${device.id}-${d.id}",
+                [
+                    name: d.product_name,
+                    label: d.name,
+                    //location: add room support if we can get from Tuya
+                ]
+            )
+        } catch (UnknownDeviceTypeException e) {
+            log.warn "${device.displayName} ${e.message} - you need to install the driver"
+            return null
+        }
     }
 
     dw.label = dw.label ?: d.name

@@ -109,7 +109,6 @@ metadata {
 void initialize() {
     log.info "${device.displayName} driver initializing"
     unschedule()
-    mqttDisconnect()
     reset()
     mqttConnect()
 }
