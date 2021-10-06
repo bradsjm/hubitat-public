@@ -104,14 +104,14 @@ metadata {
 @Field static final Map<String, List<String>> tuyaFunctions = [
     'brightness': [ 'bright_value', 'bright_value_v2', 'bright_value_1' ],
     'colour': [ 'colour_data', 'colour_data_v2' ],
-    'switch': [ 'switch_led', 'switch_led_1', 'light' ],
+    'switch': [ 'switch', 'switch_led', 'switch_led_1', 'light' ],
     'temperature': [ 'temp_value', 'temp_value_v2' ],
     'workMode': [ 'work_mode' ]
 ]
 
 // Constants
-@Field static final Integer maxMireds = 500 // should this be 370?
-@Field static final Integer minMireds = 153
+@Field static final Integer maxMireds = 500 // 2000K
+@Field static final Integer minMireds = 153 // 6536K
 
 // Jason Parsing Cache
 @Field static final ConcurrentHashMap<String, Map> jsonCache = new ConcurrentHashMap<>()
@@ -145,7 +145,7 @@ void componentOff(DeviceWrapper dw) {
 void componentRefresh(DeviceWrapper dw) {
     String id = dw.getDataValue('id')
     if (id && dw.getDataValue('functions')) {
-        log.info "Refreshing ${dw}"
+        log.info "Refreshing ${dw} (${id})"
         tuyaGetState(id)
     }
 }
@@ -237,6 +237,11 @@ void componentSetSaturation(DeviceWrapper dw, BigDecimal saturation) {
     ])
 }
 
+// Component command to set fan speed
+void componentSetSpeed(DeviceWrapper dw, String speed) {
+    log.warn "${device.displayName} Set speed command not supported"
+}
+
 // Component command to start level change (up or down)
 void componentStartLevelChange(DeviceWrapper dw, String direction) {
     levelChanges[dw.deviceNetworkId] = (direction == 'down') ? -10 : 10
@@ -312,12 +317,12 @@ void parse(String data) {
     Cipher cipher = Cipher.getInstance('AES/ECB/PKCS5Padding')
     cipher.init(Cipher.DECRYPT_MODE, key)
     Map result = parser.parse(cipher.doFinal(payload.data.decodeBase64()), 'UTF-8')
-    if (result.status) {
+    if (result.status && (result.id || result.devId)) {
         parseDeviceState(result)
     } else if (result.bizCode && result.bizData) {
         parseBizData(result.bizCode, result.bizData)
-    } else {
-        log.debug result
+    } else if (logEnable) {
+        log.debug "${device.displayName} unsupported packet: ${result}"
     }
 }
 
@@ -390,9 +395,9 @@ private static Map mapTuyaCategory(String category) {
         case 'dc':    // String Lights
         case 'dd':    // Strip Lights
         case 'dj':    // Light
-        case 'fsd':   // Ceiling Fan Light
+        case 'fsd':   // Ceiling Fan with Light
         case 'fwd':   // Ambient Light
-        case 'gyd':   // Motion Sensor Light
+        case 'gyd':   // Motion Sensor with Light
         case 'xdd':   // Ceiling Light
             return [ namespace: 'hubitat', name: 'Generic Component RGBW' ]
         default:
@@ -463,7 +468,7 @@ private void parseBizData(String bizCode, Map bizData) {
     String indicator = ' [Offline]'
     ChildDeviceWrapper dw = getChildDevice("${device.id}-${bizData.devId}")
     if (!dw) {
-        log.error "${device.displayName} parseBizData: Child device for ${bizData} not found"
+        log.error "${device.displayName} parseBizData: Child device not found (${bizCode} ${bizData})"
         return
     }
 
@@ -491,7 +496,6 @@ private void parseBizData(String bizCode, Map bizData) {
 }
 
 private void parseDeviceState(Map d) {
-    if (!d.status) { return }
     ChildDeviceWrapper dw = getChildDevice("${device.id}-${d.id ?: d.devId}")
     if (!dw) {
         log.error "${device.displayName} parseDeviceState: Child device for ${d} not found"
@@ -499,9 +503,10 @@ private void parseDeviceState(Map d) {
     }
 
     Map deviceFunctions = getFunctions(dw)
-    String workmode = d.status['workMode'] ?: ''
-    List<Map> events = d.status.collectMany { status ->
-        if (logEnable) { log.debug "${device.displayName} ${dw.displayName} ${status}" }
+    List<Map> statusList = d.status ?: []
+    String workMode = statusList['workMode'] ?: ''
+    List<Map> events = statusList.collectMany { status ->
+        if (logEnable) { log.debug "${device.displayName} ${dw.displayName} status ${status}" }
 
         if (status.code in tuyaFunctions.brightness && workMode != 'colour') {
             Map bright = deviceFunctions[status.code]
@@ -518,12 +523,15 @@ private void parseDeviceState(Map d) {
             Integer saturation = Math.floor(remap(value.s, colour.s.min, colour.s.max, 0, 100))
             Integer level = Math.floor(remap(value.v, bright.min, bright.max, 0, 100))
             String colorName = translateColor(hue, saturation)
-            return [
+            List<Map> events = [
                 [ name: 'hue', value: hue, descriptionText: "hue is ${hue}" ],
                 [ name: 'saturation', value: saturation, descriptionText: "saturation is ${saturation}" ],
                 [ name: 'colorName', value: colorName, descriptionText: "color name is ${colorName}" ]
-            ] + (workMode == 'color') ?
-                [ name: 'level', value: level, unit: '%', descriptionText: "level is ${level}%" ] : []
+            ]
+            if (workMode == 'color') {
+                events << [ name: 'level', value: level, unit: '%', descriptionText: "level is ${level}%" ]
+            }
+            return events
         }
 
         if (status.code in tuyaFunctions.switch) {
@@ -552,7 +560,7 @@ private void parseDeviceState(Map d) {
         return []
     }
 
-    if (events && logEnable) { log.debug "${device.displayName} [${dw.displayName}] ${events}" }
+    if (events && logEnable) { log.debug "${device.displayName} ${dw.displayName} sending events ${events}" }
     dw.parse(events)
 }
 
@@ -666,7 +674,7 @@ private void tuyaGetDeviceFunctionsResponse(AsyncResponse response, Map data) {
 }
 
 private void tuyaGetState(String deviceID) {
-    log.info "${device.displayName} requesting device ${deviceID} state"
+    if (logEnable) { log.debug "${device.displayName} requesting device ${deviceID} state" }
     tuyaGet("/v1.0/devices/${deviceID}/status", null, 'tuyaGetStateResponse', [ id: deviceID ])
 }
 
