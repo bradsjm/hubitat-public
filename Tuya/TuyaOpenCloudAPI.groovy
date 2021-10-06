@@ -37,6 +37,11 @@ import hubitat.helper.HexUtils
 import hubitat.helper.NetworkUtils
 import hubitat.scheduling.AsyncResponse
 
+/*
+ *  Changelog:
+ *  10/6/21 - 0.1 Initial release
+ */
+
 metadata {
     definition (name: 'Tuya IoT Platform (Cloud)', namespace: 'tuya', author: 'Jonathan Bradshaw') {
         capability 'Initialize'
@@ -249,12 +254,14 @@ void componentStopLevelChange(DeviceWrapper dw) {
 void doLevelChange() {
     levelChanges.each { kv ->
         ChildDeviceWrapper dw = getChildDevice(kv.key)
-        int newLevel = (dw.currentValue('level') as int) + kv.value
-        if (newLevel < 0) { newLevel = 0 }
-        if (newLevel > 100) { newLevel = 100 }
-        componentSetLevel(dw, newLevel)
-        if (newLevel <= 0 && newLevel >= 100) {
-            componentStopLevelChange(device)
+        if (dw) {
+            int newLevel = (dw.currentValue('level') as int) + kv.value
+            if (newLevel < 0) { newLevel = 0 }
+            if (newLevel > 100) { newLevel = 100 }
+            componentSetLevel(dw, newLevel)
+            if (newLevel <= 0 && newLevel >= 100) {
+                componentStopLevelChange(device)
+            }
         }
     }
 
@@ -289,10 +296,12 @@ void uninstalled() {
 // Called when the settings are updated
 void updated() {
     log.info "${device.displayName} driver configuration updated"
-    log.debug settings
-    initialize()
+    if (logEnable) {
+        log.debug settings
+        runIn(1800, 'logsOff')
+    }
 
-    if (logEnable) { runIn(1800, 'logsOff') }
+    initialize()
 }
 
 // Called to parse received MQTT data
@@ -428,7 +437,7 @@ private ChildDeviceWrapper createChildDevice(Map d) {
                 ]
             )
         } catch (UnknownDeviceTypeException e) {
-            log.warn "${device.displayName} ${e.message} - you need to install the driver"
+            log.warn "${device.displayName} ${e.message} - you may need to install the driver"
             return null
         }
     }
@@ -453,6 +462,11 @@ private void logsOff() {
 private void parseBizData(String bizCode, Map bizData) {
     String indicator = ' [Offline]'
     ChildDeviceWrapper dw = getChildDevice("${device.id}-${bizData.devId}")
+    if (!dw) {
+        log.error "${device.displayName} parseBizData: Child device for ${bizData} not found"
+        return
+    }
+
     if (logEnable) { log.debug "${device.displayName} ${bizCode} ${bizData}" }
     switch (bizCode) {
         case 'nameUpdate':
@@ -479,6 +493,11 @@ private void parseBizData(String bizCode, Map bizData) {
 private void parseDeviceState(Map d) {
     if (!d.status) { return }
     ChildDeviceWrapper dw = getChildDevice("${device.id}-${d.id ?: d.devId}")
+    if (!dw) {
+        log.error "${device.displayName} parseDeviceState: Child device for ${d} not found"
+        return
+    }
+
     Map deviceFunctions = getFunctions(dw)
     String workmode = d.status['workMode'] ?: ''
     List<Map> events = d.status.collectMany { status ->
@@ -493,7 +512,8 @@ private void parseDeviceState(Map d) {
         if (status.code in tuyaFunctions.colour) {
             Map colour = deviceFunctions[status.code]
             Map bright = deviceFunctions[getFunctionByCode(deviceFunctions, tuyaFunctions.brightness)] ?: colour.v
-            Map value = status.value == '' ? [h: 100.0, s: 100.0, v: 100.0] : jsonCache.computeIfAbsent(status.value) { k -> new JsonSlurper().parseText(k) }
+            Map value = status.value == '' ? [h: 100.0, s: 100.0, v: 100.0] :
+                        jsonCache.computeIfAbsent(status.value) { k -> new JsonSlurper().parseText(k) }
             Integer hue = Math.floor(remap(value.h, colour.h.min, colour.h.max, 0, 100))
             Integer saturation = Math.floor(remap(value.s, colour.s.min, colour.s.max, 0, 100))
             Integer level = Math.floor(remap(value.v, bright.min, bright.max, 0, 100))
@@ -502,7 +522,8 @@ private void parseDeviceState(Map d) {
                 [ name: 'hue', value: hue, descriptionText: "hue is ${hue}" ],
                 [ name: 'saturation', value: saturation, descriptionText: "saturation is ${saturation}" ],
                 [ name: 'colorName', value: colorName, descriptionText: "color name is ${colorName}" ]
-            ] + workMode == 'color' ? [ name: 'level', value: level, unit: '%', descriptionText: "level is ${level}%" ] : []
+            ] + (workMode == 'color') ?
+                [ name: 'level', value: level, unit: '%', descriptionText: "level is ${level}%" ] : []
         }
 
         if (status.code in tuyaFunctions.switch) {
@@ -514,7 +535,8 @@ private void parseDeviceState(Map d) {
             Map temperature = deviceFunctions[status.code]
             Integer value = Math.floor(1000000 / remap(temperature.max - status.value,
                             temperature.min, temperature.max, minMireds, maxMireds))
-            return [ [ name: 'colorTemperature', value: value, unit: 'K', descriptionText: "color temperature is ${value}K" ] ]
+            return [ [ name: 'colorTemperature', value: value, unit: 'K',
+                       descriptionText: "color temperature is ${value}K" ] ]
         }
 
         if (status.code in tuyaFunctions.workMode) {
@@ -624,7 +646,7 @@ private void tuyaGetDeviceFunctionsResponse(AsyncResponse response, Map data) {
     JsonSlurper parser = new JsonSlurper()
     List result = response.json.result
     log.info "${device.displayName} received ${result.size()} cloud function groups"
-    result.each { group ->
+    result?.each { group ->
         Map functions = group.functions.collectEntries { f ->
             String code = f.code
             Map values = parser.parseText(f.values)
@@ -634,7 +656,7 @@ private void tuyaGetDeviceFunctionsResponse(AsyncResponse response, Map data) {
         String json = JsonOutput.toJson(functions)
         group.devices.each { id ->
             ChildDeviceWrapper dw = getChildDevice("${device.id}-${id}")
-            dw.updateDataValue('functions', json)
+            dw?.updateDataValue('functions', json)
         }
     }
 
