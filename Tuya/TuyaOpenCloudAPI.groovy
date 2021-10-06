@@ -385,7 +385,7 @@ private static Map mapTuyaCategory(String category) {
         case 'fwd':   // Ambient Light
         case 'gyd':   // Motion Sensor Light
         case 'xdd':   // Ceiling Light
-            return [ namespace: 'hubitat', name: 'Generic Component RGBW Light' ]
+            return [ namespace: 'hubitat', name: 'Generic Component RGBW' ]
         default:
             return [ namespace: 'hubitat', name: 'Generic Component Switch' ]
     }
