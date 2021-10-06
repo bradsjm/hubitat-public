@@ -322,6 +322,12 @@ void updated() {
     if (logEnable) { runIn(1800, 'logsOff') }
 }
 
+/* groovylint-disable-next-line UnusedPrivateMethod */
+private void logsOff() {
+    log.warn "debug logging disabled for ${device.displayName}"
+    device.updateSetting('logEnable', [value: 'false', type: 'bool'] )
+}
+
 #include tuya.tuyaProtocols
 
 private static Map getFunctions(DeviceWrapper device) {
