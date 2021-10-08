@@ -40,6 +40,7 @@ import hubitat.scheduling.AsyncResponse
 /*
  *  Changelog:
  *  10/6/21 - 0.1 Initial release
+ *  10/8/21 - 0.1.1 Scene Switch TS004F
  */
 
 metadata {
@@ -106,7 +107,8 @@ metadata {
     'colour': [ 'colour_data', 'colour_data_v2' ],
     'switch': [ 'switch', 'switch_led', 'switch_led_1', 'light' ],
     'temperature': [ 'temp_value', 'temp_value_v2' ],
-    'workMode': [ 'work_mode' ]
+    'workMode': [ 'work_mode' ],
+    'sceneSwitch' : [ 'switch1_value', 'switch2_value', 'switch3_value', 'switch4_value' ]        // KK
 ]
 
 // Constants
@@ -400,6 +402,8 @@ private static Map mapTuyaCategory(String category) {
         case 'gyd':   // Motion Sensor with Light
         case 'xdd':   // Ceiling Light
             return [ namespace: 'hubitat', name: 'Generic Component RGBW' ]
+        case 'wxkg':    // Scene switch (TS004F)
+            return [ namespace: 'hubitat', name: 'Generic Component Central Scene Switch' ]  
         default:
             return [ namespace: 'hubitat', name: 'Generic Component Switch' ]
     }
@@ -545,6 +549,32 @@ private void parseDeviceState(Map d) {
                             temperature.min, temperature.max, minMireds, maxMireds))
             return [ [ name: 'colorTemperature', value: value, unit: 'K',
                        descriptionText: "color temperature is ${value}K" ] ]
+        }
+
+        if (status.code in tuyaFunctions.sceneSwitch) {
+            String name
+            if (status.value == 'single_click')
+                name = 'pushed'
+            else if (status.value == 'double_click')
+                name = 'doubleTapped'
+            else if (status.value == 'long_press')
+                name = 'held'
+            else
+                log.warn "sceneSwitch unknown status.value {status.value}"
+
+            String value
+            if (status.code == 'switch1_value')
+                value = '4'
+            else if (status.code == 'switch2_value')
+                value = '3'
+            else if (status.code == 'switch3_value')
+                value = '1'
+            else if (status.code == 'switch4_value')
+                value = '2'
+            else
+                log.warn "sceneSwitch unknown status.code {status.code}"
+                
+            return [ [ name: name, value: value, descriptionText: "button ${value} is ${name}", isStateChange: true ] ]
         }
 
         if (status.code in tuyaFunctions.workMode) {
