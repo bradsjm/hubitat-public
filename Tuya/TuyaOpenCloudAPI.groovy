@@ -108,7 +108,7 @@ metadata {
     'switch': [ 'switch', 'switch_led', 'switch_led_1', 'light' ],
     'temperature': [ 'temp_value', 'temp_value_v2' ],
     'workMode': [ 'work_mode' ],
-    'sceneSwitch' : [ 'switch1_value', 'switch2_value', 'switch3_value', 'switch4_value' ]        // KK
+    'sceneSwitch' : [ 'switch1_value', 'switch2_value', 'switch3_value', 'switch4_value' ]
 ]
 
 // Constants
