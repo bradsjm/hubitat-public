@@ -848,17 +848,11 @@ private Map getModeSettings(Long id) {
         mode.activeLights = settings["mode.${mode.id}.activeLights"] ?: []
         mode.activeTransitionTime = settings["mode.${mode.id}.activeTransitionTime"] as BigDecimal
 
-        mode.inactive = settings["mode.${mode.id}.inactive"] as String
-        mode.inactiveLevel = settings["mode.${mode.id}.inactiveLevel"] as BigDecimal
-        mode.inactiveLights = settings["mode.${mode.id}.inactiveLights"] ?: []
-        mode.inactiveMinutes = settings["mode.${mode.id}.inactiveMinutes"] as Integer
-        mode.inactiveTransitionTime = settings["mode.${mode.id}.inactiveTransitionTime"] as BigDecimal
-
-        // If mode has no lights use the default mode values
-        if (mode.id > 0) {
-            mode.activeLights = mode.activeLights ?: settings['mode.0.activeLights'] ?: []
-            mode.inactiveMinutes = mode.inactiveMinutes ?: settings['mode.0.inactiveMinutes'] as Integer
-        }
+        mode.inactive = (settings["mode.${mode.id}.inactive"] ?: settings["mode.0.inactive"]) as String
+        mode.inactiveLevel = (settings["mode.${mode.id}.inactiveLevel"] ?: settings["mode.0.inactiveLevel"]) as BigDecimal
+        mode.inactiveLights = settings["mode.${mode.id}.inactiveLights"] ?: settings["mode.0.inactiveLights"]
+        mode.inactiveMinutes = (settings["mode.${mode.id}.inactiveMinutes"] ?: settings['mode.0.inactiveMinutes']) as Integer
+        mode.inactiveTransitionTime = (settings["mode.${mode.id}.inactiveTransitionTime"] ?: settings['mode.0.inactiveMinutes']) as BigDecimal
     }
 
     return mode
