@@ -40,6 +40,7 @@ import hubitat.scheduling.AsyncResponse
 /*
  *  Changelog:
  *  10/6/21 - 0.1 Initial release
+ *  10/8/21 - 0.1.1 Scene Switch TS004F
  */
 
 metadata {
@@ -106,7 +107,8 @@ metadata {
     'colour': [ 'colour_data', 'colour_data_v2' ],
     'switch': [ 'switch', 'switch_led', 'switch_led_1', 'light' ],
     'temperature': [ 'temp_value', 'temp_value_v2' ],
-    'workMode': [ 'work_mode' ]
+    'workMode': [ 'work_mode' ],
+    'sceneSwitch' : [ 'switch1_value', 'switch2_value', 'switch3_value', 'switch4_value' ]
 ]
 
 // Constants
@@ -257,7 +259,8 @@ void componentStopLevelChange(DeviceWrapper dw) {
 
 // Utility function to handle multiple level changes
 void doLevelChange() {
-    levelChanges.each { kv ->
+    List active = levelChanges.collect() // copy list locally
+    active.each { kv ->
         ChildDeviceWrapper dw = getChildDevice(kv.key)
         if (dw) {
             int newLevel = (dw.currentValue('level') as int) + kv.value
@@ -267,6 +270,8 @@ void doLevelChange() {
             if (newLevel <= 0 && newLevel >= 100) {
                 componentStopLevelChange(device)
             }
+        } else {
+            levelChanges.remove(kv.key)
         }
     }
 
@@ -311,18 +316,16 @@ void updated() {
 
 // Called to parse received MQTT data
 void parse(String data) {
-    JsonSlurper parser = new JsonSlurper()
     Map payload = parser.parseText(interfaces.mqtt.parseMessage(data).payload)
-    SecretKeySpec key = new SecretKeySpec(state.mqttInfo.password[8..23].bytes, 'AES')
     Cipher cipher = Cipher.getInstance('AES/ECB/PKCS5Padding')
-    cipher.init(Cipher.DECRYPT_MODE, key)
-    Map result = parser.parse(cipher.doFinal(payload.data.decodeBase64()), 'UTF-8')
+    cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(state.mqttInfo.password[8..23].bytes, 'AES'))
+    Map result = new JsonSlurper().parse(cipher.doFinal(payload.data.decodeBase64()), 'UTF-8')
     if (result.status && (result.id || result.devId)) {
-        parseDeviceState(result)
+        updateDeviceStatus(result)
     } else if (result.bizCode && result.bizData) {
         parseBizData(result.bizCode, result.bizData)
     } else if (logEnable) {
-        log.debug "${device.displayName} unsupported packet: ${result}"
+        log.debug "${device.displayName} unsupported mqtt packet: ${result}"
     }
 }
 
@@ -400,6 +403,8 @@ private static Map mapTuyaCategory(String category) {
         case 'gyd':   // Motion Sensor with Light
         case 'xdd':   // Ceiling Light
             return [ namespace: 'hubitat', name: 'Generic Component RGBW' ]
+        case 'wxkg':    // Scene switch (TS004F)
+            return [ namespace: 'hubitat', name: 'Generic Component Central Scene Switch' ]
         default:
             return [ namespace: 'hubitat', name: 'Generic Component Switch' ]
     }
@@ -495,10 +500,10 @@ private void parseBizData(String bizCode, Map bizData) {
     }
 }
 
-private void parseDeviceState(Map d) {
+private void updateDeviceStatus(Map d) {
     ChildDeviceWrapper dw = getChildDevice("${device.id}-${d.id ?: d.devId}")
     if (!dw) {
-        log.error "${device.displayName} parseDeviceState: Child device for ${d} not found"
+        log.error "${device.displayName} updateDeviceStatus: Child device for ${d} not found"
         return
     }
 
@@ -547,6 +552,34 @@ private void parseDeviceState(Map d) {
                        descriptionText: "color temperature is ${value}K" ] ]
         }
 
+        if (status.code in tuyaFunctions.sceneSwitch) {
+            String name
+            if (status.value == 'single_click') {
+                name = 'pushed'
+            } else if (status.value == 'double_click') {
+                name = 'doubleTapped'
+            } else if (status.value == 'long_press') {
+                name = 'held'
+            } else {
+                log.warn "sceneSwitch unknown status.value ${status.value}"
+            }
+
+            String value
+            if (status.code == 'switch1_value') {
+                value = '4'
+            } else if (status.code == 'switch2_value') {
+                value = '3'
+            } else if (status.code == 'switch3_value') {
+                value = '1'
+            } else if (status.code == 'switch4_value') {
+                value = '2'
+            } else {
+                log.warn "sceneSwitch unknown status.code ${status.code}"
+            }
+
+            return [ [ name: name, value: value, descriptionText: "button ${value} is ${name}", isStateChange: true ] ]
+        }
+
         if (status.code in tuyaFunctions.workMode) {
             switch (status.value) {
                 case 'white':
@@ -569,31 +602,31 @@ private void parseDeviceState(Map d) {
  *  https://developer.tuya.com/en/docs/cloud/
 */
 private void tuyaAuthenticate() {
-    if (username && password && appSchema) {
-        log.info "${device.displayName} starting Tuya cloud authentication for ${username}"
+    if (settings.username && settings.password && settings.appSchema && settings.countryCode) {
+        log.info "${device.displayName} starting Tuya cloud authentication for ${settings.username}"
         MessageDigest digest = MessageDigest.getInstance('MD5')
-        String md5pwd = HexUtils.byteArrayToHexString(digest.digest(password.bytes)).toLowerCase()
+        String md5pwd = HexUtils.byteArrayToHexString(digest.digest(settings.password.bytes)).toLowerCase()
         Map body = [
-            'country_code': countryCode,
-            'username': username,
+            'country_code': settings.countryCode,
+            'username': settings.username,
             'password': md5pwd,
-            'schema': appSchema
+            'schema': settings.appSchema
         ]
         state.tokenInfo.access_token = ''
         tuyaPost('/v1.0/iot-01/associated-users/actions/authorized-login', body, 'tuyaAuthenticateResponse')
     } else {
-        log.error "${device.displayName} Error - Device must be configured before authentication is enabled"
+        log.error "${device.displayName} must be configured before authentication is possible"
     }
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
 private void tuyaAuthenticateResponse(AsyncResponse response, Map data) {
-    sendEvent([ name: 'connected', value: false, descriptionText: 'connected is false'])
-    if (!tuyaCheckResponse(response)) { return }
+    if (!tuyaCheckResponse(response)) {
+        sendEvent([ name: 'connected', value: false, descriptionText: 'connected is false'])
+        return
+    }
 
     Map result = response.json.result
-    log.info "${device.displayName} received access token valid for ${result.expire_time} seconds"
-
     state.endPoint = result.platform_url
     state.tokenInfo = [
         access_token: result.access_token,
@@ -601,6 +634,7 @@ private void tuyaAuthenticateResponse(AsyncResponse response, Map data) {
         uid: result.uid,
         expire: result.expire_time * 1000 + now(),
     ]
+    log.info "${device.displayName} received Tuya access token (valid for ${result.expire_time}s)"
 
     // Schedule next authentication
     runIn(result.expire_time - 60, 'tuyaAuthenticate')
@@ -669,7 +703,7 @@ private void tuyaGetDeviceFunctionsResponse(AsyncResponse response, Map data) {
     }
 
     // Process status updates
-    data.devices.each { d -> parseDeviceState(d) }
+    data.devices.each { d -> updateDeviceStatus(d) }
     sendEvent([ name: 'connected', value: true, descriptionText: 'connected is true'])
 }
 
@@ -682,7 +716,7 @@ private void tuyaGetState(String deviceID) {
 private void tuyaGetStateResponse(AsyncResponse response, Map data) {
     if (!tuyaCheckResponse(response)) { return }
     data.status = response.json.result
-    parseDeviceState(data)
+    updateDeviceStatus(data)
 }
 
 private void tuyaSendDeviceCommands(String deviceID, Map...params) {
