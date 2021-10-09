@@ -39,9 +39,9 @@ import hubitat.scheduling.AsyncResponse
 
 /*
  *  Changelog:
- *  10/6/21 - 0.1 Initial release
- *  10/8/21 - 0.1.1 - added Scene Switch TS004F productKey:xabckq1v
- *  10/8/21 - 0.1.2 - added Scene Switch TS0044 productKey:vp6clf9d; added battery reports (when the virtual driver supports it)
+ *  10/06/21 - 0.1 Initial release
+ *  10/08/21 - 0.1.1 - added Scene Switch TS004F productKey:xabckq1v
+ *  10/10/21 - 0.1.2 - added Scene Switch TS0044 productKey:vp6clf9d; added battery reports (when the virtual driver supports it)
  */
 
 metadata {
