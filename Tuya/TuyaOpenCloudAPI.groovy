@@ -40,7 +40,8 @@ import hubitat.scheduling.AsyncResponse
 /*
  *  Changelog:
  *  10/6/21 - 0.1 Initial release
- *  10/8/21 - 0.1.1 Scene Switch TS004F
+ *  10/8/21 - 0.1.1 - added Scene Switch TS004F productKey:xabckq1v
+ *  10/8/21 - 0.1.2 - added Scene Switch TS0044 productKey:vp6clf9d; added battery reports (when the virtual driver supports it)
  */
 
 metadata {
@@ -108,8 +109,30 @@ metadata {
     'switch': [ 'switch', 'switch_led', 'switch_led_1', 'light' ],
     'temperature': [ 'temp_value', 'temp_value_v2' ],
     'workMode': [ 'work_mode' ],
-    'sceneSwitch' : [ 'switch1_value', 'switch2_value', 'switch3_value', 'switch4_value' ]
+    'sceneSwitch' : [ 'switch1_value', 'switch2_value', 'switch3_value', 'switch4_value', 'switch_mode2', 'switch_mode3', 'switch_mode4' ],
+    'battery' : [ 'battery_percentage' ] 
 ]
+
+// Tuya -> Hubitat attributes mappings
+// TS004F  productKey:xabckq1v        TS0044 productKey:vp6clf9d
+@Field static final Map<String, String> sceneSwitchAction = [       
+    'single_click' : 'pushed',             // TS004F
+    'double_click' : 'doubleTapped',
+    'long_press'   : 'held',
+    'click'        : 'pushed',             // TS0044
+    'double_click' : 'doubleTapped',
+    'press'        : 'held'
+]
+@Field static final Map<String, String> sceneSwitchKeyNumbers = [     
+    'switch_mode2'  : '2',                // TS0044
+    'switch_mode3'  : '3',
+    'switch_mode4'  : '4',
+    'switch1_value' : '4',                // '4'for TS004F and '1' for TS0044 !
+    'switch2_value' : '3',                // TS004F - match the key numbering as in Hubitat built-in TS0044 driver
+    'switch3_value' : '1',
+    'switch4_value' : '2',
+]
+
 
 // Constants
 @Field static final Integer maxMireds = 500 // 2000K
@@ -403,8 +426,8 @@ private static Map mapTuyaCategory(String category) {
         case 'gyd':   // Motion Sensor with Light
         case 'xdd':   // Ceiling Light
             return [ namespace: 'hubitat', name: 'Generic Component RGBW' ]
-        case 'wxkg':    // Scene switch (TS004F)
-            return [ namespace: 'hubitat', name: 'Generic Component Central Scene Switch' ]
+        case 'wxkg':    // Scene switch (TS004F in 'Device trigger' mode only; TS0044)
+            return [ namespace: 'hubitat', name: 'Generic Component Central Scene Switch' ]  
         default:
             return [ namespace: 'hubitat', name: 'Generic Component Switch' ]
     }
@@ -553,31 +576,36 @@ private void updateDeviceStatus(Map d) {
         }
 
         if (status.code in tuyaFunctions.sceneSwitch) {
-            String name
-            if (status.value == 'single_click') {
-                name = 'pushed'
-            } else if (status.value == 'double_click') {
-                name = 'doubleTapped'
-            } else if (status.value == 'long_press') {
-                name = 'held'
-            } else {
-                log.warn "sceneSwitch unknown status.value ${status.value}"
+            String action
+            if ( status.value in sceneSwitchAction ){
+                 action = sceneSwitchAction[status.value]
             }
-
+            else {
+                log.warn "sceneSwitch: unknown status.value ${status.value}"
+            }
+            
             String value
-            if (status.code == 'switch1_value') {
-                value = '4'
-            } else if (status.code == 'switch2_value') {
-                value = '3'
-            } else if (status.code == 'switch3_value') {
-                value = '1'
-            } else if (status.code == 'switch4_value') {
-                value = '2'
-            } else {
-                log.warn "sceneSwitch unknown status.code ${status.code}"
+            if ( status.code in sceneSwitchKeyNumbers ){
+                 value = sceneSwitchKeyNumbers[status.code]
+                if ( d.productKey == 'vp6clf9d' && status.code == 'switch1_value' )
+                   value = '1'                    // correction for TS0044 key #1
+            }
+            else {
+                log.warn "sceneSwitch: unknown status.code ${status.code}"
             }
 
-            return [ [ name: name, value: value, descriptionText: "button ${value} is ${name}", isStateChange: true ] ]
+            if ( value != null && action != null )     
+                return [ [ name: action, value: value, descriptionText: "button ${value} is ${action}", isStateChange: true ] ]
+            else
+                log.warn "sceneSwitch: unknown name ${action} or value ${value}"
+        }
+        
+        if (status.code in tuyaFunctions.battery) {
+            def value
+            if ( status.code == 'battery_percentage') {
+                log.info "${dw.displayName} battery is ${status.value}%"
+                return [ [ name: 'battery', value: status.value, descriptionText: "battery is ${status.value}%", unit: "%", isStateChange: true ] ]
+            }
         }
 
         if (status.code in tuyaFunctions.workMode) {
