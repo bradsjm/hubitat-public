@@ -316,7 +316,7 @@ void updated() {
 
 // Called to parse received MQTT data
 void parse(String data) {
-    Map payload = parser.parseText(interfaces.mqtt.parseMessage(data).payload)
+    Map payload = new JsonSlurper().parseText(interfaces.mqtt.parseMessage(data).payload)
     Cipher cipher = Cipher.getInstance('AES/ECB/PKCS5Padding')
     cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(state.mqttInfo.password[8..23].bytes, 'AES'))
     Map result = new JsonSlurper().parse(cipher.doFinal(payload.data.decodeBase64()), 'UTF-8')
