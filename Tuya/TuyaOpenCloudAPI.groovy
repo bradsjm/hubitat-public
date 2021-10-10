@@ -105,27 +105,27 @@ metadata {
 
 // Tuya Function Categories
 @Field static final Map<String, List<String>> tuyaFunctions = [
-    'brightness': [ 'bright_value', 'bright_value_v2', 'bright_value_1' ],
-    'colour': [ 'colour_data', 'colour_data_v2' ],
-    'switch': [ 'switch', 'switch_led', 'switch_led_1', 'light' ],
-    'temperature': [ 'temp_value', 'temp_value_v2' ],
-    'workMode': [ 'work_mode' ],
-    'sceneSwitch' : [ 'switch1_value', 'switch2_value', 'switch3_value', 'switch4_value', 'switch_mode2', 'switch_mode3', 'switch_mode4' ],
-    'omniSensor': [ 'bright_value', 'temp_current', 'humidity_value', 'va_humidity', 'bright_sensitivity', 'co2_value', 'battery_percentage' ],
-    'battery' : [ 'battery_percentage', 'va_battery' ] 
+    'brightness'    : [ 'bright_value', 'bright_value_v2', 'bright_value_1' ],
+    'colour'        : [ 'colour_data', 'colour_data_v2' ],
+    'switch'        : [ 'switch', 'switch_led', 'switch_led_1', 'light' ],
+    'temperature'   : [ 'temp_value', 'temp_value_v2' ],
+    'workMode'      : [ 'work_mode' ],
+    'sceneSwitch'   : [ 'switch1_value', 'switch2_value', 'switch3_value', 'switch4_value', 'switch_mode2', 'switch_mode3', 'switch_mode4' ],
+    'omniSensor'    : [ 'bright_value', 'temp_current', 'humidity_value', 'va_humidity', 'bright_sensitivity', 'co2_value', 'battery_percentage' ],
+    'battery'       : [ 'battery_percentage', 'va_battery' ]
 ]
 
 // Tuya -> Hubitat attributes mappings
 // TS004F  productKey:xabckq1v        TS0044 productKey:vp6clf9d
-@Field static final Map<String, String> sceneSwitchAction = [       
-    'single_click' : 'pushed',             // TS004F
-    'double_click' : 'doubleTapped',
-    'long_press'   : 'held',
-    'click'        : 'pushed',             // TS0044
-    'double_click' : 'doubleTapped',
-    'press'        : 'held'
+@Field static final Map<String, String> sceneSwitchAction = [
+    'single_click'  : 'pushed',             // TS004F
+    'double_click'  : 'doubleTapped',
+    'long_press'    : 'held',
+    'click'         : 'pushed',             // TS0044
+    'double_click'  : 'doubleTapped',
+    'press'         : 'held'
 ]
-@Field static final Map<String, String> sceneSwitchKeyNumbers = [     
+@Field static final Map<String, String> sceneSwitchKeyNumbers = [
     'switch_mode2'  : '2',                // TS0044
     'switch_mode3'  : '3',
     'switch_mode4'  : '4',
@@ -134,7 +134,6 @@ metadata {
     'switch3_value' : '1',
     'switch4_value' : '2',
 ]
-
 
 // Constants
 @Field static final Integer maxMireds = 500 // 2000K
@@ -429,10 +428,10 @@ private static Map mapTuyaCategory(String category) {
         case 'xdd':   // Ceiling Light
             return [ namespace: 'hubitat', name: 'Generic Component RGBW' ]
         case 'wxkg':    // Scene switch (TS004F in 'Device trigger' mode only; TS0044)
-            return [ namespace: 'hubitat', name: 'Generic Component Central Scene Switch' ] 
+            return [ namespace: 'hubitat', name: 'Generic Component Central Scene Switch' ]
         case 'ldcg':    // brightness, temperature, humidity, CO2 sensors
-        case 'wsdcg' :
-            return [ namespace: 'hubitat', name: 'Generic Component Omni Sensor' ] 
+        case 'wsdcg':
+            return [ namespace: 'hubitat', name: 'Generic Component Omni Sensor' ]
         default:
             return [ namespace: 'hubitat', name: 'Generic Component Switch' ]
     }
@@ -464,10 +463,7 @@ private ChildDeviceWrapper createChildDevice(Map d) {
         Map driver = mapTuyaCategory(d.category)
         log.info "${device.displayName} creating device ${d.name} using ${driver.name} driver"
         try {
-            dw = addChildDevice(
-                driver.namespace,
-                driver.name,
-                "${device.id}-${d.id}",
+            dw = addChildDevice(driver.namespace, driver.name, "${device.id}-${d.id}",
                 [
                     name: d.product_name,
                     label: d.name,
@@ -480,8 +476,8 @@ private ChildDeviceWrapper createChildDevice(Map d) {
         }
     }
 
-    dw.label = dw.label ?: d.name
     dw.with {
+        label = label ?: d.name
         updateDataValue 'id', d.id
         updateDataValue 'local_key', d.local_key
         updateDataValue 'category', d.category
@@ -499,11 +495,7 @@ private void logsOff() {
 
 private void parseBizData(String bizCode, Map bizData) {
     String indicator = ' [Offline]'
-    ChildDeviceWrapper dw = getChildDevice("${device.id}-${bizData.devId}")
-    if (!dw) {
-        log.error "${device.displayName} parseBizData: Child device not found (${bizCode} ${bizData})"
-        return
-    }
+    ChildDeviceWrapper dw = bizData.devId ? getChildDevice("${device.id}-${bizData.devId}") : null
 
     if (logEnable) { log.debug "${device.displayName} ${bizCode} ${bizData}" }
     switch (bizCode) {
@@ -546,6 +538,7 @@ private void updateDeviceStatus(Map d) {
             if ( bright != null )
             {
                 Integer value = Math.floor(remap(status.value, bright.min, bright.max, 0, 100))
+                log.info "${dw.displayName} level is ${value}%"
                 return [ [ name: 'level', value: value, unit: '%', descriptionText: "level is ${value}%" ] ]
             }
         }
@@ -559,12 +552,14 @@ private void updateDeviceStatus(Map d) {
             Integer saturation = Math.floor(remap(value.s, colour.s.min, colour.s.max, 0, 100))
             Integer level = Math.floor(remap(value.v, bright.min, bright.max, 0, 100))
             String colorName = translateColor(hue, saturation)
+            log.info "${dw.displayName} color is h:${hue} s:${saturation} (${colorName})"
             List<Map> events = [
                 [ name: 'hue', value: hue, descriptionText: "hue is ${hue}" ],
                 [ name: 'saturation', value: saturation, descriptionText: "saturation is ${saturation}" ],
                 [ name: 'colorName', value: colorName, descriptionText: "color name is ${colorName}" ]
             ]
             if (workMode == 'color') {
+                log.info "${dw.displayName} level is ${level}%"
                 events << [ name: 'level', value: level, unit: '%', descriptionText: "level is ${level}%" ]
             }
             return events
@@ -572,6 +567,7 @@ private void updateDeviceStatus(Map d) {
 
         if (status.code in tuyaFunctions.switch) {
             String value = status.value ? 'on' : 'off'
+            log.info "${dw.displayName} switch is ${value}"
             return [ [ name: 'switch', value: value, descriptionText: "switch is ${value}" ] ]
         }
 
@@ -579,84 +575,85 @@ private void updateDeviceStatus(Map d) {
             Map temperature = deviceFunctions[status.code]
             Integer value = Math.floor(1000000 / remap(temperature.max - status.value,
                             temperature.min, temperature.max, minMireds, maxMireds))
+            log.info "${dw.displayName} color temperature is ${value}K"
             return [ [ name: 'colorTemperature', value: value, unit: 'K',
                        descriptionText: "color temperature is ${value}K" ] ]
         }
 
         if (status.code in tuyaFunctions.sceneSwitch) {
             String action
-            if ( status.value in sceneSwitchAction ){
+            if (status.value in sceneSwitchAction) {
                  action = sceneSwitchAction[status.value]
+            } else {
+                log.warn "${dw.displayName} sceneSwitch: unknown status.value ${status.value}"
             }
-            else {
-                log.warn "sceneSwitch: unknown status.value ${status.value}"
-            }
-            
+
             String value
-            if ( status.code in sceneSwitchKeyNumbers ){
-                 value = sceneSwitchKeyNumbers[status.code]
-                if ( d.productKey == 'vp6clf9d' && status.code == 'switch1_value' )
+            if (status.code in sceneSwitchKeyNumbers) {
+                value = sceneSwitchKeyNumbers[status.code]
+                if (d.productKey == 'vp6clf9d' && status.code == 'switch1_value') {
                    value = '1'                    // correction for TS0044 key #1
-            }
-            else {
-                log.warn "sceneSwitch: unknown status.code ${status.code}"
+                }
+            } else {
+                log.warn "${dw.displayName} sceneSwitch: unknown status.code ${status.code}"
             }
 
-            if ( value != null && action != null )     
+            if (value != null && action != null) {
+                log.info "${dw.displayName} buttons ${value} is ${action}"
                 return [ [ name: action, value: value, descriptionText: "button ${value} is ${action}", isStateChange: true ] ]
-            else
-                log.warn "sceneSwitch: unknown name ${action} or value ${value}"
-        }
-        
-        if (status.code in tuyaFunctions.battery) {
-            def value
-            if ( status.code == 'battery_percentage' || status.code == 'va_battery') {
-                log.info "${dw.displayName} battery is ${status.value}%"
-                return [ [ name: 'battery', value: status.value, descriptionText: "battery is ${status.value}%", unit: "%", isStateChange: true ] ]
+            } else {
+                log.warn "${dw.displayName} sceneSwitch: unknown name ${action} or value ${value}"
             }
         }
 
-        
+        if (status.code in tuyaFunctions.battery) {
+            if (status.code == 'battery_percentage' || status.code == 'va_battery') {
+                log.info "${dw.displayName} battery is ${status.value}%"
+                return [ [ name: 'battery', value: status.value, descriptionText: "battery is ${status.value}%", unit: "%" ] ]
+            }
+        }
+
         if (status.code in tuyaFunctions.omniSensor) {
             String name
             String value
-            String unut
+            String unit
             switch (status.code) {
                 case 'bright_value':
                     name = 'illuminance'
                     value = status.value
-                    unit = "Lux"
+                    unit = 'Lux'
                     break
                 case 'temp_current':
                 case 'va_temperature':
                     value = status.value
-                    if (status.code == 'temp_current') 
+                    if (status.code == 'temp_current') {
                         value = value / 10
+                    }
                     name = 'temperature'
-                    unit = "\u00B0"+"${location.temperatureScale}"
+                    unit = "\u00B0${location.temperatureScale}"
                     break
                 case 'humidity_value':
                 case 'va_humidity':
                     name = 'humidity'
                     value = status.value / 10
-                    unit = "RH%"
+                    unit = 'RH%'
                     break
                 case 'co2_value':
                     name = 'carbonDioxide'
                     value = status.value
-                    unit = "ppm"
+                    unit = 'ppm'
                     break
                 case 'bright_sensitivity':
                     name = 'sensitivity'
                     value = status.value
-                    unit = "%"
+                    unit = '%'
                     break
                 default:
-                    log.warn "unsupported omniSensor status.code ${status.code}"
+                    log.warn "${dw.displayName} unsupported omniSensor status.code ${status.code}"
             }
-            if ( name != null && value != null) {
+            if (name != null && value != null) {
                 log.info "${dw.displayName} ${name} is ${value} ${unit}"
-                return [ [ name: name, value: value, descriptionText: "${name} is ${value} ${unit}", unit: unit, isStateChange: true ] ]
+                return [ [ name: name, value: value, descriptionText: "${name} is ${value} ${unit}", unit: unit ] ]
             }
         }
 
@@ -664,8 +661,10 @@ private void updateDeviceStatus(Map d) {
             switch (status.value) {
                 case 'white':
                 case 'light_white':
+                    log.info "${dw.displayName} color mode is CT"
                     return [ [ name: 'colorMode', value: 'CT', descriptionText: "color mode is CT" ] ]
                 case 'colour':
+                    log.info "${dw.displayName} color mode is RGB"
                     return [ [ name: 'colorMode', value: 'RGB', descriptionText: "color mode is RGB" ] ]
             }
         }
