@@ -41,7 +41,8 @@ import hubitat.scheduling.AsyncResponse
  *  Changelog:
  *  10/6/21 - 0.1 Initial release
  *  10/8/21 - 0.1.1 - added Scene Switch TS004F productKey:xabckq1v
- *  10/8/21 - 0.1.2 - added Scene Switch TS0044 productKey:vp6clf9d; added battery reports (when the virtual driver supports it)
+ *  10/09/21 - 0.1.2 - added Scene Switch TS0044 productKey:vp6clf9d; added battery reports (when the virtual driver supports it)
+ *  10/10/21 - 0.1.3 - brightness, temperature, humidity, CO2 sensors
  */
 
 metadata {
@@ -110,7 +111,8 @@ metadata {
     'temperature': [ 'temp_value', 'temp_value_v2' ],
     'workMode': [ 'work_mode' ],
     'sceneSwitch' : [ 'switch1_value', 'switch2_value', 'switch3_value', 'switch4_value', 'switch_mode2', 'switch_mode3', 'switch_mode4' ],
-    'battery' : [ 'battery_percentage' ] 
+    'omniSensor': [ 'bright_value', 'temp_current', 'humidity_value', 'va_humidity', 'bright_sensitivity', 'co2_value', 'battery_percentage' ],
+    'battery' : [ 'battery_percentage', 'va_battery' ] 
 ]
 
 // Tuya -> Hubitat attributes mappings
@@ -427,7 +429,10 @@ private static Map mapTuyaCategory(String category) {
         case 'xdd':   // Ceiling Light
             return [ namespace: 'hubitat', name: 'Generic Component RGBW' ]
         case 'wxkg':    // Scene switch (TS004F in 'Device trigger' mode only; TS0044)
-            return [ namespace: 'hubitat', name: 'Generic Component Central Scene Switch' ]  
+            return [ namespace: 'hubitat', name: 'Generic Component Central Scene Switch' ] 
+        case 'ldcg':    // brightness, temperature, humidity, CO2 sensors
+        case 'wsdcg' :
+            return [ namespace: 'hubitat', name: 'Generic Component Omni Sensor' ] 
         default:
             return [ namespace: 'hubitat', name: 'Generic Component Switch' ]
     }
@@ -538,8 +543,11 @@ private void updateDeviceStatus(Map d) {
 
         if (status.code in tuyaFunctions.brightness && workMode != 'colour') {
             Map bright = deviceFunctions[status.code]
-            Integer value = Math.floor(remap(status.value, bright.min, bright.max, 0, 100))
-            return [ [ name: 'level', value: value, unit: '%', descriptionText: "level is ${value}%" ] ]
+            if ( bright != null )
+            {
+                Integer value = Math.floor(remap(status.value, bright.min, bright.max, 0, 100))
+                return [ [ name: 'level', value: value, unit: '%', descriptionText: "level is ${value}%" ] ]
+            }
         }
 
         if (status.code in tuyaFunctions.colour) {
@@ -602,9 +610,53 @@ private void updateDeviceStatus(Map d) {
         
         if (status.code in tuyaFunctions.battery) {
             def value
-            if ( status.code == 'battery_percentage') {
+            if ( status.code == 'battery_percentage' || status.code == 'va_battery') {
                 log.info "${dw.displayName} battery is ${status.value}%"
                 return [ [ name: 'battery', value: status.value, descriptionText: "battery is ${status.value}%", unit: "%", isStateChange: true ] ]
+            }
+        }
+
+        
+        if (status.code in tuyaFunctions.omniSensor) {
+            String name
+            String value
+            String unut
+            switch (status.code) {
+                case 'bright_value':
+                    name = 'illuminance'
+                    value = status.value
+                    unit = "Lux"
+                    break
+                case 'temp_current':
+                case 'va_temperature':
+                    value = status.value
+                    if (status.code == 'temp_current') 
+                        value = value / 10
+                    name = 'temperature'
+                    unit = "\u00B0"+"${location.temperatureScale}"
+                    break
+                case 'humidity_value':
+                case 'va_humidity':
+                    name = 'humidity'
+                    value = status.value / 10
+                    unit = "RH%"
+                    break
+                case 'co2_value':
+                    name = 'carbonDioxide'
+                    value = status.value
+                    unit = "ppm"
+                    break
+                case 'bright_sensitivity':
+                    name = 'sensitivity'
+                    value = status.value
+                    unit = "%"
+                    break
+                default:
+                    log.warn "unsupported omniSensor status.code ${status.code}"
+            }
+            if ( name != null && value != null) {
+                log.info "${dw.displayName} ${name} is ${value} ${unit}"
+                return [ [ name: name, value: value, descriptionText: "${name} is ${value} ${unit}", unit: unit, isStateChange: true ] ]
             }
         }
 
