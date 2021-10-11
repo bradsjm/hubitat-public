@@ -322,10 +322,8 @@ void componentSetSpeed(DeviceWrapper dw, String speed) {
 // Component command to cycle fan speed
 void componentCycleSpeed(DeviceWrapper dw) {
     switch(dw.currentValue('speed')) {
-        case 'low': componentSetSpeed(dw, 'medium-low'); break
-        case 'medium-low': componentSetSpeed(dw, 'medium'); break
-        case 'medium': componentSetSpeed(dw, 'medium-high'); break
-        case 'medium-high': componentSetSpeed(dw, 'high'); break
+        case 'low': componentSetSpeed(dw, 'medium'); break
+        case 'medium': componentSetSpeed(dw, 'high'); break
         case 'high': componentSetSpeed(dw, 'low'); break
     }
 }
