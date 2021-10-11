@@ -39,10 +39,11 @@ import hubitat.scheduling.AsyncResponse
 
 /*
  *  Changelog:
- *  10/6/21 - 0.1 Initial release
- *  10/8/21 - 0.1.1 - added Scene Switch TS004F productKey:xabckq1v
+ *  10/06/21 - 0.1   - Initial release
+ *  10/08/21 - 0.1.1 - added Scene Switch TS004F productKey:xabckq1v
  *  10/09/21 - 0.1.2 - added Scene Switch TS0044 productKey:vp6clf9d; added battery reports (when the virtual driver supports it)
  *  10/10/21 - 0.1.3 - brightness, temperature, humidity, CO2 sensors
+ *  10/11/21 - 0.1.4 - door contact, water, smoke, co, pir sensors
  */
 
 metadata {
@@ -111,8 +112,14 @@ metadata {
     'temperature'   : [ 'temp_value', 'temp_value_v2' ],
     'workMode'      : [ 'work_mode' ],
     'sceneSwitch'   : [ 'switch1_value', 'switch2_value', 'switch3_value', 'switch4_value', 'switch_mode2', 'switch_mode3', 'switch_mode4' ],
-    'omniSensor'    : [ 'bright_value', 'temp_current', 'humidity_value', 'va_humidity', 'bright_sensitivity', 'co2_value', 'battery_percentage' ],
-    'battery'       : [ 'battery_percentage', 'va_battery' ]
+    'omniSensor'    : [ 'bright_value', 'temp_current', 'humidity_value', 'va_humidity', 'bright_sensitivity' ],
+    'battery'       : [ 'battery_percentage', 'va_battery' ],
+    'contact'       : [ 'doorcontact_state' ],
+    'water'         : [ 'watersensor_state' ],
+    'smoke'         : [ 'smoke_sensor_status' ],
+    'co'            : [ 'co_state' ],
+    'co2'           : [ 'co2_value' ],
+    'pir'           : [ 'pir' ]
 ]
 
 // Tuya -> Hubitat attributes mappings
@@ -419,19 +426,32 @@ private static Map mapTuyaCategory(String category) {
         case 'tgq':   // Dimmer Light
         case 'tgkg':  // Dimmer Switch
             return [ namespace: 'hubitat', name: 'Generic Component Dimmer' ]
-        case 'dc':    // String Lights
-        case 'dd':    // Strip Lights
         case 'dj':    // Light
-        case 'fsd':   // Ceiling Fan with Light
-        case 'fwd':   // Ambient Light
-        case 'gyd':   // Motion Sensor with Light
+        case 'dc':    // String Light
+        case 'dd':    // Strip Light
+        case 'fsd':   // Ceiling Fan Light
+        case 'gyd':   // Motion Sensor Lights
         case 'xdd':   // Ceiling Light
+        case 'fwd':   // Ambient Light
+        case 'tyndj': // Solar Light
             return [ namespace: 'hubitat', name: 'Generic Component RGBW' ]
-        case 'wxkg':    // Scene switch (TS004F in 'Device trigger' mode only; TS0044)
+        case 'wxkg':  // Scene switch (TS004F in 'Device trigger' mode only; TS0044)
             return [ namespace: 'hubitat', name: 'Generic Component Central Scene Switch' ]
-        case 'ldcg':    // brightness, temperature, humidity, CO2 sensors
+        case 'ldcg':  // Brightness, temperature, humidity, CO2 sensors
         case 'wsdcg':
             return [ namespace: 'hubitat', name: 'Generic Component Omni Sensor' ]
+        case 'mcs':   // Contact Sensor
+            return [ namespace: 'hubitat', name: 'Generic Component Contact Sensor' ]
+        case 'sj':    // Water Sensor
+            return [ namespace: 'hubitat', name: 'Generic Component Water Sensor' ]
+        case 'ywbj':  // Smoke Detector
+            return [ namespace: 'hubitat', name: 'Generic Component Smoke Detector' ]
+        case 'cobj':  // CO Detector
+            return [ namespace: 'hubitat', name: 'Generic Component Carbon Monoxide Detector' ]
+        case 'co2bj': // CO2 Sensor
+            return [ namespace: 'hubitat', name: 'Generic Component Carbon Dioxide Detector' ]
+        case 'pir':   // Motion Sensor
+            return [ namespace: 'hubitat', name: 'Generic Component Motion Sensor' ]
         default:
             return [ namespace: 'hubitat', name: 'Generic Component Switch' ]
     }
@@ -565,6 +585,42 @@ private void updateDeviceStatus(Map d) {
             return events
         }
 
+        if (status.code in tuyaFunctions.contact) {
+            String value = status.value ? 'open' : 'closed'
+            log.info "${dw.displayName} contact is ${value}"
+            return [ [ name: 'contact', value: value, descriptionText: "contact is ${value}" ] ]
+        }
+
+        if (status.code in tuyaFunctions.water) {
+            String value = status.value == 'alarm' ? 'wet' : 'dry'
+            log.info "${dw.displayName} water is ${value}"
+            return [ [ name: 'water', value: value, descriptionText: "water is ${value}" ] ]
+        }
+
+        if (status.code in tuyaFunctions.smoke) {
+            String value = status.value == 'alarm' ? 'detected' : 'clear'
+            log.info "${dw.displayName} smoke is ${value}"
+            return [ [ name: 'smoke', value: value, descriptionText: "smoke is ${value}" ] ]
+        }
+
+        if (status.code in tuyaFunctions.co) {
+            String value = status.value == 'alarm' ? 'detected' : 'clear'
+            log.info "${dw.displayName} carbon monoxide is ${value}"
+            return [ [ name: 'carbonMonoxide', value: value, descriptionText: "carbon monoxide is ${value}" ] ]
+        }
+
+        if (status.code in tuyaFunctions.co2) {
+            String value = status.value
+            log.info "${dw.displayName} carbon dioxide level is ${value}"
+            return [ [ name: 'carbonDioxide', value: value, unit: 'ppm', descriptionText: "carbon dioxide level is ${value}" ] ]
+        }
+
+        if (status.code in tuyaFunctions.pir) {
+            String value = status.value == 'pir' ? 'active' : 'inactive'
+            log.info "${dw.displayName} motion is ${value}"
+            return [ [ name: 'motion', value: value, descriptionText: "motion is ${value}" ] ]
+        }
+
         if (status.code in tuyaFunctions.switch) {
             String value = status.value ? 'on' : 'off'
             log.info "${dw.displayName} switch is ${value}"
@@ -637,11 +693,6 @@ private void updateDeviceStatus(Map d) {
                     name = 'humidity'
                     value = status.value / 10
                     unit = 'RH%'
-                    break
-                case 'co2_value':
-                    name = 'carbonDioxide'
-                    value = status.value
-                    unit = 'ppm'
                     break
                 case 'bright_sensitivity':
                     name = 'sensitivity'
