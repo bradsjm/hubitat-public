@@ -634,7 +634,7 @@ private void updateDeviceStatus(Map d) {
             int value
             switch (speed.type) {
                 case 'Enum':
-                    value = remap(speedFunc.range.indexOf(status.value), 0, speedFunc.range.size() - 1, 0, 4) as int
+                    value = remap(speed.range.indexOf(status.value), 0, speed.range.size() - 1, 0, 4) as int
                     break
                 case 'Integer':
                     value = remap(status.value as int, speed.min as int ?: 1, speed.max as int ?: 100, 0, 4) as int
