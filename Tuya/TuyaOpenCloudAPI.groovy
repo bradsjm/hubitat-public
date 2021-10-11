@@ -287,6 +287,7 @@ void componentSetSpeed(DeviceWrapper dw, String speed) {
         tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': 'switch', 'value': false ])
     } else {
         Map functions = getFunctions(dw)
+        String code = getFunctionByCode(functions, tuyaFunctions.fanSpeed)
         Map speedFunc = functions[code]
         int speedVal = ['low', 'medium-low', 'medium', 'medium-high', 'high'].indexOf(speed) + 1
         String value
@@ -299,7 +300,6 @@ void componentSetSpeed(DeviceWrapper dw, String speed) {
                 break
         }
         log.info "Setting speed to ${speed}"
-        String code = getFunctionByCode(functions, tuyaFunctions.fanSpeed)
         tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': value ])
     }
 }
