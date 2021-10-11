@@ -294,10 +294,10 @@ void componentSetSpeed(DeviceWrapper dw, String speed) {
         String value
         switch (speedFunc.type) {
             case 'Enum':
-                value = speedFunc.range[remap(speedVal, 0, 4, 1, speedFunc.range.size()) as int]
+                value = speedFunc.range[remap(speedVal, 0, 4, 0, speedFunc.range.size() - 1) as int]
                 break
             case 'Integer':
-                value = remap(speedVal, 0, 4, speedFunc.min ?: 1, speedFunc.max ?: 100)
+                value = remap(speedVal, 0, 4, speedFunc.min as int ?: 1, speedFunc.max as int ?: 100)
                 break
             default:
                 log.warn "Unknown fan speed function type ${speedFunc}"
@@ -634,10 +634,10 @@ private void updateDeviceStatus(Map d) {
             int value
             switch (speed.type) {
                 case 'Enum':
-                    value = remap(status.value as int, speed.range.min(), speed.range.max(), 0, 4) as int
+                    value = remap(speedFunc.range.indexOf(status.value), 0, speedFunc.range.size() - 1, 0, 4) as int
                     break
                 case 'Integer':
-                    value = remap(status.value as int, speed.min ?: 1, speed.max ?: 100, 0, 4) as int
+                    value = remap(status.value as int, speed.min as int ?: 1, speed.max as int ?: 100, 0, 4) as int
                     break
             }
             String level = ['low', 'medium-low', 'medium', 'medium-high', 'high'].get(value)
