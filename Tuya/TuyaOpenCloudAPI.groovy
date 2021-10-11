@@ -644,17 +644,22 @@ private void updateDeviceStatus(Map d) {
         if (status.code in tuyaFunctions.fanSpeed) {
             Map speed = deviceFunctions[status.code]
             int value
-            switch (speed.type) {
-                case 'Enum':
-                    value = remap(speed.range.indexOf(status.value), 0, speed.range.size() - 1, 0, 4) as int
-                    break
-                case 'Integer':
-                    value = remap(status.value as int, speed.min as int ?: 1, speed.max as int ?: 100, 0, 4) as int
-                    break
+            if (statusList['switch']) {
+                switch (speed.type) {
+                    case 'Enum':
+                        value = remap(speed.range.indexOf(status.value), 0, speed.range.size() - 1, 0, 4) as int
+                        break
+                    case 'Integer':
+                        value = remap(status.value as int, speed.min as int ?: 1, speed.max as int ?: 100, 0, 4) as int
+                        break
+                }
+                String level = ['low', 'medium-low', 'medium', 'medium-high', 'high'].get(value)
+                if (txtEnable) { log.info "${dw.displayName} speed is ${level}" }
+                return [ [ name: 'speed', value: level, descriptionText: "speed is ${level}" ] ]
+            } else {
+                if (txtEnable) { log.info "${dw.displayName} speed is off" }
+                return [ [ name: 'speed', value: 'off', descriptionText: "speed is off" ] ]
             }
-            String level = ['low', 'medium-low', 'medium', 'medium-high', 'high'].get(value)
-            if (txtEnable) { log.info "${dw.displayName} speed is ${level}" }
-            return [ [ name: 'speed', value: level, descriptionText: "speed is ${level}" ] ]
         }
 
         if (status.code in tuyaFunctions.contact) {
