@@ -261,11 +261,11 @@ void componentSetLevel(DeviceWrapper dw, BigDecimal level, BigDecimal duration =
 }
 
 void componentSetNextEffect(DeviceWrapper device) {
-    log.warn "${device.displayName} Set next effect command not supported"
+    log.warn "Set next effect command not supported"
 }
 
 void componentSetPreviousEffect(DeviceWrapper device) {
-    log.warn "${device.displayName} Set previous effect command not supported"
+    log.warn "Set previous effect command not supported"
 }
 
 // Component command to set saturation
@@ -284,6 +284,8 @@ void componentSetSpeed(DeviceWrapper dw, String speed) {
         tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': 'switch', 'value': true ])
     } else if (speed == 'off') {
         tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': 'switch', 'value': false ])
+    } else if (speed == 'auto') {
+        log.warn 'Speed level auto is not supported'
     } else {
         Map functions = getFunctions(dw)
         String code = getFunctionByCode(functions, tuyaFunctions.fanSpeed)
@@ -629,10 +631,10 @@ private void updateDeviceStatus(Map d) {
             int value
             switch (speed.type) {
                 case 'Enum':
-                    value = remap(1, speed.range.size(), status.value, 0, 4) as int
+                    value = remap(1, speed.range.size(), status.value as int, 0, 4) as int
                     break
                 case 'Integer':
-                    value = remap(status.value, speed.min ?: 1, speed.max ?: 100, 0, 4) as int
+                    value = remap(status.value as int, speed.min ?: 1, speed.max ?: 100, 0, 4) as int
                     break
             }
             String level = ['low', 'medium-low', 'medium', 'medium-high', 'high'].get(value)
