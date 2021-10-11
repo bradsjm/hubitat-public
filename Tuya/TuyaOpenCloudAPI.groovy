@@ -294,7 +294,7 @@ void componentSetSpeed(DeviceWrapper dw, String speed) {
         String value
         switch (speedFunc.type) {
             case 'Enum':
-                value = speedFunc.range[remap(speedVal, 1, 5, 1, speedFunc.range.size())]
+                value = speedFunc.range[remap(speedVal, 1, 5, 1, speedFunc.range.size()) as int]
                 break
             case 'Integer':
                 value = remap(speedVal, 1, 5, speedFunc.min ?: 1, speedFunc.max ?: 100)
