@@ -247,7 +247,7 @@ void componentSetLevel(DeviceWrapper dw, BigDecimal level, BigDecimal duration =
     if (colorMode == 'CT') {
         Map functions = getFunctions(dw)
         String code = getFunctionByCode(functions, tuyaFunctions.brightness)
-        Map bright = functions[code]
+        Map bright = functions[code] ?: [:]
         Integer value = Math.ceil(remap(level, 0, 100, bright.min ?: 0, bright.max ?: 100))
         log.info "Setting ${dw} level to ${level}%"
         tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': value ])
@@ -279,11 +279,10 @@ void componentSetSaturation(DeviceWrapper dw, BigDecimal saturation) {
 
 // Component command to set fan speed
 void componentSetSpeed(DeviceWrapper dw, String speed) {
+    log.info "Setting speed to ${speed}"
     if (speed == 'on') {
-        log.info "Setting speed to ${speed}"
         tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': 'switch', 'value': true ])
     } else if (speed == 'off') {
-        log.info "Setting speed to ${speed}"
         tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': 'switch', 'value': false ])
     } else {
         Map functions = getFunctions(dw)
@@ -299,7 +298,6 @@ void componentSetSpeed(DeviceWrapper dw, String speed) {
                 value = remap(speedVal, 1, 5, speedFunc.min ?: 1, speedFunc.max ?: 100)
                 break
         }
-        log.info "Setting speed to ${speed}"
         tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': value ])
     }
 }
@@ -628,13 +626,13 @@ private void updateDeviceStatus(Map d) {
 
         if (status.code in tuyaFunctions.fanSpeed) {
             Map speed = deviceFunctions[status.code]
-            Integer value
+            int value
             switch (speed.type) {
                 case 'Enum':
-                    value = remap(1, speed.range.size(), status.value, 0, 4)
+                    value = remap(1, speed.range.size(), status.value, 0, 4) as int
                     break
                 case 'Integer':
-                    value = remap(status.value, speed.min ?: 1, speed.max ?: 100, 0, 4)
+                    value = remap(status.value, speed.min ?: 1, speed.max ?: 100, 0, 4) as int
                     break
             }
             String level = ['low', 'medium-low', 'medium', 'medium-high', 'high'].get(value)
