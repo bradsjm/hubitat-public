@@ -642,7 +642,7 @@ private void updateDeviceStatus(Map d) {
             }
             String level = ['low', 'medium-low', 'medium', 'medium-high', 'high'].get(value)
             if (txtEnable) { log.info "${dw.displayName} speed is ${level}" }
-            events << [ name: 'speed', value: level, descriptionText: "speed is ${level}" ]
+            return [ [ name: 'speed', value: level, descriptionText: "speed is ${level}" ] ]
         }
 
         if (status.code in tuyaFunctions.contact) {
