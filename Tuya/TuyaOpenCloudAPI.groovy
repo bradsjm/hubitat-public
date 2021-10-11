@@ -101,12 +101,6 @@ metadata {
                   required: false,
                   defaultValue: true
 
-            input name: 'logEnable',
-                  type: 'bool',
-                  title: 'Enable debug logging',
-                  required: false,
-                  defaultValue: true
-
             input name: 'txtEnable',
                   type: 'bool',
                   title: 'Enable descriptionText logging',
