@@ -290,15 +290,18 @@ void componentSetSpeed(DeviceWrapper dw, String speed) {
         Map functions = getFunctions(dw)
         String code = getFunctionByCode(functions, tuyaFunctions.fanSpeed)
         Map speedFunc = functions[code]
-        int speedVal = ['low', 'medium-low', 'medium', 'medium-high', 'high'].indexOf(speed) + 1
+        int speedVal = ['low', 'medium-low', 'medium', 'medium-high', 'high'].indexOf(speed)
         String value
         switch (speedFunc.type) {
             case 'Enum':
-                value = speedFunc.range[remap(speedVal, 1, 5, 1, speedFunc.range.size()) as int]
+                value = speedFunc.range[remap(speedVal, 0, 4, 1, speedFunc.range.size()) as int]
                 break
             case 'Integer':
-                value = remap(speedVal, 1, 5, speedFunc.min ?: 1, speedFunc.max ?: 100)
+                value = remap(speedVal, 0, 4, speedFunc.min ?: 1, speedFunc.max ?: 100)
                 break
+            default:
+                log.warn "Unknown fan speed function type ${speedFunc}"
+                return
         }
         tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': value ])
     }
