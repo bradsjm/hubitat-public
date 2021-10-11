@@ -521,11 +521,6 @@ private static BigDecimal remap(BigDecimal oldValue, BigDecimal oldMin, BigDecim
     return newValue.setScale(1, BigDecimal.ROUND_HALF_UP)
 }
 
-private static Integer remap(Integer oldValue, Integer oldMin, Integer oldMax,
-                             Integer newMin, Integer newMax) {
-    return remap(oldValue, oldMin, oldMax, newMin, newMax) as Integer
-}
-
 private ChildDeviceWrapper createChildDevice(Map d) {
     ChildDeviceWrapper dw = getChildDevice("${device.id}-${d.id}")
     if (!dw) {
