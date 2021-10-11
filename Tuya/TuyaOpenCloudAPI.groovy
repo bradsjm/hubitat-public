@@ -114,7 +114,7 @@ metadata {
 @Field static final Map<String, List<String>> tuyaFunctions = [
     'brightness'    : [ 'bright_value', 'bright_value_v2', 'bright_value_1' ],
     'colour'        : [ 'colour_data', 'colour_data_v2' ],
-    'switch'        : [ 'switch', 'switch_led', 'switch_led_1', 'light' ],
+    'light'         : [ 'switch_led', 'switch_led_1', 'light' ],
     'temperature'   : [ 'temp_value', 'temp_value_v2' ],
     'workMode'      : [ 'work_mode' ],
     'sceneSwitch'   : [ 'switch1_value', 'switch2_value', 'switch3_value', 'switch4_value', 'switch_mode2', 'switch_mode3', 'switch_mode4' ],
@@ -168,17 +168,21 @@ metadata {
 // Component command to turn on device
 void componentOn(DeviceWrapper dw) {
     Map functions = getFunctions(dw)
-    String code = getFunctionByCode(functions, tuyaFunctions.switch)
-    log.info "Turning ${dw} on"
-    tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': true ])
+    String code = getFunctionByCode(functions, tuyaFunctions.light)
+    if (code) {
+        log.info "Turning ${dw} on"
+        tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': true ])
+    }
 }
 
 // Component command to turn off device
 void componentOff(DeviceWrapper dw) {
     Map functions = getFunctions(dw)
-    String code = getFunctionByCode(functions, tuyaFunctions.switch)
-    log.info "Turning ${dw} off"
-    tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': false ])
+    String code = getFunctionByCode(functions, tuyaFunctions.light)
+    if (code) {
+        log.info "Turning ${dw} off"
+        tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': false ])
+    }
 }
 
 // Component command to refresh device
@@ -194,19 +198,21 @@ void componentRefresh(DeviceWrapper dw) {
 void componentSetColor(DeviceWrapper dw, Map colorMap) {
     Map functions = getFunctions(dw)
     String code = getFunctionByCode(functions, tuyaFunctions.colour)
-    Map color = functions[code]
-    // An oddity and workaround for mapping brightness values
-    Map bright = functions['bright_value'] ?: functions['bright_value_v2'] ?: color.v
-    Map value = [
-        h: remap(colorMap.hue, 0, 100, color.h.min, color.h.max),
-        s: remap(colorMap.saturation, 0, 100, color.s.min, color.s.max),
-        v: remap(colorMap.level, 0, 100, bright.min, bright.max)
-    ]
-    log.info "Setting ${dw} color to ${colorMap}"
-    tuyaSendDeviceCommands(dw.getDataValue('id'),
-        [ 'code': code, 'value': value ],
-        [ 'code': 'work_mode', 'value': 'colour']
-    )
+    if (code) {
+        Map color = functions[code]
+        // An oddity and workaround for mapping brightness values
+        Map bright = functions['bright_value'] ?: functions['bright_value_v2'] ?: color.v
+        Map value = [
+            h: remap(colorMap.hue, 0, 100, color.h.min, color.h.max),
+            s: remap(colorMap.saturation, 0, 100, color.s.min, color.s.max),
+            v: remap(colorMap.level, 0, 100, bright.min, bright.max)
+        ]
+        log.info "Setting ${dw} color to ${colorMap}"
+        tuyaSendDeviceCommands(dw.getDataValue('id'),
+            [ 'code': code, 'value': value ],
+            [ 'code': 'work_mode', 'value': 'colour']
+        )
+    }
 }
 
 // Component command to set color temperature
@@ -214,13 +220,15 @@ void componentSetColorTemperature(DeviceWrapper dw, BigDecimal kelvin,
                                   BigDecimal level = null, BigDecimal duration = null) {
     Map functions = getFunctions(dw)
     String code = getFunctionByCode(functions, tuyaFunctions.temperature)
-    Map temp = functions[code]
-    Integer value = temp.max - Math.ceil(maxMireds - remap(1000000 / kelvin, minMireds, maxMireds, temp.min, temp.max))
-    log.info "Setting ${dw} color temperature to ${kelvin}K"
-    tuyaSendDeviceCommands(dw.getDataValue('id'),
-        [ 'code': code, 'value': value ],
-        [ 'code': 'work_mode', 'value': 'white']
-    )
+    if (code) {
+        Map temp = functions[code]
+        Integer value = temp.max - Math.ceil(maxMireds - remap(1000000 / kelvin, minMireds, maxMireds, temp.min, temp.max))
+        log.info "Setting ${dw} color temperature to ${kelvin}K"
+        tuyaSendDeviceCommands(dw.getDataValue('id'),
+            [ 'code': code, 'value': value ],
+            [ 'code': 'work_mode', 'value': 'white']
+        )
+    }
     if (level && dw.currentValue('level') != level) {
         componentSetLevel(dw, level, duration)
     }
@@ -247,10 +255,12 @@ void componentSetLevel(DeviceWrapper dw, BigDecimal level, BigDecimal duration =
     if (colorMode == 'CT') {
         Map functions = getFunctions(dw)
         String code = getFunctionByCode(functions, tuyaFunctions.brightness)
-        Map bright = functions[code] ?: [:]
-        Integer value = Math.ceil(remap(level, 0, 100, bright.min ?: 0, bright.max ?: 100))
-        log.info "Setting ${dw} level to ${level}%"
-        tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': value ])
+        if (code) {
+            Map bright = functions[code] ?: [:]
+            Integer value = Math.ceil(remap(level, 0, 100, bright.min ?: 0, bright.max ?: 100))
+            log.info "Setting ${dw} level to ${level}%"
+            tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': value ])
+        }
     } else {
         componentSetColor(dw, [
             hue: dw.currentValue('hue') ?: 100,
@@ -279,42 +289,44 @@ void componentSetSaturation(DeviceWrapper dw, BigDecimal saturation) {
 
 // Component command to set fan speed
 void componentSetSpeed(DeviceWrapper dw, String speed) {
-    log.info "Setting speed to ${speed}"
-    if (speed == 'on') {
-        tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': 'switch', 'value': true ])
-    } else if (speed == 'off') {
-        tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': 'switch', 'value': false ])
-    } else if (speed == 'auto') {
-        log.warn 'Speed level auto is not supported'
-    } else {
-        Map functions = getFunctions(dw)
-        String code = getFunctionByCode(functions, tuyaFunctions.fanSpeed)
-        Map speedFunc = functions[code]
-        int speedVal = ['low', 'medium-low', 'medium', 'medium-high', 'high'].indexOf(speed)
-        String value
-        switch (speedFunc.type) {
-            case 'Enum':
-                value = speedFunc.range[remap(speedVal, 0, 4, 0, speedFunc.range.size() - 1) as int]
-                break
-            case 'Integer':
-                value = remap(speedVal, 0, 4, speedFunc.min as int ?: 1, speedFunc.max as int ?: 100)
-                break
-            default:
-                log.warn "Unknown fan speed function type ${speedFunc}"
-                return
+    Map functions = getFunctions(dw)
+    String code = getFunctionByCode(functions, tuyaFunctions.fanSpeed)
+    if (code) {
+        log.info "Setting speed to ${speed}"
+        if (speed == 'on') {
+            tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': 'switch', 'value': true ])
+        } else if (speed == 'off') {
+            tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': 'switch', 'value': false ])
+        } else if (speed == 'auto') {
+            log.warn 'Speed level auto is not supported'
+        } else {
+            Map speedFunc = functions[code]
+            int speedVal = ['low', 'medium-low', 'medium', 'medium-high', 'high'].indexOf(speed)
+            String value
+            switch (speedFunc.type) {
+                case 'Enum':
+                    value = speedFunc.range[remap(speedVal, 0, 4, 0, speedFunc.range.size() - 1) as int]
+                    break
+                case 'Integer':
+                    value = remap(speedVal, 0, 4, speedFunc.min as int ?: 1, speedFunc.max as int ?: 100)
+                    break
+                default:
+                    log.warn "Unknown fan speed function type ${speedFunc}"
+                    return
+            }
+            tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': value ])
         }
-        tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': value ])
     }
 }
 
 // Component command to cycle fan speed
 void componentCycleSpeed(DeviceWrapper dw) {
     switch(dw.currentValue('speed')) {
-        case 'low': componentSetSpeed('medium-low'); break
-        case 'medium-low': componentSetSpeed('medium'); break
-        case 'medium': componentSetSpeed('medium-high'); break
-        case 'medium-high': componentSetSpeed('high'); break
-        case 'high': componentSetSpeed('low'); break
+        case 'low': componentSetSpeed(dw, 'medium-low'); break
+        case 'medium-low': componentSetSpeed(dw, 'medium'); break
+        case 'medium': componentSetSpeed(dw, 'medium-high'); break
+        case 'medium-high': componentSetSpeed(dw, 'high'); break
+        case 'high': componentSetSpeed(dw, 'low'); break
     }
 }
 
@@ -681,7 +693,7 @@ private void updateDeviceStatus(Map d) {
             return [ [ name: 'motion', value: value, descriptionText: "motion is ${value}" ] ]
         }
 
-        if (status.code in tuyaFunctions.switch) {
+        if (status.code in tuyaFunctions.light) {
             String value = status.value ? 'on' : 'off'
             if (txtEnable) { log.info "${dw.displayName} switch is ${value}" }
             return [ [ name: 'switch', value: value, descriptionText: "switch is ${value}" ] ]
