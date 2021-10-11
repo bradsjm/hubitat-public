@@ -248,7 +248,7 @@ void componentSetLevel(DeviceWrapper dw, BigDecimal level, BigDecimal duration =
         Map functions = getFunctions(dw)
         String code = getFunctionByCode(functions, tuyaFunctions.brightness)
         Map bright = functions[code]
-        Integer value = Math.ceil(remap(level, 0, 100, bright.min, bright.max))
+        Integer value = Math.ceil(remap(level, 0, 100, bright.min ?: 0, bright.max ?: 100))
         log.info "Setting ${dw} level to ${level}%"
         tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': value ])
     } else {
@@ -293,7 +293,7 @@ void componentSetSpeed(DeviceWrapper dw, String speed) {
         String value
         switch (speedFunc.type) {
             case 'Enum':
-                value = code.range[remap(speedVal, 1, 5, 1, speedFunc.range.size())]
+                value = speedFunc.range[remap(speedVal, 1, 5, 1, speedFunc.range.size())]
                 break
             case 'Integer':
                 value = remap(speedVal, 1, 5, speedFunc.min ?: 1, speedFunc.max ?: 100)
