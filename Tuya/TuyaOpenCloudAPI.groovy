@@ -29,12 +29,10 @@ import groovy.json.JsonSlurper
 import groovy.transform.Field
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
-import java.util.Random
 import javax.crypto.spec.SecretKeySpec
 import javax.crypto.Cipher
 import javax.crypto.Mac
 import hubitat.helper.HexUtils
-import hubitat.helper.NetworkUtils
 import hubitat.scheduling.AsyncResponse
 
 /*
@@ -168,7 +166,7 @@ metadata {
  */
 // Component command to turn on device
 void componentOn(DeviceWrapper dw) {
-    Map functions = getFunctions(dw)
+    Map<String, Map> functions = getFunctions(dw)
     String code = getFunctionByCode(functions, tuyaFunctions.light) ?: getFunctionByCode(functions, tuyaFunctions.power)
     if (code) {
         log.info "Turning ${dw} on"
@@ -178,7 +176,7 @@ void componentOn(DeviceWrapper dw) {
 
 // Component command to turn off device
 void componentOff(DeviceWrapper dw) {
-    Map functions = getFunctions(dw)
+    Map<String, Map> functions = getFunctions(dw)
     String code = getFunctionByCode(functions, tuyaFunctions.light) ?: getFunctionByCode(functions, tuyaFunctions.power)
     if (code) {
         log.info "Turning ${dw} off"
@@ -197,7 +195,7 @@ void componentRefresh(DeviceWrapper dw) {
 
 // Component command to set color
 void componentSetColor(DeviceWrapper dw, Map colorMap) {
-    Map functions = getFunctions(dw)
+    Map<String, Map> functions = getFunctions(dw)
     String code = getFunctionByCode(functions, tuyaFunctions.colour)
     if (code) {
         Map color = functions[code]
@@ -219,7 +217,7 @@ void componentSetColor(DeviceWrapper dw, Map colorMap) {
 // Component command to set color temperature
 void componentSetColorTemperature(DeviceWrapper dw, BigDecimal kelvin,
                                   BigDecimal level = null, BigDecimal duration = null) {
-    Map functions = getFunctions(dw)
+    Map<String, Map> functions = getFunctions(dw)
     String code = getFunctionByCode(functions, tuyaFunctions.temperature)
     if (code) {
         Map temp = functions[code]
@@ -254,7 +252,7 @@ void componentSetHue(DeviceWrapper dw, BigDecimal hue) {
 void componentSetLevel(DeviceWrapper dw, BigDecimal level, BigDecimal duration = 0) {
     String colorMode = dw.currentValue('colorMode') ?: 'CT'
     if (colorMode == 'CT') {
-        Map functions = getFunctions(dw)
+        Map<String, Map> functions = getFunctions(dw)
         String code = getFunctionByCode(functions, tuyaFunctions.brightness)
         if (code) {
             Map bright = functions[code] ?: [:]
@@ -272,11 +270,11 @@ void componentSetLevel(DeviceWrapper dw, BigDecimal level, BigDecimal duration =
 }
 
 void componentSetNextEffect(DeviceWrapper device) {
-    log.warn "Set next effect command not supported"
+    log.warn 'Set next effect command not supported'
 }
 
 void componentSetPreviousEffect(DeviceWrapper device) {
-    log.warn "Set previous effect command not supported"
+    log.warn 'Set previous effect command not supported'
 }
 
 // Component command to set saturation
@@ -290,39 +288,44 @@ void componentSetSaturation(DeviceWrapper dw, BigDecimal saturation) {
 
 // Component command to set fan speed
 void componentSetSpeed(DeviceWrapper dw, String speed) {
-    Map functions = getFunctions(dw)
+    Map<String, Map> functions = getFunctions(dw)
     String code = getFunctionByCode(functions, tuyaFunctions.fanSpeed)
     if (code) {
         log.info "Setting speed to ${speed}"
-        if (speed == 'on') {
-            tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': 'switch', 'value': true ])
-        } else if (speed == 'off') {
-            tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': 'switch', 'value': false ])
-        } else if (speed == 'auto') {
-            log.warn 'Speed level auto is not supported'
-        } else {
-            Map speedFunc = functions[code]
-            int speedVal = ['low', 'medium-low', 'medium', 'medium-high', 'high'].indexOf(speed)
-            String value
-            switch (speedFunc.type) {
-                case 'Enum':
-                    value = speedFunc.range[remap(speedVal, 0, 4, 0, speedFunc.range.size() - 1) as int]
-                    break
-                case 'Integer':
-                    value = remap(speedVal, 0, 4, speedFunc.min as int ?: 1, speedFunc.max as int ?: 100)
-                    break
-                default:
-                    log.warn "Unknown fan speed function type ${speedFunc}"
-                    return
-            }
-            tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': value ])
+        switch (speed) {
+            case 'on':
+                tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': 'switch', 'value': true ])
+                break
+            case 'off':
+                tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': 'switch', 'value': false ])
+                break
+            case 'auto':
+                log.warn 'Speed level auto is not supported'
+                break
+            default:
+                Map speedFunc = functions[code]
+                int speedVal = ['low', 'medium-low', 'medium', 'medium-high', 'high'].indexOf(speed)
+                String value
+                switch (speedFunc.type) {
+                    case 'Enum':
+                        value = speedFunc.range[remap(speedVal, 0, 4, 0, speedFunc.range.size() - 1) as int]
+                        break
+                    case 'Integer':
+                        value = remap(speedVal, 0, 4, speedFunc.min as int ?: 1, speedFunc.max as int ?: 100)
+                        break
+                    default:
+                        log.warn "Unknown fan speed function type ${speedFunc}"
+                        return
+                }
+                tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': value ])
+                break
         }
     }
 }
 
 // Component command to cycle fan speed
 void componentCycleSpeed(DeviceWrapper dw) {
-    switch(dw.currentValue('speed')) {
+    switch (dw.currentValue('speed')) {
         case 'low':
         case 'medium-low':
             componentSetSpeed(dw, 'medium')
@@ -496,7 +499,6 @@ private static Map mapTuyaCategory(String category) {
         case 'gyd':   // Motion Sensor Lights
         case 'xdd':   // Ceiling Light
         case 'fwd':   // Ambient Light
-        case 'tyndj': // Solar Light
             return [ namespace: 'hubitat', name: 'Generic Component RGBW' ]
         case 'wxkg':  // Scene switch (TS004F in 'Device trigger' mode only; TS0044)
             return [ namespace: 'hubitat', name: 'Generic Component Central Scene Switch' ]
@@ -520,7 +522,7 @@ private static Map mapTuyaCategory(String category) {
     }
 }
 
-private static Map getFunctions(DeviceWrapper dw) {
+private static Map<String, Map> getFunctions(DeviceWrapper dw) {
     return jsonCache.computeIfAbsent(dw.getDataValue('functions')) {
         k -> new JsonSlurper().parseText(k)
     }
@@ -555,11 +557,10 @@ private ChildDeviceWrapper createChildDevice(Map d) {
             )
         } catch (UnknownDeviceTypeException e) {
             log.warn "${device.displayName} ${e.message} - you may need to install the driver"
-            return null
         }
     }
 
-    dw.with {
+    dw?.with {
         label = label ?: d.name
         updateDataValue 'id', d.id
         updateDataValue 'local_key', d.local_key
@@ -567,7 +568,7 @@ private ChildDeviceWrapper createChildDevice(Map d) {
         updateDataValue 'online', d.online as String
     }
 
-    return childDevice
+    return dw
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
@@ -610,7 +611,7 @@ private void updateDeviceStatus(Map d) {
         return
     }
 
-    Map deviceFunctions = getFunctions(dw)
+    Map<String, Map> deviceFunctions = getFunctions(dw)
     List<Map> statusList = d.status ?: []
     String workMode = statusList['workMode'] ?: ''
     List<Map> events = statusList.collectMany { status ->
@@ -618,8 +619,7 @@ private void updateDeviceStatus(Map d) {
 
         if (status.code in tuyaFunctions.brightness && workMode != 'colour') {
             Map bright = deviceFunctions[status.code]
-            if ( bright != null )
-            {
+            if ( bright != null ) {
                 Integer value = Math.floor(remap(status.value, bright.min, bright.max, 0, 100))
                 if (txtEnable) { log.info "${dw.displayName} level is ${value}%" }
                 return [ [ name: 'level', value: value, unit: '%', descriptionText: "level is ${value}%" ] ]
@@ -663,10 +663,10 @@ private void updateDeviceStatus(Map d) {
                 String level = ['low', 'medium-low', 'medium', 'medium-high', 'high'].get(value)
                 if (txtEnable) { log.info "${dw.displayName} speed is ${level}" }
                 return [ [ name: 'speed', value: level, descriptionText: "speed is ${level}" ] ]
-            } else {
-                if (txtEnable) { log.info "${dw.displayName} speed is off" }
-                return [ [ name: 'speed', value: 'off', descriptionText: "speed is off" ] ]
             }
+
+            if (txtEnable) { log.info "${dw.displayName} speed is off" }
+            return [ [ name: 'speed', value: 'off', descriptionText: 'speed is off' ] ]
         }
 
         if (status.code in tuyaFunctions.contact) {
@@ -723,7 +723,7 @@ private void updateDeviceStatus(Map d) {
         if (status.code in tuyaFunctions.sceneSwitch) {
             String action
             if (status.value in sceneSwitchAction) {
-                 action = sceneSwitchAction[status.value]
+                action = sceneSwitchAction[status.value]
             } else {
                 log.warn "${dw.displayName} sceneSwitch: unknown status.value ${status.value}"
             }
@@ -732,7 +732,7 @@ private void updateDeviceStatus(Map d) {
             if (status.code in sceneSwitchKeyNumbers) {
                 value = sceneSwitchKeyNumbers[status.code]
                 if (d.productKey == 'vp6clf9d' && status.code == 'switch1_value') {
-                   value = '1'                    // correction for TS0044 key #1
+                    value = '1'                    // correction for TS0044 key #1
                 }
             } else {
                 log.warn "${dw.displayName} sceneSwitch: unknown status.code ${status.code}"
@@ -741,15 +741,15 @@ private void updateDeviceStatus(Map d) {
             if (value != null && action != null) {
                 if (txtEnable) { log.info "${dw.displayName} buttons ${value} is ${action}" }
                 return [ [ name: action, value: value, descriptionText: "button ${value} is ${action}", isStateChange: true ] ]
-            } else {
-                log.warn "${dw.displayName} sceneSwitch: unknown name ${action} or value ${value}"
             }
+
+            log.warn "${dw.displayName} sceneSwitch: unknown name ${action} or value ${value}"
         }
 
         if (status.code in tuyaFunctions.battery) {
             if (status.code == 'battery_percentage' || status.code == 'va_battery') {
                 if (txtEnable) { log.info "${dw.displayName} battery is ${status.value}%" }
-                return [ [ name: 'battery', value: status.value, descriptionText: "battery is ${status.value}%", unit: "%" ] ]
+                return [ [ name: 'battery', value: status.value, descriptionText: "battery is ${status.value}%", unit: '%' ] ]
             }
         }
 
@@ -797,10 +797,10 @@ private void updateDeviceStatus(Map d) {
                 case 'white':
                 case 'light_white':
                     if (txtEnable) { log.info "${dw.displayName} color mode is CT" }
-                    return [ [ name: 'colorMode', value: 'CT', descriptionText: "color mode is CT" ] ]
+                    return [ [ name: 'colorMode', value: 'CT', descriptionText: 'color mode is CT' ] ]
                 case 'colour':
                     if (txtEnable) { log.info "${dw.displayName} color mode is RGB" }
-                    return [ [ name: 'colorMode', value: 'RGB', descriptionText: "color mode is RGB" ] ]
+                    return [ [ name: 'colorMode', value: 'RGB', descriptionText: 'color mode is RGB' ] ]
             }
         }
 
