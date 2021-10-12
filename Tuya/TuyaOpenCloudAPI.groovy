@@ -115,6 +115,7 @@ metadata {
     'brightness'    : [ 'bright_value', 'bright_value_v2', 'bright_value_1' ],
     'colour'        : [ 'colour_data', 'colour_data_v2' ],
     'light'         : [ 'switch_led', 'switch_led_1', 'light' ],
+    'power'         : [ 'Power', 'power', 'switch' ],
     'temperature'   : [ 'temp_value', 'temp_value_v2' ],
     'workMode'      : [ 'work_mode' ],
     'sceneSwitch'   : [ 'switch1_value', 'switch2_value', 'switch3_value', 'switch4_value', 'switch_mode2', 'switch_mode3', 'switch_mode4' ],
@@ -168,7 +169,7 @@ metadata {
 // Component command to turn on device
 void componentOn(DeviceWrapper dw) {
     Map functions = getFunctions(dw)
-    String code = getFunctionByCode(functions, tuyaFunctions.light)
+    String code = getFunctionByCode(functions, tuyaFunctions.light) ?: getFunctionByCode(functions, tuyaFunctions.power)
     if (code) {
         log.info "Turning ${dw} on"
         tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': true ])
@@ -178,7 +179,7 @@ void componentOn(DeviceWrapper dw) {
 // Component command to turn off device
 void componentOff(DeviceWrapper dw) {
     Map functions = getFunctions(dw)
-    String code = getFunctionByCode(functions, tuyaFunctions.light)
+    String code = getFunctionByCode(functions, tuyaFunctions.light) ?: getFunctionByCode(functions, tuyaFunctions.power)
     if (code) {
         log.info "Turning ${dw} off"
         tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': false ])
@@ -704,7 +705,7 @@ private void updateDeviceStatus(Map d) {
             return [ [ name: 'motion', value: value, descriptionText: "motion is ${value}" ] ]
         }
 
-        if (status.code in tuyaFunctions.light) {
+        if (status.code in tuyaFunctions.light || status.code in tuyaFunctions.power) {
             String value = status.value ? 'on' : 'off'
             if (txtEnable) { log.info "${dw.displayName} switch is ${value}" }
             return [ [ name: 'switch', value: value, descriptionText: "switch is ${value}" ] ]
