@@ -529,8 +529,7 @@ private static Map<String, Map> getFunctions(DeviceWrapper dw) {
 }
 
 private static String getFunctionByCode(Map functions, List codes) {
-    return codes.find { c -> functions.containsKey(c) } ?: codes.first()
-    // TODO: Include default function values
+    return codes.find { c -> functions.containsKey(c) }
 }
 
 private static BigDecimal remap(BigDecimal oldValue, BigDecimal oldMin, BigDecimal oldMax,
