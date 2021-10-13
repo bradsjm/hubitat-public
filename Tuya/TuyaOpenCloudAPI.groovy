@@ -875,8 +875,8 @@ private void tuyaGetDevicesResponse(AsyncResponse response, Map data) {
     if (tuyaCheckResponse(response)) {
         Map result = response.json.result
         data.devices = (data.devices ?: []) + result.devices
-        log.info "${device.displayName} received ${result.devices.size()} cloud devices (has_next: ${result.has_next})"
-        if (result.has_next) {
+        log.info "${device.displayName} received ${result.devices.size()} cloud devices (has_more: ${result.has_more})"
+        if (result.has_more) {
             pauseExecution(1000)
             tuyaGetDevices(result.last_row_key, data)
             return
