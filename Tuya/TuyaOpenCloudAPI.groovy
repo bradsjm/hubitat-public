@@ -42,6 +42,7 @@ import hubitat.scheduling.AsyncResponse
  *  10/09/21 - 0.1.2 - added Scene Switch TS0044 productKey:vp6clf9d; added battery reports (when the virtual driver supports it)
  *  10/10/21 - 0.1.3 - brightness, temperature, humidity, CO2 sensors
  *  10/11/21 - 0.1.4 - door contact, water, smoke, co, pir sensors, fan
+ *  10/13/21 - 0.1.5 - fix ternary use error for colors and levels
  */
 
 metadata {
@@ -242,8 +243,8 @@ void componentSetEffect(DeviceWrapper dw, BigDecimal index) {
 void componentSetHue(DeviceWrapper dw, BigDecimal hue) {
     componentSetColor(dw, [
         hue: hue,
-        saturation: dw.currentValue('saturation') ?: 100,
-        level: dw.currentValue('level') ?: 100
+        saturation: dw.currentValue('saturation'),
+        level: dw.currentValue('level')
     ])
 }
 
@@ -262,8 +263,8 @@ void componentSetLevel(DeviceWrapper dw, BigDecimal level, BigDecimal duration =
         }
     } else {
         componentSetColor(dw, [
-            hue: dw.currentValue('hue') ?: 100,
-            saturation: dw.currentValue('saturation') ?: 100,
+            hue: dw.currentValue('hue'),
+            saturation: dw.currentValue('saturation'),
             level: level
         ])
     }
@@ -280,9 +281,9 @@ void componentSetPreviousEffect(DeviceWrapper device) {
 // Component command to set saturation
 void componentSetSaturation(DeviceWrapper dw, BigDecimal saturation) {
     componentSetColor(dw, [
-        hue: dw.currentValue('hue') ?: 100,
+        hue: dw.currentValue('hue'),
         saturation: saturation,
-        level: dw.currentValue('level') ?: 100
+        level: dw.currentValue('level')
     ])
 }
 
@@ -659,7 +660,9 @@ private void updateDeviceStatus(Map d) {
                         value = remap(speed.range.indexOf(status.value), 0, speed.range.size() - 1, 0, 4) as int
                         break
                     case 'Integer':
-                        value = remap(status.value as int, speed.min as int ?: 1, speed.max as int ?: 100, 0, 4) as int
+                        int min = (speed.min == null) ? 1 : speed.min
+                        int max = (speed.max == null) ? 100 : speed.max
+                        value = remap(status.value as int, min, max, 0, 4) as int
                         break
                 }
                 String level = ['low', 'medium-low', 'medium', 'medium-high', 'high'].get(value)
