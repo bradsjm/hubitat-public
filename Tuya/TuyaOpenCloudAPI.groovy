@@ -42,7 +42,7 @@ import hubitat.scheduling.AsyncResponse
  *  10/09/21 - 0.1.2 - added Scene Switch TS0044 productKey:vp6clf9d; added battery reports (when the virtual driver supports it)
  *  10/10/21 - 0.1.3 - brightness, temperature, humidity, CO2 sensors
  *  10/11/21 - 0.1.4 - door contact, water, smoke, co, pir sensors, fan
- *  10/13/21 - 0.1.5 - smart plug, vibration sensor; brightness and temperature sensors scaling bug fix
+ *  10/13/21 - 0.1.6 - smart plug, vibration sensor; brightness and temperature sensors scaling bug fix
  */
 
 metadata {
