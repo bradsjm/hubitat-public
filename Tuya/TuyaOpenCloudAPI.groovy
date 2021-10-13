@@ -559,11 +559,14 @@ private ChildDeviceWrapper createChildDevice(Map d) {
         }
     }
 
+    String functionJson = JsonOutput.toJson(d.functions)
+    jsonCache.put(functionJson, d.functions)
     dw?.with {
         label = label ?: d.name
         updateDataValue 'id', d.id
         updateDataValue 'local_key', d.local_key
         updateDataValue 'category', d.category
+        updateDataValue 'functions', functionJson
         updateDataValue 'online', d.online as String
     }
 
@@ -887,9 +890,9 @@ private void tuyaGetDevicesResponse(AsyncResponse response, Map data) {
         sendEvent([ name: 'deviceCount', value: data.devices.size() as String ])
 
         // Create Hubitat devices from Tuya results
-        data.devices.each { d ->
-            createChildDevice(d)
-        }
+        //data.devices.each { d ->
+        //    createChildDevice(d)
+        //}
 
         // Get device functions in batches of 20
         data.devices.collate(20).each { collection ->
@@ -906,26 +909,37 @@ private void tuyaGetDeviceFunctions(List<Map> devices, Map data = [:]) {
 
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
 private void tuyaGetDeviceFunctionsResponse(AsyncResponse response, Map data) {
-    if (!tuyaCheckResponse(response)) { return }
-    JsonSlurper parser = new JsonSlurper()
-    List result = response.json.result
-    log.info "${device.displayName} received ${result.size()} cloud function groups"
-    result?.each { group ->
-        Map functions = group.functions.collectEntries { f ->
-            String code = f.code
-            Map values = parser.parseText(f.values)
-            values.type = f.type
-            [ (code): values ]
-        }
-        String json = JsonOutput.toJson(functions)
-        group.devices.each { id ->
-            ChildDeviceWrapper dw = getChildDevice("${device.id}-${id}")
-            dw?.updateDataValue('functions', json)
+    if (tuyaCheckResponse(response)) {
+        JsonSlurper parser = new JsonSlurper()
+        List result = response.json.result
+        log.info "${device.displayName} received ${result.size()} cloud function groups"
+        result?.each { group ->
+            Map functions = group.functions.collectEntries { f ->
+                Map values = parser.parseText(f.values ?: '{}')
+                values.name = f.name
+                values.type = f.type
+                return [ (f.code): values ]
+            }
+            //String json = JsonOutput.toJson(functions)
+            group.devices.each { id ->
+                Map d = data.devices.find { d -> d.id == id }
+                d.functions = functions
+                createChildDevice(d)
+                updateDeviceStatus(d)
+                //ChildDeviceWrapper dw = getChildDevice("${device.id}-${id}")
+                //dw?.updateDataValue('functions', json)
+            }
         }
     }
 
+    // Create Hubitat devices from Tuya results
+    // data.devices.each { d ->
+    //     createChildDevice(d)
+    // }
     // Process status updates
-    data.devices.each { d -> updateDeviceStatus(d) }
+    // if (data.devices) {
+    //     data.devices.each { d -> updateDeviceStatus(d) }
+    // }
     sendEvent([ name: 'connected', value: true, descriptionText: 'connected is true'])
 }
 
