@@ -114,7 +114,7 @@ metadata {
     'colour'        : [ 'colour_data', 'colour_data_v2' ],
     'light'         : [ 'switch_led', 'switch_led_1', 'light' ],
     'power'         : [ 'Power', 'power', 'switch' ],
-    'temperature'   : [ 'temp_value', 'temp_value_v2' ],
+    'ct'            : [ 'temp_value', 'temp_value_v2' ],
     'workMode'      : [ 'work_mode' ],
     'sceneSwitch'   : [ 'switch1_value', 'switch2_value', 'switch3_value', 'switch4_value', 'switch_mode2', 'switch_mode3', 'switch_mode4' ],
     'omniSensor'    : [ 'bright_value', 'temp_current', 'humidity_value', 'va_humidity', 'bright_sensitivity' ],
@@ -218,7 +218,7 @@ void componentSetColor(DeviceWrapper dw, Map colorMap) {
 void componentSetColorTemperature(DeviceWrapper dw, BigDecimal kelvin,
                                   BigDecimal level = null, BigDecimal duration = null) {
     Map<String, Map> functions = getFunctions(dw)
-    String code = getFunctionByCode(functions, tuyaFunctions.temperature)
+    String code = getFunctionByCode(functions, tuyaFunctions.ct)
     if (code) {
         Map temp = functions[code]
         Integer value = temp.max - Math.ceil(maxMireds - remap(1000000 / kelvin, minMireds, maxMireds, temp.min, temp.max))
@@ -483,8 +483,8 @@ private static String translateColor(Integer hue, Integer saturation) {
   *  Tuya Standard Instruction Set Category Mapping to Hubitat Drivers
   *  https://developer.tuya.com/en/docs/iot/standarddescription?id=K9i5ql6waswzq
   */
-private static Map mapTuyaCategory(String category) {
-    switch (category) {
+private static Map mapTuyaCategory(Map d) {
+    switch (d?.category) {
         case 'ykq':   // Remote Control
         case 'tyndj': // Solar Light
             return [ namespace: 'hubitat', name: 'Generic Component CT' ]
@@ -544,7 +544,7 @@ private static BigDecimal remap(BigDecimal oldValue, BigDecimal oldMin, BigDecim
 private ChildDeviceWrapper createChildDevice(Map d) {
     ChildDeviceWrapper dw = getChildDevice("${device.id}-${d.id}")
     if (!dw) {
-        Map driver = mapTuyaCategory(d.category)
+        Map driver = mapTuyaCategory(d)
         log.info "${device.displayName} creating device ${d.name} using ${driver.name} driver"
         try {
             dw = addChildDevice(driver.namespace, driver.name, "${device.id}-${d.id}",
@@ -710,7 +710,7 @@ private void updateDeviceStatus(Map d) {
             return [ [ name: 'switch', value: value, descriptionText: "switch is ${value}" ] ]
         }
 
-        if (status.code in tuyaFunctions.temperature) {
+        if (status.code in tuyaFunctions.ct) {
             Map temperature = deviceFunctions[status.code]
             Integer value = Math.floor(1000000 / remap(temperature.max - status.value,
                             temperature.min, temperature.max, minMireds, maxMireds))
@@ -860,31 +860,36 @@ private void tuyaAuthenticateResponse(AsyncResponse response, Map data) {
  *  Tuya Open API Device Management
  *  https://developer.tuya.com/en/docs/cloud/
  */
-private void tuyaGetDevices() {
+private void tuyaGetDevices(String last_row_key = '', Map data = [:]) {
     if (!jsonCache.isEmpty()) {
         log.info "${device.displayName} clearing json cache"
         jsonCache.clear()
     }
 
-    log.info "${device.displayName} requesting cloud devices (maximum 100)"
-    tuyaGet('/v1.0/iot-01/associated-users/devices', [ 'size': 100 ], 'tuyaGetDevicesResponse')
+    log.info "${device.displayName} requesting cloud devices batch"
+    tuyaGet('/v1.0/iot-01/associated-users/devices', [ 'last_row_key': last_row_key ], 'tuyaGetDevicesResponse', data)
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
 private void tuyaGetDevicesResponse(AsyncResponse response, Map data) {
-    if (!tuyaCheckResponse(response)) { return }
-    Map result = response.json.result
-    data.devices = result.devices
-    log.info "${device.displayName} received ${result.devices.size()} cloud devices"
-    sendEvent([ name: 'deviceCount', value: result.devices.size() as String ])
+    if (tuyaCheckResponse(response)) {
+        Map result = response.json.result
+        data.devices = (data.devices ?: []) + result.devices
+        log.info "${device.displayName} received ${result.devices.size()} cloud devices"
+        sendEvent([ name: 'deviceCount', value: result.devices.size() as String ])
+        if (result.has_next) {
+            pauseExecution(1000)
+            tuyaGetDevices(result.last_row_key, data)
+        }
+    }
 
     // Create Hubitat devices from Tuya results
-    result.devices.each { d ->
+    data.devices.each { d ->
         createChildDevice(d)
     }
 
     // Get device functions in batches of 20
-    result.devices.collate(20).each { collection ->
+    data.devices.collate(20).each { collection ->
         tuyaGetDeviceFunctions(collection, data)
         pauseExecution(1000)
     }
