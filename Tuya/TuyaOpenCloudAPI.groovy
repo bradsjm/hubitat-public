@@ -875,8 +875,7 @@ private void tuyaGetDevicesResponse(AsyncResponse response, Map data) {
     if (tuyaCheckResponse(response)) {
         Map result = response.json.result
         data.devices = (data.devices ?: []) + result.devices
-        log.info "${device.displayName} received ${result.devices.size()} cloud devices"
-        sendEvent([ name: 'deviceCount', value: result.devices.size() as String ])
+        log.info "${device.displayName} received ${result.devices.size()} cloud devices (has_next: ${result.has_next})"
         if (result.has_next) {
             pauseExecution(1000)
             tuyaGetDevices(result.last_row_key, data)
@@ -885,6 +884,8 @@ private void tuyaGetDevicesResponse(AsyncResponse response, Map data) {
     }
 
     if (data.devices) {
+        sendEvent([ name: 'deviceCount', value: data.devices.size() as String ])
+
         // Create Hubitat devices from Tuya results
         data.devices.each { d ->
             createChildDevice(d)
