@@ -880,18 +880,21 @@ private void tuyaGetDevicesResponse(AsyncResponse response, Map data) {
         if (result.has_next) {
             pauseExecution(1000)
             tuyaGetDevices(result.last_row_key, data)
+            return
         }
     }
 
-    // Create Hubitat devices from Tuya results
-    data.devices.each { d ->
-        createChildDevice(d)
-    }
+    if (data.devices) {
+        // Create Hubitat devices from Tuya results
+        data.devices.each { d ->
+            createChildDevice(d)
+        }
 
-    // Get device functions in batches of 20
-    data.devices.collate(20).each { collection ->
-        tuyaGetDeviceFunctions(collection, data)
-        pauseExecution(1000)
+        // Get device functions in batches of 20
+        data.devices.collate(20).each { collection ->
+            tuyaGetDeviceFunctions(collection, data)
+            pauseExecution(1000)
+        }
     }
 }
 
