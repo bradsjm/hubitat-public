@@ -140,7 +140,6 @@ void initialize() {
         runIn(settings.telePeriod + 60, 'healthcheck')
     }
 
-    mqttDisconnect()
     mqttConnect()
 }
 
@@ -196,7 +195,7 @@ void sendCommand(String command) {
     log.info "${device.displayName} sending ${command} to all devices"
     childDevices.each { device ->
         Map config = getDeviceConfig(device)
-        String topic = getCommandTopic(config) + 'Backlog'
+        String topic = getCommandTopic(config)
         mqttPublish(topic, command)
     }
 }
@@ -206,7 +205,7 @@ void sendCommand(String command) {
  */
 void componentOn(DeviceWrapper device) {
     Map config = getDeviceConfig(device)
-    String topic = getCommandTopic(config) + 'Backlog'
+    String topic = getCommandTopic(config)
     boolean isTuyaMcu = config['ty']
     String fadeCommand = fadeCommand(isTuyaMcu ? 0 : settings.fadeTime)
     log.info "Turning ${device} on"
@@ -215,7 +214,7 @@ void componentOn(DeviceWrapper device) {
 
 void componentOff(DeviceWrapper device) {
     Map config = getDeviceConfig(device)
-    String topic = getCommandTopic(config) + 'Backlog'
+    String topic = getCommandTopic(config)
     boolean isTuyaMcu = config['ty']
     String fadeCommand = fadeCommand(isTuyaMcu ? 0 : settings.fadeTime)
     log.info "Turning ${device} off"
@@ -224,7 +223,7 @@ void componentOff(DeviceWrapper device) {
 
 void componentSetLevel(DeviceWrapper device, BigDecimal level, BigDecimal duration = -1) {
     Map config = getDeviceConfig(device)
-    String topic = getCommandTopic(config) + 'Backlog'
+    String topic = getCommandTopic(config)
     int seconds = duration >= 0 ? duration : settings.fadeTime
     boolean isTuyaMcu = config['ty']
     String fadeCommand = fadeCommand(isTuyaMcu ? 0 : settings.fadeTime)
@@ -250,7 +249,7 @@ void componentStopLevelChange(DeviceWrapper device) {
 void componentSetColorTemperature(DeviceWrapper device, BigDecimal kelvin,
     BigDecimal level = null, BigDecimal transitionTime = null) {
     Map config = getDeviceConfig(device)
-    String topic = getCommandTopic(config) + 'Backlog'
+    String topic = getCommandTopic(config)
     String fadeCommand = fadeCommand(transitionTime ?: settings.fadeTime)
 
     if (config['lt_st'] == 2 || config['lt_st'] == 5) {
@@ -271,7 +270,7 @@ void componentSetColorTemperature(DeviceWrapper device, BigDecimal kelvin,
 
 void componentSetColor(DeviceWrapper device, Map colormap) {
     Map config = getDeviceConfig(device)
-    String topic = getCommandTopic(config) + 'Backlog'
+    String topic = getCommandTopic(config)
     String fadeCommand = fadeCommand(duration ?: settings.fadeTime)
     log.info "Setting ${device} color to ${colormap}"
     mqttPublish(topic, fadeCommand +
@@ -280,7 +279,7 @@ void componentSetColor(DeviceWrapper device, Map colormap) {
 
 void componentSetHue(DeviceWrapper device, BigDecimal hue) {
     Map config = getDeviceConfig(device)
-    String topic = getCommandTopic(config) + 'Backlog'
+    String topic = getCommandTopic(config)
     String fadeCommand = fadeCommand(duration ?: settings.fadeTime)
     log.info "Setting ${device} hue to ${colormap}"
     mqttPublish(topic, fadeCommand +
@@ -289,7 +288,7 @@ void componentSetHue(DeviceWrapper device, BigDecimal hue) {
 
 void componentSetSaturation(DeviceWrapper device, BigDecimal saturation) {
     Map config = getDeviceConfig(device)
-    String topic = getCommandTopic(config) + 'Backlog'
+    String topic = getCommandTopic(config)
     String fadeCommand = fadeCommand(duration ?: settings.fadeTime)
     log.info "Setting ${device} hue to ${colormap}"
     mqttPublish(topic, fadeCommand +
@@ -301,39 +300,22 @@ void componentRefresh(DeviceWrapper device) {
     if (config) {
         subscribeDeviceTopics(device)
         log.info "Refreshing ${device}"
-        mqttPublish(getCommandTopic(config) + 'TELEPERIOD', '')
+        mqttPublish(getCommandTopic(config, 'TELEPERIOD'), '')
     }
 }
 
 // Called with MQTT client status messages
 void mqttClientStatus(String status) {
-    // The string that is passed to this method with start with "Error" if an error occurred
-    // or "Status" if this is just a status message.
-    List<String> parts = status.split(': ')
-    switch (parts[0]) {
-        case 'Error':
-            log.warn "MQTT ${status}"
-            switch (parts[1]) {
-                case 'Connection lost':
-                case 'send error':
-                    mqttDisconnect()
-                    runIn(30, 'initialize')
-                    break
-            }
+    switch (status) {
+        case 'Status: Connection succeeded':
+            sendEvent(name: 'connected', value: true, descriptionText: "${device.displayName} is connected")
+            runIn(1, 'mqttSubscribeDiscovery')
             break
-        case 'Status':
-            log.info "MQTT ${status}"
-            switch (parts[1]) {
-                case 'Connection succeeded':
-                    sendEvent(name: 'connected', value: true, descriptionText: "${device.displayName} is connected")
-                    // without this delay the `parse` method is never called
-                    // (it seems that there needs to be some delay after connection to subscribe)
-                    runIn(1, 'mqttSubscribeDiscovery')
-                    break
-            }
-            break
-        default:
-            log.warn "MQTT ${status}"
+        case 'Error: Connection lost':
+        case 'Error: send error':
+            log.error "${device.displayName} MQTT connection error: " + status
+            mqttDisconnect()
+            runIn(30, 'initialize')
             break
     }
 }
@@ -350,42 +332,27 @@ private static String fadeCommand(BigDecimal seconds) {
 
 // Convert hsv to a generic color name
 private static String getGenericName(List<Integer> hsv) {
-    String colorName
-
-    if (!hsv[0] && !hsv[1]) {
-        colorName = 'White'
-    } else {
-        switch (hsv[0] * 3.6 as int) {
-            case 0..15: colorName = 'Red'
-                break
-            case 16..45: colorName = 'Orange'
-                break
-            case 46..75: colorName = 'Yellow'
-                break
-            case 76..105: colorName = 'Chartreuse'
-                break
-            case 106..135: colorName = 'Green'
-                break
-            case 136..165: colorName = 'Spring'
-                break
-            case 166..195: colorName = 'Cyan'
-                break
-            case 196..225: colorName = 'Azure'
-                break
-            case 226..255: colorName = 'Blue'
-                break
-            case 256..285: colorName = 'Violet'
-                break
-            case 286..315: colorName = 'Magenta'
-                break
-            case 316..345: colorName = 'Rose'
-                break
-            case 346..360: colorName = 'Red'
-                break
-        }
+    if (hsv[1] < 1) {
+        return 'White'
     }
 
-    return colorName
+    switch (hsv[0] * 3.6 as int) {
+        case 0..15: return 'Red'
+        case 16..45: return 'Orange'
+        case 46..75: return 'Yellow'
+        case 76..105: return 'Chartreuse'
+        case 106..135: return 'Green'
+        case 136..165: return 'Spring'
+        case 166..195: return 'Cyan'
+        case 196..225: return 'Azure'
+        case 226..255: return 'Blue'
+        case 256..285: return 'Violet'
+        case 286..315: return 'Magenta'
+        case 316..345: return 'Rose'
+        case 346..360: return 'Red'
+    }
+
+    return ''
 }
 
 // Convert rgb to HSV value
@@ -598,7 +565,7 @@ private void parseAutoDiscoveryRelay(int idx, int relaytype, Map config) {
 
 // Configure Tasmota device settings
 private void configureDeviceSettings(Map config) {
-    String topic = getCommandTopic(config) + 'BACKLOG'
+    String topic = getCommandTopic(config)
     String payload = ''
     boolean isTuyaMcu = config['ty']
 
@@ -610,15 +577,6 @@ private void configureDeviceSettings(Map config) {
     payload += 'teleperiod ' + settings['telePeriod'] + ';'
 
     mqttPublish(topic, payload)
-}
-
-private void restoreState(ChildDeviceWrapper device) {
-    String sw = device.currentValue('switch')
-
-    if (sw == 'off') {
-        log.info "Attempting to restore ${device} previous state of 'off'"
-        componentOff(device)
-    }
 }
 
 private void scanChildDevices() {
@@ -640,8 +598,6 @@ private void parseLWT(ChildDeviceWrapper device, String payload) {
     if (payload == 'Offline') {
         device.label += indicator
         device.parse([ newEvent(device, 'switch', 'off') ])
-    } else if (settings.restoreState) {
-        restoreState(device)
     }
 }
 
@@ -766,7 +722,6 @@ private void parseTopicPayload(ChildDeviceWrapper device, String topic, String p
 /**
  *  Common Tasmota MQTT communication methods
  */
-
 private void mqttConnect() {
     unschedule('mqttConnect')
     jsonCache.clear()
@@ -861,8 +816,8 @@ private void mqttUnsubscribe(String topic) {
  *  Utility methods
  */
 
-private String getCommandTopic(Map config) {
-    return getTopic(config, config['tp'][0])
+private String getCommandTopic(Map config, String command = 'Backlog') {
+    return getTopic(config, config['tp'][0]) + command
 }
 
 private Map getDeviceConfig(DeviceWrapper device) {
