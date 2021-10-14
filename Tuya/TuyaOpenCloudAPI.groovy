@@ -115,7 +115,7 @@ metadata {
     'brightness'    : [ 'bright_value', 'bright_value_v2', 'bright_value_1' ],
     'colour'        : [ 'colour_data', 'colour_data_v2' ],
     'light'         : [ 'switch_led', 'switch_led_1', 'light' ],
-    'power'         : [ 'Power', 'power', 'switch' ],
+    'power'         : [ 'Power', 'power', 'power_go', 'switch' ],
     'temperature'   : [ 'temp_value', 'temp_value_v2' ],
     'workMode'      : [ 'work_mode' ],
     'sceneSwitch'   : [ 'switch1_value', 'switch2_value', 'switch3_value', 'switch4_value', 'switch_mode2', 'switch_mode3', 'switch_mode4' ],
