@@ -112,23 +112,23 @@ metadata {
 
 // Tuya Function Categories
 @Field static final Map<String, List<String>> tuyaFunctions = [
-    'brightness'    : [ 'bright_value', 'bright_value_v2', 'bright_value_1' ],
-    'colour'        : [ 'colour_data', 'colour_data_v2' ],
-    'light'         : [ 'switch_led', 'switch_led_1', 'light' ],
-    'power'         : [ 'Power', 'power', 'switch' ],
-    'ct'            : [ 'temp_value', 'temp_value_v2' ],
-    'workMode'      : [ 'work_mode' ],
-    'sceneSwitch'   : [ 'switch1_value', 'switch2_value', 'switch3_value', 'switch4_value', 'switch_mode2', 'switch_mode3', 'switch_mode4' ],
-    'omniSensor'    : [ 'bright_value', 'temp_current', 'humidity_value', 'va_humidity', 'bright_sensitivity', 'shock_state', 'inactive_state', 'sensitivity' ],
     'battery'       : [ 'battery_percentage', 'va_battery' ],
-    'contact'       : [ 'doorcontact_state' ],
-    'water'         : [ 'watersensor_state' ],
-    'smoke'         : [ 'smoke_sensor_status' ],
+    'brightness'    : [ 'bright_value', 'bright_value_v2', 'bright_value_1' ],
     'co'            : [ 'co_state' ],
     'co2'           : [ 'co2_value' ],
-    'pir'           : [ 'pir' ],
+    'colour'        : [ 'colour_data', 'colour_data_v2' ],
+    'contact'       : [ 'doorcontact_state' ],
+    'ct'            : [ 'temp_value', 'temp_value_v2' ],
     'fanSpeed'      : [ 'fan_speed' ],
-    'meteringSwitch': [ 'switch_1', 'countdown_1' , 'add_ele' , 'cur_current', 'cur_power', 'cur_voltage' , 'relay_status', 'light_mode' ]
+    'light'         : [ 'switch_led', 'switch_led_1', 'light' ],
+    'meteringSwitch': [ 'switch_1', 'countdown_1' , 'add_ele' , 'cur_current', 'cur_power', 'cur_voltage' , 'relay_status', 'light_mode' ],
+    'omniSensor'    : [ 'bright_value', 'temp_current', 'humidity_value', 'va_humidity', 'bright_sensitivity', 'shock_state', 'inactive_state', 'sensitivity' ],
+    'pir'           : [ 'pir' ],
+    'power'         : [ 'Power', 'power', 'switch' ],
+    'sceneSwitch'   : [ 'switch1_value', 'switch2_value', 'switch3_value', 'switch4_value', 'switch_mode2', 'switch_mode3', 'switch_mode4' ],
+    'smoke'         : [ 'smoke_sensor_status' ],
+    'water'         : [ 'watersensor_state' ],
+    'workMode'      : [ 'work_mode' ]
 ]
 
 // Tuya -> Hubitat attributes mappings
@@ -171,12 +171,15 @@ metadata {
 void componentOn(DeviceWrapper dw) {
     Map<String, Map> functions = getFunctions(dw)
     String code
-    if (dw.getDataValue('category') == 'cz') {    // meteringSwitch code is 'switch_1'
-        code = getFunctionByCode(functions, tuyaFunctions.meteringSwitch)
+    switch (dw.getDataValue('category')) {
+        case 'cz':
+            code = getFunctionCode(functions, tuyaFunctions.meteringSwitch) // meteringSwitch code is 'switch_1'
+            break
+        default:
+    		code = getFunctionCode(functions, tuyaFunctions.light + tuyaFunctions.power)
+            break
     }
-	else {
-		code = getFunctionByCode(functions, tuyaFunctions.light) ?: getFunctionByCode(functions, tuyaFunctions.power)
-    }
+
     if (code) {
         log.info "Turning ${dw} on"
         tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': true ])
@@ -187,12 +190,15 @@ void componentOn(DeviceWrapper dw) {
 void componentOff(DeviceWrapper dw) {
     Map<String, Map> functions = getFunctions(dw)
     String code
-    if (dw.getDataValue('category') == 'cz') {    // meteringSwitch code is 'switch_1'
-        code = getFunctionByCode(functions, tuyaFunctions.meteringSwitch)
+    switch (dw.getDataValue('category')) {
+        case 'cz':
+            code = getFunctionCode(functions, tuyaFunctions.meteringSwitch) // meteringSwitch code is 'switch_1'
+            break
+        default:
+    		code = getFunctionCode(functions, tuyaFunctions.light + tuyaFunctions.power)
+            break
     }
-	else {
-		code = getFunctionByCode(functions, tuyaFunctions.light) ?: getFunctionByCode(functions, tuyaFunctions.power)
-    }
+
     if (code) {
         log.info "Turning ${dw} off"
         tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': false ])
@@ -860,7 +866,7 @@ private void updateDeviceStatus(Map d) {
                     log.warn "${dw.displayName} unsupported meteringSwitch status.code ${status.code}"
             }
             if (name != null && value != null) {
-                log.info "${dw.displayName} ${name} is ${value} ${unit}"
+                if (txtEnable) { log.info "${dw.displayName} ${name} is ${value} ${unit}" }
                 return [ [ name: name, value: value, descriptionText: "${dw.displayName} ${name} is ${value} ${unit}", unit: unit ] ]
             }
         }
