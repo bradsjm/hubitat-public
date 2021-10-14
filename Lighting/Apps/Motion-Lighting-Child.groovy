@@ -127,13 +127,13 @@ Map pageMain() {
         }
 
         List configuredModes = getConfiguredModes()
-        section(configuredModes ? 'Mode Overrides' : '') {
+        section(configuredModes ? 'Mode Overrides:' : '') {
             Long activeId = getActiveMode().id
             location.getModes().each { mode ->
                 if ((String)mode.id in settings?.modes || settings["mode.${mode.id}.enable"] == true) {
                     href name: "pageModeSettings${mode.id}",
                         page: 'pageMode',
-                        title: "${mode.name} mode" + (mode.id == activeId ? ' (currently active)' : ''),
+                        title: mode.id == activeId ? "<span style='font-weight: bold'>${mode.name} mode (currently active)</span>" : "${mode.name} mode",
                         params: [modeName: mode.name, modeID: mode.id],
                         description: getModeDescription(mode.id) ?:
                             "Click to override defaults during ${mode.name} mode",
@@ -562,8 +562,6 @@ String getTriggerDescription() {
 String getModeDescription(Long modeID) {
     Map mode = getModeSettings(modeID)
     if (!mode.enable) { return '' }
-
-    if (!mode.activeLights) { return '' }
 
     String description = ''
     if (mode.active != 'none') {
