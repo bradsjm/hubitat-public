@@ -168,7 +168,7 @@ metadata {
 // Component command to turn on device
 void componentOn(DeviceWrapper dw) {
     Map<String, Map> functions = getFunctions(dw)
-    String code = getFunctionByCode(functions, tuyaFunctions.light) ?: getFunctionByCode(functions, tuyaFunctions.power)
+    String code = getFunctionCode(functions, tuyaFunctions.light) ?: getFunctionCode(functions, tuyaFunctions.power)
     if (code) {
         log.info "Turning ${dw} on"
         tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': true ])
@@ -178,7 +178,7 @@ void componentOn(DeviceWrapper dw) {
 // Component command to turn off device
 void componentOff(DeviceWrapper dw) {
     Map<String, Map> functions = getFunctions(dw)
-    String code = getFunctionByCode(functions, tuyaFunctions.light) ?: getFunctionByCode(functions, tuyaFunctions.power)
+    String code = getFunctionCode(functions, tuyaFunctions.light) ?: getFunctionCode(functions, tuyaFunctions.power)
     if (code) {
         log.info "Turning ${dw} off"
         tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': false ])
@@ -197,11 +197,11 @@ void componentRefresh(DeviceWrapper dw) {
 // Component command to set color
 void componentSetColor(DeviceWrapper dw, Map colorMap) {
     Map<String, Map> functions = getFunctions(dw)
-    String code = getFunctionByCode(functions, tuyaFunctions.colour)
+    String code = getFunctionCode(functions, tuyaFunctions.colour)
     if (code) {
-        Map color = functions[code]
+        Map color = functions[code] ?: [:]
         // An oddity and workaround for mapping brightness values
-        Map bright = functions['bright_value'] ?: functions['bright_value_v2'] ?: color.v
+        Map bright = getFunction(functions, functions.brightness) ?: color.v
         Map value = [
             h: remap(colorMap.hue, 0, 100, color.h.min, color.h.max),
             s: remap(colorMap.saturation, 0, 100, color.s.min, color.s.max),
@@ -219,7 +219,7 @@ void componentSetColor(DeviceWrapper dw, Map colorMap) {
 void componentSetColorTemperature(DeviceWrapper dw, BigDecimal kelvin,
                                   BigDecimal level = null, BigDecimal duration = null) {
     Map<String, Map> functions = getFunctions(dw)
-    String code = getFunctionByCode(functions, tuyaFunctions.ct)
+    String code = getFunctionCode(functions, tuyaFunctions.ct)
     if (code) {
         Map temp = functions[code]
         Integer value = temp.max - Math.ceil(maxMireds - remap(1000000 / kelvin, minMireds, maxMireds, temp.min, temp.max))
@@ -254,10 +254,10 @@ void componentSetLevel(DeviceWrapper dw, BigDecimal level, BigDecimal duration =
     String colorMode = dw.currentValue('colorMode') ?: 'CT'
     if (colorMode == 'CT') {
         Map<String, Map> functions = getFunctions(dw)
-        String code = getFunctionByCode(functions, tuyaFunctions.brightness)
+        String code = getFunctionCode(functions, tuyaFunctions.brightness)
         if (code) {
-            Map bright = functions[code] ?: [:]
-            Integer value = Math.ceil(remap(level, 0, 100, bright.min ?: 0, bright.max ?: 100))
+            Map bright = functions[code] ?: [ min: 0, max: 100 ]
+            Integer value = Math.ceil(remap(level, 0, 100, bright.min, bright.max))
             log.info "Setting ${dw} level to ${level}%"
             tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': value ])
         }
@@ -290,15 +290,16 @@ void componentSetSaturation(DeviceWrapper dw, BigDecimal saturation) {
 // Component command to set fan speed
 void componentSetSpeed(DeviceWrapper dw, String speed) {
     Map<String, Map> functions = getFunctions(dw)
-    String code = getFunctionByCode(functions, tuyaFunctions.fanSpeed)
+    String code = getFunctionCode(functions, tuyaFunctions.fanSpeed)
+    String id = dw.getDataValue('id')
     if (code) {
         log.info "Setting speed to ${speed}"
         switch (speed) {
             case 'on':
-                tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': 'switch', 'value': true ])
+                tuyaSendDeviceCommands(id, [ 'code': 'switch', 'value': true ])
                 break
             case 'off':
-                tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': 'switch', 'value': false ])
+                tuyaSendDeviceCommands(id, [ 'code': 'switch', 'value': false ])
                 break
             case 'auto':
                 log.warn 'Speed level auto is not supported'
@@ -318,7 +319,7 @@ void componentSetSpeed(DeviceWrapper dw, String speed) {
                         log.warn "Unknown fan speed function type ${speedFunc}"
                         return
                 }
-                tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': value ])
+                tuyaSendDeviceCommands(id, [ 'code': code, 'value': value ])
                 break
         }
     }
@@ -485,7 +486,7 @@ private static String translateColor(Integer hue, Integer saturation) {
   *  https://developer.tuya.com/en/docs/iot/standarddescription?id=K9i5ql6waswzq
   */
 private static Map mapTuyaCategory(Map d) {
-    switch (d?.category) {
+    switch (d.category) {
         case 'ykq':   // Remote Control
         case 'tyndj': // Solar Light
             return [ namespace: 'hubitat', name: 'Generic Component CT' ]
@@ -529,7 +530,11 @@ private static Map<String, Map> getFunctions(DeviceWrapper dw) {
     }
 }
 
-private static String getFunctionByCode(Map functions, List codes) {
+private static Map getFunction(Map functions, List codes) {
+    return functions.find({ f -> f.key in codes })?.value
+}
+
+private static String getFunctionCode(Map functions, List codes) {
     return codes.find { c -> functions.containsKey(c) }
 }
 
@@ -621,7 +626,7 @@ private void updateDeviceStatus(Map d) {
         if (logEnable) { log.debug "${device.displayName} ${dw.displayName} status ${status}" }
 
         if (status.code in tuyaFunctions.brightness && workMode != 'colour') {
-            Map bright = deviceFunctions[status.code]
+            Map bright = deviceFunctions[status.code] ?: [ min: 0, max: 100 ]
             if ( bright != null ) {
                 Integer value = Math.floor(remap(status.value, bright.min, bright.max, 0, 100))
                 if (txtEnable) { log.info "${dw.displayName} level is ${value}%" }
@@ -631,7 +636,7 @@ private void updateDeviceStatus(Map d) {
 
         if (status.code in tuyaFunctions.colour) {
             Map colour = deviceFunctions[status.code]
-            Map bright = deviceFunctions[getFunctionByCode(deviceFunctions, tuyaFunctions.brightness)] ?: colour.v
+            Map bright = getFunction(deviceFunctions, tuyaFunctions.brightness) ?: colour.v
             Map value = status.value == '' ? [h: 100.0, s: 100.0, v: 100.0] :
                         jsonCache.computeIfAbsent(status.value) { k -> new JsonSlurper().parseText(k) }
             Integer hue = Math.floor(remap(value.h, colour.h.min, colour.h.max, 0, 100))
