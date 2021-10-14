@@ -42,7 +42,7 @@ import hubitat.scheduling.AsyncResponse
  *  10/09/21 - 0.1.2 - added Scene Switch TS0044 productKey:vp6clf9d; added battery reports (when the virtual driver supports it)
  *  10/10/21 - 0.1.3 - brightness, temperature, humidity, CO2 sensors
  *  10/11/21 - 0.1.4 - door contact, water, smoke, co, pir sensors, fan
- *  10/13/21 - 0.1.6 - smart plug, vibration sensor; brightness and temperature sensors scaling bug fix
+ *  10/13/21 - 0.1.5 - fix ternary use error for colors and levels
  */
 
 metadata {
@@ -118,7 +118,7 @@ metadata {
     'temperature'   : [ 'temp_value', 'temp_value_v2' ],
     'workMode'      : [ 'work_mode' ],
     'sceneSwitch'   : [ 'switch1_value', 'switch2_value', 'switch3_value', 'switch4_value', 'switch_mode2', 'switch_mode3', 'switch_mode4' ],
-    'omniSensor'    : [ 'bright_value', 'temp_current', 'humidity_value', 'va_humidity', 'bright_sensitivity', 'shock_state', 'inactive_state', 'sensitivity' ],
+    'omniSensor'    : [ 'bright_value', 'temp_current', 'humidity_value', 'va_humidity', 'bright_sensitivity' ],
     'battery'       : [ 'battery_percentage', 'va_battery' ],
     'contact'       : [ 'doorcontact_state' ],
     'water'         : [ 'watersensor_state' ],
@@ -126,8 +126,7 @@ metadata {
     'co'            : [ 'co_state' ],
     'co2'           : [ 'co2_value' ],
     'pir'           : [ 'pir' ],
-    'fanSpeed'      : [ 'fan_speed' ],
-    'meteringSwitch': [ 'switch_1', 'countdown_1' , 'add_ele' , 'cur_current', 'cur_power', 'cur_voltage' , 'relay_status', 'light_mode' ]
+    'fanSpeed'      : [ 'fan_speed' ]
 ]
 
 // Tuya -> Hubitat attributes mappings
@@ -169,13 +168,7 @@ metadata {
 // Component command to turn on device
 void componentOn(DeviceWrapper dw) {
     Map<String, Map> functions = getFunctions(dw)
-    String code
-    if (dw.getDataValue('category') == 'cz') {    // meteringSwitch code is 'switch_1'
-        code = getFunctionByCode(functions, tuyaFunctions.meteringSwitch)
-    }
-	else {
-		code = getFunctionByCode(functions, tuyaFunctions.light) ?: getFunctionByCode(functions, tuyaFunctions.power)
-    }
+    String code = getFunctionByCode(functions, tuyaFunctions.light) ?: getFunctionByCode(functions, tuyaFunctions.power)
     if (code) {
         log.info "Turning ${dw} on"
         tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': true ])
@@ -185,13 +178,7 @@ void componentOn(DeviceWrapper dw) {
 // Component command to turn off device
 void componentOff(DeviceWrapper dw) {
     Map<String, Map> functions = getFunctions(dw)
-    String code
-    if (dw.getDataValue('category') == 'cz') {    // meteringSwitch code is 'switch_1'
-        code = getFunctionByCode(functions, tuyaFunctions.meteringSwitch)
-    }
-	else {
-		code = getFunctionByCode(functions, tuyaFunctions.light) ?: getFunctionByCode(functions, tuyaFunctions.power)
-    }
+    String code = getFunctionByCode(functions, tuyaFunctions.light) ?: getFunctionByCode(functions, tuyaFunctions.power)
     if (code) {
         log.info "Turning ${dw} off"
         tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': false ])
@@ -256,8 +243,8 @@ void componentSetEffect(DeviceWrapper dw, BigDecimal index) {
 void componentSetHue(DeviceWrapper dw, BigDecimal hue) {
     componentSetColor(dw, [
         hue: hue,
-        saturation: dw.currentValue('saturation') ?: 100,
-        level: dw.currentValue('level') ?: 100
+        saturation: dw.currentValue('saturation'),
+        level: dw.currentValue('level')
     ])
 }
 
@@ -276,8 +263,8 @@ void componentSetLevel(DeviceWrapper dw, BigDecimal level, BigDecimal duration =
         }
     } else {
         componentSetColor(dw, [
-            hue: dw.currentValue('hue') ?: 100,
-            saturation: dw.currentValue('saturation') ?: 100,
+            hue: dw.currentValue('hue'),
+            saturation: dw.currentValue('saturation'),
             level: level
         ])
     }
@@ -294,9 +281,9 @@ void componentSetPreviousEffect(DeviceWrapper device) {
 // Component command to set saturation
 void componentSetSaturation(DeviceWrapper dw, BigDecimal saturation) {
     componentSetColor(dw, [
-        hue: dw.currentValue('hue') ?: 100,
+        hue: dw.currentValue('hue'),
         saturation: saturation,
-        level: dw.currentValue('level') ?: 100
+        level: dw.currentValue('level')
     ])
 }
 
@@ -518,7 +505,6 @@ private static Map mapTuyaCategory(String category) {
             return [ namespace: 'hubitat', name: 'Generic Component Central Scene Switch' ]
         case 'ldcg':  // Brightness, temperature, humidity, CO2 sensors
         case 'wsdcg':
-        case 'zd':    // Vibration sensor as motion
             return [ namespace: 'hubitat', name: 'Generic Component Omni Sensor' ]
         case 'mcs':   // Contact Sensor
             return [ namespace: 'hubitat', name: 'Generic Component Contact Sensor' ]
@@ -532,8 +518,6 @@ private static Map mapTuyaCategory(String category) {
             return [ namespace: 'hubitat', name: 'Generic Component Carbon Dioxide Detector' ]
         case 'pir':   // Motion Sensor
             return [ namespace: 'hubitat', name: 'Generic Component Motion Sensor' ]
-        case 'cz':    // smart plug
-            return [ namespace: 'hubitat', name: 'Generic Component Metering Switch' ]
         default:
             return [ namespace: 'hubitat', name: 'Generic Component Switch' ]
     }
@@ -673,7 +657,9 @@ private void updateDeviceStatus(Map d) {
                         value = remap(speed.range.indexOf(status.value), 0, speed.range.size() - 1, 0, 4) as int
                         break
                     case 'Integer':
-                        value = remap(status.value as int, speed.min as int ?: 1, speed.max as int ?: 100, 0, 4) as int
+                        int min = (speed.min == null) ? 1 : speed.min
+                        int max = (speed.max == null) ? 100 : speed.max
+                        value = remap(status.value as int, min, max, 0, 4) as int
                         break
                 }
                 String level = ['low', 'medium-low', 'medium', 'medium-high', 'high'].get(value)
@@ -783,37 +769,21 @@ private void updateDeviceStatus(Map d) {
                 case 'va_temperature':
                     value = status.value
                     if (status.code == 'temp_current') {
-                        value = status.value / 10
+                        value = value / 10
                     }
                     name = 'temperature'
                     unit = "\u00B0${location.temperatureScale}"
                     break
                 case 'humidity_value':
                 case 'va_humidity':
-                    value = status.value
-                    if (status.code == 'humidity_value') {
-                        value = status.value / 10
-                    }
                     name = 'humidity'
+                    value = status.value / 10
                     unit = 'RH%'
                     break
                 case 'bright_sensitivity':
-                case 'sensitivity':
                     name = 'sensitivity'
                     value = status.value
                     unit = '%'
-                    break
-                case 'shock_state':    // vibration sensor TS0210
-                    name = 'motion'    // simulated motion
-                    value = 'active'   // no 'inactive' state!
-                    unit = ''
-                    status.code = 'inactive_state'
-                    runIn(5, 'updateDeviceStatus',  [data: d])
-                    break
-                case 'inactive_state': // vibration sensor
-                    name = 'motion'    // simulated motion
-                    value = 'inactive' // simulated 'inactive' state!
-                    unit = ''
                     break
                 default:
                     log.warn "${dw.displayName} unsupported omniSensor status.code ${status.code}"
@@ -821,36 +791,6 @@ private void updateDeviceStatus(Map d) {
             if (name != null && value != null) {
                 if (txtEnable) { log.info "${dw.displayName} ${name} is ${value} ${unit}" }
                 return [ [ name: name, value: value, descriptionText: "${name} is ${value} ${unit}", unit: unit ] ]
-            }
-        }
-
-        if (status.code in tuyaFunctions.meteringSwitch) {
-            String name = status.code
-            String value = status.value
-            String unit = ''
-            switch (status.code) {
-                case 'switch_1':
-                    name = 'switch'
-                    value = value == 'true' ? 'on' : 'off'
-                    break
-                case 'cur_power':
-                    name = 'power'
-                    value = status.value / 10
-                    unit = 'W'
-                    break
-                case 'cur_voltage':
-                case 'cur_current':
-                case 'relay_status':
-                case 'light_mode':
-                case 'add_ele':
-                case 'countdown_1':
-                    break
-                default:
-                    log.warn "${dw.displayName} unsupported meteringSwitch status.code ${status.code}"
-            }
-            if (name != null && value != null) {
-                log.info "${dw.displayName} ${name} is ${value} ${unit}"
-                return [ [ name: name, value: value, descriptionText: "${dw.displayName} ${name} is ${value} ${unit}", unit: unit ] ]
             }
         }
 
