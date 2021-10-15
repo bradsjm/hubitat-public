@@ -381,6 +381,7 @@ Map pageModeSectionActive(Long modeID) {
 Map pageModeSectionInactive(Long modeID) {
     if (settings["mode.${modeID}.active"] == 'none') {
         app.removeSetting("mode.${modeID}.inactive")
+        app.removeSetting("mode.${modeID}.inactiveMinutes")
         app.removeSetting("mode.${modeID}.inactiveLevel")
         app.removeSetting("mode.${modeID}.inactiveLights")
         app.removeSetting("mode.${modeID}.inactiveTransitionTime")
@@ -564,7 +565,7 @@ String getModeDescription(Long modeID) {
     if (!mode.enable) { return '' }
 
     String description = ''
-    if (mode.active != 'none') {
+    if (mode.active != 'none' && mode.activeLights) {
         List lights = mode.activeLights*.displayName
         lights.sort()
         if (lights.size() <= 10) {
@@ -579,12 +580,12 @@ String getModeDescription(Long modeID) {
         description += '\n'
     }
 
-    String action = activeActions.findResult { m -> m.get(mode.active) }
-    if (action) {
-        description += "When active: ${action}\n"
-        action = inactiveActions.findResult { m -> m.get(mode.inactive) }
-        if (action) {
-            description += "When inactive: ${action}"
+    String activeAction = activeActions.findResult { m -> m.get(mode.active) }
+    if (activeAction) {
+        description += "When active: ${activeAction}\n"
+        String inactiveAction = inactiveActions.findResult { m -> m.get(mode.inactive) }
+        if (mode.active != 'none' && inactiveAction) {
+            description += "When inactive: ${inactiveAction}"
             if (mode.inactiveMinutes) {
                 description += " after ${mode.inactiveMinutes} minute"
                 if (mode.inactiveMinutes > 1) { description += 's' }
