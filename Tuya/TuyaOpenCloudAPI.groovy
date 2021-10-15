@@ -438,12 +438,13 @@ void parse(String data) {
     Cipher cipher = Cipher.getInstance('AES/ECB/PKCS5Padding')
     cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(state.mqttInfo.password[8..23].bytes, 'AES'))
     Map result = new JsonSlurper().parse(cipher.doFinal(payload.data.decodeBase64()), 'UTF-8')
+
     if (result.status && (result.id || result.devId)) {
         updateDeviceStatus(result)
     } else if (result.bizCode && result.bizData) {
         parseBizData(result.bizCode, result.bizData)
-    } else if (logEnable) {
-        log.debug "${device.displayName} unsupported mqtt packet: ${result}"
+    } else {
+        log.warn "${device.displayName} unsupported mqtt packet: ${result}"
     }
 }
 
@@ -472,33 +473,6 @@ void refresh() {
 void removeDevices() {
     log.info "${device.displayName} removing all child devices"
     childDevices.each { device -> deleteChildDevice(device.deviceNetworkId) }
-}
-
-/**
- *  Driver Capabilities Implementation
- */
-private static String translateColor(Integer hue, Integer saturation) {
-    if (saturation < 1) {
-        return 'White'
-    }
-
-    switch (hue * 3.6 as int) {
-        case 0..15: return 'Red'
-        case 16..45: return 'Orange'
-        case 46..75: return 'Yellow'
-        case 76..105: return 'Chartreuse'
-        case 106..135: return 'Green'
-        case 136..165: return 'Spring'
-        case 166..195: return 'Cyan'
-        case 196..225: return 'Azure'
-        case 226..255: return 'Blue'
-        case 256..285: return 'Violet'
-        case 286..315: return 'Magenta'
-        case 316..345: return 'Rose'
-        case 346..360: return 'Red'
-    }
-
-    return ''
 }
 
 /**
@@ -570,6 +544,33 @@ private static BigDecimal remap(BigDecimal oldValue, BigDecimal oldMin, BigDecim
     return newValue.setScale(1, BigDecimal.ROUND_HALF_UP)
 }
 
+private static String translateColorName(Integer hue, Integer saturation) {
+    if (saturation < 1) {
+        return 'White'
+    }
+
+    switch (hue * 3.6 as int) {
+        case 0..15: return 'Red'
+        case 16..45: return 'Orange'
+        case 46..75: return 'Yellow'
+        case 76..105: return 'Chartreuse'
+        case 106..135: return 'Green'
+        case 136..165: return 'Spring'
+        case 166..195: return 'Cyan'
+        case 196..225: return 'Azure'
+        case 226..255: return 'Blue'
+        case 256..285: return 'Violet'
+        case 286..315: return 'Magenta'
+        case 316..345: return 'Rose'
+        case 346..360: return 'Red'
+    }
+
+    return ''
+}
+
+/**
+ *  Driver Capabilities Implementation
+ */
 private ChildDeviceWrapper createChildDevice(Map d) {
     ChildDeviceWrapper dw = getChildDevice("${device.id}-${d.id}")
     if (!dw) {
@@ -648,6 +649,13 @@ private void updateDeviceStatus(Map d) {
     List<Map> events = statusList.collectMany { status ->
         if (logEnable) { log.debug "${device.displayName} ${dw.displayName} status ${status}" }
 
+        if (status.code in tuyaFunctions.battery) {
+            if (status.code == 'battery_percentage' || status.code == 'va_battery') {
+                if (txtEnable) { log.info "${dw.displayName} battery is ${status.value}%" }
+                return [ [ name: 'battery', value: status.value, descriptionText: "battery is ${status.value}%", unit: '%' ] ]
+            }
+        }
+
         if (status.code in tuyaFunctions.brightness && workMode != 'colour') {
             Map bright = deviceFunctions[status.code] ?: [ min: 0, max: 100 ]
             if ( bright != null ) {
@@ -655,6 +663,27 @@ private void updateDeviceStatus(Map d) {
                 if (txtEnable) { log.info "${dw.displayName} level is ${value}%" }
                 return [ [ name: 'level', value: value, unit: '%', descriptionText: "level is ${value}%" ] ]
             }
+        }
+
+        if (status.code in tuyaFunctions.co) {
+            String value = status.value == 'alarm' ? 'detected' : 'clear'
+            if (txtEnable) { log.info "${dw.displayName} carbon monoxide is ${value}" }
+            return [ [ name: 'carbonMonoxide', value: value, descriptionText: "carbon monoxide is ${value}" ] ]
+        }
+
+        if (status.code in tuyaFunctions.co2) {
+            String value = status.value
+            if (txtEnable) { log.info "${dw.displayName} carbon dioxide level is ${value}" }
+            return [ [ name: 'carbonDioxide', value: value, unit: 'ppm', descriptionText: "carbon dioxide level is ${value}" ] ]
+        }
+
+        if (status.code in tuyaFunctions.ct) {
+            Map temperature = deviceFunctions[status.code]
+            Integer value = Math.floor(1000000 / remap(temperature.max - status.value,
+                            temperature.min, temperature.max, minMireds, maxMireds))
+            if (txtEnable) { log.info "${dw.displayName} color temperature is ${value}K" }
+            return [ [ name: 'colorTemperature', value: value, unit: 'K',
+                       descriptionText: "color temperature is ${value}K" ] ]
         }
 
         if (status.code in tuyaFunctions.colour) {
@@ -665,7 +694,7 @@ private void updateDeviceStatus(Map d) {
             Integer hue = Math.floor(remap(value.h, colour.h.min, colour.h.max, 0, 100))
             Integer saturation = Math.floor(remap(value.s, colour.s.min, colour.s.max, 0, 100))
             Integer level = Math.floor(remap(value.v, bright.min, bright.max, 0, 100))
-            String colorName = translateColor(hue, saturation)
+            String colorName = translateColorName(hue, saturation)
             if (txtEnable) { log.info "${dw.displayName} color is h:${hue} s:${saturation} (${colorName})" }
             List<Map> events = [
                 [ name: 'hue', value: hue, descriptionText: "hue is ${hue}" ],
@@ -677,6 +706,12 @@ private void updateDeviceStatus(Map d) {
                 events << [ name: 'level', value: level, unit: '%', descriptionText: "level is ${level}%" ]
             }
             return events
+        }
+
+        if (status.code in tuyaFunctions.contact) {
+            String value = status.value ? 'open' : 'closed'
+            if (txtEnable) { log.info "${dw.displayName} contact is ${value}" }
+            return [ [ name: 'contact', value: value, descriptionText: "contact is ${value}" ] ]
         }
 
         if (status.code in tuyaFunctions.fanSpeed) {
@@ -702,87 +737,39 @@ private void updateDeviceStatus(Map d) {
             return [ [ name: 'speed', value: 'off', descriptionText: 'speed is off' ] ]
         }
 
-        if (status.code in tuyaFunctions.contact) {
-            String value = status.value ? 'open' : 'closed'
-            if (txtEnable) { log.info "${dw.displayName} contact is ${value}" }
-            return [ [ name: 'contact', value: value, descriptionText: "contact is ${value}" ] ]
-        }
-
-        if (status.code in tuyaFunctions.water) {
-            String value = status.value == 'alarm' ? 'wet' : 'dry'
-            if (txtEnable) { log.info "${dw.displayName} water is ${value}" }
-            return [ [ name: 'water', value: value, descriptionText: "water is ${value}" ] ]
-        }
-
-        if (status.code in tuyaFunctions.smoke) {
-            String value = status.value == 'alarm' ? 'detected' : 'clear'
-            if (txtEnable) { log.info "${dw.displayName} smoke is ${value}" }
-            return [ [ name: 'smoke', value: value, descriptionText: "smoke is ${value}" ] ]
-        }
-
-        if (status.code in tuyaFunctions.co) {
-            String value = status.value == 'alarm' ? 'detected' : 'clear'
-            if (txtEnable) { log.info "${dw.displayName} carbon monoxide is ${value}" }
-            return [ [ name: 'carbonMonoxide', value: value, descriptionText: "carbon monoxide is ${value}" ] ]
-        }
-
-        if (status.code in tuyaFunctions.co2) {
-            String value = status.value
-            if (txtEnable) { log.info "${dw.displayName} carbon dioxide level is ${value}" }
-            return [ [ name: 'carbonDioxide', value: value, unit: 'ppm', descriptionText: "carbon dioxide level is ${value}" ] ]
-        }
-
-        if (status.code in tuyaFunctions.pir) {
-            String value = status.value == 'pir' ? 'active' : 'inactive'
-            if (txtEnable) { log.info "${dw.displayName} motion is ${value}" }
-            return [ [ name: 'motion', value: value, descriptionText: "motion is ${value}" ] ]
-        }
-
         if (status.code in tuyaFunctions.light || status.code in tuyaFunctions.power) {
             String value = status.value ? 'on' : 'off'
             if (txtEnable) { log.info "${dw.displayName} switch is ${value}" }
             return [ [ name: 'switch', value: value, descriptionText: "switch is ${value}" ] ]
         }
 
-        if (status.code in tuyaFunctions.ct) {
-            Map temperature = deviceFunctions[status.code]
-            Integer value = Math.floor(1000000 / remap(temperature.max - status.value,
-                            temperature.min, temperature.max, minMireds, maxMireds))
-            if (txtEnable) { log.info "${dw.displayName} color temperature is ${value}K" }
-            return [ [ name: 'colorTemperature', value: value, unit: 'K',
-                       descriptionText: "color temperature is ${value}K" ] ]
-        }
-
-        if (status.code in tuyaFunctions.sceneSwitch) {
-            String action
-            if (status.value in sceneSwitchAction) {
-                action = sceneSwitchAction[status.value]
-            } else {
-                log.warn "${dw.displayName} sceneSwitch: unknown status.value ${status.value}"
+        if (status.code in tuyaFunctions.meteringSwitch) {
+            String name = status.code
+            String value = status.value
+            String unit = ''
+            switch (status.code) {
+                case 'switch_1':
+                    name = 'switch'
+                    value = value == 'true' ? 'on' : 'off'
+                    break
+                case 'cur_power':
+                    name = 'power'
+                    value = status.value / 10
+                    unit = 'W'
+                    break
+                case 'cur_voltage':
+                case 'cur_current':
+                case 'relay_status':
+                case 'light_mode':
+                case 'add_ele':
+                case 'countdown_1':
+                    break
+                default:
+                    log.warn "${dw.displayName} unsupported meteringSwitch status.code ${status.code}"
             }
-
-            String value
-            if (status.code in sceneSwitchKeyNumbers) {
-                value = sceneSwitchKeyNumbers[status.code]
-                if (d.productKey == 'vp6clf9d' && status.code == 'switch1_value') {
-                    value = '1'                    // correction for TS0044 key #1
-                }
-            } else {
-                log.warn "${dw.displayName} sceneSwitch: unknown status.code ${status.code}"
-            }
-
-            if (value != null && action != null) {
-                if (txtEnable) { log.info "${dw.displayName} buttons ${value} is ${action}" }
-                return [ [ name: action, value: value, descriptionText: "button ${value} is ${action}", isStateChange: true ] ]
-            }
-
-            log.warn "${dw.displayName} sceneSwitch: unknown name ${action} or value ${value}"
-        }
-
-        if (status.code in tuyaFunctions.battery) {
-            if (status.code == 'battery_percentage' || status.code == 'va_battery') {
-                if (txtEnable) { log.info "${dw.displayName} battery is ${status.value}%" }
-                return [ [ name: 'battery', value: status.value, descriptionText: "battery is ${status.value}%", unit: '%' ] ]
+            if (name != null && value != null) {
+                if (txtEnable) { log.info "${dw.displayName} ${name} is ${value} ${unit}" }
+                return [ [ name: name, value: value, descriptionText: "${dw.displayName} ${name} is ${value} ${unit}", unit: unit ] ]
             }
         }
 
@@ -841,34 +828,48 @@ private void updateDeviceStatus(Map d) {
             }
         }
 
-        if (status.code in tuyaFunctions.meteringSwitch) {
-            String name = status.code
-            String value = status.value
-            String unit = ''
-            switch (status.code) {
-                case 'switch_1':
-                    name = 'switch'
-                    value = value == 'true' ? 'on' : 'off'
-                    break
-                case 'cur_power':
-                    name = 'power'
-                    value = status.value / 10
-                    unit = 'W'
-                    break
-                case 'cur_voltage':
-                case 'cur_current':
-                case 'relay_status':
-                case 'light_mode':
-                case 'add_ele':
-                case 'countdown_1':
-                    break
-                default:
-                    log.warn "${dw.displayName} unsupported meteringSwitch status.code ${status.code}"
+        if (status.code in tuyaFunctions.pir) {
+            String value = status.value == 'pir' ? 'active' : 'inactive'
+            if (txtEnable) { log.info "${dw.displayName} motion is ${value}" }
+            return [ [ name: 'motion', value: value, descriptionText: "motion is ${value}" ] ]
+        }
+
+        if (status.code in tuyaFunctions.sceneSwitch) {
+            String action
+            if (status.value in sceneSwitchAction) {
+                action = sceneSwitchAction[status.value]
+            } else {
+                log.warn "${dw.displayName} sceneSwitch: unknown status.value ${status.value}"
             }
-            if (name != null && value != null) {
-                if (txtEnable) { log.info "${dw.displayName} ${name} is ${value} ${unit}" }
-                return [ [ name: name, value: value, descriptionText: "${dw.displayName} ${name} is ${value} ${unit}", unit: unit ] ]
+
+            String value
+            if (status.code in sceneSwitchKeyNumbers) {
+                value = sceneSwitchKeyNumbers[status.code]
+                if (d.productKey == 'vp6clf9d' && status.code == 'switch1_value') {
+                    value = '1'                    // correction for TS0044 key #1
+                }
+            } else {
+                log.warn "${dw.displayName} sceneSwitch: unknown status.code ${status.code}"
             }
+
+            if (value != null && action != null) {
+                if (txtEnable) { log.info "${dw.displayName} buttons ${value} is ${action}" }
+                return [ [ name: action, value: value, descriptionText: "button ${value} is ${action}", isStateChange: true ] ]
+            }
+
+            log.warn "${dw.displayName} sceneSwitch: unknown name ${action} or value ${value}"
+        }
+
+        if (status.code in tuyaFunctions.smoke) {
+            String value = status.value == 'alarm' ? 'detected' : 'clear'
+            if (txtEnable) { log.info "${dw.displayName} smoke is ${value}" }
+            return [ [ name: 'smoke', value: value, descriptionText: "smoke is ${value}" ] ]
+        }
+
+        if (status.code in tuyaFunctions.water) {
+            String value = status.value == 'alarm' ? 'wet' : 'dry'
+            if (txtEnable) { log.info "${dw.displayName} water is ${value}" }
+            return [ [ name: 'water', value: value, descriptionText: "water is ${value}" ] ]
         }
 
         if (status.code in tuyaFunctions.workMode) {
