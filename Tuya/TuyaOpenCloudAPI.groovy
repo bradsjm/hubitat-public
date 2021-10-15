@@ -112,23 +112,23 @@ metadata {
 
 // Tuya Function Categories
 @Field static final Map<String, List<String>> tuyaFunctions = [
-    'brightness'    : [ 'bright_value', 'bright_value_v2', 'bright_value_1' ],
-    'colour'        : [ 'colour_data', 'colour_data_v2' ],
-    'light'         : [ 'switch_led', 'switch_led_1', 'light' ],
-    'power'         : [ 'Power', 'power', 'power_go', 'switch' ],
-    'temperature'   : [ 'temp_value', 'temp_value_v2' ],
-    'workMode'      : [ 'work_mode' ],
-    'sceneSwitch'   : [ 'switch1_value', 'switch2_value', 'switch3_value', 'switch4_value', 'switch_mode2', 'switch_mode3', 'switch_mode4' ],
-    'omniSensor'    : [ 'bright_value', 'temp_current', 'humidity_value', 'va_humidity', 'bright_sensitivity', 'shock_state', 'inactive_state', 'sensitivity' ],
     'battery'       : [ 'battery_percentage', 'va_battery' ],
-    'contact'       : [ 'doorcontact_state' ],
-    'water'         : [ 'watersensor_state' ],
-    'smoke'         : [ 'smoke_sensor_status' ],
+    'brightness'    : [ 'bright_value', 'bright_value_v2', 'bright_value_1' ],
     'co'            : [ 'co_state' ],
     'co2'           : [ 'co2_value' ],
-    'pir'           : [ 'pir' ],
+    'colour'        : [ 'colour_data', 'colour_data_v2' ],
+    'contact'       : [ 'doorcontact_state' ],
+    'ct'            : [ 'temp_value', 'temp_value_v2' ],
     'fanSpeed'      : [ 'fan_speed' ],
-    'meteringSwitch': [ 'switch_1', 'countdown_1' , 'add_ele' , 'cur_current', 'cur_power', 'cur_voltage' , 'relay_status', 'light_mode' ]
+    'light'         : [ 'switch_led', 'switch_led_1', 'light' ],
+    'meteringSwitch': [ 'switch_1', 'countdown_1' , 'add_ele' , 'cur_current', 'cur_power', 'cur_voltage' , 'relay_status', 'light_mode' ],
+    'omniSensor'    : [ 'bright_value', 'temp_current', 'humidity_value', 'va_humidity', 'bright_sensitivity', 'shock_state', 'inactive_state', 'sensitivity' ],
+    'pir'           : [ 'pir' ],
+    'power'         : [ 'Power', 'power', 'switch' ],
+    'sceneSwitch'   : [ 'switch1_value', 'switch2_value', 'switch3_value', 'switch4_value', 'switch_mode2', 'switch_mode3', 'switch_mode4' ],
+    'smoke'         : [ 'smoke_sensor_status' ],
+    'water'         : [ 'watersensor_state' ],
+    'workMode'      : [ 'work_mode' ]
 ]
 
 // Tuya -> Hubitat attributes mappings
@@ -171,12 +171,15 @@ metadata {
 void componentOn(DeviceWrapper dw) {
     Map<String, Map> functions = getFunctions(dw)
     String code
-    if (dw.getDataValue('category') == 'cz') {    // meteringSwitch code is 'switch_1'
-        code = getFunctionByCode(functions, tuyaFunctions.meteringSwitch)
+    switch (dw.getDataValue('category')) {
+        case 'cz':
+            code = getFunctionCode(functions, tuyaFunctions.meteringSwitch) // meteringSwitch code is 'switch_1'
+            break
+        default:
+    		code = getFunctionCode(functions, tuyaFunctions.light + tuyaFunctions.power)
+            break
     }
-	else {
-		code = getFunctionByCode(functions, tuyaFunctions.light) ?: getFunctionByCode(functions, tuyaFunctions.power)
-    }
+
     if (code) {
         log.info "Turning ${dw} on"
         tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': true ])
@@ -187,12 +190,15 @@ void componentOn(DeviceWrapper dw) {
 void componentOff(DeviceWrapper dw) {
     Map<String, Map> functions = getFunctions(dw)
     String code
-    if (dw.getDataValue('category') == 'cz') {    // meteringSwitch code is 'switch_1'
-        code = getFunctionByCode(functions, tuyaFunctions.meteringSwitch)
+    switch (dw.getDataValue('category')) {
+        case 'cz':
+            code = getFunctionCode(functions, tuyaFunctions.meteringSwitch) // meteringSwitch code is 'switch_1'
+            break
+        default:
+    		code = getFunctionCode(functions, tuyaFunctions.light + tuyaFunctions.power)
+            break
     }
-	else {
-		code = getFunctionByCode(functions, tuyaFunctions.light) ?: getFunctionByCode(functions, tuyaFunctions.power)
-    }
+
     if (code) {
         log.info "Turning ${dw} off"
         tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': false ])
@@ -211,11 +217,11 @@ void componentRefresh(DeviceWrapper dw) {
 // Component command to set color
 void componentSetColor(DeviceWrapper dw, Map colorMap) {
     Map<String, Map> functions = getFunctions(dw)
-    String code = getFunctionByCode(functions, tuyaFunctions.colour)
+    String code = getFunctionCode(functions, tuyaFunctions.colour)
     if (code) {
-        Map color = functions[code]
+        Map color = functions[code] ?: [:]
         // An oddity and workaround for mapping brightness values
-        Map bright = functions['bright_value'] ?: functions['bright_value_v2'] ?: color.v
+        Map bright = getFunction(functions, functions.brightness) ?: color.v
         Map value = [
             h: remap(colorMap.hue, 0, 100, color.h.min, color.h.max),
             s: remap(colorMap.saturation, 0, 100, color.s.min, color.s.max),
@@ -233,7 +239,7 @@ void componentSetColor(DeviceWrapper dw, Map colorMap) {
 void componentSetColorTemperature(DeviceWrapper dw, BigDecimal kelvin,
                                   BigDecimal level = null, BigDecimal duration = null) {
     Map<String, Map> functions = getFunctions(dw)
-    String code = getFunctionByCode(functions, tuyaFunctions.temperature)
+    String code = getFunctionCode(functions, tuyaFunctions.ct)
     if (code) {
         Map temp = functions[code]
         Integer value = temp.max - Math.ceil(maxMireds - remap(1000000 / kelvin, minMireds, maxMireds, temp.min, temp.max))
@@ -268,10 +274,10 @@ void componentSetLevel(DeviceWrapper dw, BigDecimal level, BigDecimal duration =
     String colorMode = dw.currentValue('colorMode') ?: 'CT'
     if (colorMode == 'CT') {
         Map<String, Map> functions = getFunctions(dw)
-        String code = getFunctionByCode(functions, tuyaFunctions.brightness)
+        String code = getFunctionCode(functions, tuyaFunctions.brightness)
         if (code) {
-            Map bright = functions[code] ?: [:]
-            Integer value = Math.ceil(remap(level, 0, 100, bright.min ?: 0, bright.max ?: 100))
+            Map bright = functions[code] ?: [ min: 0, max: 100 ]
+            Integer value = Math.ceil(remap(level, 0, 100, bright.min, bright.max))
             log.info "Setting ${dw} level to ${level}%"
             tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': value ])
         }
@@ -304,15 +310,16 @@ void componentSetSaturation(DeviceWrapper dw, BigDecimal saturation) {
 // Component command to set fan speed
 void componentSetSpeed(DeviceWrapper dw, String speed) {
     Map<String, Map> functions = getFunctions(dw)
-    String code = getFunctionByCode(functions, tuyaFunctions.fanSpeed)
+    String code = getFunctionCode(functions, tuyaFunctions.fanSpeed)
+    String id = dw.getDataValue('id')
     if (code) {
         log.info "Setting speed to ${speed}"
         switch (speed) {
             case 'on':
-                tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': 'switch', 'value': true ])
+                tuyaSendDeviceCommands(id, [ 'code': 'switch', 'value': true ])
                 break
             case 'off':
-                tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': 'switch', 'value': false ])
+                tuyaSendDeviceCommands(id, [ 'code': 'switch', 'value': false ])
                 break
             case 'auto':
                 log.warn 'Speed level auto is not supported'
@@ -332,7 +339,7 @@ void componentSetSpeed(DeviceWrapper dw, String speed) {
                         log.warn "Unknown fan speed function type ${speedFunc}"
                         return
                 }
-                tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': value ])
+                tuyaSendDeviceCommands(id, [ 'code': code, 'value': value ])
                 break
         }
     }
@@ -431,12 +438,13 @@ void parse(String data) {
     Cipher cipher = Cipher.getInstance('AES/ECB/PKCS5Padding')
     cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(state.mqttInfo.password[8..23].bytes, 'AES'))
     Map result = new JsonSlurper().parse(cipher.doFinal(payload.data.decodeBase64()), 'UTF-8')
+
     if (result.status && (result.id || result.devId)) {
         updateDeviceStatus(result)
     } else if (result.bizCode && result.bizData) {
         parseBizData(result.bizCode, result.bizData)
-    } else if (logEnable) {
-        log.debug "${device.displayName} unsupported mqtt packet: ${result}"
+    } else {
+        log.warn "${device.displayName} unsupported mqtt packet: ${result}"
     }
 }
 
@@ -468,38 +476,11 @@ void removeDevices() {
 }
 
 /**
- *  Driver Capabilities Implementation
- */
-private static String translateColor(Integer hue, Integer saturation) {
-    if (saturation < 1) {
-        return 'White'
-    }
-
-    switch (hue * 3.6 as int) {
-        case 0..15: return 'Red'
-        case 16..45: return 'Orange'
-        case 46..75: return 'Yellow'
-        case 76..105: return 'Chartreuse'
-        case 106..135: return 'Green'
-        case 136..165: return 'Spring'
-        case 166..195: return 'Cyan'
-        case 196..225: return 'Azure'
-        case 226..255: return 'Blue'
-        case 256..285: return 'Violet'
-        case 286..315: return 'Magenta'
-        case 316..345: return 'Rose'
-        case 346..360: return 'Red'
-    }
-
-    return ''
-}
-
-/**
   *  Tuya Standard Instruction Set Category Mapping to Hubitat Drivers
   *  https://developer.tuya.com/en/docs/iot/standarddescription?id=K9i5ql6waswzq
   */
-private static Map mapTuyaCategory(String category) {
-    switch (category) {
+private static Map mapTuyaCategory(Map d) {
+    switch (d.category) {
         case 'ykq':   // Remote Control
         case 'tyndj': // Solar Light
             return [ namespace: 'hubitat', name: 'Generic Component CT' ]
@@ -546,7 +527,11 @@ private static Map<String, Map> getFunctions(DeviceWrapper dw) {
     }
 }
 
-private static String getFunctionByCode(Map functions, List codes) {
+private static Map getFunction(Map functions, List codes) {
+    return functions.find({ f -> f.key in codes })?.value
+}
+
+private static String getFunctionCode(Map functions, List codes) {
     return codes.find { c -> functions.containsKey(c) }
 }
 
@@ -559,10 +544,37 @@ private static BigDecimal remap(BigDecimal oldValue, BigDecimal oldMin, BigDecim
     return newValue.setScale(1, BigDecimal.ROUND_HALF_UP)
 }
 
+private static String translateColorName(Integer hue, Integer saturation) {
+    if (saturation < 1) {
+        return 'White'
+    }
+
+    switch (hue * 3.6 as int) {
+        case 0..15: return 'Red'
+        case 16..45: return 'Orange'
+        case 46..75: return 'Yellow'
+        case 76..105: return 'Chartreuse'
+        case 106..135: return 'Green'
+        case 136..165: return 'Spring'
+        case 166..195: return 'Cyan'
+        case 196..225: return 'Azure'
+        case 226..255: return 'Blue'
+        case 256..285: return 'Violet'
+        case 286..315: return 'Magenta'
+        case 316..345: return 'Rose'
+        case 346..360: return 'Red'
+    }
+
+    return ''
+}
+
+/**
+ *  Driver Capabilities Implementation
+ */
 private ChildDeviceWrapper createChildDevice(Map d) {
     ChildDeviceWrapper dw = getChildDevice("${device.id}-${d.id}")
     if (!dw) {
-        Map driver = mapTuyaCategory(d.category)
+        Map driver = mapTuyaCategory(d)
         log.info "${device.displayName} creating device ${d.name} using ${driver.name} driver"
         try {
             dw = addChildDevice(driver.namespace, driver.name, "${device.id}-${d.id}",
@@ -577,11 +589,14 @@ private ChildDeviceWrapper createChildDevice(Map d) {
         }
     }
 
+    String functionJson = JsonOutput.toJson(d.functions)
+    jsonCache.put(functionJson, d.functions)
     dw?.with {
         label = label ?: d.name
         updateDataValue 'id', d.id
         updateDataValue 'local_key', d.local_key
         updateDataValue 'category', d.category
+        updateDataValue 'functions', functionJson
         updateDataValue 'online', d.online as String
     }
 
@@ -634,8 +649,15 @@ private void updateDeviceStatus(Map d) {
     List<Map> events = statusList.collectMany { status ->
         if (logEnable) { log.debug "${device.displayName} ${dw.displayName} status ${status}" }
 
+        if (status.code in tuyaFunctions.battery) {
+            if (status.code == 'battery_percentage' || status.code == 'va_battery') {
+                if (txtEnable) { log.info "${dw.displayName} battery is ${status.value}%" }
+                return [ [ name: 'battery', value: status.value, descriptionText: "battery is ${status.value}%", unit: '%' ] ]
+            }
+        }
+
         if (status.code in tuyaFunctions.brightness && workMode != 'colour') {
-            Map bright = deviceFunctions[status.code]
+            Map bright = deviceFunctions[status.code] ?: [ min: 0, max: 100 ]
             if ( bright != null ) {
                 Integer value = Math.floor(remap(status.value, bright.min, bright.max, 0, 100))
                 if (txtEnable) { log.info "${dw.displayName} level is ${value}%" }
@@ -643,15 +665,36 @@ private void updateDeviceStatus(Map d) {
             }
         }
 
+        if (status.code in tuyaFunctions.co) {
+            String value = status.value == 'alarm' ? 'detected' : 'clear'
+            if (txtEnable) { log.info "${dw.displayName} carbon monoxide is ${value}" }
+            return [ [ name: 'carbonMonoxide', value: value, descriptionText: "carbon monoxide is ${value}" ] ]
+        }
+
+        if (status.code in tuyaFunctions.co2) {
+            String value = status.value
+            if (txtEnable) { log.info "${dw.displayName} carbon dioxide level is ${value}" }
+            return [ [ name: 'carbonDioxide', value: value, unit: 'ppm', descriptionText: "carbon dioxide level is ${value}" ] ]
+        }
+
+        if (status.code in tuyaFunctions.ct) {
+            Map temperature = deviceFunctions[status.code]
+            Integer value = Math.floor(1000000 / remap(temperature.max - status.value,
+                            temperature.min, temperature.max, minMireds, maxMireds))
+            if (txtEnable) { log.info "${dw.displayName} color temperature is ${value}K" }
+            return [ [ name: 'colorTemperature', value: value, unit: 'K',
+                       descriptionText: "color temperature is ${value}K" ] ]
+        }
+
         if (status.code in tuyaFunctions.colour) {
             Map colour = deviceFunctions[status.code]
-            Map bright = deviceFunctions[getFunctionByCode(deviceFunctions, tuyaFunctions.brightness)] ?: colour.v
+            Map bright = getFunction(deviceFunctions, tuyaFunctions.brightness) ?: colour.v
             Map value = status.value == '' ? [h: 100.0, s: 100.0, v: 100.0] :
                         jsonCache.computeIfAbsent(status.value) { k -> new JsonSlurper().parseText(k) }
             Integer hue = Math.floor(remap(value.h, colour.h.min, colour.h.max, 0, 100))
             Integer saturation = Math.floor(remap(value.s, colour.s.min, colour.s.max, 0, 100))
             Integer level = Math.floor(remap(value.v, bright.min, bright.max, 0, 100))
-            String colorName = translateColor(hue, saturation)
+            String colorName = translateColorName(hue, saturation)
             if (txtEnable) { log.info "${dw.displayName} color is h:${hue} s:${saturation} (${colorName})" }
             List<Map> events = [
                 [ name: 'hue', value: hue, descriptionText: "hue is ${hue}" ],
@@ -663,6 +706,12 @@ private void updateDeviceStatus(Map d) {
                 events << [ name: 'level', value: level, unit: '%', descriptionText: "level is ${level}%" ]
             }
             return events
+        }
+
+        if (status.code in tuyaFunctions.contact) {
+            String value = status.value ? 'open' : 'closed'
+            if (txtEnable) { log.info "${dw.displayName} contact is ${value}" }
+            return [ [ name: 'contact', value: value, descriptionText: "contact is ${value}" ] ]
         }
 
         if (status.code in tuyaFunctions.fanSpeed) {
@@ -688,87 +737,39 @@ private void updateDeviceStatus(Map d) {
             return [ [ name: 'speed', value: 'off', descriptionText: 'speed is off' ] ]
         }
 
-        if (status.code in tuyaFunctions.contact) {
-            String value = status.value ? 'open' : 'closed'
-            if (txtEnable) { log.info "${dw.displayName} contact is ${value}" }
-            return [ [ name: 'contact', value: value, descriptionText: "contact is ${value}" ] ]
-        }
-
-        if (status.code in tuyaFunctions.water) {
-            String value = status.value == 'alarm' ? 'wet' : 'dry'
-            if (txtEnable) { log.info "${dw.displayName} water is ${value}" }
-            return [ [ name: 'water', value: value, descriptionText: "water is ${value}" ] ]
-        }
-
-        if (status.code in tuyaFunctions.smoke) {
-            String value = status.value == 'alarm' ? 'detected' : 'clear'
-            if (txtEnable) { log.info "${dw.displayName} smoke is ${value}" }
-            return [ [ name: 'smoke', value: value, descriptionText: "smoke is ${value}" ] ]
-        }
-
-        if (status.code in tuyaFunctions.co) {
-            String value = status.value == 'alarm' ? 'detected' : 'clear'
-            if (txtEnable) { log.info "${dw.displayName} carbon monoxide is ${value}" }
-            return [ [ name: 'carbonMonoxide', value: value, descriptionText: "carbon monoxide is ${value}" ] ]
-        }
-
-        if (status.code in tuyaFunctions.co2) {
-            String value = status.value
-            if (txtEnable) { log.info "${dw.displayName} carbon dioxide level is ${value}" }
-            return [ [ name: 'carbonDioxide', value: value, unit: 'ppm', descriptionText: "carbon dioxide level is ${value}" ] ]
-        }
-
-        if (status.code in tuyaFunctions.pir) {
-            String value = status.value == 'pir' ? 'active' : 'inactive'
-            if (txtEnable) { log.info "${dw.displayName} motion is ${value}" }
-            return [ [ name: 'motion', value: value, descriptionText: "motion is ${value}" ] ]
-        }
-
         if (status.code in tuyaFunctions.light || status.code in tuyaFunctions.power) {
             String value = status.value ? 'on' : 'off'
             if (txtEnable) { log.info "${dw.displayName} switch is ${value}" }
             return [ [ name: 'switch', value: value, descriptionText: "switch is ${value}" ] ]
         }
 
-        if (status.code in tuyaFunctions.temperature) {
-            Map temperature = deviceFunctions[status.code]
-            Integer value = Math.floor(1000000 / remap(temperature.max - status.value,
-                            temperature.min, temperature.max, minMireds, maxMireds))
-            if (txtEnable) { log.info "${dw.displayName} color temperature is ${value}K" }
-            return [ [ name: 'colorTemperature', value: value, unit: 'K',
-                       descriptionText: "color temperature is ${value}K" ] ]
-        }
-
-        if (status.code in tuyaFunctions.sceneSwitch) {
-            String action
-            if (status.value in sceneSwitchAction) {
-                action = sceneSwitchAction[status.value]
-            } else {
-                log.warn "${dw.displayName} sceneSwitch: unknown status.value ${status.value}"
+        if (status.code in tuyaFunctions.meteringSwitch) {
+            String name = status.code
+            String value = status.value
+            String unit = ''
+            switch (status.code) {
+                case 'switch_1':
+                    name = 'switch'
+                    value = value == 'true' ? 'on' : 'off'
+                    break
+                case 'cur_power':
+                    name = 'power'
+                    value = status.value / 10
+                    unit = 'W'
+                    break
+                case 'cur_voltage':
+                case 'cur_current':
+                case 'relay_status':
+                case 'light_mode':
+                case 'add_ele':
+                case 'countdown_1':
+                    break
+                default:
+                    log.warn "${dw.displayName} unsupported meteringSwitch status.code ${status.code}"
             }
-
-            String value
-            if (status.code in sceneSwitchKeyNumbers) {
-                value = sceneSwitchKeyNumbers[status.code]
-                if (d.productKey == 'vp6clf9d' && status.code == 'switch1_value') {
-                    value = '1'                    // correction for TS0044 key #1
-                }
-            } else {
-                log.warn "${dw.displayName} sceneSwitch: unknown status.code ${status.code}"
-            }
-
-            if (value != null && action != null) {
-                if (txtEnable) { log.info "${dw.displayName} buttons ${value} is ${action}" }
-                return [ [ name: action, value: value, descriptionText: "button ${value} is ${action}", isStateChange: true ] ]
-            }
-
-            log.warn "${dw.displayName} sceneSwitch: unknown name ${action} or value ${value}"
-        }
-
-        if (status.code in tuyaFunctions.battery) {
-            if (status.code == 'battery_percentage' || status.code == 'va_battery') {
-                if (txtEnable) { log.info "${dw.displayName} battery is ${status.value}%" }
-                return [ [ name: 'battery', value: status.value, descriptionText: "battery is ${status.value}%", unit: '%' ] ]
+            if (name != null && value != null) {
+                if (txtEnable) { log.info "${dw.displayName} ${name} is ${value} ${unit}" }
+                return [ [ name: name, value: value, descriptionText: "${dw.displayName} ${name} is ${value} ${unit}", unit: unit ] ]
             }
         }
 
@@ -827,34 +828,48 @@ private void updateDeviceStatus(Map d) {
             }
         }
 
-        if (status.code in tuyaFunctions.meteringSwitch) {
-            String name = status.code
-            String value = status.value
-            String unit = ''
-            switch (status.code) {
-                case 'switch_1':
-                    name = 'switch'
-                    value = value == 'true' ? 'on' : 'off'
-                    break
-                case 'cur_power':
-                    name = 'power'
-                    value = status.value / 10
-                    unit = 'W'
-                    break
-                case 'cur_voltage':
-                case 'cur_current':
-                case 'relay_status':
-                case 'light_mode':
-                case 'add_ele':
-                case 'countdown_1':
-                    break
-                default:
-                    log.warn "${dw.displayName} unsupported meteringSwitch status.code ${status.code}"
+        if (status.code in tuyaFunctions.pir) {
+            String value = status.value == 'pir' ? 'active' : 'inactive'
+            if (txtEnable) { log.info "${dw.displayName} motion is ${value}" }
+            return [ [ name: 'motion', value: value, descriptionText: "motion is ${value}" ] ]
+        }
+
+        if (status.code in tuyaFunctions.sceneSwitch) {
+            String action
+            if (status.value in sceneSwitchAction) {
+                action = sceneSwitchAction[status.value]
+            } else {
+                log.warn "${dw.displayName} sceneSwitch: unknown status.value ${status.value}"
             }
-            if (name != null && value != null) {
-                log.info "${dw.displayName} ${name} is ${value} ${unit}"
-                return [ [ name: name, value: value, descriptionText: "${dw.displayName} ${name} is ${value} ${unit}", unit: unit ] ]
+
+            String value
+            if (status.code in sceneSwitchKeyNumbers) {
+                value = sceneSwitchKeyNumbers[status.code]
+                if (d.productKey == 'vp6clf9d' && status.code == 'switch1_value') {
+                    value = '1'                    // correction for TS0044 key #1
+                }
+            } else {
+                log.warn "${dw.displayName} sceneSwitch: unknown status.code ${status.code}"
             }
+
+            if (value != null && action != null) {
+                if (txtEnable) { log.info "${dw.displayName} buttons ${value} is ${action}" }
+                return [ [ name: action, value: value, descriptionText: "button ${value} is ${action}", isStateChange: true ] ]
+            }
+
+            log.warn "${dw.displayName} sceneSwitch: unknown name ${action} or value ${value}"
+        }
+
+        if (status.code in tuyaFunctions.smoke) {
+            String value = status.value == 'alarm' ? 'detected' : 'clear'
+            if (txtEnable) { log.info "${dw.displayName} smoke is ${value}" }
+            return [ [ name: 'smoke', value: value, descriptionText: "smoke is ${value}" ] ]
+        }
+
+        if (status.code in tuyaFunctions.water) {
+            String value = status.value == 'alarm' ? 'wet' : 'dry'
+            if (txtEnable) { log.info "${dw.displayName} water is ${value}" }
+            return [ [ name: 'water', value: value, descriptionText: "water is ${value}" ] ]
         }
 
         if (status.code in tuyaFunctions.workMode) {
@@ -926,33 +941,42 @@ private void tuyaAuthenticateResponse(AsyncResponse response, Map data) {
  *  Tuya Open API Device Management
  *  https://developer.tuya.com/en/docs/cloud/
  */
-private void tuyaGetDevices() {
+private void tuyaGetDevices(String last_row_key = '', Map data = [:]) {
     if (!jsonCache.isEmpty()) {
         log.info "${device.displayName} clearing json cache"
         jsonCache.clear()
     }
 
-    log.info "${device.displayName} requesting cloud devices (maximum 100)"
-    tuyaGet('/v1.0/iot-01/associated-users/devices', [ 'size': 100 ], 'tuyaGetDevicesResponse')
+    log.info "${device.displayName} requesting cloud devices batch"
+    tuyaGet('/v1.0/iot-01/associated-users/devices', [ 'last_row_key': last_row_key ], 'tuyaGetDevicesResponse', data)
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
 private void tuyaGetDevicesResponse(AsyncResponse response, Map data) {
-    if (!tuyaCheckResponse(response)) { return }
-    Map result = response.json.result
-    data.devices = result.devices
-    log.info "${device.displayName} received ${result.devices.size()} cloud devices"
-    sendEvent([ name: 'deviceCount', value: result.devices.size() as String ])
-
-    // Create Hubitat devices from Tuya results
-    result.devices.each { d ->
-        createChildDevice(d)
+    if (tuyaCheckResponse(response)) {
+        Map result = response.json.result
+        data.devices = (data.devices ?: []) + result.devices
+        log.info "${device.displayName} received ${result.devices.size()} cloud devices (has_more: ${result.has_more})"
+        if (result.has_more) {
+            pauseExecution(1000)
+            tuyaGetDevices(result.last_row_key, data)
+            return
+        }
     }
 
-    // Get device functions in batches of 20
-    result.devices.collate(20).each { collection ->
-        tuyaGetDeviceFunctions(collection, data)
-        pauseExecution(1000)
+    if (data.devices) {
+        sendEvent([ name: 'deviceCount', value: data.devices.size() as String ])
+
+        // Create Hubitat devices from Tuya results
+        //data.devices.each { d ->
+        //    createChildDevice(d)
+        //}
+
+        // Get device functions in batches of 20
+        data.devices.collate(20).each { collection ->
+            tuyaGetDeviceFunctions(collection, data)
+            pauseExecution(1000)
+        }
     }
 }
 
@@ -963,26 +987,37 @@ private void tuyaGetDeviceFunctions(List<Map> devices, Map data = [:]) {
 
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
 private void tuyaGetDeviceFunctionsResponse(AsyncResponse response, Map data) {
-    if (!tuyaCheckResponse(response)) { return }
-    JsonSlurper parser = new JsonSlurper()
-    List result = response.json.result
-    log.info "${device.displayName} received ${result.size()} cloud function groups"
-    result?.each { group ->
-        Map functions = group.functions.collectEntries { f ->
-            String code = f.code
-            Map values = parser.parseText(f.values)
-            values.type = f.type
-            [ (code): values ]
-        }
-        String json = JsonOutput.toJson(functions)
-        group.devices.each { id ->
-            ChildDeviceWrapper dw = getChildDevice("${device.id}-${id}")
-            dw?.updateDataValue('functions', json)
+    if (tuyaCheckResponse(response)) {
+        JsonSlurper parser = new JsonSlurper()
+        List result = response.json.result
+        log.info "${device.displayName} received ${result.size()} cloud function groups"
+        result?.each { group ->
+            Map functions = group.functions.collectEntries { f ->
+                Map values = parser.parseText(f.values ?: '{}')
+                values.name = f.name
+                values.type = f.type
+                return [ (f.code): values ]
+            }
+            //String json = JsonOutput.toJson(functions)
+            group.devices.each { id ->
+                Map d = data.devices.find { d -> d.id == id }
+                d.functions = functions
+                createChildDevice(d)
+                updateDeviceStatus(d)
+                //ChildDeviceWrapper dw = getChildDevice("${device.id}-${id}")
+                //dw?.updateDataValue('functions', json)
+            }
         }
     }
 
+    // Create Hubitat devices from Tuya results
+    // data.devices.each { d ->
+    //     createChildDevice(d)
+    // }
     // Process status updates
-    data.devices.each { d -> updateDeviceStatus(d) }
+    // if (data.devices) {
+    //     data.devices.each { d -> updateDeviceStatus(d) }
+    // }
     sendEvent([ name: 'connected', value: true, descriptionText: 'connected is true'])
 }
 
