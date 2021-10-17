@@ -44,6 +44,7 @@ import hubitat.scheduling.AsyncResponse
  *  10/11/21 - 0.1.4 - door contact, water, smoke, co, pir sensors, fan
  *  10/13/21 - 0.1.5 - fix ternary use error for colors and levels
  *  10/14/21 - 0.1.6 - smart plug, vibration sensor; brightness and temperature sensors scaling bug fix
+ *  10/17/21 - 0.1.7 - switched API to use device specification request to get both functions and status ranges
  */
 
 metadata {
