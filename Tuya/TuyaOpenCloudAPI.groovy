@@ -182,7 +182,7 @@ void componentOn(DeviceWrapper dw) {
 
     if (code) {
         log.info "Turning ${dw} on"
-        tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': true ])
+        tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': true ])
     }
 }
 
@@ -201,7 +201,7 @@ void componentOff(DeviceWrapper dw) {
 
     if (code) {
         log.info "Turning ${dw} off"
-        tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': false ])
+        tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': false ])
     }
 }
 
@@ -210,7 +210,7 @@ void componentRefresh(DeviceWrapper dw) {
     String id = dw.getDataValue('id')
     if (id && dw.getDataValue('functions')) {
         log.info "Refreshing ${dw} (${id})"
-        tuyaGetState(id)
+        tuyaGetStateAsync(id)
     }
 }
 
@@ -228,7 +228,7 @@ void componentSetColor(DeviceWrapper dw, Map colorMap) {
             v: remap(colorMap.level, 0, 100, bright.min, bright.max)
         ]
         log.info "Setting ${dw} color to ${colorMap}"
-        tuyaSendDeviceCommands(dw.getDataValue('id'),
+        tuyaSendDeviceCommandsAsync(dw.getDataValue('id'),
             [ 'code': code, 'value': value ],
             [ 'code': 'work_mode', 'value': 'colour']
         )
@@ -244,7 +244,7 @@ void componentSetColorTemperature(DeviceWrapper dw, BigDecimal kelvin,
         Map temp = functions[code]
         Integer value = temp.max - Math.ceil(maxMireds - remap(1000000 / kelvin, minMireds, maxMireds, temp.min, temp.max))
         log.info "Setting ${dw} color temperature to ${kelvin}K"
-        tuyaSendDeviceCommands(dw.getDataValue('id'),
+        tuyaSendDeviceCommandsAsync(dw.getDataValue('id'),
             [ 'code': code, 'value': value ],
             [ 'code': 'work_mode', 'value': 'white']
         )
@@ -279,7 +279,7 @@ void componentSetLevel(DeviceWrapper dw, BigDecimal level, BigDecimal duration =
             Map bright = functions[code] ?: [ min: 0, max: 100 ]
             Integer value = Math.ceil(remap(level, 0, 100, bright.min, bright.max))
             log.info "Setting ${dw} level to ${level}%"
-            tuyaSendDeviceCommands(dw.getDataValue('id'), [ 'code': code, 'value': value ])
+            tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': value ])
         }
     } else {
         componentSetColor(dw, [
@@ -316,10 +316,10 @@ void componentSetSpeed(DeviceWrapper dw, String speed) {
         log.info "Setting speed to ${speed}"
         switch (speed) {
             case 'on':
-                tuyaSendDeviceCommands(id, [ 'code': 'switch', 'value': true ])
+                tuyaSendDeviceCommandsAsync(id, [ 'code': 'switch', 'value': true ])
                 break
             case 'off':
-                tuyaSendDeviceCommands(id, [ 'code': 'switch', 'value': false ])
+                tuyaSendDeviceCommandsAsync(id, [ 'code': 'switch', 'value': false ])
                 break
             case 'auto':
                 log.warn 'Speed level auto is not supported'
@@ -339,7 +339,7 @@ void componentSetSpeed(DeviceWrapper dw, String speed) {
                         log.warn "Unknown fan speed function type ${speedFunc}"
                         return
                 }
-                tuyaSendDeviceCommands(id, [ 'code': code, 'value': value ])
+                tuyaSendDeviceCommandsAsync(id, [ 'code': code, 'value': value ])
                 break
         }
     }
@@ -408,7 +408,7 @@ void initialize() {
     state.tokenInfo = [ access_token: '', expire: now() ] // initialize token
     state.uuid = state?.uuid ?: UUID.randomUUID().toString()
 
-    tuyaAuthenticate()
+    tuyaAuthenticateAsync()
 }
 
 // Called when the device is first created
@@ -452,13 +452,13 @@ void parse(String data) {
 void mqttClientStatus(String status) {
     switch (status) {
         case 'Status: Connection succeeded':
-            runInMillis(1000, 'tuyaHubSubscribe')
+            runInMillis(1000, 'tuyaHubSubscribeAsync')
             break
         case 'Error: Connection lost':
         case 'Error: send error':
             log.error "${device.displayName} MQTT connection error: " + status
             sendEvent([ name: 'connected', value: false, descriptionText: 'connected is false'])
-            runIn(15 + random.nextInt(45), 'tuyaGetHubConfig')
+            runIn(15 + random.nextInt(45), 'tuyaGetHubConfigAsync')
             break
     }
 }
@@ -466,7 +466,7 @@ void mqttClientStatus(String status) {
 // Command to refresh all devices
 void refresh() {
     log.info "${device.displayName} refreshing devices"
-    tuyaGetDevices()
+    tuyaGetDevicesAsync()
 }
 
 // Command to remove all the child devices
@@ -522,7 +522,7 @@ private static Map mapTuyaCategory(Map d) {
 }
 
 private static Map<String, Map> getFunctions(DeviceWrapper dw) {
-    return jsonCache.computeIfAbsent(dw.getDataValue('functions')) {
+    return jsonCache.computeIfAbsent(dw.getDataValue('functions') ?: '{}') {
         k -> new JsonSlurper().parseText(k)
     }
 }
@@ -597,6 +597,7 @@ private ChildDeviceWrapper createChildDevice(Map d) {
         updateDataValue 'local_key', d.local_key
         updateDataValue 'category', d.category
         updateDataValue 'functions', functionJson
+        updateDataValue 'statusSet', JsonOutput.toJson(d.statusSet)
         updateDataValue 'online', d.online as String
     }
 
@@ -895,7 +896,7 @@ private void updateDeviceStatus(Map d) {
  *  Tuya Open API Authentication
  *  https://developer.tuya.com/en/docs/cloud/
 */
-private void tuyaAuthenticate() {
+private void tuyaAuthenticateAsync() {
     if (settings.username && settings.password && settings.appSchema && settings.countryCode) {
         log.info "${device.displayName} starting Tuya cloud authentication for ${settings.username}"
         MessageDigest digest = MessageDigest.getInstance('MD5')
@@ -907,7 +908,7 @@ private void tuyaAuthenticate() {
             'schema': settings.appSchema
         ]
         state.tokenInfo.access_token = ''
-        tuyaPost('/v1.0/iot-01/associated-users/actions/authorized-login', body, 'tuyaAuthenticateResponse')
+        tuyaPostAsync('/v1.0/iot-01/associated-users/actions/authorized-login', body, 'tuyaAuthenticateResponse')
     } else {
         log.error "${device.displayName} must be configured before authentication is possible"
     }
@@ -931,24 +932,43 @@ private void tuyaAuthenticateResponse(AsyncResponse response, Map data) {
     log.info "${device.displayName} received Tuya access token (valid for ${result.expire_time}s)"
 
     // Schedule next authentication
-    runIn(result.expire_time - 60, 'tuyaAuthenticate')
+    runIn(result.expire_time - 60, 'tuyaAuthenticateAsync')
 
     // Get MQTT details
-    tuyaGetHubConfig()
+    tuyaGetHubConfigAsync()
 }
 
 /**
  *  Tuya Open API Device Management
  *  https://developer.tuya.com/en/docs/cloud/
+ *
+ *  Attributes:
+ *      id: Device id
+ *      name: Device name
+ *      local_key: Key
+ *      category: Product category
+ *      product_id: Product ID
+ *      product_name: Product name
+ *      sub: Determine whether it is a sub-device, true-> yes; false-> no
+ *      uuid: The unique device identifier
+ *      asset_id: asset id of the device
+ *      online: Online status of the device
+ *      icon: Device icon
+ *      ip: Device external IP
+ *      time_zone: device time zone
+ *      active_time: The last pairing time of the device
+ *      create_time: The first network pairing time of the device
+ *      update_time: The update time of device status
+ *      status: Status set of the device
  */
-private void tuyaGetDevices(String last_row_key = '', Map data = [:]) {
+private void tuyaGetDevicesAsync(String last_row_key = '', Map data = [:]) {
     if (!jsonCache.isEmpty()) {
         log.info "${device.displayName} clearing json cache"
         jsonCache.clear()
     }
 
     log.info "${device.displayName} requesting cloud devices batch"
-    tuyaGet('/v1.0/iot-01/associated-users/devices', [ 'last_row_key': last_row_key ], 'tuyaGetDevicesResponse', data)
+    tuyaGetAsync('/v1.0/iot-01/associated-users/devices', [ 'last_row_key': last_row_key ], 'tuyaGetDevicesResponse', data)
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
@@ -959,71 +979,56 @@ private void tuyaGetDevicesResponse(AsyncResponse response, Map data) {
         log.info "${device.displayName} received ${result.devices.size()} cloud devices (has_more: ${result.has_more})"
         if (result.has_more) {
             pauseExecution(1000)
-            tuyaGetDevices(result.last_row_key, data)
+            tuyaGetDevicesAsync(result.last_row_key, data)
             return
         }
     }
 
-    if (data.devices) {
-        sendEvent([ name: 'deviceCount', value: data.devices.size() as String ])
-
-        // Create Hubitat devices from Tuya results
-        //data.devices.each { d ->
-        //    createChildDevice(d)
-        //}
-
-        // Get device functions in batches of 20
-        data.devices.collate(20).each { collection ->
-            tuyaGetDeviceFunctions(collection, data)
-            pauseExecution(1000)
-        }
+    sendEvent([ name: 'deviceCount', value: data.devices?.size() as String ])
+    data.devices.each { d ->
+        tuyaGetDeviceSpecificationsAsync(d.id, d)
     }
 }
 
-private void tuyaGetDeviceFunctions(List<Map> devices, Map data = [:]) {
-    log.info "${device.displayName} requesting cloud device functions for ${devices*.name}"
-    tuyaGet('/v1.0/devices/functions', [ 'device_ids': devices*.id.join(',') ], 'tuyaGetDeviceFunctionsResponse', data)
+// https://developer.tuya.com/en/docs/cloud/device-control?id=K95zu01ksols7#title-29-API%20address
+private void tuyaGetDeviceSpecificationsAsync(String deviceID, Map data = [:]) {
+    log.info "${device.displayName} requesting cloud device specifications for ${deviceID}"
+    tuyaGetAsync("/v1.0/devices/${deviceID}/specifications", null, 'tuyaGetDeviceSpecificationsResponse', data)
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
-private void tuyaGetDeviceFunctionsResponse(AsyncResponse response, Map data) {
+private void tuyaGetDeviceSpecificationsResponse(AsyncResponse response, Map data) {
     if (tuyaCheckResponse(response)) {
         JsonSlurper parser = new JsonSlurper()
-        List result = response.json.result
-        log.info "${device.displayName} received ${result.size()} cloud function groups"
-        result?.each { group ->
-            Map functions = group.functions.collectEntries { f ->
+        Map result = response.json.result
+        data.category = result.category
+        if (result.functions) {
+            data.functions = result.functions.collectEntries { f ->
                 Map values = parser.parseText(f.values ?: '{}')
-                values.name = f.name
                 values.type = f.type
                 return [ (f.code): values ]
             }
-            //String json = JsonOutput.toJson(functions)
-            group.devices.each { id ->
-                Map d = data.devices.find { d -> d.id == id }
-                d.functions = functions
-                createChildDevice(d)
-                updateDeviceStatus(d)
-                //ChildDeviceWrapper dw = getChildDevice("${device.id}-${id}")
-                //dw?.updateDataValue('functions', json)
-            }
+        } else {
+            data.functions = [:]
         }
+        if (result.status) {
+            data.statusSet = result.status.collectEntries { f ->
+                Map values = parser.parseText(f.values ?: '{}')
+                values.type = f.type
+                return [ (f.code): values ]
+            }
+        } else {
+            data.statusSet = [:]
+        }
+        if (logEnable) { log.debug "${device.displayName} Device Data: ${data}"}
+        createChildDevice(data)
+        updateDeviceStatus(data)
     }
-
-    // Create Hubitat devices from Tuya results
-    // data.devices.each { d ->
-    //     createChildDevice(d)
-    // }
-    // Process status updates
-    // if (data.devices) {
-    //     data.devices.each { d -> updateDeviceStatus(d) }
-    // }
-    sendEvent([ name: 'connected', value: true, descriptionText: 'connected is true'])
 }
 
-private void tuyaGetState(String deviceID) {
+private void tuyaGetStateAsync(String deviceID) {
     if (logEnable) { log.debug "${device.displayName} requesting device ${deviceID} state" }
-    tuyaGet("/v1.0/devices/${deviceID}/status", null, 'tuyaGetStateResponse', [ id: deviceID ])
+    tuyaGetAsync("/v1.0/devices/${deviceID}/status", null, 'tuyaGetStateResponse', [ id: deviceID ])
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
@@ -1033,13 +1038,13 @@ private void tuyaGetStateResponse(AsyncResponse response, Map data) {
     updateDeviceStatus(data)
 }
 
-private void tuyaSendDeviceCommands(String deviceID, Map...params) {
+private void tuyaSendDeviceCommandsAsync(String deviceID, Map...params) {
     if (logEnable) { log.debug "${device.displayName} device ${deviceID} command ${params}" }
     if (!state?.tokenInfo?.access_token) {
-        log.error "${device.displayName} tuyaSendDeviceCommands Error - Access token is null"
+        log.error "${device.displayName} tuyaSendDeviceCommandsAsync Error - Access token is null"
         return
     }
-    tuyaPost("/v1.0/devices/${deviceID}/commands", [ 'commands': params ], 'tuyaSendDeviceCommandsResponse')
+    tuyaPostAsync("/v1.0/devices/${deviceID}/commands", [ 'commands': params ], 'tuyaSendDeviceCommandsResponse')
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
@@ -1051,7 +1056,7 @@ private void tuyaSendDeviceCommandsResponse(AsyncResponse response, Map data) {
  *  Tuya Open API MQTT Hub
  *  https://developer.tuya.com/en/docs/cloud/
  */
-private void tuyaGetHubConfig() {
+private void tuyaGetHubConfigAsync() {
     log.info "${device.displayName} requesting Tuya MQTT configuration"
     Map body = [
         'uid': state.tokenInfo.uid,
@@ -1061,7 +1066,7 @@ private void tuyaGetHubConfig() {
         'msg_encrypted_version': '1.0'
     ]
 
-    tuyaPost('/v1.0/iot-03/open-hub/access-config', body, 'tuyaGetHubConfigResponse')
+    tuyaPostAsync('/v1.0/iot-03/open-hub/access-config', body, 'tuyaGetHubConfigResponse')
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
@@ -1069,10 +1074,10 @@ private void tuyaGetHubConfigResponse(AsyncResponse response, Map data) {
     if (!tuyaCheckResponse(response)) { return }
     Map result = response.json.result
     state.mqttInfo = result
-    tuyaHubConnect()
+    tuyaHubConnectAsync()
 }
 
-private void tuyaHubConnect() {
+private void tuyaHubConnectAsync() {
     log.info "${device.displayName} connecting to Tuya MQTT hub at ${state.mqttInfo.url}"
     try {
         interfaces.mqtt.connect(
@@ -1082,34 +1087,35 @@ private void tuyaHubConnect() {
             state.mqttInfo.password)
     } catch (e) {
         log.error "${device.displayName} MQTT connection error: " + e
-        runIn(30, 'tuyaGetHubConfig')
+        runIn(30, 'tuyaHubConnectAsync')
     }
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
-private void tuyaHubSubscribe() {
+private void tuyaHubSubscribeAsync() {
     state.mqttInfo.source_topic.each { t ->
         log.info "${device.displayName} subscribing to Tuya MQTT hub ${t.key} topic"
         interfaces.mqtt.subscribe(t.value)
     }
 
-    tuyaGetDevices()
+    sendEvent([ name: 'connected', value: true, descriptionText: 'connected is true'])
+    tuyaGetDevicesAsync()
 }
 
 /**
  *  Tuya Open API HTTP REST Implementation
  *  https://developer.tuya.com/en/docs/cloud/
  */
-private void tuyaGet(String path, Map query, String callback, Map data = [:]) {
-    tuyaRequest('get', path, callback, query, null, data)
+private void tuyaGetAsync(String path, Map query, String callback, Map data = [:]) {
+    tuyaRequestAsync('get', path, callback, query, null, data)
 }
 
-private void tuyaPost(String path, Map body, String callback, Map data = [:]) {
-    tuyaRequest('post', path, callback, null, body, data)
+private void tuyaPostAsync(String path, Map body, String callback, Map data = [:]) {
+    tuyaRequestAsync('post', path, callback, null, body, data)
 }
 
 /* groovylint-disable-next-line ParameterCount */
-private void tuyaRequest(String method, String path, String callback, Map query, Map body, Map data) {
+private void tuyaRequestAsync(String method, String path, String callback, Map query, Map body, Map data) {
     String accessToken = state?.tokenInfo?.access_token ?: ''
     String stringToSign = tuyaGetStringToSign(method, path, query, body)
     long now = now()
@@ -1117,7 +1123,7 @@ private void tuyaRequest(String method, String path, String callback, Map query,
       't': now,
       'client_id': access_id,
       'Signature-Headers': 'client_id',
-      'sign': tuyaGetSignature(accessToken, now, stringToSign),
+      'sign': tuyaCalculateSignature(accessToken, now, stringToSign),
       'sign_method': 'HMAC-SHA256',
       'access_token': accessToken,
       'lang': 'en'
@@ -1161,7 +1167,7 @@ private boolean tuyaCheckResponse(AsyncResponse response) {
     return true
 }
 
-private String tuyaGetSignature(String accessToken, long timestamp, String stringToSign) {
+private String tuyaCalculateSignature(String accessToken, long timestamp, String stringToSign) {
     String message = access_id + accessToken + timestamp.toString() + stringToSign
     Mac sha256HMAC = Mac.getInstance('HmacSHA256')
     sha256HMAC.init(new SecretKeySpec(access_key.bytes, 'HmacSHA256'))
