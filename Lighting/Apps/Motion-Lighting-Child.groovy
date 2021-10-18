@@ -335,6 +335,12 @@ Map pageModeSectionActive(Long modeID) {
                 submitOnChange: true
 
             switch (settings["mode.${modeID}.active"]) {
+                case 'on':
+                    app.removeSetting("mode.${modeID}.activeLevel")
+                    app.removeSetting("mode.${modeID}.activeTransitionTime")
+                    app.removeSetting("mode.${modeID}.activeColor")
+                    app.removeSetting("mode.${modeID}.activeCT")
+                    break
                 case 'onLevel':
                     input name: "mode.${modeID}.activeLevel",
                         title: 'Set brightness (1-100) %',
@@ -351,6 +357,10 @@ Map pageModeSectionActive(Long modeID) {
                         submitOnChange: true
                     break
                 case 'onCT':
+                    app.removeSetting("mode.${modeID}.activeLevel")
+                    app.removeSetting("mode.${modeID}.activeTransitionTime")
+                    app.removeSetting("mode.${modeID}.activeColor")
+
                     input name: "mode.${modeID}.activeCT",
                         title: 'Set color temperature (K)',
                         type: 'number',
@@ -360,6 +370,10 @@ Map pageModeSectionActive(Long modeID) {
                         submitOnChange: true
                     break
                 case 'onColor':
+                    app.removeSetting("mode.${modeID}.activeLevel")
+                    app.removeSetting("mode.${modeID}.activeTransitionTime")
+                    app.removeSetting("mode.${modeID}.activeCT")
+
                     input name: "mode.${modeID}.activeColor",
                         title: 'Select light color',
                         type: 'enum',
@@ -405,6 +419,8 @@ Map pageModeSectionInactive(Long modeID) {
                   range: '1..3600',
                   width: 4,
                   required: modeID == 0
+        } else {
+            app.removeSetting("mode.${modeID}.inactiveMinutes")
         }
 
         switch (settings["mode.${modeID}.inactive"]) {
@@ -424,6 +440,9 @@ Map pageModeSectionInactive(Long modeID) {
                       submitOnChange: true
                 break
             case 'off':
+                app.removeSetting("mode.${modeID}.inactiveLevel")
+                app.removeSetting("mode.${modeID}.inactiveTransitionTime")
+
                 input name: "mode.${modeID}.inactiveLights",
                       title: '<i>Additional lights to turn off (optional)</i>',
                       type: 'capability.switch',
