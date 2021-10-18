@@ -859,12 +859,12 @@ private Map getModeSettings(Long id) {
 
     mode.enable = settings["mode.${mode.id}.enable"] as Boolean
     if (mode.enable == true) {
-        mode.active = settings["mode.${mode.id}.active"] as String
-        mode.activeColor = settings["mode.${mode.id}.activeColor"] as String
-        mode.activeColorTemperature = settings["mode.${mode.id}.activeCT"] as BigDecimal
-        mode.activeLevel = settings["mode.${mode.id}.activeLevel"] as BigDecimal
-        mode.activeLights = settings["mode.${mode.id}.activeLights"] ?: []
-        mode.activeTransitionTime = settings["mode.${mode.id}.activeTransitionTime"] as BigDecimal
+        mode.active = (settings["mode.${mode.id}.active"] ?: settings["mode.0.active"]) as String
+        mode.activeColor = (settings["mode.${mode.id}.activeColor"] ?: settings["mode.0.activeColor"]) as String
+        mode.activeColorTemperature = (settings["mode.${mode.id}.activeCT"] ?: settings["mode.0.activeCT"]) as BigDecimal
+        mode.activeLevel = (settings["mode.${mode.id}.activeLevel"] ?: settings["mode.0.activeLevel"]) as BigDecimal
+        mode.activeLights = settings["mode.${mode.id}.activeLights"] ?: settings["mode.0.activeLights"]
+        mode.activeTransitionTime = (settings["mode.${mode.id}.activeTransitionTime"] ?: settings["mode.0.activeTransitionTime"]) as BigDecimal
 
         mode.inactive = (settings["mode.${mode.id}.inactive"] ?: settings["mode.0.inactive"]) as String
         mode.inactiveLevel = (settings["mode.${mode.id}.inactiveLevel"] ?: settings["mode.0.inactiveLevel"]) as BigDecimal
