@@ -131,6 +131,12 @@ preferences {
                   type: 'mode',
                   title: 'Select mode(s) where lighting manager should be disabled',
                   multiple: true
+
+            input name: 'disabledVariable',
+                  title: 'Select variable to enable or disable:',
+                  type: 'enum',
+                  options: getGlobalVarsByType('boolean').collect { v -> [(v.key): "${v.key} (currently ${v.value.value})"] }
+                  multiple: false
         }
 
         section {
@@ -263,6 +269,11 @@ private boolean checkEnabled() {
         settings.disabledSwitchWhenOff.any { device -> device.currentValue('switch') == 'off' }
     ) {
         log.info "${app.name} is disabled due to a switch set to OFF"
+        return false
+    }
+
+    if (settings.disabledVariable && getGlobalVar(settings.disabledVariable)?.value == false) {
+        log.info "${app.name} is disabled (${settings.disabledVariable} is false)"
         return false
     }
 

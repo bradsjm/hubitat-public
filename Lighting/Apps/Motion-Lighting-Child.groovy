@@ -27,7 +27,7 @@ import hubitat.helper.ColorUtils
 import java.util.concurrent.ConcurrentHashMap
 
 definition (
-    name: 'Motion Lighting Controller',
+    name: 'Motion Lighting Instance',
     namespace: 'nrgup',
     parent: 'nrgup:Motion Lighting',
     author: 'Jonathan Bradshaw',
@@ -168,8 +168,16 @@ Map pageMain() {
                   multiple: true
 
             input name: 'luxNumber',
-                  title: 'Disable controller if average illuminance is above this value',
+                  title: 'Disable if illuminance is above:',
+                  width: 6,
                   type: 'number'
+
+            input name: 'disabledVariable',
+                  title: 'Select variable to enable or disable:',
+                  type: 'enum',
+                  width: 6,
+                  options: getGlobalVarsByType('boolean').collect { v -> [(v.key): "${v.key} (currently ${v.value.value})"] }
+                  multiple: false
         }
 
         section('Manual Override Settings', hideable: true, hidden: true) {
@@ -819,6 +827,11 @@ private boolean checkEnabled(Map mode) {
     if (settings.disabledSwitchWhenOff &&
         settings.disabledSwitchWhenOff.any { device -> device.currentValue('switch') == 'off' }) {
         log.info "${app.name} is disabled (disable switch is OFF)"
+        return false
+    }
+
+    if (settings.disabledVariable && getGlobalVar(settings.disabledVariable)?.value == false) {
+        log.info "${app.name} is disabled (${settings.disabledVariable} is false)"
         return false
     }
 
