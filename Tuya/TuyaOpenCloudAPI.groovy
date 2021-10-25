@@ -113,23 +113,26 @@ metadata {
 
 // Tuya Function Categories
 @Field static final Map<String, List<String>> tuyaFunctions = [
-    'battery'       : [ 'battery_percentage', 'va_battery' ],
-    'brightness'    : [ 'bright_value', 'bright_value_v2', 'bright_value_1' ],
-    'co'            : [ 'co_state' ],
-    'co2'           : [ 'co2_value' ],
-    'colour'        : [ 'colour_data', 'colour_data_v2' ],
-    'contact'       : [ 'doorcontact_state' ],
-    'ct'            : [ 'temp_value', 'temp_value_v2' ],
-    'fanSpeed'      : [ 'fan_speed' ],
-    'light'         : [ 'switch_led', 'switch_led_1', 'light' ],
-    'meteringSwitch': [ 'switch_1', 'countdown_1' , 'add_ele' , 'cur_current', 'cur_power', 'cur_voltage' , 'relay_status', 'light_mode' ],
-    'omniSensor'    : [ 'bright_value', 'temp_current', 'humidity_value', 'va_humidity', 'bright_sensitivity', 'shock_state', 'inactive_state', 'sensitivity' ],
-    'pir'           : [ 'pir' ],
-    'power'         : [ 'Power', 'power', 'switch' ],
-    'sceneSwitch'   : [ 'switch1_value', 'switch2_value', 'switch3_value', 'switch4_value', 'switch_mode2', 'switch_mode3', 'switch_mode4' ],
-    'smoke'         : [ 'smoke_sensor_status' ],
-    'water'         : [ 'watersensor_state' ],
-    'workMode'      : [ 'work_mode' ]
+    'battery'        : [ 'battery_percentage', 'va_battery' ],
+    'brightness'     : [ 'bright_value', 'bright_value_v2', 'bright_value_1' ],
+    'co'             : [ 'co_state' ],
+    'co2'            : [ 'co2_value' ],
+    'colour'         : [ 'colour_data', 'colour_data_v2' ],
+    'contact'        : [ 'doorcontact_state' ],
+    'ct'             : [ 'temp_value', 'temp_value_v2' ],
+    'control'        : [ 'control' ],
+    'fanSpeed'       : [ 'fan_speed' ],
+    'light'          : [ 'switch_led', 'switch_led_1', 'light' ],
+    'meteringSwitch' : [ 'switch_1', 'countdown_1' , 'add_ele' , 'cur_current', 'cur_power', 'cur_voltage' , 'relay_status', 'light_mode' ],
+    'omniSensor'     : [ 'bright_value', 'temp_current', 'humidity_value', 'va_humidity', 'bright_sensitivity', 'shock_state', 'inactive_state', 'sensitivity' ],
+    'pir'            : [ 'pir' ],
+    'power'          : [ 'Power', 'power', 'switch' ],
+    'percentControl' : [ 'percent_control' ],
+    'sceneSwitch'    : [ 'switch1_value', 'switch2_value', 'switch3_value', 'switch4_value', 'switch_mode2', 'switch_mode3', 'switch_mode4' ],
+    'smoke'          : [ 'smoke_sensor_status' ],
+    'water'          : [ 'watersensor_state' ],
+    'workMode'       : [ 'work_mode' ],
+    'workState'      : [ 'work_state' ]
 ]
 
 // Tuya -> Hubitat attributes mappings
@@ -168,6 +171,34 @@ metadata {
 /**
  *  Hubitat Driver Event Handlers
  */
+// Component command to cycle fan speed
+void componentCycleSpeed(DeviceWrapper dw) {
+    switch (dw.currentValue('speed')) {
+        case 'low':
+        case 'medium-low':
+            componentSetSpeed(dw, 'medium')
+            break
+        case 'medium':
+        case 'medium-high':
+            componentSetSpeed(dw, 'high')
+            break
+        case 'high':
+            componentSetSpeed(dw, 'low')
+            break
+    }
+}
+
+// Component command to close device
+void componentClose(DeviceWrapper dw) {
+    Map<String, Map> functions = getFunctions(dw)
+    String code = getFunctionCode(functions, tuyaFunctions.control)
+
+    if (code) {
+        log.info "Closing ${dw}"
+        tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': 'close' ])
+    }
+}
+
 // Component command to turn on device
 void componentOn(DeviceWrapper dw) {
     Map<String, Map> functions = getFunctions(dw)
@@ -203,6 +234,17 @@ void componentOff(DeviceWrapper dw) {
     if (code) {
         log.info "Turning ${dw} off"
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': false ])
+    }
+}
+
+// Component command to open device
+void componentOpen(DeviceWrapper dw) {
+    Map<String, Map> functions = getFunctions(dw)
+    String code = getFunctionCode(functions, tuyaFunctions.control)
+
+    if (code) {
+        log.info "Opening ${dw}"
+        tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': 'open' ])
     }
 }
 
@@ -299,6 +341,17 @@ void componentSetPreviousEffect(DeviceWrapper device) {
     log.warn 'Set previous effect command not supported'
 }
 
+// Component command to set position
+void componentSetPosition(DeviceWrapper dw, BigDecimal position) {
+    Map<String, Map> functions = getFunctions(dw)
+    String code = getFunctionCode(functions, tuyaFunctions.percentControl)
+
+    if (code) {
+        log.info "Setting ${dw} position to ${position}"
+        tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': position as Integer ])
+    }
+}
+
 // Component command to set saturation
 void componentSetSaturation(DeviceWrapper dw, BigDecimal saturation) {
     componentSetColor(dw, [
@@ -346,23 +399,6 @@ void componentSetSpeed(DeviceWrapper dw, String speed) {
     }
 }
 
-// Component command to cycle fan speed
-void componentCycleSpeed(DeviceWrapper dw) {
-    switch (dw.currentValue('speed')) {
-        case 'low':
-        case 'medium-low':
-            componentSetSpeed(dw, 'medium')
-            break
-        case 'medium':
-        case 'medium-high':
-            componentSetSpeed(dw, 'high')
-            break
-        case 'high':
-            componentSetSpeed(dw, 'low')
-            break
-    }
-}
-
 // Component command to start level change (up or down)
 void componentStartLevelChange(DeviceWrapper dw, String direction) {
     levelChanges[dw.deviceNetworkId] = (direction == 'down') ? -10 : 10
@@ -374,6 +410,28 @@ void componentStartLevelChange(DeviceWrapper dw, String direction) {
 void componentStopLevelChange(DeviceWrapper dw) {
     log.info "Stopping level change for ${dw}"
     levelChanges.remove(dw.deviceNetworkId)
+}
+
+// Component command to set position direction
+void componentStartPositionChange(DeviceWrapper dw, String direction) {
+    switch (direction) {
+        case 'open': componentOpen(dw); break
+        case 'close': componentClose(dw); break
+        case default:
+            log.warn "${device.displayName} Unknown position change direction ${direction} for ${dw}"
+            break
+    }
+}
+
+// Component command to stop position change
+void componentStopPositionChange(DeviceWrapper dw) {
+    Map<String, Map> functions = getFunctions(dw)
+    String code = getFunctionCode(functions, tuyaFunctions.control)
+
+    if (code) {
+        log.info "Stopping ${dw}"
+        tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': 'stop' ])
+    }
 }
 
 // Utility function to handle multiple level changes
@@ -482,23 +540,26 @@ void removeDevices() {
   */
 private static Map mapTuyaCategory(Map d) {
     switch (d.category) {
+        // Lighting
         case 'ykq':   // Remote Control
         case 'tyndj': // Solar Light
             return [ namespace: 'hubitat', name: 'Generic Component CT' ]
         case 'tgq':   // Dimmer Light
-        case 'tgkg':  // Dimmer Switch
-            return [ namespace: 'hubitat', name: 'Generic Component Dimmer' ]
         case 'fsd ':  // Ceiling Fan (with Light)
             return [ namespace: 'hubitat', name: 'Generic Component Fan Control' ]
-        case 'dj':    // Light
-        case 'dc':    // String Light
-        case 'dd':    // Strip Light
-        case 'gyd':   // Motion Sensor Lights
-        case 'xdd':   // Ceiling Light
-        case 'fwd':   // Ambient Light
-            return [ namespace: 'hubitat', name: 'Generic Component RGBW' ]
-        case 'wxkg':  // Scene switch (TS004F in 'Device trigger' mode only; TS0044)
+
+        // Electrical
+        case 'tgkg':  // Dimmer Switch
+            return [ namespace: 'hubitat', name: 'Generic Component Dimmer' ]
+        case 'wxkg':  // Scene Switch (TS004F in 'Device trigger' mode only; TS0044)
             return [ namespace: 'hubitat', name: 'Generic Component Central Scene Switch' ]
+        case 'cz':    // Smart Plug
+            return [ namespace: 'hubitat', name: 'Generic Component Metering Switch' ]
+        case 'cl':    // Curtain Motor (uses custom driver)
+        case 'clkg':
+            return [ namespace: 'component', name: 'Generic Component Window Shade' ]
+
+        // Security & Sensors
         case 'ldcg':  // Brightness, temperature, humidity, CO2 sensors
         case 'wsdcg':
         case 'zd':    // Vibration sensor as motion
@@ -515,8 +576,14 @@ private static Map mapTuyaCategory(Map d) {
             return [ namespace: 'hubitat', name: 'Generic Component Carbon Dioxide Detector' ]
         case 'pir':   // Motion Sensor
             return [ namespace: 'hubitat', name: 'Generic Component Motion Sensor' ]
-        case 'cz':    // smart plug
-            return [ namespace: 'hubitat', name: 'Generic Component Metering Switch' ]
+
+        // Large Home Appliances
+
+        // Small Home Appliances
+
+        // Kitchen Appliances
+
+        // Default category mapping
         default:
             return [ namespace: 'hubitat', name: 'Generic Component Switch' ]
     }
@@ -679,6 +746,21 @@ private void updateDeviceStatus(Map d) {
             return [ [ name: 'carbonDioxide', value: value, unit: 'ppm', descriptionText: "carbon dioxide level is ${value}" ] ]
         }
 
+        if (status.code in tuyaFunctions.control + tuyaFunctions.workState) {
+            String value
+            switch (status.value) {
+                case 'open': value = 'open'; break
+                case 'opening': value = 'opening'; break
+                case 'close': value = 'closed'; break
+                case 'closing': value = 'closing'; break
+                case 'stop': value = 'unknown'; break
+            }
+            if (value) {
+                if (txtEnable) { log.info "${dw.displayName} control is ${value}" }
+                return [ [ name: 'windowShade', value: value, descriptionText: "window shade is ${value}" ] ]
+            }
+        }
+
         if (status.code in tuyaFunctions.ct) {
             Map temperature = deviceFunctions[status.code]
             Integer value = Math.floor(1000000 / remap(temperature.max - status.value,
@@ -834,6 +916,11 @@ private void updateDeviceStatus(Map d) {
             String value = status.value == 'pir' ? 'active' : 'inactive'
             if (txtEnable) { log.info "${dw.displayName} motion is ${value}" }
             return [ [ name: 'motion', value: value, descriptionText: "motion is ${value}" ] ]
+        }
+
+        if (status.code in tuyaFunctions.percent_control) {
+            if (txtEnable) { log.info "${dw.displayName} position is ${status.value}%" }
+            return [ [ name: 'position', value: status.value, descriptionText: "position is ${status.value}%", unit: '%' ] ]
         }
 
         if (status.code in tuyaFunctions.sceneSwitch) {
