@@ -687,6 +687,7 @@ private ChildDeviceWrapper createChildDevice(Map d) {
         label = label ?: d.name
         updateDataValue 'id', d.id
         updateDataValue 'local_key', d.local_key
+        updateDataValue 'product_id', d.product_id
         updateDataValue 'category', d.category
         updateDataValue 'functions', functionJson
         updateDataValue 'statusSet', JsonOutput.toJson(d.statusSet)
