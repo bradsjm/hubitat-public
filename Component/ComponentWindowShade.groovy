@@ -29,12 +29,12 @@ void installed() {
 
 // Component command to open device
 void open() {
-    parent?.open(device)
+    parent?.componentOpen(device)
 }
 
 // Component command to close device
 void close() {
-    parent?.close(device)
+    parent?.componentClose(device)
 }
 
 // parse commands from parent
@@ -48,17 +48,17 @@ void parse(List<Map> description) {
 
 // Component command to set position of device
 void setPosition(BigDecimal position) {
-    parent?.setPosition(device, position)
+    parent?.componentSetPosition(device, position)
 }
 
 // Component command to start position change of device
 void startPositionChange(String change) {
-    parent?.startPositionChange(device, change)
+    parent?.componentStartPositionChange(device, change)
 }
 
 // Component command to start position change of device
 void stopPositionChange() {
-    parent?.stopPositionChange(device)
+    parent?.componentStopPositionChange(device)
 }
 
 // Called when the device is removed
