@@ -557,10 +557,20 @@ void removeDevices() {
 private static Map mapTuyaCategory(Map d) {
     switch (d.category) {
         // Lighting
-        case 'ykq':   // Remote Control
-        case 'tyndj': // Solar Light
-            return [ namespace: 'hubitat', name: 'Generic Component CT' ]
+        case 'dc':    // String Lights
+        case 'dd':    // Strip Lights
+        case 'dj':    // Light
         case 'tgq':   // Dimmer Light
+        case 'tyndj': // Solar Light
+        case 'xdd':   // Ceiling Light
+        case 'ykq':   // Remote Control
+            if (getFunctionCode(d.statusSet, tuyaFunctions.colour)) {
+                return [ namespace: 'hubitat', name: 'Generic Component RGBW' ]
+            } else if (getFunctionCode(d.statusSet, tuyaFunctions.ct)) {
+                return [ namespace: 'hubitat', name: 'Generic Component CT' ]
+            } else if (getFunctionCode(d.statusSet, tuyaFunctions.brightness)) {
+                return [ namespace: 'hubitat', name: 'Generic Component Dimmer' ]
+            }
         case 'fsd ':  // Ceiling Fan (with Light)
             return [ namespace: 'hubitat', name: 'Generic Component Fan Control' ]
 
@@ -600,11 +610,9 @@ private static Map mapTuyaCategory(Map d) {
             return [ namespace: 'component', name: 'Generic Component Heating Device' ]
 
         // Kitchen Appliances
-
-        // Default category mapping
-        default:
-            return [ namespace: 'hubitat', name: 'Generic Component Switch' ]
     }
+
+    return [ namespace: 'hubitat', name: 'Generic Component Switch' ]
 }
 
 private static Map<String, Map> getFunctions(DeviceWrapper dw) {
