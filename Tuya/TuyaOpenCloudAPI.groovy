@@ -45,6 +45,10 @@ import hubitat.scheduling.AsyncResponse
  *  10/13/21 - 0.1.5 - fix ternary use error for colors and levels
  *  10/14/21 - 0.1.6 - smart plug, vibration sensor; brightness and temperature sensors scaling bug fix
  *  10/17/21 - 0.1.7 - switched API to use device specification request to get both functions and status ranges
+ *  10/25/21 - 0.1.8 - Added support for Window Shade using a custom component driver
+ *  10/27/21 - 0.1.9 - Add support for heating devices with custom component driver
+ *
+ *  Custom component drivers located at https://github.com/bradsjm/hubitat-drivers/tree/master/Component
  */
 
 metadata {
@@ -124,12 +128,14 @@ metadata {
     'fanSpeed'       : [ 'fan_speed' ],
     'light'          : [ 'switch_led', 'switch_led_1', 'light' ],
     'meteringSwitch' : [ 'switch_1', 'countdown_1' , 'add_ele' , 'cur_current', 'cur_power', 'cur_voltage' , 'relay_status', 'light_mode' ],
-    'omniSensor'     : [ 'bright_value', 'temp_current', 'humidity_value', 'va_humidity', 'bright_sensitivity', 'shock_state', 'inactive_state', 'sensitivity' ],
+    'omniSensor'     : [ 'bright_value', 'humidity_value', 'va_humidity', 'bright_sensitivity', 'shock_state', 'inactive_state', 'sensitivity' ],
     'pir'            : [ 'pir' ],
     'power'          : [ 'Power', 'power', 'switch' ],
     'percentControl' : [ 'percent_control' ],
     'sceneSwitch'    : [ 'switch1_value', 'switch2_value', 'switch3_value', 'switch4_value', 'switch_mode2', 'switch_mode3', 'switch_mode4' ],
     'smoke'          : [ 'smoke_sensor_status' ],
+    'temperatureSet' : [ 'temp_set' ],
+    'temperature'    : [ 'temp_current', 'va_temperature' ],
     'water'          : [ 'watersensor_state' ],
     'workMode'       : [ 'work_mode' ],
     'workState'      : [ 'work_state' ]
@@ -262,7 +268,7 @@ void componentSetColor(DeviceWrapper dw, Map colorMap) {
     Map<String, Map> functions = getFunctions(dw)
     String code = getFunctionCode(functions, tuyaFunctions.colour)
     if (code) {
-        Map color = functions[code] ?: [:]
+        Map color = functions[code] ?: [ h: [min: 0, max: 360], s: [min: 1, max: 255], v: [min: 1, max: 255] ]
         // An oddity and workaround for mapping brightness values
         Map bright = getFunction(functions, functions.brightness) ?: color.v
         Map value = [
@@ -281,10 +287,10 @@ void componentSetColor(DeviceWrapper dw, Map colorMap) {
 // Component command to set color temperature
 void componentSetColorTemperature(DeviceWrapper dw, BigDecimal kelvin,
                                   BigDecimal level = null, BigDecimal duration = null) {
-    Map<String, Map> functions = getFunctions(dw)
+    Map<String, Map> functions = getFunctions(dw) << getStatusSet(dw)
     String code = getFunctionCode(functions, tuyaFunctions.ct)
     if (code) {
-        Map temp = functions[code]
+        Map temp = functions[code] ?: [min: 0, max: 100]
         Integer value = temp.max - Math.ceil(maxMireds - remap(1000000 / kelvin, minMireds, maxMireds, temp.min, temp.max))
         log.info "Setting ${dw} color temperature to ${kelvin}K"
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'),
@@ -300,6 +306,16 @@ void componentSetColorTemperature(DeviceWrapper dw, BigDecimal kelvin,
 // Component command to set effect
 void componentSetEffect(DeviceWrapper dw, BigDecimal index) {
     log.warn "${device.displayName} Set effect command not supported"
+}
+
+// Component command to set heating setpoint
+void componentSetHeatingSetpoint(DeviceWrapper dw, BigDecimal temperature) {
+    Map<String, Map> functions = getFunctions(dw)
+    String code = getFunctionCode(functions, tuyaFunctions.temperatureSet)
+    if (code) {
+        log.info "Setting ${dw} heating set point to ${temperature}"
+        tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': temperature ])
+    }
 }
 
 // Component command to set hue
@@ -417,7 +433,7 @@ void componentStartPositionChange(DeviceWrapper dw, String direction) {
     switch (direction) {
         case 'open': componentOpen(dw); break
         case 'close': componentClose(dw); break
-        case default:
+        default:
             log.warn "${device.displayName} Unknown position change direction ${direction} for ${dw}"
             break
     }
@@ -580,6 +596,8 @@ private static Map mapTuyaCategory(Map d) {
         // Large Home Appliances
 
         // Small Home Appliances
+        case 'qn':    // Heater
+            return [ namespace: 'component', name: 'Generic Component Heating Device' ]
 
         // Kitchen Appliances
 
@@ -601,6 +619,12 @@ private static Map getFunction(Map functions, List codes) {
 
 private static String getFunctionCode(Map functions, List codes) {
     return codes.find { c -> functions.containsKey(c) }
+}
+
+private static Map<String, Map> getStatusSet(DeviceWrapper dw) {
+    return jsonCache.computeIfAbsent(dw.getDataValue('statusSet') ?: '{}') {
+        k -> new JsonSlurper().parseText(k)
+    }
 }
 
 private static BigDecimal remap(BigDecimal oldValue, BigDecimal oldMin, BigDecimal oldMax,
@@ -712,7 +736,7 @@ private void updateDeviceStatus(Map d) {
         return
     }
 
-    Map<String, Map> deviceFunctions = getFunctions(dw)
+    Map<String, Map> deviceStatusSet = getStatusSet(dw) ?: getFunctions(dw)
     List<Map> statusList = d.status ?: []
     String workMode = statusList['workMode'] ?: ''
     List<Map> events = statusList.collectMany { status ->
@@ -726,7 +750,7 @@ private void updateDeviceStatus(Map d) {
         }
 
         if (status.code in tuyaFunctions.brightness && workMode != 'colour') {
-            Map bright = deviceFunctions[status.code] ?: [ min: 0, max: 100 ]
+            Map bright = deviceStatusSet[status.code] ?: [ min: 0, max: 100 ]
             if ( bright != null ) {
                 Integer value = Math.floor(remap(status.value, bright.min, bright.max, 0, 100))
                 if (txtEnable) { log.info "${dw.displayName} level is ${value}%" }
@@ -762,7 +786,7 @@ private void updateDeviceStatus(Map d) {
         }
 
         if (status.code in tuyaFunctions.ct) {
-            Map temperature = deviceFunctions[status.code]
+            Map temperature = deviceStatusSet[status.code]
             Integer value = Math.floor(1000000 / remap(temperature.max - status.value,
                             temperature.min, temperature.max, minMireds, maxMireds))
             if (txtEnable) { log.info "${dw.displayName} color temperature is ${value}K" }
@@ -771,8 +795,8 @@ private void updateDeviceStatus(Map d) {
         }
 
         if (status.code in tuyaFunctions.colour) {
-            Map colour = deviceFunctions[status.code]
-            Map bright = getFunction(deviceFunctions, tuyaFunctions.brightness) ?: colour.v
+            Map colour = deviceStatusSet[status.code]
+            Map bright = getFunction(deviceStatusSet, tuyaFunctions.brightness) ?: colour.v
             Map value = status.value == '' ? [h: 100.0, s: 100.0, v: 100.0] :
                         jsonCache.computeIfAbsent(status.value) { k -> new JsonSlurper().parseText(k) }
             Integer hue = Math.floor(remap(value.h, colour.h.min, colour.h.max, 0, 100))
@@ -799,7 +823,7 @@ private void updateDeviceStatus(Map d) {
         }
 
         if (status.code in tuyaFunctions.fanSpeed) {
-            Map speed = deviceFunctions[status.code]
+            Map speed = deviceStatusSet[status.code]
             int value
             if (statusList['switch']) {
                 switch (speed.type) {
@@ -866,15 +890,6 @@ private void updateDeviceStatus(Map d) {
                     name = 'illuminance'
                     value = status.value
                     unit = 'Lux'
-                    break
-                case 'temp_current':
-                case 'va_temperature':
-                    value = status.value
-                    if (status.code == 'temp_current') {
-                        value = status.value / 10
-                    }
-                    name = 'temperature'
-                    unit = "\u00B0${location.temperatureScale}"
                     break
                 case 'humidity_value':
                 case 'va_humidity':
@@ -953,6 +968,23 @@ private void updateDeviceStatus(Map d) {
             String value = status.value == 'alarm' ? 'detected' : 'clear'
             if (txtEnable) { log.info "${dw.displayName} smoke is ${value}" }
             return [ [ name: 'smoke', value: value, descriptionText: "smoke is ${value}" ] ]
+        }
+
+        if (status.code in tuyaFunctions.temperature) {
+            Map set = deviceStatusSet[status.code] ?: [scale: 0, unit: "\u00B0${location.temperatureScale}" ]
+            int scale = pow(10, set.scale)
+            String value = status.value / scale
+            String unit = set.unit
+            if (txtEnable) { log.info "${dw.displayName} temperature is ${value}${unit}" }
+            return [ [ name: 'temperature', value: value, unit: unit, descriptionText: "temperature is ${value}${unit}" ] ]
+        }
+
+        if (status.code in tuyaFunctions.temperatureSet) {
+            Map set = deviceStatusSet[status.code] ?: [scale: 0, unit: "\u00B0${location.temperatureScale}" ]
+            String value = status.value
+            String unit = set.unit
+            if (txtEnable) { log.info "${dw.displayName} heating set point is ${value}${unit}" }
+            return [ [ name: 'heatingSetpoint', value: value, unit: unit, descriptionText: "heating set point is ${value}${unit}" ] ]
         }
 
         if (status.code in tuyaFunctions.water) {
