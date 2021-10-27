@@ -586,6 +586,8 @@ private static Map mapTuyaCategory(Map d) {
             return [ namespace: 'component', name: 'Generic Component Window Shade' ]
 
         // Security & Sensors
+        case 'ms':    // Lock
+            return [ namespace: 'hubitat', name: 'Generic Component Lock' ]
         case 'ldcg':  // Brightness, temperature, humidity, CO2 sensors
         case 'wsdcg':
         case 'zd':    // Vibration sensor as motion
@@ -981,7 +983,7 @@ private void updateDeviceStatus(Map d) {
 
         if (status.code in tuyaFunctions.temperature) {
             Map set = deviceStatusSet[status.code] ?: [scale: 0, unit: "\u00B0${location.temperatureScale}" ]
-            int scale = pow(10, set.scale)
+            int scale = Math.pow(10, set.scale)
             String value = status.value / scale
             String unit = set.unit
             if (txtEnable) { log.info "${dw.displayName} temperature is ${value}${unit}" }
