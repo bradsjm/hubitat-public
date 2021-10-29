@@ -4,6 +4,7 @@ metadata {
         capability 'Switch'
         capability "TemperatureMeasurement"
         capability "ThermostatHeatingSetpoint"
+        capability "ThermostatMode"
         capability 'Refresh'
     }
 }
@@ -51,6 +52,38 @@ void parse(List<Map> description) {
 // Component command to set position of device
 void setHeatingSetpoint(BigDecimal temperature) {
     parent?.componentSetHeatingSetpoint(device, temperature)
+}
+
+// Set the thermostat mode, maps everything to on and off
+void setThermostatMode(String thermostatMode) {
+    switch (thermostatMode) {
+        case 'heat':
+        case 'emergency heat':
+        case 'cool':
+            break
+        case 'auto':
+            on()
+            break
+        case 'off':
+            off()
+            break
+    }
+}
+
+void auto() {
+    on()
+}
+
+void cool() {
+    // do nothing
+}
+
+void emergencyHeat() {
+    on()
+}
+
+void heat() {
+    on()
 }
 
 // Called when the device is removed
