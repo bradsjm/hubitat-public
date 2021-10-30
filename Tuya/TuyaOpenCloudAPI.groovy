@@ -216,7 +216,7 @@ void componentOn(DeviceWrapper dw) {
             code = getFunctionCode(functions, tuyaFunctions.meteringSwitch) // meteringSwitch code is 'switch_1'
             break
         default:
-    		code = getFunctionCode(functions, tuyaFunctions.light + tuyaFunctions.power)
+            code = getFunctionCode(functions, tuyaFunctions.light + tuyaFunctions.power)
             break
     }
 
@@ -235,7 +235,7 @@ void componentOff(DeviceWrapper dw) {
             code = getFunctionCode(functions, tuyaFunctions.meteringSwitch) // meteringSwitch code is 'switch_1'
             break
         default:
-    		code = getFunctionCode(functions, tuyaFunctions.light + tuyaFunctions.power)
+            code = getFunctionCode(functions, tuyaFunctions.light + tuyaFunctions.power)
             break
     }
 
@@ -1240,7 +1240,7 @@ private void updateDeviceStatus(Map d) {
 
         if (status.code in tuyaFunctions.temperature) {
             Map set = deviceStatusSet[status.code] ?: [scale: 0, unit: "\u00B0${location.temperatureScale}" ]
-            int scale = Math.pow(10, set.scale)
+            int scale = Math.pow(10, set.scale as int)
             String value = status.value / scale
             String unit = set.unit
             if (txtEnable) { log.info "${dw.displayName} temperature is ${value}${unit}" }
@@ -1524,7 +1524,7 @@ private void tuyaRequestAsync(String method, String path, String callback, Map q
         contentType: 'application/json',
         headers: headers,
         body: JsonOutput.toJson(body),
-        timeout: 5
+        timeout: 20
     ]
 
     if (logEnable) {

@@ -2,9 +2,9 @@ metadata {
     definition (name: 'Generic Component Heating Device', namespace: 'component', author: 'Jonathan Bradshaw') {
         capability 'Actuator'
         capability 'Switch'
-        capability "TemperatureMeasurement"
-        capability "ThermostatHeatingSetpoint"
-        capability "ThermostatMode"
+        capability 'TemperatureMeasurement'
+        capability 'ThermostatHeatingSetpoint'
+        capability 'ThermostatMode'
         capability 'Refresh'
     }
 }
@@ -75,7 +75,7 @@ void auto() {
 }
 
 void cool() {
-    // do nothing
+// do nothing
 }
 
 void emergencyHeat() {
