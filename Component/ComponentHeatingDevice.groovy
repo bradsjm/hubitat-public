@@ -57,10 +57,10 @@ void setHeatingSetpoint(BigDecimal temperature) {
 // Set the thermostat mode, maps everything to on and off
 void setThermostatMode(String thermostatMode) {
     switch (thermostatMode) {
-        case 'heat':
-        case 'emergency heat':
         case 'cool':
             break
+        case 'heat':
+        case 'emergency heat':
         case 'auto':
             on()
             break
