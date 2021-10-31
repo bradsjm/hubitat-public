@@ -311,8 +311,7 @@ void mqttClientStatus(String status) {
             sendEvent(name: 'connected', value: true, descriptionText: "${device.displayName} is connected")
             runIn(1, 'mqttSubscribeDiscovery')
             break
-        case 'Error: Connection lost':
-        case 'Error: send error':
+        default:
             log.error "${device.displayName} MQTT connection error: " + status
             mqttDisconnect()
             runIn(30, 'initialize')

@@ -308,12 +308,7 @@ private void mqttParseStatus(String status) {
     switch (parts[0]) {
         case 'Error':
             log.warn "MQTT ${status}"
-            switch (parts[1]) {
-                case 'Connection lost':
-                case 'send error':
-                    runIn(30, 'initialize')
-                    break
-            }
+            runIn(30, 'initialize')
             break
         case 'Status':
             log.info "MQTT ${status}"
@@ -337,4 +332,3 @@ private void logsOff() {
     device.updateSetting('logEnable', [value: 'false', type: 'bool'] )
     log.info "debug logging disabled for ${device.displayName}"
 }
-

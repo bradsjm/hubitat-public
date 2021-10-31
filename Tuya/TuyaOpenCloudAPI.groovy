@@ -538,8 +538,7 @@ void mqttClientStatus(String status) {
         case 'Status: Connection succeeded':
             runInMillis(1000, 'tuyaHubSubscribeAsync')
             break
-        case 'Error: Connection lost':
-        case 'Error: send error':
+        default:
             log.error "${device.displayName} MQTT connection error: " + status
             sendEvent([ name: 'connected', value: false, descriptionText: 'connected is false'])
             runIn(15 + random.nextInt(45), 'tuyaGetHubConfigAsync')
