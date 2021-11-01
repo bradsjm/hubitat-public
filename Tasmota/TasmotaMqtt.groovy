@@ -726,11 +726,11 @@ private void mqttConnect() {
     jsonCache.clear()
 
     try {
-        String clientId = device.hub.hardwareID + '-' + device.id
+        state.clientId = state.client ?: new BigInteger(119, new Random()).toString(36)
         log.info "Connecting to MQTT broker at ${settings.mqttBroker}"
         interfaces.mqtt.connect(
             settings.mqttBroker,
-            clientId,
+            state.clientId,
             settings?.mqttUsername,
             settings?.mqttPassword
         )

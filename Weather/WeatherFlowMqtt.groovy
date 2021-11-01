@@ -79,12 +79,10 @@ metadata {
 import groovy.json.JsonSlurper
 import groovy.transform.Field
 
-// Random number generator
-@Field static final Random random = new Random()
-
 @Field static final List<String> topics = [
     'homeassistant/sensor/weatherflow2mqtt/obs_air/state',
-    'homeassistant/sensor/weatherflow2mqtt/obs_sky/state'
+    'homeassistant/sensor/weatherflow2mqtt/obs_sky/state',
+    'homeassistant/sensor/weatherflow2mqtt/hub_status/state'
 ]
 
 @Field static final Map mapping = [
@@ -119,12 +117,12 @@ void installed() {
 
 // Called when MQTT client state changes
 void mqttClientStatus(String status) {
+    log.info status
     switch (status) {
         case 'Status: Connection succeeded':
             runIn(1, 'subscribe')
             break
-        case 'Error: Connection lost':
-        case 'Error: send error':
+        default:
             log.error "${device.displayName} MQTT connection error: " + status
             runIn(15 + random.nextInt(45), 'initialize')
             break
@@ -174,21 +172,18 @@ void updated() {
 
 private void mqttConnect() {
     unschedule('mqttConnect')
-    String clientId = device.hub.hardwareID + '-' + device.id
     try {
+        state.clientId = state.client ?: new BigInteger(119, new Random()).toString(36)
         log.info "Connecting to MQTT broker at ${settings.mqttBroker}"
         interfaces.mqtt.connect(
             settings.mqttBroker,
-            clientId,
+            state.clientId,
             settings?.mqttUsername,
             settings?.mqttPassword
         )
     } catch (e) {
-        if (e != 'Client is disconnected (32101)') {
-            log.error "MQTT connect error: ${e}"
-            runIn(15 + random.nextInt(45), 'mqttConnect')
-        }
-        runIn(1, 'mqttConnect')
+        log.error "MQTT connect error: ${e}"
+        runIn(15 + random.nextInt(45), 'mqttConnect')
     }
 }
 

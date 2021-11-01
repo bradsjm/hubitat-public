@@ -467,11 +467,11 @@ private int getPrecision(int miles) {
 private void mqttConnect() {
     unschedule('mqttConnect')
     try {
-        String clientId = device.hub.hardwareID + '-' + device.id
+        state.clientId = state.client ?: new BigInteger(119, new Random()).toString(36)
         log.info "Connecting to MQTT broker at ${broker}"
         interfaces.mqtt.connect(
             broker,
-            clientId,
+            state.clientId,
             null,
             null
         )
