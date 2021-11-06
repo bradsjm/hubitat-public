@@ -293,7 +293,7 @@ void componentSetColorTemperature(DeviceWrapper dw, BigDecimal kelvin,
     String code = getFunctionCode(functions, tuyaFunctions.ct)
     if (code) {
         Map temp = functions[code] ?: [min: 0, max: 100]
-        Integer value = temp.max - Math.ceil(maxMireds - remap(1000000 / kelvin, minMireds, maxMireds, temp.min, temp.max))
+        Integer value = temp.max - Math.ceil(remap(1000000 / kelvin, minMireds, maxMireds, temp.min, temp.max))
         log.info "Setting ${dw} color temperature to ${kelvin}K"
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'),
             [ 'code': code, 'value': value ],
@@ -1284,6 +1284,7 @@ private void updateDeviceStatus(Map d) {
  *  https://developer.tuya.com/en/docs/cloud/
 */
 private void tuyaAuthenticateAsync() {
+    unschedule('tuyaAuthenticateAsync')
     if (settings.username && settings.password && settings.appSchema && settings.countryCode) {
         log.info "${device.displayName} starting Tuya cloud authentication for ${settings.username}"
         MessageDigest digest = MessageDigest.getInstance('MD5')
@@ -1305,6 +1306,7 @@ private void tuyaAuthenticateAsync() {
 private void tuyaAuthenticateResponse(AsyncResponse response, Map data) {
     if (!tuyaCheckResponse(response)) {
         sendEvent([ name: 'connected', value: false, descriptionText: 'connected is false'])
+        runIn(60 + random.nextInt(300), 'tuyaAuthenticateAsync')
         return
     }
 
@@ -1474,7 +1476,7 @@ private void tuyaHubConnectAsync() {
             state.mqttInfo.password)
     } catch (e) {
         log.error "${device.displayName} MQTT connection error: " + e
-        runIn(30, 'tuyaHubConnectAsync')
+        runIn(15 + random.nextInt(45), 'tuyaHubConnectAsync')
     }
 }
 

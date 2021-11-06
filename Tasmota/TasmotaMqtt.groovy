@@ -314,7 +314,7 @@ void mqttClientStatus(String status) {
         default:
             log.error "${device.displayName} MQTT connection error: " + status
             mqttDisconnect()
-            runIn(30, 'initialize')
+            runIn(3, 'initialize')
             break
     }
 }
