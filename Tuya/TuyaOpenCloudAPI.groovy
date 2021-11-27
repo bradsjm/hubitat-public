@@ -221,7 +221,6 @@ void componentOn(DeviceWrapper dw) {
 // Component command to turn off device
 void componentOff(DeviceWrapper dw) {
     Map<String, Map> functions = getFunctions(dw)
-    String code
     String code = getFunctionCode(functions, tuyaFunctions.light + tuyaFunctions.power)
 
     if (code) {
