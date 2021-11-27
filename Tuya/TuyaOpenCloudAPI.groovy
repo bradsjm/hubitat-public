@@ -129,10 +129,10 @@ metadata {
     'control'        : [ 'control' ],
     'fanSpeed'       : [ 'fan_speed' ],
     'light'          : [ 'switch_led', 'switch_led_1', 'light' ],
-    'meteringSwitch' : [ 'switch_1', 'countdown_1' , 'add_ele' , 'cur_current', 'cur_power', 'cur_voltage' , 'relay_status', 'light_mode' ],
+    'meteringSwitch' : [ 'countdown_1' , 'add_ele' , 'cur_current', 'cur_power', 'cur_voltage' , 'relay_status', 'light_mode' ],
     'omniSensor'     : [ 'bright_value', 'humidity_value', 'va_humidity', 'bright_sensitivity', 'shock_state', 'inactive_state', 'sensitivity' ],
     'pir'            : [ 'pir' ],
-    'power'          : [ 'Power', 'power', 'switch' ],
+    'power'          : [ 'Power', 'power', 'switch', 'switch_1' ],
     'percentControl' : [ 'percent_control' ],
     'sceneSwitch'    : [ 'switch1_value', 'switch2_value', 'switch3_value', 'switch4_value', 'switch_mode2', 'switch_mode3', 'switch_mode4' ],
     'smoke'          : [ 'smoke_sensor_status' ],
@@ -210,15 +210,7 @@ void componentClose(DeviceWrapper dw) {
 // Component command to turn on device
 void componentOn(DeviceWrapper dw) {
     Map<String, Map> functions = getFunctions(dw)
-    String code
-    switch (dw.getDataValue('category')) {
-        case 'cz':
-            code = getFunctionCode(functions, tuyaFunctions.meteringSwitch) // meteringSwitch code is 'switch_1'
-            break
-        default:
-            code = getFunctionCode(functions, tuyaFunctions.light + tuyaFunctions.power)
-            break
-    }
+    String code = getFunctionCode(functions, tuyaFunctions.light + tuyaFunctions.power)
 
     if (code) {
         log.info "Turning ${dw} on"
@@ -230,14 +222,7 @@ void componentOn(DeviceWrapper dw) {
 void componentOff(DeviceWrapper dw) {
     Map<String, Map> functions = getFunctions(dw)
     String code
-    switch (dw.getDataValue('category')) {
-        case 'cz':
-            code = getFunctionCode(functions, tuyaFunctions.meteringSwitch) // meteringSwitch code is 'switch_1'
-            break
-        default:
-            code = getFunctionCode(functions, tuyaFunctions.light + tuyaFunctions.power)
-            break
-    }
+    String code = getFunctionCode(functions, tuyaFunctions.light + tuyaFunctions.power)
 
     if (code) {
         log.info "Turning ${dw} off"
@@ -1123,10 +1108,6 @@ private void updateDeviceStatus(Map d) {
             String value = status.value
             String unit = ''
             switch (status.code) {
-                case 'switch_1':
-                    name = 'switch'
-                    value = value == 'true' ? 'on' : 'off'
-                    break
                 case 'cur_power':
                     name = 'power'
                     value = status.value / 10
