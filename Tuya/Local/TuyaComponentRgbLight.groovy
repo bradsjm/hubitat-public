@@ -29,13 +29,13 @@ import hubitat.helper.ColorUtils
 import hubitat.helper.HexUtils
 import javax.crypto.Cipher
 import javax.crypto.spec.SecretKeySpec
+import java.util.concurrent.*
 import java.util.regex.Matcher
 import java.util.Random
 
 metadata {
-    definition (name: 'Tuya Generic RGBW Light', namespace: 'tuya', author: 'Jonathan Bradshaw') {
+    definition (name: 'Tuya Local RGBW Light', namespace: 'tuya', author: 'Jonathan Bradshaw') {
         capability 'Actuator'
-        capability 'ChangeLevel'
         capability 'ColorControl'
         capability 'ColorMode'
         capability 'ColorTemperature'
@@ -65,23 +65,6 @@ preferences {
               title: 'Device IP',
               required: false
 
-        input name: 'sendMode',
-              title: 'Communications Mode',
-              type: 'enum',
-              required: true,
-              defaultValue: 'both',
-              options: [
-                'cloud': 'Cloud (requires internet)',
-                'local': 'Local (requires ip)',
-                'both':  'Optimized (local with cloud)'
-              ]
-
-        input name: 'enableHeartbeat',
-              title: 'Enable Heartbeat ping',
-              type: 'bool',
-              required: true,
-              defaultValue: false
-
         input name: 'logEnable',
               type: 'bool',
               title: 'Enable debug logging',
@@ -105,9 +88,32 @@ preferences {
     'workMode': [ 'work_mode' ]
 ]
 
+/*
+ * Tuya default attributes used if missing from device details
+ */
+@Field static final Map defaults = [
+    'bright_value': [ min: 0, max: 100, scale: 0, step: 1, type: 'Integer' ],
+    'bright_value_v2': [ min: 0, max: 100, scale: 0, step: 1, type: 'Integer' ],
+    'temp_value': [ min: 0, max: 100, scale: 0, step: 1, type: 'Integer' ],
+    'temp_value_v2': [ min: 0, max: 100, scale: 0, step: 1, type: 'Integer' ],
+    'colour_data': [
+        h: [ min: 1, scale: 0, max: 360, step: 1, type: 'Integer' ],
+        s: [ min: 1, scale: 0, max: 255, step: 1, type: 'Integer' ],
+        v: [ min: 1, scale: 0, max: 255, step: 1, type: 'Integer' ]
+    ],
+    'colour_data_v2': [
+        h: [ min: 1, scale: 0, max: 360, step: 1, type: 'Integer' ],
+        s: [ min: 1, scale: 0, max: 1000, step: 1, type: 'Integer' ],
+        v: [ min: 1, scale: 0, max: 1000, step: 1, type: 'Integer' ]
+    ]
+]
+
 // Constants
 @Field static final Integer minMireds = 153
 @Field static final Integer maxMireds = 500 // should this be 370?
+
+// Queue used for ACK tracking
+@Field static queues = new ConcurrentHashMap<String, SynchronousQueue>()
 
 // Random number generator
 @Field static final Random random = new Random()
@@ -115,42 +121,44 @@ preferences {
 /**
  *  Hubitat Driver Event Handlers
  */
-// Called every 15 - 20 seconds to keep device connection open
+// Called to keep device connection open
 void heartbeat() {
-    runIn(15 + random.nextInt(5), 'heartbeat')
-    tuyaSendCommand(getDataValue('id'), 'HEART_BEAT')
+    String id = getDataValue('id')
+    String localKey = getDataValue('local_key')
+    if (logEnable) { log.debug "${device} sending heartbeat" }
+    tuyaSendCommand(id, ipAddress, localKey, null, 'HEART_BEAT')
+    runIn(20 + random.nextInt(5), 'heartbeat')
 }
 
 // Called when the device is first created
 void installed() {
-    log.info "${device.displayName} driver installed"
+    log.info "${device} driver installed"
 }
 
 // Called to initialize
 void initialize() {
-    unschedule('heartbeat')
-    if (ipAddress && getDataValue('local_key') && enableHeartbeat) {
-        heartbeat()
-    }
+    heartbeat()
 }
 
 // Component command to turn on device
 void on() {
-    //tuyaSendCommand(getDataValue('id'), [ '1': true ])
-    //runIn(1, 'parentCommand', [data: [ name: 'componentOn', args: [] ]])
-    if (!tuyaSendCommand(getDataValue('id'), [ '1': true ])) {
-        parent?.componentOn(device)
+    log.info "Turning ${device} on"
+
+    if (repeatCommand([ '1': true ])) {
+        sendEvent([ name: 'switch', value: 'on', descriptionText: 'switch is on' ])
     } else {
-        log.info "Turning ${device} on"
+        parent?.componentOn(device)
     }
 }
 
 // Component command to turn off device
 void off() {
-    if (!tuyaSendCommand(getDataValue('id'), [ '1': false ])) {
-        parent?.componentOff(device)
+    log.info "Turning ${device} off"
+
+    if (repeatCommand([ '1': false ])) {
+        sendEvent([ name: 'switch', value: 'off', descriptionText: 'switch is off' ])
     } else {
-        log.info "Turning ${device} off"
+        parent?.componentOff(device)
     }
 }
 
@@ -159,11 +167,13 @@ void parse(String message) {
     if (!message) { return }
     String localKey = getDataValue('local_key')
     Map result = tuyaDecode(HexUtils.hexStringToByteArray(message), localKey)
-    if (logEnable) { log.debug "${device.displayName} received ${result}" }
+    if (logEnable) { log.debug "${device} received ${result}" }
     if (result.error) {
-        log.error "${device.displayName} received error ${result.error}"
-    } else if (result.commandByte == 7 && sendMode == 'local') { // COMMAND ACK
-        tuyaSendCommand(getDataValue('id'), 'DP_QUERY')
+        log.error "${device} received error ${result.error}"
+    } else if (result.commandByte == 7) { // COMMAND ACK
+        if (!getQ().offer(result)) { log.warn "${device} ACK received but no thread waiting for it" }
+    } else if (result.commandByte == 9) { // HEARTBEAT ACK
+        if (logEnable) { log.debug "${device} received heartbeat" }
     } else if (result.commandByte == 8 || result.commandByte == 10 ) { // STATUS or QUERY RESULTS
         Map json = new JsonSlurper().parseText(result.text)
         parseDeviceState(json.dps)
@@ -172,8 +182,6 @@ void parse(String message) {
 
 // parse commands from parent (cloud)
 void parse(List<Map> description) {
-    if (ipAddress && sendMode == 'local') { return }
-    if (logEnable) { log.debug description }
     description.each { d ->
         if (device.currentValue(d.name) != d.value) {
             if (d.descriptionText && txtEnable) { log.info "${device} ${d.descriptionText}" }
@@ -184,7 +192,9 @@ void parse(List<Map> description) {
 
 // Component command to refresh device
 void refresh() {
-    if (!tuyaSendCommand(getDataValue('id'), 'DP_QUERY')) {
+    String id = getDataValue('id')
+    String localKey = getDataValue('local_key')
+    if (!tuyaSendCommand(id, ipAddress, localKey, null, 'DP_QUERY')) {
         parent?.componentRefresh(device)
     } else {
         log.info "Refreshing ${device}"
@@ -194,6 +204,8 @@ void refresh() {
 
 // Component command to set color
 void setColor(Map colorMap) {
+    log.info "Setting ${device} color to ${colorMap}"
+
     Map functions = getFunctions(device)
     String code = getFunctionByCode(functions, tuyaFunctions.colour)
     Map color = functions[code]
@@ -202,38 +214,50 @@ void setColor(Map colorMap) {
     int s = remap(colorMap.saturation, 0, 100, color.s.min, color.s.max)
     int v = remap(colorMap.level, 0, 100, bright.min, bright.max)
     def (int r, int g, int b) = ColorUtils.hsvToRGB([colorMap.hue, colorMap.saturation, colorMap.level])
+    String colorName = translateColor(colorMap.hue as int, colorMap.saturation as int)
     String rgb = Integer.toHexString(r).padLeft(2, '0') +
                  Integer.toHexString(g).padLeft(2, '0') +
                  Integer.toHexString(b).padLeft(2, '0')
     String hsv = Integer.toHexString(h).padLeft(4, '0') +
                  Integer.toHexString(s).padLeft(2, '0') +
                  Integer.toHexString(v).padLeft(2, '0')
-    if (!tuyaSendCommand(getDataValue('id'), [ '5': rgb + hsv, '2': 'colour' ])) {
+
+    if (repeatCommand([ '5': rgb + hsv, '2': 'colour' ])) {
+        sendEvent([ name: 'hue', value: colorMap.hue, descriptionText: "hue is ${colorMap.hue}" ])
+        sendEvent([ name: 'saturation', value: colorMap.saturation, descriptionText: "saturation is ${colorMap.saturation}" ])
+        sendEvent([ name: 'level', value: colorMap.level, unit: '%', descriptionText: "level is ${colorMap.level}%" ])
+        sendEvent([ name: 'colorName', value: colorName, descriptionText: "color name is ${colorName}" ])
+        sendEvent([ name: 'colorMode', value: 'RGB', descriptionText: 'color mode is RGB' ])
+    } else {
         parent?.componentSetColor(device, colorMap)
-    }else {
-        log.info "Setting ${device} color to ${colorMap}"
     }
 }
 
 // Send custom Dps command
 void sendCustomDps(BigDecimal dps, String value) {
-    tuyaSendCommand(getDataValue('id'), [ (dps): value ])
     log.info "Sending DPS ${dps} command ${value}"
+    repeatCommand([ (dps): value ])
 }
 
 // Component command to set color temperature
 void setColorTemperature(BigDecimal kelvin, BigDecimal level = null, BigDecimal duration = null) {
+    log.info "Setting ${device} color temperature to ${kelvin}K"
+
     Map functions = getFunctions(device)
     String code = getFunctionByCode(functions, tuyaFunctions.temperature)
     Map temp = functions[code]
     Integer value = temp.max - Math.ceil(remap(1000000 / kelvin, minMireds, maxMireds, temp.min, temp.max))
-    if (!tuyaSendCommand(getDataValue('id'), [ '4': value ])) {
-        parent?.componentSetColorTemperature(device, kelvin, level, duration)
+
+    if (repeatCommand([ '4': value ])) {
+        sendEvent([ name: 'colorTemperature', value: kelvin, unit: 'K', descriptionText: "color temperature is ${kelvin}K" ])
+        sendEvent([ name: 'colorMode', value: 'CT', descriptionText: 'color mode is CT' ])
     } else {
-        log.info "Setting ${device} color temperature to ${kelvin}K"
-        if (level && device.currentValue('level') != level) {
-            setLevel(level, duration)
-        }
+        parent?.componentSetColorTemperature(device, kelvin, level, duration)
+        return
+    }
+
+    if (level && device.currentValue('level') != level) {
+        setLevel(level, duration)
     }
 }
 
@@ -248,16 +272,18 @@ void setHue(BigDecimal hue) {
 
 // Component command to set level
 void setLevel(BigDecimal level, BigDecimal duration = 0) {
+    log.info "Setting ${device} level to ${level}%"
+
     String colorMode = device.currentValue('colorMode')
     if (colorMode == 'CT') {
         Map functions = getFunctions(device)
         String code = getFunctionByCode(functions, tuyaFunctions.brightness)
         Map bright = functions[code]
         Integer value = Math.ceil(remap(level, 0, 100, bright.min, bright.max))
-        if (!tuyaSendCommand(getDataValue('id'), [ '3': value ])) {
-            parent?.componentSetLevel(device, level, duration)
+        if (repeatCommand([ '3': value ])) {
+            sendEvent([ name: 'level', value: level, unit: '%', descriptionText: "level is ${level}%" ])
         } else {
-            log.info "Setting ${device} level to ${level}%"
+            parent?.componentSetLevel(device, level, duration)
         }
     } else {
         setColor([
@@ -280,43 +306,20 @@ void setSaturation(BigDecimal saturation) {
 // Socket status updates
 void socketStatus(String message) {
     if (message.contains('error')) {
-        log.error "${device.displayName} socket ${message}"
+        log.error "${device} socket ${message}"
     } else {
-        log.info "${device.displayName} socket ${message}"
-    }
-}
-
-// Start gradual level change
-void startLevelChange(String direction) {
-    log.info "Starting level change ${direction} for ${device}"
-    doLevelChange(delta: (direction == 'down') ? -10 : 10)
-}
-
-// Stop gradual level change
-void stopLevelChange() {
-    log.info "Stopping level change for ${device}"
-    unschedule('doLevelChange')
-}
-
-void doLevelChange(Integer delta) {
-    int newLevel = (device.currentValue('level') as int) + delta
-    if (newLevel < 0) { newLevel = 0 }
-    if (newLevel > 100) { newLevel = 100 }
-    setLevel(newLevel)
-
-    if (newLevel > 0 && newLevel < 100) {
-        runInMillis(1000, 'doLevelChange', delta)
+        log.info "${device} socket ${message}"
     }
 }
 
 // Called when the device is removed
 void uninstalled() {
-    log.info "${device.displayName} driver uninstalled"
+    log.info "${device} driver uninstalled"
 }
 
 // Called when the settings are updated
 void updated() {
-    log.info "${device.displayName} driver configuration updated"
+    log.info "${device} driver configuration updated"
     log.debug settings
     initialize()
     if (logEnable) { runIn(1800, 'logsOff') }
@@ -324,7 +327,7 @@ void updated() {
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void logsOff() {
-    log.warn "debug logging disabled for ${device.displayName}"
+    log.warn "debug logging disabled for ${device}"
     device.updateSetting('logEnable', [value: 'false', type: 'bool'] )
 }
 
@@ -372,8 +375,12 @@ private static String translateColor(Integer hue, Integer saturation) {
     return ''
 }
 
+private SynchronousQueue getQ() {
+    return queues.computeIfAbsent(device.id) { k -> new SynchronousQueue() };
+}
+
 private void parseDeviceState(Map dps) {
-    if (logEnable) { log.debug "${device.displayName} parsing dps ${dps}" }
+    if (logEnable) { log.debug "${device} parsing dps ${dps}" }
     Map functions = getFunctions(device)
 
     String colorMode = device.currentValue('colorMode')
@@ -433,9 +440,35 @@ private void parseDeviceState(Map dps) {
 
     events.each { e ->
         if (device.currentValue(e.name) != e.value) {
-            if (e.descriptionText && txtEnable) { log.info e.descriptionText }
+            if (e.descriptionText && txtEnable) { log.info "${device} ${e.descriptionText}" }
             sendEvent(e)
         }
     }
 }
 
+private Map repeatCommand(Map dps, int repeat = 3, timeoutSecs = 1) {
+    Map result
+    String id = getDataValue('id')
+    String localKey = getDataValue('local_key')
+    if (!id || !localKey || !ipAddress) return result
+
+    for (i = 1; i <= repeat; i++) {
+        try {
+            tuyaSendCommand(id, ipAddress, localKey, dps, 'CONTROL')
+        } catch (e) {
+            log.error "${device} tuya send exception: ${e}"
+            pauseExecution(50 + random.nextInt(200))
+            continue
+        }
+
+        result = getQ().poll(timeoutSecs, TimeUnit.SECONDS)
+        if (result) {
+            log.info "Received ${device} command acknowledgement"
+            break
+        } else {
+            log.warn "${device} command timeout (${i} of ${repeat})"
+        }
+    }
+
+    return result
+}

@@ -99,13 +99,8 @@ byte[] tuyaEncode(String command, String input, String localKey, long seq = 0) {
     return buffer
 }
 
-Boolean tuyaSendCommand(String devId, String command = 'CONTROL') {
-    return tuyaSendCommand(devId, null, command)
-}
-
-Boolean tuyaSendCommand(String devId, Map dps, String command = 'CONTROL') {
-    String localKey = getDataValue('local_key')
-    if (!ipAddress || !localKey || !(sendMode in ['local', 'both'])) { return false }
+Boolean tuyaSendCommand(String devId, String ipAddress, String localKey, Map dps, String command) {
+    if (!ipAddress || !localKey) { return false }
 
     byte[] output = tuyaEncode(
         command,
@@ -119,15 +114,10 @@ Boolean tuyaSendCommand(String devId, Map dps, String command = 'CONTROL') {
         localKey
     )
 
-    try {
-        interfaces.rawSocket.connect(ipAddress, 6668, byteInterface: true)
-        interfaces.rawSocket.sendMessage(HexUtils.byteArrayToHexString(output))
-    } catch (e) {
-        log.error "tuya send error ${e}"
-        return false
-    }
+    interfaces.rawSocket.connect(ipAddress, 6668, byteInterface: true)
+    interfaces.rawSocket.sendMessage(HexUtils.byteArrayToHexString(output))
 
-    return (sendmode == 'local')
+    return true
 }
 
 private static byte[] copy(byte[] buffer, String source, int from) {
@@ -174,14 +164,14 @@ private static long tuyaCrc32(byte[] buffer) {
 }
 
 private static byte[] tuyaDecrypt (byte[] payload, String secret) {
-    SecretKeySpec key = new SecretKeySpec(secret.getBytes('UTF-8'), 'AES')
+    SecretKeySpec key = new SecretKeySpec(secret.bytes, 'AES')
     Cipher cipher = Cipher.getInstance('AES/ECB/PKCS5Padding')
     cipher.init(Cipher.DECRYPT_MODE, key)
     return cipher.doFinal(payload)
 }
 
 private static byte[] tuyaEncrypt (byte[] payload, String secret) {
-    SecretKeySpec key = new SecretKeySpec(secret.getBytes('UTF-8'), 'AES')
+    SecretKeySpec key = new SecretKeySpec(secret.bytes, 'AES')
     Cipher cipher = Cipher.getInstance('AES/ECB/PKCS5Padding')
     cipher.init(Cipher.ENCRYPT_MODE, key)
     return cipher.doFinal(payload)
