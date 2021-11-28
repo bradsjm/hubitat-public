@@ -60,7 +60,15 @@ metadata {
         command 'removeDevices'
 
         attribute 'deviceCount', 'Integer'
-        attribute 'connected', 'Boolean'
+        attribute 'state', 'enum', [
+            'not configured',
+            'error',
+            'authenticating',
+            'authenticated',
+            'connected',
+            'disconnected',
+            'ready'
+        ]
     }
 
     preferences {
@@ -291,7 +299,7 @@ void componentSetColorTemperature(DeviceWrapper dw, BigDecimal kelvin,
 
 // Component command to set effect
 void componentSetEffect(DeviceWrapper dw, BigDecimal index) {
-    log.warn "${device.displayName} Set effect command not supported"
+    log.warn "${device} Set effect command not supported"
 }
 
 // Component command to set heating setpoint
@@ -420,7 +428,7 @@ void componentStartPositionChange(DeviceWrapper dw, String direction) {
         case 'open': componentOpen(dw); break
         case 'close': componentClose(dw); break
         default:
-            log.warn "${device.displayName} Unknown position change direction ${direction} for ${dw}"
+            log.warn "${device} Unknown position change direction ${direction} for ${dw}"
             break
     }
 }
@@ -461,37 +469,43 @@ void doLevelChange() {
 
 // Called when the device is started
 void initialize() {
-    log.info "${device.displayName} driver initializing"
+    log.info "${device} driver initializing"
     state.clear()
     unschedule()
 
+    sendEvent([ name: 'deviceCount', value: 0 ])
     Map datacenter = tuyaCountries.find { c -> c.country == settings.appCountry }
     if (datacenter) {
         state.endPoint = datacenter.endpoint
         state.countryCode = datacenter.countryCode
     } else {
-        log.error "${device.displayName} Country not set in configuration"
+        log.error "${device} Country not set in configuration"
+        sendEvent([ name: 'state', value: 'error', descriptionText: 'Country not set in configuration'])
     }
 
-    state.tokenInfo = [ access_token: '', expire: now() ] // initialize token
-    state.uuid = state?.uuid ?: UUID.randomUUID().toString()
+    state.with {
+        tokenInfo = [ access_token: '', expire: now() ] // initialize token
+        uuid = state?.uuid ?: UUID.randomUUID().toString()
+        driver_version = '0.2'
+        lang = 'en'
+    }
 
     tuyaAuthenticateAsync()
 }
 
 // Called when the device is first created
 void installed() {
-    log.info "${device.displayName} driver installed"
+    log.info "${device} driver installed"
 }
 
 // Called when the device is removed
 void uninstalled() {
-    log.info "${device.displayName} driver uninstalled"
+    log.info "${device} driver uninstalled"
 }
 
 // Called when the settings are updated
 void updated() {
-    log.info "${device.displayName} driver configuration updated"
+    log.info "${device} driver configuration updated"
     if (logEnable) {
         log.debug settings
         runIn(1800, 'logsOff')
@@ -512,19 +526,20 @@ void parse(String data) {
     } else if (result.bizCode && result.bizData) {
         parseBizData(result.bizCode, result.bizData)
     } else {
-        log.warn "${device.displayName} unsupported mqtt packet: ${result}"
+        log.warn "${device} unsupported mqtt packet: ${result}"
     }
 }
 
-// Called to parse MQTT status changes
+// Called to parse MQTT client status changes
 void mqttClientStatus(String status) {
     switch (status) {
         case 'Status: Connection succeeded':
+            sendEvent([ name: 'state', value: 'connected', descriptionText: 'Connected to Tuya MQTT hub'])
             runInMillis(1000, 'tuyaHubSubscribeAsync')
             break
         default:
-            log.error "${device.displayName} MQTT connection error: " + status
-            sendEvent([ name: 'connected', value: false, descriptionText: 'connected is false'])
+            log.error "${device} MQTT connection error: " + status
+            sendEvent([ name: 'state', value: 'disconnected', descriptionText: 'Disconnected from Tuya MQTT hub'])
             runIn(15 + random.nextInt(45), 'tuyaGetHubConfigAsync')
             break
     }
@@ -532,13 +547,13 @@ void mqttClientStatus(String status) {
 
 // Command to refresh all devices
 void refresh() {
-    log.info "${device.displayName} refreshing devices"
+    log.info "${device} refreshing devices"
     tuyaGetDevicesAsync()
 }
 
 // Command to remove all the child devices
 void removeDevices() {
-    log.info "${device.displayName} removing all child devices"
+    log.info "${device} removing all child devices"
     childDevices.each { device -> deleteChildDevice(device.deviceNetworkId) }
 }
 
@@ -917,7 +932,7 @@ private ChildDeviceWrapper createChildDevice(Map d) {
     ChildDeviceWrapper dw = getChildDevice("${device.id}-${d.id}")
     if (!dw) {
         Map driver = mapTuyaCategory(d)
-        log.info "${device.displayName} creating device ${d.name} using ${driver.name} driver"
+        log.info "${device} creating device ${d.name} using ${driver.name} driver"
         try {
             dw = addChildDevice(driver.namespace, driver.name, "${device.id}-${d.id}",
                 [
@@ -927,7 +942,7 @@ private ChildDeviceWrapper createChildDevice(Map d) {
                 ]
             )
         } catch (UnknownDeviceTypeException e) {
-            log.warn "${device.displayName} ${e.message} - you may need to install the driver"
+            log.warn "${device} ${e.message} - you may need to install the driver"
         }
     }
 
@@ -950,14 +965,14 @@ private ChildDeviceWrapper createChildDevice(Map d) {
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void logsOff() {
     device.updateSetting('logEnable', [value: 'false', type: 'bool'] )
-    log.info "${device.displayName} debug logging disabled"
+    log.info "${device} debug logging disabled"
 }
 
 private void parseBizData(String bizCode, Map bizData) {
     String indicator = ' [Offline]'
     ChildDeviceWrapper dw = bizData.devId ? getChildDevice("${device.id}-${bizData.devId}") : null
 
-    if (logEnable) { log.debug "${device.displayName} ${bizCode} ${bizData}" }
+    if (logEnable) { log.debug "${device} ${bizCode} ${bizData}" }
     switch (bizCode) {
         case 'nameUpdate':
             dw.label = bizData.name
@@ -983,7 +998,7 @@ private void parseBizData(String bizCode, Map bizData) {
 private void updateDeviceStatus(Map d) {
     ChildDeviceWrapper dw = getChildDevice("${device.id}-${d.id ?: d.devId}")
     if (!dw) {
-        log.error "${device.displayName} updateDeviceStatus: Child device for ${d} not found"
+        log.error "${device} updateDeviceStatus: Child device for ${d} not found"
         return
     }
 
@@ -991,11 +1006,11 @@ private void updateDeviceStatus(Map d) {
     List<Map> statusList = d.status ?: []
     String workMode = statusList['workMode'] ?: ''
     List<Map> events = statusList.collectMany { status ->
-        if (logEnable) { log.debug "${device.displayName} ${dw.displayName} status ${status}" }
+        if (logEnable) { log.debug "${device} ${dw} status ${status}" }
 
         if (status.code in tuyaFunctions.battery) {
             if (status.code == 'battery_percentage' || status.code == 'va_battery') {
-                if (txtEnable) { log.info "${dw.displayName} battery is ${status.value}%" }
+                if (txtEnable) { log.info "${dw} battery is ${status.value}%" }
                 return [ [ name: 'battery', value: status.value, descriptionText: "battery is ${status.value}%", unit: '%' ] ]
             }
         }
@@ -1004,20 +1019,20 @@ private void updateDeviceStatus(Map d) {
             Map bright = deviceStatusSet[status.code] ?: [ min: 0, max: 100 ]
             if ( bright != null ) {
                 Integer value = Math.floor(remap(status.value, bright.min, bright.max, 0, 100))
-                if (txtEnable) { log.info "${dw.displayName} level is ${value}%" }
+                if (txtEnable) { log.info "${dw} level is ${value}%" }
                 return [ [ name: 'level', value: value, unit: '%', descriptionText: "level is ${value}%" ] ]
             }
         }
 
         if (status.code in tuyaFunctions.co) {
             String value = status.value == 'alarm' ? 'detected' : 'clear'
-            if (txtEnable) { log.info "${dw.displayName} carbon monoxide is ${value}" }
+            if (txtEnable) { log.info "${dw} carbon monoxide is ${value}" }
             return [ [ name: 'carbonMonoxide', value: value, descriptionText: "carbon monoxide is ${value}" ] ]
         }
 
         if (status.code in tuyaFunctions.co2) {
             String value = status.value
-            if (txtEnable) { log.info "${dw.displayName} carbon dioxide level is ${value}" }
+            if (txtEnable) { log.info "${dw} carbon dioxide level is ${value}" }
             return [ [ name: 'carbonDioxide', value: value, unit: 'ppm', descriptionText: "carbon dioxide level is ${value}" ] ]
         }
 
@@ -1031,7 +1046,7 @@ private void updateDeviceStatus(Map d) {
                 case 'stop': value = 'unknown'; break
             }
             if (value) {
-                if (txtEnable) { log.info "${dw.displayName} control is ${value}" }
+                if (txtEnable) { log.info "${dw} control is ${value}" }
                 return [ [ name: 'windowShade', value: value, descriptionText: "window shade is ${value}" ] ]
             }
         }
@@ -1040,7 +1055,7 @@ private void updateDeviceStatus(Map d) {
             Map temperature = deviceStatusSet[status.code]
             Integer value = Math.floor(1000000 / remap(temperature.max - status.value,
                             temperature.min, temperature.max, minMireds, maxMireds))
-            if (txtEnable) { log.info "${dw.displayName} color temperature is ${value}K" }
+            if (txtEnable) { log.info "${dw} color temperature is ${value}K" }
             return [ [ name: 'colorTemperature', value: value, unit: 'K',
                        descriptionText: "color temperature is ${value}K" ] ]
         }
@@ -1054,14 +1069,14 @@ private void updateDeviceStatus(Map d) {
             Integer saturation = Math.floor(remap(value.s, colour.s.min, colour.s.max, 0, 100))
             Integer level = Math.floor(remap(value.v, bright.min, bright.max, 0, 100))
             String colorName = translateColorName(hue, saturation)
-            if (txtEnable) { log.info "${dw.displayName} color is h:${hue} s:${saturation} (${colorName})" }
+            if (txtEnable) { log.info "${dw} color is h:${hue} s:${saturation} (${colorName})" }
             List<Map> events = [
                 [ name: 'hue', value: hue, descriptionText: "hue is ${hue}" ],
                 [ name: 'saturation', value: saturation, descriptionText: "saturation is ${saturation}" ],
                 [ name: 'colorName', value: colorName, descriptionText: "color name is ${colorName}" ]
             ]
             if (workMode == 'color') {
-                if (txtEnable) { log.info "${dw.displayName} level is ${level}%" }
+                if (txtEnable) { log.info "${dw} level is ${level}%" }
                 events << [ name: 'level', value: level, unit: '%', descriptionText: "level is ${level}%" ]
             }
             return events
@@ -1069,7 +1084,7 @@ private void updateDeviceStatus(Map d) {
 
         if (status.code in tuyaFunctions.contact) {
             String value = status.value ? 'open' : 'closed'
-            if (txtEnable) { log.info "${dw.displayName} contact is ${value}" }
+            if (txtEnable) { log.info "${dw} contact is ${value}" }
             return [ [ name: 'contact', value: value, descriptionText: "contact is ${value}" ] ]
         }
 
@@ -1088,17 +1103,17 @@ private void updateDeviceStatus(Map d) {
                         break
                 }
                 String level = ['low', 'medium-low', 'medium', 'medium-high', 'high'].get(value)
-                if (txtEnable) { log.info "${dw.displayName} speed is ${level}" }
+                if (txtEnable) { log.info "${dw} speed is ${level}" }
                 return [ [ name: 'speed', value: level, descriptionText: "speed is ${level}" ] ]
             }
 
-            if (txtEnable) { log.info "${dw.displayName} speed is off" }
+            if (txtEnable) { log.info "${dw} speed is off" }
             return [ [ name: 'speed', value: 'off', descriptionText: 'speed is off' ] ]
         }
 
         if (status.code in tuyaFunctions.light || status.code in tuyaFunctions.power) {
             String value = status.value ? 'on' : 'off'
-            if (txtEnable) { log.info "${dw.displayName} switch is ${value}" }
+            if (txtEnable) { log.info "${dw} switch is ${value}" }
             return [ [ name: 'switch', value: value, descriptionText: "switch is ${value}" ] ]
         }
 
@@ -1120,11 +1135,11 @@ private void updateDeviceStatus(Map d) {
                 case 'countdown_1':
                     break
                 default:
-                    log.warn "${dw.displayName} unsupported meteringSwitch status.code ${status.code}"
+                    log.warn "${dw} unsupported meteringSwitch status.code ${status.code}"
             }
             if (name != null && value != null) {
-                if (txtEnable) { log.info "${dw.displayName} ${name} is ${value} ${unit}" }
-                return [ [ name: name, value: value, descriptionText: "${dw.displayName} ${name} is ${value} ${unit}", unit: unit ] ]
+                if (txtEnable) { log.info "${dw} ${name} is ${value} ${unit}" }
+                return [ [ name: name, value: value, descriptionText: "${dw} ${name} is ${value} ${unit}", unit: unit ] ]
             }
         }
 
@@ -1166,22 +1181,22 @@ private void updateDeviceStatus(Map d) {
                     unit = ''
                     break
                 default:
-                    log.warn "${dw.displayName} unsupported omniSensor status.code ${status.code}"
+                    log.warn "${dw} unsupported omniSensor status.code ${status.code}"
             }
             if (name != null && value != null) {
-                if (txtEnable) { log.info "${dw.displayName} ${name} is ${value} ${unit}" }
+                if (txtEnable) { log.info "${dw} ${name} is ${value} ${unit}" }
                 return [ [ name: name, value: value, descriptionText: "${name} is ${value} ${unit}", unit: unit ] ]
             }
         }
 
         if (status.code in tuyaFunctions.pir) {
             String value = status.value == 'pir' ? 'active' : 'inactive'
-            if (txtEnable) { log.info "${dw.displayName} motion is ${value}" }
+            if (txtEnable) { log.info "${dw} motion is ${value}" }
             return [ [ name: 'motion', value: value, descriptionText: "motion is ${value}" ] ]
         }
 
         if (status.code in tuyaFunctions.percent_control) {
-            if (txtEnable) { log.info "${dw.displayName} position is ${status.value}%" }
+            if (txtEnable) { log.info "${dw} position is ${status.value}%" }
             return [ [ name: 'position', value: status.value, descriptionText: "position is ${status.value}%", unit: '%' ] ]
         }
 
@@ -1190,7 +1205,7 @@ private void updateDeviceStatus(Map d) {
             if (status.value in sceneSwitchAction) {
                 action = sceneSwitchAction[status.value]
             } else {
-                log.warn "${dw.displayName} sceneSwitch: unknown status.value ${status.value}"
+                log.warn "${dw} sceneSwitch: unknown status.value ${status.value}"
             }
 
             String value
@@ -1200,20 +1215,20 @@ private void updateDeviceStatus(Map d) {
                     value = '1'                    // correction for TS0044 key #1
                 }
             } else {
-                log.warn "${dw.displayName} sceneSwitch: unknown status.code ${status.code}"
+                log.warn "${dw} sceneSwitch: unknown status.code ${status.code}"
             }
 
             if (value != null && action != null) {
-                if (txtEnable) { log.info "${dw.displayName} buttons ${value} is ${action}" }
+                if (txtEnable) { log.info "${dw} buttons ${value} is ${action}" }
                 return [ [ name: action, value: value, descriptionText: "button ${value} is ${action}", isStateChange: true ] ]
             }
 
-            log.warn "${dw.displayName} sceneSwitch: unknown name ${action} or value ${value}"
+            log.warn "${dw} sceneSwitch: unknown name ${action} or value ${value}"
         }
 
         if (status.code in tuyaFunctions.smoke) {
             String value = status.value == 'alarm' ? 'detected' : 'clear'
-            if (txtEnable) { log.info "${dw.displayName} smoke is ${value}" }
+            if (txtEnable) { log.info "${dw} smoke is ${value}" }
             return [ [ name: 'smoke', value: value, descriptionText: "smoke is ${value}" ] ]
         }
 
@@ -1222,7 +1237,7 @@ private void updateDeviceStatus(Map d) {
             int scale = Math.pow(10, set.scale as int)
             String value = status.value / scale
             String unit = set.unit
-            if (txtEnable) { log.info "${dw.displayName} temperature is ${value}${unit}" }
+            if (txtEnable) { log.info "${dw} temperature is ${value}${unit}" }
             return [ [ name: 'temperature', value: value, unit: unit, descriptionText: "temperature is ${value}${unit}" ] ]
         }
 
@@ -1230,13 +1245,13 @@ private void updateDeviceStatus(Map d) {
             Map set = deviceStatusSet[status.code] ?: [scale: 0, unit: "\u00B0${location.temperatureScale}" ]
             String value = status.value
             String unit = set.unit
-            if (txtEnable) { log.info "${dw.displayName} heating set point is ${value}${unit}" }
+            if (txtEnable) { log.info "${dw} heating set point is ${value}${unit}" }
             return [ [ name: 'heatingSetpoint', value: value, unit: unit, descriptionText: "heating set point is ${value}${unit}" ] ]
         }
 
         if (status.code in tuyaFunctions.water) {
             String value = status.value == 'alarm' ? 'wet' : 'dry'
-            if (txtEnable) { log.info "${dw.displayName} water is ${value}" }
+            if (txtEnable) { log.info "${dw} water is ${value}" }
             return [ [ name: 'water', value: value, descriptionText: "water is ${value}" ] ]
         }
 
@@ -1244,10 +1259,10 @@ private void updateDeviceStatus(Map d) {
             switch (status.value) {
                 case 'white':
                 case 'light_white':
-                    if (txtEnable) { log.info "${dw.displayName} color mode is CT" }
+                    if (txtEnable) { log.info "${dw} color mode is CT" }
                     return [ [ name: 'colorMode', value: 'CT', descriptionText: 'color mode is CT' ] ]
                 case 'colour':
-                    if (txtEnable) { log.info "${dw.displayName} color mode is RGB" }
+                    if (txtEnable) { log.info "${dw} color mode is RGB" }
                     return [ [ name: 'colorMode', value: 'RGB', descriptionText: 'color mode is RGB' ] ]
             }
         }
@@ -1255,7 +1270,7 @@ private void updateDeviceStatus(Map d) {
         return []
     }
 
-    if (events && logEnable) { log.debug "${device.displayName} ${dw.displayName} sending events ${events}" }
+    if (events && logEnable) { log.debug "${device} ${dw} sending events ${events}" }
     dw.parse(events)
 }
 
@@ -1266,7 +1281,7 @@ private void updateDeviceStatus(Map d) {
 private void tuyaAuthenticateAsync() {
     unschedule('tuyaAuthenticateAsync')
     if (settings.username && settings.password && settings.appSchema && settings.countryCode) {
-        log.info "${device.displayName} starting Tuya cloud authentication for ${settings.username}"
+        log.info "${device} starting Tuya cloud authentication for ${settings.username}"
         MessageDigest digest = MessageDigest.getInstance('MD5')
         String md5pwd = HexUtils.byteArrayToHexString(digest.digest(settings.password.bytes)).toLowerCase()
         Map body = [
@@ -1276,16 +1291,18 @@ private void tuyaAuthenticateAsync() {
             'schema': settings.appSchema
         ]
         state.tokenInfo.access_token = ''
+        sendEvent([ name: 'state', value: 'authenticating', descriptionText: 'Authenticating to Tuya'])
         tuyaPostAsync('/v1.0/iot-01/associated-users/actions/authorized-login', body, 'tuyaAuthenticateResponse')
     } else {
-        log.error "${device.displayName} must be configured before authentication is possible"
+        sendEvent([ name: 'state', value: 'not configured', descriptionText: 'Driver not configured'])
+        log.error "${device} must be configured before authentication is possible"
     }
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
 private void tuyaAuthenticateResponse(AsyncResponse response, Map data) {
     if (!tuyaCheckResponse(response)) {
-        sendEvent([ name: 'connected', value: false, descriptionText: 'connected is false'])
+        sendEvent([ name: 'state', value: 'error', descriptionText: 'Error authenticating to Tuya (check credentials and country)'])
         runIn(60 + random.nextInt(300), 'tuyaAuthenticateAsync')
         return
     }
@@ -1298,7 +1315,8 @@ private void tuyaAuthenticateResponse(AsyncResponse response, Map data) {
         uid: result.uid,
         expire: result.expire_time * 1000 + now(),
     ]
-    log.info "${device.displayName} received Tuya access token (valid for ${result.expire_time}s)"
+    log.info "${device} received Tuya access token (valid for ${result.expire_time}s)"
+    sendEvent([ name: 'state', value: 'authenticated', descriptionText: 'Authenticated to Tuya'])
 
     // Schedule next authentication
     runIn(result.expire_time - 60, 'tuyaAuthenticateAsync')
@@ -1332,11 +1350,11 @@ private void tuyaAuthenticateResponse(AsyncResponse response, Map data) {
  */
 private void tuyaGetDevicesAsync(String last_row_key = '', Map data = [:]) {
     if (!jsonCache.isEmpty()) {
-        log.info "${device.displayName} clearing json cache"
+        log.info "${device} clearing json cache"
         jsonCache.clear()
     }
 
-    log.info "${device.displayName} requesting cloud devices batch"
+    log.info "${device} requesting cloud devices batch"
     tuyaGetAsync('/v1.0/iot-01/associated-users/devices', [ 'last_row_key': last_row_key ], 'tuyaGetDevicesResponse', data)
 }
 
@@ -1345,7 +1363,7 @@ private void tuyaGetDevicesResponse(AsyncResponse response, Map data) {
     if (tuyaCheckResponse(response)) {
         Map result = response.json.result
         data.devices = (data.devices ?: []) + result.devices
-        log.info "${device.displayName} received ${result.devices.size()} cloud devices (has_more: ${result.has_more})"
+        log.info "${device} received ${result.devices.size()} cloud devices (has_more: ${result.has_more})"
         if (result.has_more) {
             pauseExecution(1000)
             tuyaGetDevicesAsync(result.last_row_key, data)
@@ -1361,7 +1379,7 @@ private void tuyaGetDevicesResponse(AsyncResponse response, Map data) {
 
 // https://developer.tuya.com/en/docs/cloud/device-control?id=K95zu01ksols7#title-29-API%20address
 private void tuyaGetDeviceSpecificationsAsync(String deviceID, Map data = [:]) {
-    log.info "${device.displayName} requesting cloud device specifications for ${deviceID}"
+    log.info "${device} requesting cloud device specifications for ${deviceID}"
     tuyaGetAsync("/v1.0/devices/${deviceID}/specifications", null, 'tuyaGetDeviceSpecificationsResponse', data)
 }
 
@@ -1389,14 +1407,19 @@ private void tuyaGetDeviceSpecificationsResponse(AsyncResponse response, Map dat
         } else {
             data.statusSet = [:]
         }
-        if (logEnable) { log.debug "${device.displayName} Device Data: ${data}"}
+
+        if (logEnable) { log.debug "${device} Device Data: ${data}"}
         createChildDevice(data)
         updateDeviceStatus(data)
+
+        if (device.currentValue('state') != 'ready') {
+            sendEvent([ name: 'state', value: 'ready', descriptionText: 'Received device data from Tuya'])
+        }
     }
 }
 
 private void tuyaGetStateAsync(String deviceID) {
-    if (logEnable) { log.debug "${device.displayName} requesting device ${deviceID} state" }
+    if (logEnable) { log.debug "${device} requesting device ${deviceID} state" }
     tuyaGetAsync("/v1.0/devices/${deviceID}/status", null, 'tuyaGetStateResponse', [ id: deviceID ])
 }
 
@@ -1408,9 +1431,10 @@ private void tuyaGetStateResponse(AsyncResponse response, Map data) {
 }
 
 private void tuyaSendDeviceCommandsAsync(String deviceID, Map...params) {
-    if (logEnable) { log.debug "${device.displayName} device ${deviceID} command ${params}" }
+    if (logEnable) { log.debug "${device} device ${deviceID} command ${params}" }
     if (!state?.tokenInfo?.access_token) {
-        log.error "${device.displayName} tuyaSendDeviceCommandsAsync Error - Access token is null"
+        log.error "${device} tuyaSendDeviceCommandsAsync Error - Access token is null"
+        sendEvent([ name: 'state', value: 'error', descriptionText: 'Access token not set (failed login?)'])
         return
     }
     tuyaPostAsync("/v1.0/devices/${deviceID}/commands", [ 'commands': params ], 'tuyaSendDeviceCommandsResponse')
@@ -1418,7 +1442,10 @@ private void tuyaSendDeviceCommandsAsync(String deviceID, Map...params) {
 
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
 private void tuyaSendDeviceCommandsResponse(AsyncResponse response, Map data) {
-    tuyaCheckResponse(response)
+    if (!tuyaCheckResponse(response)) {
+        sendEvent([ name: 'state', value: 'error', descriptionText: 'Error sending device command'])
+        runIn(5, 'tuyaHubConnectAsync')
+    }
 }
 
 /**
@@ -1426,7 +1453,7 @@ private void tuyaSendDeviceCommandsResponse(AsyncResponse response, Map data) {
  *  https://developer.tuya.com/en/docs/cloud/
  */
 private void tuyaGetHubConfigAsync() {
-    log.info "${device.displayName} requesting Tuya MQTT configuration"
+    log.info "${device} requesting Tuya MQTT configuration"
     Map body = [
         'uid': state.tokenInfo.uid,
         'link_id': state.uuid,
@@ -1447,7 +1474,7 @@ private void tuyaGetHubConfigResponse(AsyncResponse response, Map data) {
 }
 
 private void tuyaHubConnectAsync() {
-    log.info "${device.displayName} connecting to Tuya MQTT hub at ${state.mqttInfo.url}"
+    log.info "${device} connecting to Tuya MQTT hub at ${state.mqttInfo.url}"
     try {
         interfaces.mqtt.connect(
             state.mqttInfo.url,
@@ -1455,7 +1482,7 @@ private void tuyaHubConnectAsync() {
             state.mqttInfo.username,
             state.mqttInfo.password)
     } catch (e) {
-        log.error "${device.displayName} MQTT connection error: " + e
+        log.error "${device} MQTT connection error: " + e
         runIn(15 + random.nextInt(45), 'tuyaHubConnectAsync')
     }
 }
@@ -1463,11 +1490,10 @@ private void tuyaHubConnectAsync() {
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void tuyaHubSubscribeAsync() {
     state.mqttInfo.source_topic.each { t ->
-        log.info "${device.displayName} subscribing to Tuya MQTT hub ${t.key} topic"
+        log.info "${device} subscribing to Tuya MQTT hub ${t.key} topic"
         interfaces.mqtt.subscribe(t.value)
     }
 
-    sendEvent([ name: 'connected', value: true, descriptionText: 'connected is true'])
     tuyaGetDevicesAsync()
 }
 
@@ -1483,19 +1509,22 @@ private void tuyaPostAsync(String path, Map body, String callback, Map data = [:
     tuyaRequestAsync('post', path, callback, null, body, data)
 }
 
-/* groovylint-disable-next-line ParameterCount */
 private void tuyaRequestAsync(String method, String path, String callback, Map query, Map body, Map data) {
     String accessToken = state?.tokenInfo?.access_token ?: ''
     String stringToSign = tuyaGetStringToSign(method, path, query, body)
     long now = now()
     Map headers = [
       't': now,
+      'nonce': state.uuid,
       'client_id': access_id,
       'Signature-Headers': 'client_id',
       'sign': tuyaCalculateSignature(accessToken, now, stringToSign),
       'sign_method': 'HMAC-SHA256',
       'access_token': accessToken,
-      'lang': 'en' // use zh for china
+      'lang': state.lang, // use zh for china
+      'dev_lang': 'groovy',
+      'dev_channel': 'hubitat',
+      'devVersion': state.driver_version
     ]
 
     Map request = [
@@ -1505,11 +1534,11 @@ private void tuyaRequestAsync(String method, String path, String callback, Map q
         contentType: 'application/json',
         headers: headers,
         body: JsonOutput.toJson(body),
-        timeout: 20
+        timeout: 5
     ]
 
     if (logEnable) {
-        log.debug("${device.displayName} API ${method.toUpperCase()} ${request}")
+        log.debug("${device} API ${method.toUpperCase()} ${request}")
     }
 
     switch (method) {
@@ -1520,36 +1549,39 @@ private void tuyaRequestAsync(String method, String path, String callback, Map q
 
 private boolean tuyaCheckResponse(AsyncResponse response) {
     if (response.hasError()) {
-        log.error "${device.displayName} cloud request error ${response.getErrorMessage()}"
+        log.error "${device} cloud request error ${response.getErrorMessage()}"
+        sendEvent([ name: 'state', value: 'error', descriptionText: response.getErrorMessage() ])
         return false
     }
 
     if (response.status != 200) {
-        log.error "${device.displayName} cloud request returned HTTP status ${response.status}"
+        log.error "${device} cloud request returned HTTP status ${response.status}"
+        sendEvent([ name: 'state', value: 'error', descriptionText: "Cloud HTTP response ${response.status}" ])
         return false
     }
 
     if (response.json?.success != true) {
-        log.warn "${device.displayName} cloud API request failed: ${response.data}"
+        log.error "${device} cloud API request failed: ${response.data}"
+        sendEvent([ name: 'state', value: 'error', descriptionText: response.data ])
         return false
     }
 
     if (logEnable) {
-        log.debug "${device.displayName} API response ${response.json ?: response.data}"
+        log.debug "${device} API response ${response.json ?: response.data}"
     }
 
     return true
 }
 
 private String tuyaCalculateSignature(String accessToken, long timestamp, String stringToSign) {
-    String message = access_id + accessToken + timestamp.toString() + stringToSign
+    String message = access_id + accessToken + timestamp.toString() + state.uuid + stringToSign
     Mac sha256HMAC = Mac.getInstance('HmacSHA256')
     sha256HMAC.init(new SecretKeySpec(access_key.bytes, 'HmacSHA256'))
     return HexUtils.byteArrayToHexString(sha256HMAC.doFinal(message.bytes))
 }
 
 private String tuyaGetStringToSign(String method, String path, Map query, Map body) {
-    String url = query ? path + '?' + query.collect { key, value -> "${key}=${value}" }.join('&') : path
+    String url = query ? path + '?' + query.sort().collect { key, value -> "${key}=${value}" }.join('&') : path
     String headers = 'client_id:' + access_id + '\n'
     String bodyStream = (body == null) ? '' : JsonOutput.toJson(body)
     MessageDigest sha256 = MessageDigest.getInstance('SHA-256')
