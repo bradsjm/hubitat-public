@@ -45,6 +45,8 @@ metadata {
         capability 'SwitchLevel'
         capability 'Refresh'
 
+        attribute 'retries', 'number'
+
         command 'sendCustomDps', [
             [
                 name: 'Dps',
@@ -155,6 +157,7 @@ void installed() {
 
 // Called to initialize
 void initialize() {
+    sendEvent ([ name: 'retries', value: 0, descriptionText: 'reset' ])
     heartbeat()
 }
 
@@ -485,6 +488,8 @@ private Map repeatCommand(Map dps) {
             break
         } else {
             log.warn "${device} command timeout (${i} of ${repeat})"
+            int val = (device.currentValue('retries') ?: 0) as int
+            sendEvent ([ name: retries, value: val + 1 ])
         }
     }
 

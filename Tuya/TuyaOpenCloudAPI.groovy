@@ -59,7 +59,7 @@ metadata {
 
         command 'removeDevices'
 
-        attribute 'deviceCount', 'Integer'
+        attribute 'deviceCount', 'number'
         attribute 'state', 'enum', [
             'not configured',
             'error',
