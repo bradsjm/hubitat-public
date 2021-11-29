@@ -1280,7 +1280,7 @@ private void updateDeviceStatus(Map d) {
 */
 private void tuyaAuthenticateAsync() {
     unschedule('tuyaAuthenticateAsync')
-    if (settings.username && settings.password && settings.appSchema && settings.countryCode) {
+    if (settings.username && settings.password && settings.appSchema && state.countryCode) {
         log.info "${device} starting Tuya cloud authentication for ${settings.username}"
         MessageDigest digest = MessageDigest.getInstance('MD5')
         String md5pwd = HexUtils.byteArrayToHexString(digest.digest(settings.password.bytes)).toLowerCase()
