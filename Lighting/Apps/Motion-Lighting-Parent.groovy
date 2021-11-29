@@ -51,7 +51,7 @@ preferences {
 
         section {
             app name: 'childApps',
-                appName: 'Motion Lighting Controller',
+                appName: 'Motion Lighting Instance',
                 namespace: 'nrgup',
                 title: 'Add new motion lighting controller',
                 multiple: true
