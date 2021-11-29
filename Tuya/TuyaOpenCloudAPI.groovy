@@ -1285,7 +1285,7 @@ private void tuyaAuthenticateAsync() {
         MessageDigest digest = MessageDigest.getInstance('MD5')
         String md5pwd = HexUtils.byteArrayToHexString(digest.digest(settings.password.bytes)).toLowerCase()
         Map body = [
-            'country_code': settings.countryCode,
+            'country_code': state.countryCode,
             'username': settings.username,
             'password': md5pwd,
             'schema': settings.appSchema
