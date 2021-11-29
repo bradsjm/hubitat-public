@@ -63,7 +63,28 @@ preferences {
         input name: 'ipAddress',
               type: 'text',
               title: 'Device IP',
-              required: false
+              required: true
+
+        input name: 'repeat',
+              title: 'Command Retries',
+              type: 'number',
+              required: true,
+              range: '0..5',
+              defaultValue: '3'
+
+        input name: 'timeoutSecs',
+              title: 'Command Timeout (sec)',
+              type: 'number',
+              required: true,
+              range: '1..5',
+              defaultValue: '1'
+
+        input name: 'heartbeatSecs',
+              title: 'Heartbeat interval (sec)',
+              type: 'number',
+              required: true,
+              range: '0..60',
+              defaultValue: '20'
 
         input name: 'logEnable',
               type: 'bool',
@@ -115,9 +136,6 @@ preferences {
 // Queue used for ACK tracking
 @Field static queues = new ConcurrentHashMap<String, SynchronousQueue>()
 
-// Random number generator
-@Field static final Random random = new Random()
-
 /**
  *  Hubitat Driver Event Handlers
  */
@@ -127,7 +145,7 @@ void heartbeat() {
     String localKey = getDataValue('local_key')
     if (logEnable) { log.debug "${device} sending heartbeat" }
     tuyaSendCommand(id, ipAddress, localKey, null, 'HEART_BEAT')
-    runIn(20 + random.nextInt(5), 'heartbeat')
+    if (heartbeatSecs) { runIn(heartbeatSecs, 'heartbeat') }
 }
 
 // Called when the device is first created
@@ -446,7 +464,7 @@ private void parseDeviceState(Map dps) {
     }
 }
 
-private Map repeatCommand(Map dps, int repeat = 3, timeoutSecs = 1) {
+private Map repeatCommand(Map dps) {
     Map result
     String id = getDataValue('id')
     String localKey = getDataValue('local_key')
@@ -457,7 +475,7 @@ private Map repeatCommand(Map dps, int repeat = 3, timeoutSecs = 1) {
             tuyaSendCommand(id, ipAddress, localKey, dps, 'CONTROL')
         } catch (e) {
             log.error "${device} tuya send exception: ${e}"
-            pauseExecution(50 + random.nextInt(200))
+            pauseExecution(250)
             continue
         }
 
