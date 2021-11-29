@@ -40,6 +40,11 @@ void off() {
     parent?.componentOff(device)
 }
 
+// Component command to refresh device
+void refresh() {
+    parent?.componentRefresh(device)
+}
+
 // parse commands from parent
 void parse(List<Map> description) {
     if (logEnable) { log.debug description }
