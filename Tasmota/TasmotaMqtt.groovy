@@ -383,6 +383,15 @@ private void doLevelChange() {
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void healthcheck() {
+    if (lastHeard.isEmpty()) return
+
+    int allElapsed = (now() - lastHeard.values().max()) / 1000
+    if (allElapsed > settings.telePeriod) {
+        log.warn "No device has been heard from in ${allElapsed} seconds"
+        runIn(3, 'initialize')
+        return
+    }
+
     String indicator = ' (Offline)'
     childDevices.each { device ->
         if (lastHeard.containsKey(device.id)) {
@@ -785,7 +794,7 @@ private void mqttReceive(Map message) {
             }
         }
     } else {
-        log.warn "Unhandled topic ${topic} received, rebuilding subscriptions"
+        log.warn "Unhandled topic ${topic} received"
         mqttUnsubscribe(topic)
     }
 }
