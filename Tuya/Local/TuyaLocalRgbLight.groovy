@@ -475,6 +475,7 @@ private Map repeatCommand(Map dps) {
 
     for (i = 1; i <= repeat; i++) {
         try {
+            if (logEnable) { log.debug "Sending DPS command ${dps} to ${device}" }
             tuyaSendCommand(id, ipAddress, localKey, dps, 'CONTROL')
         } catch (e) {
             log.error "${device} tuya send exception: ${e}"
@@ -489,7 +490,7 @@ private Map repeatCommand(Map dps) {
         } else {
             log.warn "${device} command timeout (${i} of ${repeat})"
             int val = (device.currentValue('retries') ?: 0) as int
-            sendEvent ([ name: retries, value: val + 1 ])
+            sendEvent ([ name: 'retries', value: val + 1 ])
         }
     }
 
