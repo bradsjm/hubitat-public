@@ -140,7 +140,7 @@ metadata {
     'meteringSwitch' : [ 'countdown_1' , 'add_ele' , 'cur_current', 'cur_power', 'cur_voltage' , 'relay_status', 'light_mode' ],
     'omniSensor'     : [ 'bright_value', 'humidity_value', 'va_humidity', 'bright_sensitivity', 'shock_state', 'inactive_state', 'sensitivity' ],
     'pir'            : [ 'pir' ],
-    'power'          : [ 'Power', 'power', 'switch', 'switch_1' ],
+    'power'          : [ 'Power', 'power', 'switch', 'switch_1', 'switch_2', 'switch_3', 'switch_4', 'switch_5', 'switch_6', 'switch_usb1', 'switch_usb2', 'switch_usb3', 'switch_usb4', 'switch_usb5', 'switch_usb6' ],
     'percentControl' : [ 'percent_control' ],
     'sceneSwitch'    : [ 'switch1_value', 'switch2_value', 'switch3_value', 'switch4_value', 'switch_mode2', 'switch_mode3', 'switch_mode4' ],
     'smoke'          : [ 'smoke_sensor_status' ],
@@ -550,7 +550,7 @@ void parse(String data) {
     Map result = new JsonSlurper().parse(cipher.doFinal(payload.data.decodeBase64()), 'UTF-8')
 
     if (result.status && (result.id || result.devId)) {
-        updateDeviceStatus(result)
+        updateMultiDeviceStatus(result)
     } else if (result.bizCode && result.bizData) {
         parseBizData(result.bizCode, result.bizData)
     } else {
@@ -624,6 +624,25 @@ private static Map mapTuyaCategory(Map d) {
         case 'cl':    // Curtain Motor (uses custom driver)
         case 'clkg':
             return [ namespace: 'component', name: 'Generic Component Window Shade' ]
+        case 'pc':    // Power Strip (https://developer.tuya.com/en/docs/iot/s?id=K9gf7o5prgf7s)
+            return [
+                namespace: 'hubitat',
+                name: 'Generic Component Switch',
+                devices: [
+                    'switch_1': 'Socket 1',
+                    'switch_2': 'Socket 2',
+                    'switch_3': 'Socket 3',
+                    'switch_4': 'Socket 4',
+                    'switch_5': 'Socket 5',
+                    'switch_6': 'Socket 6',
+                    'switch_usb1': 'USB 1',
+                    'switch_usb2': 'USB 2',
+                    'switch_usb3': 'USB 3',
+                    'switch_usb4': 'USB 4',
+                    'switch_usb5': 'USB 5',
+                    'switch_usb6': 'USB 6'
+                ]
+            ]
 
         // Security & Sensors
         case 'ms':    // Lock
@@ -956,13 +975,32 @@ private static String translateColorName(Integer hue, Integer saturation) {
 /**
  *  Driver Capabilities Implementation
  */
-private ChildDeviceWrapper createChildDevice(Map d) {
-    ChildDeviceWrapper dw = getChildDevice("${device.id}-${d.id}")
+private void createChildDevices(Map d) {
+    Map driver = mapTuyaCategory(d)
+    if (!driver.devices) {
+        createChildDevice("${device.id}-${d.id}", driver, d)
+        return
+    }
+
+    // Multiple child device support
+    String baseName = d.name
+    Map baseFunctions = d.functions
+    Map baseStatusSet = d.statusSet
+    Map subdevices = driver.devices.findAll { entry -> entry.key in baseFunctions.keySet() }
+    subdevices.each { code, description ->
+        d.name = "${baseName} ${description}"
+        d.functions = [ (code): baseFunctions[(code)] ]
+        d.statusSet = [ (code): baseStatusSet[(code)] ]
+        createChildDevice("${device.id}-${d.id}-${code}", driver, d)
+    }
+}
+
+private ChildDeviceWrapper createChildDevice(String dni, Map driver, Map d) {
+    ChildDeviceWrapper dw = getChildDevice(dni)
     if (!dw) {
-        Map driver = mapTuyaCategory(d)
         log.info "${device} creating device ${d.name} using ${driver.name} driver"
         try {
-            dw = addChildDevice(driver.namespace, driver.name, "${device.id}-${d.id}",
+            dw = addChildDevice(driver.namespace, driver.name, dni,
                 [
                     name: d.product_name,
                     label: d.name,
@@ -1023,17 +1061,30 @@ private void parseBizData(String bizCode, Map bizData) {
     }
 }
 
-private void updateDeviceStatus(Map d) {
-    ChildDeviceWrapper dw = getChildDevice("${device.id}-${d.id ?: d.devId}")
-    if (!dw) {
-        log.error "${device} updateDeviceStatus: Child device for ${d} not found"
-        return
-    }
+private void updateMultiDeviceStatus(Map d) {
+    ChildDeviceWrapper dw
+    String baseDni = "${device.id}-${d.id ?: d.devId}"
+    List<Map> events = []
+    for (Map newState in d.status) {
+        String dni = "${baseDni}-${newState.code}"
+        if ((dw = getChildDevice(dni))) {
+            events = createEvents(dw, [ newState ])
+        } else if ((dw = getChildDevice(baseDni))) {
+            events = createEvents(dw, d.status)
+        } else {
+            log.error "${device} Unable to find device for ${d}"
+            continue
+        }
 
-    Map<String, Map> deviceStatusSet = getStatusSet(dw) ?: getFunctions(dw)
-    List<Map> statusList = d.status ?: []
+        if (events && logEnable) { log.debug "${device} ${dw} sending events ${events}" }
+        dw.parse(events)
+    }
+}
+
+private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
     String workMode = statusList['workMode'] ?: ''
-    List<Map> events = statusList.collectMany { status ->
+    Map<String, Map> deviceStatusSet = getStatusSet(dw) ?: getFunctions(dw)
+    return statusList.collectMany { status ->
         if (logEnable) { log.debug "${device} ${dw} status ${status}" }
 
         if (status.code in tuyaFunctions.battery) {
@@ -1201,7 +1252,7 @@ private void updateDeviceStatus(Map d) {
                     value = 'active'   // no 'inactive' state!
                     unit = ''
                     status.code = 'inactive_state'
-                    runIn(5, 'updateDeviceStatus',  [data: d])
+                    runIn(5, 'updateMultiDeviceStatus',  [data: d])
                     break
                 case 'inactive_state': // vibration sensor
                     name = 'motion'    // simulated motion
@@ -1297,9 +1348,6 @@ private void updateDeviceStatus(Map d) {
 
         return []
     }
-
-    if (events && logEnable) { log.debug "${device} ${dw} sending events ${events}" }
-    dw.parse(events)
 }
 
 /**
@@ -1437,8 +1485,8 @@ private void tuyaGetDeviceSpecificationsResponse(AsyncResponse response, Map dat
         }
 
         if (logEnable) { log.debug "${device} Device Data: ${data}"}
-        createChildDevice(data)
-        updateDeviceStatus(data)
+        createChildDevices(data)
+        updateMultiDeviceStatus(data)
 
         if (device.currentValue('state') != 'ready') {
             sendEvent([ name: 'state', value: 'ready', descriptionText: 'Received device data from Tuya'])
@@ -1455,7 +1503,7 @@ private void tuyaGetStateAsync(String deviceID) {
 private void tuyaGetStateResponse(AsyncResponse response, Map data) {
     if (!tuyaCheckResponse(response)) { return }
     data.status = response.json.result
-    updateDeviceStatus(data)
+    updateMultiDeviceStatus(data)
 }
 
 private void tuyaSendDeviceCommandsAsync(String deviceID, Map...params) {
