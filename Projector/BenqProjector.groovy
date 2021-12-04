@@ -20,7 +20,10 @@
  *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  *  SOFTWARE.
 */
+import groovy.transform.Field
+import hubitat.helper.HexUtils
 import java.util.regex.Matcher
+import java.util.concurrent.*
 
 metadata {
     definition (name: 'BenQ Projector', namespace: 'nrgup', author: 'Jonathan Bradshaw', importUrl: '') {
@@ -36,6 +39,8 @@ metadata {
         attribute 'source', 'string'
         attribute 'lampHours', 'number'
         attribute 'lampMode', 'string'
+
+        attribute 'retries', 'number'
 
         command 'setSource', [
             [
@@ -79,6 +84,9 @@ metadata {
     }
 }
 
+// Queue used for response tracking
+@Field static queues = new ConcurrentHashMap<String, SynchronousQueue>()
+
 /**
  *  Hubitat Driver Event Handlers
  */
@@ -86,13 +94,11 @@ metadata {
 // Called when the device is started.
 void initialize() {
     log.info "${device.displayName} driver initializing"
-
     if (!settings.networkHost) {
         log.error 'Unable to connect because host setting not configured'
         return
     }
 
-    state.connected = false
     send('modelname', '?')
 }
 
@@ -105,7 +111,6 @@ void installed() {
 void socketStatus(String status) {
     if (status.contains('error')) {
         log.error status
-        disconnect()
     } else if (logEnable) {
         log.debug status
     }
@@ -113,15 +118,15 @@ void socketStatus(String status) {
 
 // Called to parse received socket data
 void parse(String data) {
-    // rawSocket and socket interfaces return Hex encoded string data
-    String response = new String(hubitat.helper.HexUtils.hexStringToByteArray(data))
-    Matcher match = response =~ /(?m)^\*(.+)#/
-    if (!match.find()) { return }
-    String payload = match.group(1)
-    if (logEnable) { log.debug "Receive: ${payload}" }
-    if (payload.contains('=')) {
-        def (String cmd, String value) = match.group(1).split('=')
-        updateState(cmd, value)
+    Matcher match = new String(HexUtils.hexStringToByteArray(data)) =~ /(?m)^\*(.+)#/
+    if (match) {
+        String payload = match.group(1)
+        if (logEnable) { log.debug "Receive: ${payload}" }
+        getQ().offer(payload)
+        if (payload.contains('=')) {
+            def (String cmd, String value) = payload.split('=')
+            updateState(cmd, value)
+        }
     }
 }
 
@@ -141,20 +146,24 @@ void updated() {
 
 void on() {
     log.info "${device.displayName} Switching On"
-    send('pow', 'on')
-    runIn(20, 'poll')
+    if (send('pow', 'on') == 'POW=ON') {
+        runIn(20, 'poll')
+    }
 }
 
 void off() {
     log.info "${device.displayName} Switching Off"
-    send('pow', 'off')
-    sendEvent(newEvent('switch', 'off'))
-    runIn(20, 'poll')
+    if (send('pow', 'off') == 'POW=OFF') {
+        sendEvent(newEvent('switch', 'off'))
+        runIn(20, 'poll')
+    }
 }
 
 void setSource(String name) {
     log.info "${device.displayName} Setting source to ${name}"
-    send('sour', name)
+    if (send('sour', name) == "SOUR=${name}") {
+        sendEvent(newEvent('source', name))
+    }
 }
 
 void poll() {
@@ -223,39 +232,29 @@ private void logsOff() {
     device.updateSetting('logEnable', [value: 'false', type: 'bool'] )
 }
 
-private boolean connect() {
-    try {
-        if (logEnable) { log.debug "Connecting to serial bridge at ${settings.networkHost}:${settings.networkPort}" }
-        state.connectCount = (state?.connectCount ?: 0) + 1
-        interfaces.rawSocket.connect(
-            settings.networkHost,
-            settings.networkPort as int,
-        )
-        state.connected = true
-        return true
-    } catch (e) {
-        log.error "connect error: ${e}"
-        state.connected = false
+private String send(String cmd, String value, int repeat = 3, int timeout = 1) {
+    for (i = 1; i <= repeat; i++) {
+        try {
+            if (logEnable) { log.debug "${device} sending: ${cmd}=${value}" }
+            interfaces.rawSocket.connect(settings.networkHost, settings.networkPort as int)
+            interfaces.rawSocket.sendMessage("\r*${cmd}=${value}#\r")
+        } catch (e) {
+            log.error "${device} send exception: ${e}"
+            pauseExecution(250)
+            continue
+        }
+
+        result = getQ().poll(timeout, TimeUnit.SECONDS)
+        if (result) {
+            return result
+        } else {
+            log.warn "${device} command timeout (${i} of ${repeat})"
+            int val = (device.currentValue('retries') ?: 0) as int
+            sendEvent ([ name: 'retries', value: val + 1 ])
+        }
     }
 
-    return false
-}
-
-private void disconnect() {
-    if (logEnable) { log.debug "Disconnecting from ${settings?.networkHost}" }
-    interfaces.rawSocket.close()
-    state.connected = false
-}
-
-private void send(String cmd, String value) {
-    if (!state.connected) {
-        if (!connect()) { return }
-    }
-
-    if (logEnable) { log.debug "Sending: ${cmd}=${value}" }
-    interfaces.rawSocket.sendMessage("\r*${cmd}=${value}#\r")
-    pauseExecution(1000)
-    runIn(60, 'disconnect')
+    return null
 }
 
 private String splitCamelCase(String s) {
@@ -267,4 +266,8 @@ private String splitCamelCase(String s) {
       ),
       ' '
    )
+}
+
+private SynchronousQueue getQ() {
+    return queues.computeIfAbsent(device.id) { k -> new SynchronousQueue() };
 }
