@@ -251,6 +251,12 @@ void componentOn(DeviceWrapper dw) {
     if (code) {
         log.info "Turning ${dw} on"
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': true ])
+    } else {
+        String homeId = dw.getDataValue("homeId")
+        String sceneId = dw.getDataValue("sceneId")
+        if (sceneId && homeId) {
+            tuyaTriggerScene(homeId as Integer, sceneId)
+        }
     }
 }
 
@@ -516,6 +522,7 @@ void initialize() {
         uuid = state?.uuid ?: UUID.randomUUID().toString()
         driver_version = '0.2'
         lang = 'en'
+        scenes = [:]
     }
 
     tuyaAuthenticateAsync()
@@ -575,8 +582,9 @@ void mqttClientStatus(String status) {
 
 // Command to refresh all devices
 void refresh() {
-    log.info "${device} refreshing devices"
+    log.info "${device} refreshing devices and scenes"
     tuyaGetDevicesAsync()
+    tuyaGetHomesAsync()
 }
 
 // Command to remove all the child devices
@@ -1028,6 +1036,32 @@ private ChildDeviceWrapper createChildDevice(String dni, Map driver, Map d) {
     return dw
 }
 
+private ChildDeviceWrapper createSceneDevice(Integer homeId, Map scene) {
+    String dni = "${device.id}-${scene.scene_id}"
+    ChildDeviceWrapper dw = getChildDevice(dni)
+    if (!dw) {
+        log.info "${device} creating scene device ${scene.name}"
+        try {
+            String name = scene.name.replace('\"', '')
+            dw = addChildDevice("hubitat", "Generic Component Switch", dni,
+                [
+                    name: name,
+                    label: name
+                ]
+            )
+        } catch (UnknownDeviceTypeException e) {
+            log.warn "${device} ${e.message}"
+        }
+    }
+
+    dw?.with {
+        updateDataValue 'homeId', homeId as String
+        updateDataValue 'sceneId', scene.scene_id
+    }
+
+    return dw
+}
+
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void logsOff() {
     device.updateSetting('logEnable', [value: 'false', type: 'bool'] )
@@ -1071,9 +1105,6 @@ private void updateMultiDeviceStatus(Map d) {
             events = createEvents(dw, [ newState ])
         } else if ((dw = getChildDevice(baseDni))) {
             events = createEvents(dw, d.status)
-        } else {
-            log.error "${device} Unable to find device for ${d}"
-            continue
         }
 
         if (events && logEnable) { log.debug "${device} ${dw} sending events ${events}" }
@@ -1399,6 +1430,9 @@ private void tuyaAuthenticateResponse(AsyncResponse response, Map data) {
 
     // Get MQTT details
     tuyaGetHubConfigAsync()
+
+    // Get Home Scenes
+    tuyaGetHomesAsync()
 }
 
 /**
@@ -1494,6 +1528,33 @@ private void tuyaGetDeviceSpecificationsResponse(AsyncResponse response, Map dat
     }
 }
 
+private void tuyaGetHomesAsync() {
+    if (logEnable) { log.debug "${device} requesting homes" }
+    tuyaGetAsync("/v1.0/users/${state.tokenInfo.uid}/homes", null, 'tuyaGetHomesResponse')
+}
+
+/* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
+private void tuyaGetHomesResponse(AsyncResponse response, Map data) {
+    if (!tuyaCheckResponse(response)) { return }
+    List<Map> homes = response.json.result ?: []
+    homes.each { home ->
+        tuyaGetScenesAsync(home.home_id)
+    }
+}
+
+private void tuyaGetScenesAsync(Integer homeId) {
+    if (logEnable) { log.debug "${device} requesting scenes for home ${homeId}" }
+    tuyaGetAsync("/v1.0/homes/${homeId}/scenes", null, 'tuyaGetScenesResponse', [ homeId: homeId ])
+}
+
+/* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
+private void tuyaGetScenesResponse(AsyncResponse response, Map data) {
+    if (!tuyaCheckResponse(response)) { return }
+    if (!state.scenes) { state.scenes = [:] }
+    List<Map> scenes = response.json.result ?: []
+    scenes.each { scene -> createSceneDevice(data.homeId, scene) }
+}
+
 private void tuyaGetStateAsync(String deviceID) {
     if (logEnable) { log.debug "${device} requesting device ${deviceID} state" }
     tuyaGetAsync("/v1.0/devices/${deviceID}/status", null, 'tuyaGetStateResponse', [ id: deviceID ])
@@ -1504,6 +1565,16 @@ private void tuyaGetStateResponse(AsyncResponse response, Map data) {
     if (!tuyaCheckResponse(response)) { return }
     data.status = response.json.result
     updateMultiDeviceStatus(data)
+}
+
+private void tuyaTriggerScene(Integer homeId, String sceneId) {
+    if (logEnable) { log.debug "${device} trigger scene id ${sceneId}" }
+    tuyaPostAsync("/v1.0/homes/${homeId}/scenes/${sceneId}/trigger", null, 'tuyaTriggerSceneResponse')
+}
+
+/* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
+private void tuyaTriggerSceneResponse(AsyncResponse response, Map data) {
+    if (!tuyaCheckResponse(response)) { return }
 }
 
 private void tuyaSendDeviceCommandsAsync(String deviceID, Map...params) {
@@ -1582,7 +1653,7 @@ private void tuyaGetAsync(String path, Map query, String callback, Map data = [:
 }
 
 private void tuyaPostAsync(String path, Map body, String callback, Map data = [:]) {
-    tuyaRequestAsync('post', path, callback, null, body, data)
+    tuyaRequestAsync('post', path, callback, null, body ?: [:], data)
 }
 
 private void tuyaRequestAsync(String method, String path, String callback, Map query, Map body, Map data) {
