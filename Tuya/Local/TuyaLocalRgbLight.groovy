@@ -41,6 +41,7 @@ metadata {
         capability 'ColorTemperature'
         capability 'Initialize'
         capability 'Light'
+        capability 'LightEffects'
         capability 'Switch'
         capability 'SwitchLevel'
         capability 'Refresh'
@@ -87,6 +88,13 @@ preferences {
               required: true,
               range: '0..60',
               defaultValue: '20'
+
+        input name: 'fxCount',
+              title: 'Number of Effects Supported',
+              type: 'number',
+              required: true,
+              range: '0..9',
+              defaultValue: '0'
 
         input name: 'logEnable',
               type: 'bool',
@@ -158,6 +166,13 @@ void installed() {
 // Called to initialize
 void initialize() {
     sendEvent ([ name: 'retries', value: 0, descriptionText: 'reset' ])
+    if (fxCount) {
+        sendEvent ([ name: 'lightEffects', value: JsonOutput.toJson(
+            (1..fxCount).collectEntries { i-> [(i): "scene${i}"]}
+        )])
+    } else {
+        sendEvent ([ name: 'lightEffects', value: "{}" ])
+    }
     heartbeat()
 }
 
@@ -279,6 +294,32 @@ void setColorTemperature(BigDecimal kelvin, BigDecimal level = null, BigDecimal 
 
     if (level && device.currentValue('level') != level) {
         setLevel(level, duration)
+    }
+}
+
+void setEffect(BigDecimal effect) {
+    log.info "Setting ${device} effect to ${effect}"
+    String value = "scene${effect}"
+    if (repeatCommand([ 2: value ])) {
+        sendEvent( [ name: 'effectName', value: value, descriptionText: "scene is ${value}" ] )
+    }
+}
+
+void setNextEffect() {
+    String effect = device.currentValue('effectName')
+    if (effect) {
+        int value = effect[-1] as int
+        if (value == settings.fxCount) { value = 0 }
+        setEffect(value + 1)
+    }
+}
+
+void setPreviousEffect() {
+    String effect = device.currentValue('effectName')
+    if (effect) {
+        int value = effect[-1] as int
+        if (value == 1) { value = settings.fxCount + 1 }
+        setEffect(value - 1)
     }
 }
 
@@ -413,9 +454,13 @@ private void parseDeviceState(Map dps) {
     }
 
     // Determine if we are in RGB or CT mode either explicitly or implicitly
-    if (dps.containsKey('2')) {
+    if (dps.containsKey('2') && dps['2'].startsWith('scene')) {
+        String effect = dps['2']
+        events << [ name: 'effectName', value: effect, descriptionText: "scene is ${effect}" ]
+    } else if (dps.containsKey('2')) {
         colorMode = dps['2'] == 'colour' ? 'RGB' : 'CT'
         events << [ name: 'colorMode', value: colorMode, descriptionText: "color mode is ${colorMode}" ]
+        events << [ name: 'effectName', value: '' ]
     } else if (dps.containsKey('4')) {
         colorMode = 'CT'
         events << [ name: 'colorMode', value: colorMode, descriptionText: "color mode is ${colorMode}" ]
