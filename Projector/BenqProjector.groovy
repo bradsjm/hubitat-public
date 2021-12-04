@@ -94,6 +94,7 @@ metadata {
 // Called when the device is started.
 void initialize() {
     log.info "${device.displayName} driver initializing"
+    sendEvent ([ name: 'retries', value: 0 ])
     if (!settings.networkHost) {
         log.error 'Unable to connect because host setting not configured'
         return
