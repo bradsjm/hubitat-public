@@ -54,7 +54,7 @@ metadata {
             [
                 name:'Picture Mode*',
                 type: 'ENUM',
-                constraints: [ 'std', 'vivid', 'game', 'cine', 'bright' ]
+                constraints: [ 'bright', 'vivid', 'cine', 'sport', 'football', 'user1', 'user2' ]
             ]
         ]
 
@@ -62,7 +62,7 @@ metadata {
             [
                 name:'Lamp Mode*',
                 type: 'ENUM',
-                constraints: [ 'lnor', 'eco', 'seco', 'cine', 'bright' ]
+                constraints: [ 'lnor', 'eco', 'seco', 'lampsave' ]
             ]
         ]
 
