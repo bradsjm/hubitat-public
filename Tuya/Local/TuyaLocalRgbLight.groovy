@@ -47,6 +47,7 @@ metadata {
         capability 'Refresh'
 
         attribute 'retries', 'number'
+        attribute 'errors', 'number'
 
         command 'sendCustomDps', [
             [
@@ -166,6 +167,7 @@ void installed() {
 // Called to initialize
 void initialize() {
     sendEvent ([ name: 'retries', value: 0, descriptionText: 'reset' ])
+    sendEvent ([ name: 'errors', value: 0, descriptionText: 'reset' ])
     if (fxCount) {
         sendEvent ([ name: 'lightEffects', value: JsonOutput.toJson(
             (1..fxCount).collectEntries { i-> [(i): "scene${i}"]}
@@ -369,6 +371,8 @@ void setSaturation(BigDecimal saturation) {
 void socketStatus(String message) {
     if (message.contains('error')) {
         log.error "${device} socket ${message}"
+        int val = (device.currentValue('errors') ?: 0) as int
+        sendEvent ([ name: 'errors', value: val + 1 ])
     } else {
         log.info "${device} socket ${message}"
     }

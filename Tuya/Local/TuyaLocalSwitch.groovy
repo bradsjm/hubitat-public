@@ -42,6 +42,7 @@ metadata {
         capability 'Refresh'
 
         attribute 'retries', 'number'
+        attribute 'errors', 'number'
 
         command 'sendCustomDps', [
             [
@@ -133,6 +134,7 @@ void installed() {
 // Called to initialize
 void initialize() {
     sendEvent ([ name: 'retries', value: 0, descriptionText: 'reset' ])
+    sendEvent ([ name: 'errors', value: 0, descriptionText: 'reset' ])
     heartbeat()
 }
 
@@ -208,6 +210,8 @@ void sendCustomDps(BigDecimal dps, String value) {
 void socketStatus(String message) {
     if (message.contains('error')) {
         log.error "${device} socket ${message}"
+        int val = (device.currentValue('errors') ?: 0) as int
+        sendEvent ([ name: 'errors', value: val + 1 ])
     } else {
         log.info "${device} socket ${message}"
     }
