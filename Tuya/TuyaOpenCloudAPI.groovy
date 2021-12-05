@@ -523,7 +523,6 @@ void initialize() {
         uuid = state?.uuid ?: UUID.randomUUID().toString()
         driver_version = '0.2'
         lang = 'en'
-        scenes = [:]
     }
 
     tuyaAuthenticateAsync()
@@ -1108,8 +1107,10 @@ private void updateMultiDeviceStatus(Map d) {
             events = createEvents(dw, d.status)
         }
 
-        if (events && logEnable) { log.debug "${device} ${dw} sending events ${events}" }
-        dw.parse(events)
+        if (dw && events) {
+            if (logEnable) { log.debug "${device} ${dw} sending events ${events}" }
+            dw.parse(events)
+        }
     }
 }
 
@@ -1410,7 +1411,6 @@ private void tuyaAuthenticateAsync() {
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
 private void tuyaAuthenticateResponse(AsyncResponse response, Map data) {
     if (!tuyaCheckResponse(response)) {
-        sendEvent([ name: 'state', value: 'error', descriptionText: 'Error authenticating to Tuya (check credentials and country)'])
         runIn(60 + random.nextInt(300), 'tuyaAuthenticateAsync')
         return
     }
@@ -1424,7 +1424,7 @@ private void tuyaAuthenticateResponse(AsyncResponse response, Map data) {
         expire: result.expire_time * 1000 + now(),
     ]
     log.info "${device} received Tuya access token (valid for ${result.expire_time}s)"
-    sendEvent([ name: 'state', value: 'authenticated', descriptionText: 'Authenticated to Tuya'])
+    sendEvent([ name: 'state', value: 'authenticated', descriptionText: 'Received access token ${result.access_token}' ])
 
     // Schedule next authentication
     runIn(result.expire_time - 60, 'tuyaAuthenticateAsync')
@@ -1710,7 +1710,7 @@ private boolean tuyaCheckResponse(AsyncResponse response) {
 
     if (response.json?.success != true) {
         log.error "${device} cloud API request failed: ${response.data}"
-        sendEvent([ name: 'state', value: 'error', descriptionText: response.data ])
+        sendEvent([ name: 'state', value: 'error', descriptionText: "${response.data.code} ${response.data.msg}" ])
         return false
     }
 
