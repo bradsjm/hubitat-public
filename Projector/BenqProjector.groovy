@@ -50,6 +50,22 @@ metadata {
             ]
         ]
 
+        command 'setPictureMode', [
+            [
+                name:'Picture Mode*',
+                type: 'ENUM',
+                constraints: [ 'std', 'vivid', 'game', 'cine', 'bright' ]
+            ]
+        ]
+
+        command 'setLampMode', [
+            [
+                name:'Lamp Mode*',
+                type: 'ENUM',
+                constraints: [ 'lnor', 'eco', 'seco', 'cine', 'bright' ]
+            ]
+        ]
+
         preferences {
             section('Connection') {
                 input name: 'networkHost',
@@ -86,10 +102,6 @@ metadata {
 
 // Queue used for response tracking
 @Field static queues = new ConcurrentHashMap<String, SynchronousQueue>()
-
-/**
- *  Hubitat Driver Event Handlers
- */
 
 // Called when the device is started.
 void initialize() {
@@ -162,9 +174,17 @@ void off() {
 
 void setSource(String name) {
     log.info "${device.displayName} Setting source to ${name}"
-    if (send('sour', name) == "SOUR=${name}") {
-        sendEvent(newEvent('source', name))
-    }
+    send('sour', name)
+}
+
+void setLampMode(String name) {
+    log.info "${device.displayName} Setting lamp mode to ${name}"
+    send('lampm', name)
+}
+
+void setPictureMode(String name) {
+    log.info "${device.displayName} Setting picture mode to ${name}"
+    send('appmod', name)
 }
 
 void poll() {
