@@ -627,11 +627,10 @@ private static Map mapTuyaCategory(Map d) {
             return [ namespace: 'hubitat', name: 'Generic Component Dimmer' ]
         case 'wxkg':  // Scene Switch (TS004F in 'Device trigger' mode only; TS0044)
             return [ namespace: 'hubitat', name: 'Generic Component Central Scene Switch' ]
-        case 'cz':    // Smart Plug
-            return [ namespace: 'hubitat', name: 'Generic Component Metering Switch' ]
         case 'cl':    // Curtain Motor (uses custom driver)
         case 'clkg':
             return [ namespace: 'component', name: 'Generic Component Window Shade' ]
+        case 'cz':    // Socket (https://developer.tuya.com/en/docs/iot/s?id=K9gf7o5prgf7s)
         case 'pc':    // Power Strip (https://developer.tuya.com/en/docs/iot/s?id=K9gf7o5prgf7s)
             return [
                 namespace: 'hubitat',
