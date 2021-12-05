@@ -55,6 +55,7 @@ preferences {
 
 @Field static final List<Map<String,String>> inactiveActions = [
    [off: 'Turn off lights'],
+   [on: 'Turn on lights'],
    [dimLevel: 'Dim light level'],
    [restore: 'Restore previous state'],
    [none: 'No action (do not turn off)']
@@ -669,6 +670,37 @@ void contactHandler(Event evt) {
     }
 }
 
+// Called when disabled switch changes
+void disableHandler(Event evt) {
+    if (state.triggered?.running == true && (
+            (evt.device.id in settings.disabledSwitchWhenOn*.id && evt.value == 'on') ||
+            (evt.device.id in settings.disabledSwitchWhenOff*.id && evt.value == 'off') )) {
+        log.info "${app.name} disable switch activated (forcing inactive state)"
+        performInactiveAction()
+        return
+    }
+
+    if (state.triggered?.running == false && (
+            (evt.device.id in settings.disabledSwitchWhenOn*.id && evt.value == 'off') ||
+            (evt.device.id in settings.disabledSwitchWhenOff*.id && evt.value == 'on'))) {
+        log.info "${app.name} disable switch deactivated (checking for active state)"
+        if (
+            settings.activationOnSwitches.any { device -> device.currentValue('switch') == 'on' } ||
+            settings.activationOffSwitches.any { device -> device.currentValue('switch') == 'off' } ||
+            settings.activationMotionSensors.any { device -> device.currentValue('motion') == 'active' } ||
+            settings.activationContactSensors.any { device -> device.currentValue('contact') == 'open' }
+        ) {
+            state.triggered = [
+                type: 'enabled',
+                device: evt.device.displayName,
+                value: evt.value
+            ]
+            performActiveAction(mode)
+            scheduleInactiveAction(mode)
+        }
+    }
+}
+
 // Called when the app is first created.
 void installed() {
     log.info "${app.name} installed"
@@ -685,6 +717,8 @@ void initialize() {
     subscribe(settings.activationOnSwitches, 'switch', switchHandler)
     subscribe(settings.activationOffSwitches, 'switch', switchHandler)
     subscribe(settings.activationButtons, 'pushed', buttonHandler)
+    subscribe(settings.disabledSwitchWhenOn, 'switch', disableHandler)
+    subscribe(settings.disabledSwitchWhenOff, 'switch', disableHandler)
     subscribe(location, 'mode', modeChangeHandler)
 
     state.lastMode = state.lastMode ?: getActiveMode().id
@@ -722,6 +756,7 @@ void modeChangeHandler(Event evt) {
         performTransitionAction(lastMode, mode)
     }
 }
+
 
 // Called when a subscribed motion sensor changes
 void motionHandler(Event evt) {
@@ -816,7 +851,7 @@ private boolean checkEnabled(Map mode) {
         currentLuxLevel() > (int)settings.luxNumber) {
         log.info "${app.name} is disabled (lux exceeds ${settings.luxNumber})"
         return false
-        }
+    }
 
     if (settings.disabledSwitchWhenOn &&
         settings.disabledSwitchWhenOn.any { device -> device.currentValue('switch') == 'on' }) {
@@ -943,6 +978,7 @@ private void performActiveAction(Map mode) {
 
 // Performs the configured actions when specified mode becomes inactive
 private void performInactiveAction() {
+    unschedule('performInactiveAction')
     performInactiveAction( getActiveMode() )
 }
 
