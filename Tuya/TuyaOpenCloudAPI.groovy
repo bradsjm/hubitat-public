@@ -48,6 +48,7 @@ import hubitat.scheduling.AsyncResponse
  *  10/25/21 - 0.1.8 - Added support for Window Shade using a custom component driver
  *  10/26/21 - 0.1.9 - Add support for heating devices with custom component driver
  *  10/27/21 - 0.2.0 - Created country to datacenter map (https://developer.tuya.com/en/docs/iot/oem-app-data-center-distributed?id=Kafi0ku9l07qb)
+ *  12/02/21 - 0.2.1 - Added support for power strips and triggering Tuya scenes
  *
  *  Custom component drivers located at https://github.com/bradsjm/hubitat-drivers/tree/master/Component
  */
