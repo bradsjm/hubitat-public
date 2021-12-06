@@ -49,6 +49,7 @@ import hubitat.scheduling.AsyncResponse
  *  10/26/21 - 0.1.9 - Add support for heating devices with custom component driver
  *  10/27/21 - 0.2.0 - Created country to datacenter map (https://developer.tuya.com/en/docs/iot/oem-app-data-center-distributed?id=Kafi0ku9l07qb)
  *  12/02/21 - 0.2.1 - Added support for power strips and triggering Tuya scenes
+ *  12/03/21 - 0.2.2 - Added basic support for pet feeder manual feeding button
  *
  *  Custom component drivers located at https://github.com/bradsjm/hubitat-drivers/tree/master/Component
  */
@@ -149,7 +150,8 @@ metadata {
     'temperature'    : [ 'temp_current', 'va_temperature' ],
     'water'          : [ 'watersensor_state' ],
     'workMode'       : [ 'work_mode' ],
-    'workState'      : [ 'work_state' ]
+    'workState'      : [ 'work_state' ],
+    'pushButton'     : [ 'manual_feed' ]
 ]
 
 // Tuya -> Hubitat attributes mappings
@@ -210,7 +212,8 @@ metadata {
     'humidity_value': [ min: 0, max: 100, scale: 0, step: 1, type: 'Integer' ],
     'temp_current': [ min: -400, max: 2000, scale: 1, step: 1, unit: '°C', type: 'Integer' ],
     'va_humidity': [ min: 0, max: 1000, scale: 1, step: 1, type: 'Integer' ],
-    'va_temperature': [ min: 0, max: 1000, scale: 1, step: 1, type: 'Integer' ]
+    'va_temperature': [ min: 0, max: 1000, scale: 1, step: 1, type: 'Integer' ],
+    'manual_feed': [ min: 1, max: 50, scale:0, step: 1, type: 'Integer' ]
 ]
 
 /**
@@ -280,6 +283,17 @@ void componentOpen(DeviceWrapper dw) {
     if (code) {
         log.info "Opening ${dw}"
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': 'open' ])
+    }
+}
+
+// Component command to push device button
+void componentPush(DeviceWrapper dw, BigDecimal button) {
+    Map<String, Map> functions = getFunctions(dw)
+    String code = getFunctionCode(functions, tuyaFunctions.pushButton)
+
+    if (code) {
+        log.info "Pushing ${dw} button ${button}"
+        tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': button ])
     }
 }
 
@@ -630,6 +644,8 @@ private static Map mapTuyaCategory(Map d) {
         case 'cl':    // Curtain Motor (uses custom driver)
         case 'clkg':
             return [ namespace: 'component', name: 'Generic Component Window Shade' ]
+        case 'cwwsq': // Pet Feeder (https://developer.tuya.com/en/docs/iot/f?id=K9gf468bl11rj)
+            return [ namespace: 'hubitat', name: 'Generic Component Button Controller' ]
         case 'cz':    // Socket (https://developer.tuya.com/en/docs/iot/s?id=K9gf7o5prgf7s)
         case 'pc':    // Power Strip (https://developer.tuya.com/en/docs/iot/s?id=K9gf7o5prgf7s)
             return [
@@ -1426,7 +1442,7 @@ private void tuyaAuthenticateResponse(AsyncResponse response, Map data) {
     sendEvent([ name: 'state', value: 'authenticated', descriptionText: 'Received access token ${result.access_token}' ])
 
     // Schedule next authentication
-    runIn(result.expire_time - 60, 'tuyaAuthenticateAsync')
+    runIn(result.expire_time - 60, 'tuyaRefreshTokenAsync')
 
     // Get MQTT details
     tuyaGetHubConfigAsync()
@@ -1565,6 +1581,30 @@ private void tuyaGetStateResponse(AsyncResponse response, Map data) {
     if (!tuyaCheckResponse(response)) { return }
     data.status = response.json.result
     updateMultiDeviceStatus(data)
+}
+
+private void tuyaRefreshTokenAsync() {
+    unschedule("tuyaRefreshTokenAsync")
+    if (logEnable) { log.debug "${device} refreshing token" }
+    state.tokenInfo.access_token = ''
+    tuyaGetAsync("/v1.0/token/${state.tokenInfo.refresh_token}", null, 'tuyaRefreshTokenResponse', null)
+}
+
+private void tuyaRefreshTokenResponse(AsyncResponse response, Map data) {
+    if (!tuyaCheckResponse(response)) {
+        tuyaAuthenticateAsync()
+        return
+    }
+
+    Map result = response.json.result
+    state.tokenInfo = [
+        access_token: result.access_token,
+        refresh_token: result.refresh_token,
+        uid: result.uid,
+        expire: result.expire_time * 1000 + now(),
+    ]
+    log.info "${device} received Tuya access token (valid for ${result.expire_time}s)"
+    runIn(result.expire_time - 60, 'tuyaRefreshTokenAsync')
 }
 
 private void tuyaTriggerScene(Integer homeId, String sceneId) {
