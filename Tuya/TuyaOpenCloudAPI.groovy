@@ -1424,7 +1424,7 @@ private void tuyaAuthenticateResponse(AsyncResponse response, Map data) {
         expire: result.expire_time * 1000 + now(),
     ]
     log.info "${device} received Tuya access token (valid for ${result.expire_time}s)"
-    sendEvent([ name: 'state', value: 'authenticated', descriptionText: 'Received access token ${result.access_token}' ])
+    sendEvent([ name: 'state', value: 'authenticated', descriptionText: "Received access token ${result.access_token}" ])
 
     // Schedule next authentication
     runIn(result.expire_time - 60, 'tuyaAuthenticateAsync')
@@ -1566,6 +1566,31 @@ private void tuyaGetStateResponse(AsyncResponse response, Map data) {
     if (!tuyaCheckResponse(response)) { return }
     data.status = response.json.result
     updateMultiDeviceStatus(data)
+}
+
+private void tuyaRefreshTokenAsync() {
+    unschedule("tuyaRefreshTokenAsync")
+    if (logEnable) { log.debug "${device} refreshing token" }
+    state.tokenInfo.access_token = ''
+    tuyaGetAsync("/v1.0/token/${state.tokenInfo.refresh_token}", null, 'tuyaRefreshTokenResponse', null)
+}
+
+private void tuyaRefreshTokenResponse(AsyncResponse response, Map data) {
+    if (!tuyaCheckResponse(response)) {
+        tuyaAuthenticateAsync()
+        return
+    }
+
+    Map result = response.json.result
+    state.tokenInfo = [
+        access_token: result.access_token,
+        refresh_token: result.refresh_token,
+        uid: result.uid,
+        expire: result.expire_time * 1000 + now(),
+    ]
+    log.info "${device} received Tuya access token (valid for ${result.expire_time}s)"
+    runIn(result.expire_time - 60, 'tuyaRefreshTokenAsync')
+    tuyaGetHubConfigAsync()
 }
 
 private void tuyaTriggerScene(Integer homeId, String sceneId) {
