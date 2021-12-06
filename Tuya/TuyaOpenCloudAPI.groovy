@@ -259,6 +259,7 @@ void componentOn(DeviceWrapper dw) {
         String homeId = dw.getDataValue("homeId")
         String sceneId = dw.getDataValue("sceneId")
         if (sceneId && homeId) {
+            log.info "Triggering ${dw} automation"
             tuyaTriggerScene(homeId as Integer, sceneId)
         }
     }
@@ -294,6 +295,13 @@ void componentPush(DeviceWrapper dw, BigDecimal button) {
     if (code) {
         log.info "Pushing ${dw} button ${button}"
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': button ])
+    } else {
+        String homeId = dw.getDataValue("homeId")
+        String sceneId = dw.getDataValue("sceneId")
+        if (sceneId && homeId) {
+            log.info "Triggering ${dw} automation"
+            tuyaTriggerScene(homeId as Integer, sceneId)
+        }
     }
 }
 
