@@ -142,7 +142,8 @@ metadata {
     'omniSensor'     : [ 'bright_value', 'humidity_value', 'va_humidity', 'bright_sensitivity', 'shock_state', 'inactive_state', 'sensitivity' ],
     'pir'            : [ 'pir' ],
     'power'          : [ 'Power', 'power', 'switch', 'switch_1', 'switch_2', 'switch_3', 'switch_4', 'switch_5', 'switch_6', 'switch_usb1', 'switch_usb2', 'switch_usb3', 'switch_usb4', 'switch_usb5', 'switch_usb6' ],
-    'percentControl' : [ 'percent_control' ],
+    'percentControl' : [ 'percent_control', 'fan_speed_percent' ],
+    'push'           : [ 'manual_feed' ],
     'sceneSwitch'    : [ 'switch1_value', 'switch2_value', 'switch3_value', 'switch4_value', 'switch_mode2', 'switch_mode3', 'switch_mode4' ],
     'smoke'          : [ 'smoke_sensor_status' ],
     'temperatureSet' : [ 'temp_set' ],
@@ -176,7 +177,7 @@ metadata {
 @Field static final Integer maxMireds = 500 // 2000K
 @Field static final Integer minMireds = 153 // 6536K
 
-// Jason Parsing Cache
+// Json Parsing Cache
 @Field static final ConcurrentHashMap<String, Map> jsonCache = new ConcurrentHashMap<>()
 
 // Track for dimming operations
@@ -192,9 +193,9 @@ metadata {
     'battery_percentage': [ min: 0, max: 100, scale: 0, step: 1, unit: '%', type: 'Integer' ],
     'bright_value': [ min: 0, max: 100, scale: 0, step: 1, type: 'Integer' ],
     'bright_value_v2': [ min: 0, max: 100, scale: 0, step: 1, type: 'Integer' ],
-    'co2': [ min: 0, max: 1000, scale: 1, step: 1, type: 'Integer' ],
-    'fanSpeed': [ min: 1, max: 100, scale: 0, step: 1, type: 'Integer' ],
-    'fanSpeedPercent': [ min: 1, max: 100, scale: 0, step: 1, type: 'Integer' ],
+    'co2_value': [ min: 0, max: 1000, scale: 1, step: 1, type: 'Integer' ],
+    'fan_speed': [ min: 1, max: 100, scale: 0, step: 1, type: 'Integer' ],
+    'fan_speed_percent': [ min: 1, max: 100, scale: 0, step: 1, type: 'Integer' ],
     'temp_value': [ min: 0, max: 100, scale: 0, step: 1, type: 'Integer' ],
     'temp_value_v2': [ min: 0, max: 100, scale: 0, step: 1, type: 'Integer' ],
     'colour_data': [
@@ -213,9 +214,21 @@ metadata {
     'va_temperature': [ min: 0, max: 1000, scale: 1, step: 1, type: 'Integer' ]
 ]
 
-/**
- *  Hubitat Driver Event Handlers
+/* -------------------------------------------------------
+ * Implementation of component commands from child devices
  */
+
+// Component command to close device
+void componentClose(DeviceWrapper dw) {
+    Map<String, Map> functions = getFunctions(dw)
+    String code = getFunctionCode(functions, tuyaFunctions.control)
+
+    if (code) {
+        log.info "Closing ${dw}"
+        tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': 'close' ])
+    }
+}
+
 // Component command to cycle fan speed
 void componentCycleSpeed(DeviceWrapper dw) {
     switch (dw.currentValue('speed')) {
@@ -233,15 +246,9 @@ void componentCycleSpeed(DeviceWrapper dw) {
     }
 }
 
-// Component command to close device
-void componentClose(DeviceWrapper dw) {
-    Map<String, Map> functions = getFunctions(dw)
-    String code = getFunctionCode(functions, tuyaFunctions.control)
-
-    if (code) {
-        log.info "Closing ${dw}"
-        tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': 'close' ])
-    }
+// Component command to lock device
+void componentLock(DeviceWrapper dw) {
+    log.warn 'componentLock not yet supported'
 }
 
 // Component command to turn on device
@@ -280,6 +287,23 @@ void componentOpen(DeviceWrapper dw) {
     if (code) {
         log.info "Opening ${dw}"
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': 'open' ])
+    }
+}
+
+// Component command to turn on device
+void componentPush(DeviceWrapper dw, BigDecimal button) {
+    Map<String, Map> functions = getFunctions(dw)
+    String code = getFunctionCode(functions, tuyaFunctions.push)
+
+    if (code) {
+        log.info "Pushing ${dw} button ${button}"
+        tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': button ])
+    } else {
+        String homeId = dw.getDataValue("homeId")
+        String sceneId = dw.getDataValue("sceneId")
+        if (sceneId && homeId) {
+            tuyaTriggerScene(homeId as Integer, sceneId)
+        }
     }
 }
 
@@ -393,7 +417,7 @@ void componentSetPosition(DeviceWrapper dw, BigDecimal position) {
 
     if (code) {
         log.info "Setting ${dw} position to ${position}"
-        tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': position as Integer ])
+        tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': position as int ])
     }
 }
 
@@ -409,9 +433,10 @@ void componentSetSaturation(DeviceWrapper dw, BigDecimal saturation) {
 // Component command to set fan speed
 void componentSetSpeed(DeviceWrapper dw, String speed) {
     Map<String, Map> functions = getFunctions(dw)
-    String code = getFunctionCode(functions, tuyaFunctions.fanSpeed)
+    String fanSpeedCode = getFunctionCode(functions, tuyaFunctions.fanSpeed)
+    String fanSpeedPercent = getFunctionCode(functions, tuyaFunctions.percentControl)
     String id = dw.getDataValue('id')
-    if (code) {
+    if (fanSpeedCode) {
         log.info "Setting speed to ${speed}"
         switch (speed) {
             case 'on':
@@ -424,7 +449,7 @@ void componentSetSpeed(DeviceWrapper dw, String speed) {
                 log.warn 'Speed level auto is not supported'
                 break
             default:
-                Map speedFunc = functions[code] ?: defaults[code]
+                Map speedFunc = functions[fanSpeedCode] ?: defaults[fanSpeedCode]
                 int speedVal = ['low', 'medium-low', 'medium', 'medium-high', 'high'].indexOf(speed)
                 String value
                 switch (speedFunc.type) {
@@ -438,10 +463,16 @@ void componentSetSpeed(DeviceWrapper dw, String speed) {
                         log.warn "Unknown fan speed function type ${speedFunc}"
                         return
                 }
-                tuyaSendDeviceCommandsAsync(id, [ 'code': code, 'value': value ])
+                tuyaSendDeviceCommandsAsync(id, [ 'code': fanSpeedCode, 'value': value ])
                 break
         }
+    } else if (fanSpeedPercent) {
+        Map speedFunc = functions[fanSpeedPercent] ?: defaults[fanSpeedPercent]
+        int speedVal = ['low', 'medium-low', 'medium', 'medium-high', 'high'].indexOf(speed)
+        int value = remap(speedVal, 0, 4, speedFunc.min as int, speedFunc.max as int)
+        tuyaSendDeviceCommandsAsync(id, [ 'code': fanSpeedPercent, 'value': value ])
     }
+
 }
 
 // Component command to start level change (up or down)
@@ -477,6 +508,11 @@ void componentStopPositionChange(DeviceWrapper dw) {
         log.info "Stopping ${dw}"
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': 'stop' ])
     }
+}
+
+// Component command to unlock device
+void componentUnlock(DeviceWrapper dw) {
+    log.warn 'componentUnlock not yet supported'
 }
 
 // Utility function to handle multiple level changes
@@ -591,11 +627,6 @@ void refresh() {
 void removeDevices() {
     log.info "${device} removing all child devices"
     childDevices.each { device -> deleteChildDevice(device.deviceNetworkId) }
-}
-
-// define country map
-private static Map country(String country, String countryCode, String endpoint = 'https://openapi.tuyaus.com') {
-    return [ country: country, countryCode: countryCode, endpoint: endpoint ]
 }
 
 /**
@@ -713,6 +744,10 @@ private static BigDecimal remap(BigDecimal oldValue, BigDecimal oldMin, BigDecim
     return newValue.setScale(1, BigDecimal.ROUND_HALF_UP)
 }
 
+private static BigDecimal scale(BigDecimal value, Integer scale) {
+    return value / Math.pow(10, scale ?: 0)
+}
+
 private static String translateColorName(Integer hue, Integer saturation) {
     if (saturation < 1) {
         return 'White'
@@ -735,6 +770,11 @@ private static String translateColorName(Integer hue, Integer saturation) {
     }
 
     return ''
+}
+
+// define country map
+private static Map country(String country, String countryCode, String endpoint = 'https://openapi.tuyaus.com') {
+    return [ country: country, countryCode: countryCode, endpoint: endpoint ]
 }
 
 @Field static final List<Map> tuyaCountries = [
@@ -1069,26 +1109,11 @@ private void logsOff() {
 }
 
 private void parseBizData(String bizCode, Map bizData) {
-    String indicator = ' [Offline]'
-    ChildDeviceWrapper dw = bizData.devId ? getChildDevice("${device.id}-${bizData.devId}") : null
-
     if (logEnable) { log.debug "${device} ${bizCode} ${bizData}" }
     switch (bizCode) {
         case 'nameUpdate':
-            dw.label = bizData.name
-            break
         case 'online':
-            dw.updateDataValue('online', 'true')
-            if (dw.label.endsWith(indicator)) {
-                dw.label -= indicator
-            }
-            break
         case 'offline':
-            dw.updateDataValue('online', 'false')
-            if (!dw.label.endsWith(indicator)) {
-                dw.label += indicator
-            }
-            break
         case 'bindUser':
             refresh()
             break
@@ -1113,6 +1138,10 @@ private void updateMultiDeviceStatus(Map d) {
         }
     }
 }
+
+/* ---------------------------------------------------
+ * Convert Tuya device values to Hubitat device events
+ */
 
 private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
     String workMode = statusList['workMode'] ?: ''
@@ -1143,7 +1172,8 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
         }
 
         if (status.code in tuyaFunctions.co2) {
-            String value = status.value
+            Map co2 = deviceStatusSet[status.code] ?: defaults[status.code]
+            String value = scale(status.value, co2.scale)
             if (txtEnable) { log.info "${dw} carbon dioxide level is ${value}" }
             return [ [ name: 'carbonDioxide', value: value, unit: 'ppm', descriptionText: "carbon dioxide level is ${value}" ] ]
         }
@@ -1230,13 +1260,14 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
         }
 
         if (status.code in tuyaFunctions.meteringSwitch) {
+            Map code = deviceStatusSet[status.code] ?: defaults[status.code]
             String name = status.code
             String value = status.value
             String unit = ''
             switch (status.code) {
                 case 'cur_power':
                     name = 'power'
-                    value = status.value / 10
+                    value = scale(status.value, code.scale)
                     unit = 'W'
                     break
                 case 'cur_voltage':
@@ -1256,20 +1287,21 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
         }
 
         if (status.code in tuyaFunctions.omniSensor) {
+            Map code = deviceStatusSet[status.code] ?: defaults[status.code]
             String name
             String value
             String unit
             switch (status.code) {
                 case 'bright_value':
                     name = 'illuminance'
-                    value = status.value
+                    value = scale(status.value, code.scale)
                     unit = 'Lux'
                     break
                 case 'humidity_value':
                 case 'va_humidity':
                     value = status.value
                     if (status.code == 'humidity_value') {
-                        value = status.value / 10
+                        value = scale(status.value, code.scale)
                     }
                     name = 'humidity'
                     unit = 'RH%'
@@ -1277,7 +1309,7 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
                 case 'bright_sensitivity':
                 case 'sensitivity':
                     name = 'sensitivity'
-                    value = status.value
+                    value = scale(status.value, code.scale)
                     unit = '%'
                     break
                 case 'shock_state':    // vibration sensor TS0210
@@ -1346,8 +1378,7 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
 
         if (status.code in tuyaFunctions.temperature) {
             Map set = deviceStatusSet[status.code] ?: defaults[status.code]
-            int scale = Math.pow(10, set.scale as int)
-            String value = status.value / scale
+            String value = scale(status.value, set.scale)
             String unit = set.unit
             if (txtEnable) { log.info "${dw} temperature is ${value}${unit}" }
             return [ [ name: 'temperature', value: value, unit: unit, descriptionText: "temperature is ${value}${unit}" ] ]
