@@ -19,6 +19,9 @@
         "InsecureRandom": {
             "enabled": false
         },
+        "LineLength": {
+            "enabled": false
+        },
         "MethodCount": {
             "enabled": false
         },
