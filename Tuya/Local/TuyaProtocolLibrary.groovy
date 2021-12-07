@@ -1,4 +1,4 @@
-library (
+library(
     name: 'tuyaProtocols',
     namespace: 'tuya',
     author: 'jb@nrgup.net',
@@ -163,14 +163,14 @@ private static long tuyaCrc32(byte[] buffer) {
     return ((crc & 0xFFFFFFFFL) ^ 0xFFFFFFFFL) & 0xFFFFFFFFL // return 0xFFFFFFFFL
 }
 
-private static byte[] tuyaDecrypt (byte[] payload, String secret) {
+private static byte[] tuyaDecrypt(byte[] payload, String secret) {
     SecretKeySpec key = new SecretKeySpec(secret.bytes, 'AES')
     Cipher cipher = Cipher.getInstance('AES/ECB/PKCS5Padding')
     cipher.init(Cipher.DECRYPT_MODE, key)
     return cipher.doFinal(payload)
 }
 
-private static byte[] tuyaEncrypt (byte[] payload, String secret) {
+private static byte[] tuyaEncrypt(byte[] payload, String secret) {
     SecretKeySpec key = new SecretKeySpec(secret.bytes, 'AES')
     Cipher cipher = Cipher.getInstance('AES/ECB/PKCS5Padding')
     cipher.init(Cipher.ENCRYPT_MODE, key)

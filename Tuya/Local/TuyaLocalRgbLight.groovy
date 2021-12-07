@@ -34,7 +34,8 @@ import java.util.regex.Matcher
 import java.util.Random
 
 metadata {
-    definition (name: 'Tuya Local RGBW Light', namespace: 'tuya', author: 'Jonathan Bradshaw') {
+    definition (name: 'Tuya Local RGBW Light', namespace: 'tuya', author: 'Jonathan Bradshaw',
+                importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/master/Tuya/Local/TuyaLocalRgbLight.groovy') {
         capability 'Actuator'
         capability 'ColorControl'
         capability 'ColorMode'
