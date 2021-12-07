@@ -735,7 +735,7 @@ static void updateShadeState(String category, String code, DeviceWrapper device,
 void componentClose(DeviceWrapper dw) {
     String code = dw.getDataValue('code')
     if (code) {
-        log.info "Opening ${dw}"
+        log.info "Closing ${dw}"
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': 'close' ])
     }
 }
