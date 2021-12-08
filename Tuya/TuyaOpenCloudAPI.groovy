@@ -1461,7 +1461,7 @@ private void tuyaAuthenticateResponse(AsyncResponse response, Map data) {
     sendEvent([ name: 'state', value: 'authenticated', descriptionText: "Received access token ${result.access_token}" ])
 
     // Schedule next authentication
-    runIn(result.expire_time - 60, 'tuyaAuthenticateAsync')
+    runIn(result.expire_time - 60, 'tuyaRefreshTokenAsync')
 
     // Get MQTT details
     tuyaGetHubConfigAsync()
