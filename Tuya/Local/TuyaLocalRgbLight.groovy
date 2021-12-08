@@ -155,12 +155,15 @@ preferences {
 void heartbeat() {
     String id = getDataValue('id')
     String localKey = getDataValue('local_key')
+    SynchronousQueue queue = getQ()
     LOG.debug "sending heartbeat"
-    tuyaSendCommand(id, ipAddress, localKey, null, 'HEART_BEAT')
-    if (getQ().poll(timeoutSecs, TimeUnit.SECONDS)) {
-        LOG.debug "received heartbeat"
-    } else {
-        LOG.warn "no response to heartbeat"
+    synchronized (queue) {
+        tuyaSendCommand(id, ipAddress, localKey, null, 'HEART_BEAT')
+        if (queue.poll(timeoutSecs, TimeUnit.SECONDS)) {
+            LOG.debug "received heartbeat"
+        } else {
+            LOG.warn "no response to heartbeat"
+        }
     }
 
     if (heartbeatSecs) { runIn(heartbeatSecs, 'heartbeat') }
@@ -526,26 +529,31 @@ private Map repeatCommand(Map dps) {
     Map result
     String id = getDataValue('id')
     String localKey = getDataValue('local_key')
-    if (!id || !localKey || !ipAddress) return result
+    SynchronousQueue queue = getQ()
+    if (!id || !localKey || !ipAddress) { return result }
 
-    for (i = 1; i <= repeat; i++) {
-        try {
-            LOG.debug "sending DPS command ${dps}"
-            tuyaSendCommand(id, ipAddress, localKey, dps, 'CONTROL')
-        } catch (e) {
-            LOG.error "tuya send exception", e
-            pauseExecution(250)
-            continue
-        }
+    // Synchronized required to stop multiple commands being sent
+    // simultaneously which will overload the tuya TCP stack
+    synchronized(queue) {
+        for (i = 1; i <= repeat; i++) {
+            try {
+                LOG.debug "sending DPS command ${dps}"
+                tuyaSendCommand(id, ipAddress, localKey, dps, 'CONTROL')
+            } catch (e) {
+                LOG.error "tuya send exception", e
+                pauseExecution(250)
+                continue
+            }
 
-        result = getQ().poll(timeoutSecs, TimeUnit.SECONDS)
-        if (result) {
-            LOG.info "received device ack"
-            break
-        } else {
-            LOG.warn "command timeout (${i} of ${repeat})"
-            int val = (device.currentValue('retries') ?: 0) as int
-            sendEvent ([ name: 'retries', value: val + 1 ])
+            result = queue.poll(timeoutSecs, TimeUnit.SECONDS)
+            if (result) {
+                LOG.info "received device ack"
+                break
+            } else {
+                LOG.warn "command timeout (${i} of ${repeat})"
+                int val = (device.currentValue('retries') ?: 0) as int
+                sendEvent ([ name: 'retries', value: val + 1 ])
+            }
         }
     }
 
