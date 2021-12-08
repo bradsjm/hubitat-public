@@ -155,14 +155,20 @@ preferences {
 void heartbeat() {
     String id = getDataValue('id')
     String localKey = getDataValue('local_key')
-    if (logEnable) { log.debug "${device} sending heartbeat" }
+    LOG.debug "sending heartbeat"
     tuyaSendCommand(id, ipAddress, localKey, null, 'HEART_BEAT')
+    if (getQ().poll(timeoutSecs, TimeUnit.SECONDS)) {
+        LOG.debug "received heartbeat"
+    } else {
+        LOG.warn "no response to heartbeat"
+    }
+
     if (heartbeatSecs) { runIn(heartbeatSecs, 'heartbeat') }
 }
 
 // Called when the device is first created
 void installed() {
-    log.info "${device} driver installed"
+    LOG.info "driver installed"
 }
 
 // Called to initialize
@@ -181,7 +187,7 @@ void initialize() {
 
 // Component command to turn on device
 void on() {
-    log.info "Turning ${device} on"
+    LOG.info "switching on"
 
     if (repeatCommand([ '1': true ])) {
         sendEvent([ name: 'switch', value: 'on', descriptionText: 'switch is on' ])
@@ -192,7 +198,7 @@ void on() {
 
 // Component command to turn off device
 void off() {
-    log.info "Turning ${device} off"
+    LOG.info "switching off"
 
     if (repeatCommand([ '1': false ])) {
         sendEvent([ name: 'switch', value: 'off', descriptionText: 'switch is off' ])
@@ -206,13 +212,13 @@ void parse(String message) {
     if (!message) { return }
     String localKey = getDataValue('local_key')
     Map result = tuyaDecode(HexUtils.hexStringToByteArray(message), localKey)
-    if (logEnable) { log.debug "${device} received ${result}" }
+    LOG.debug "received ${result}"
     if (result.error) {
-        log.error "${device} received error ${result.error}"
-    } else if (result.commandByte == 7) { // COMMAND ACK
-        if (!getQ().offer(result)) { log.warn "${device} ACK received but no thread waiting for it" }
-    } else if (result.commandByte == 9) { // HEARTBEAT ACK
-        if (logEnable) { log.debug "${device} received heartbeat" }
+        LOG.error "received error ${result.error}"
+        int val = (device.currentValue('errors') ?: 0) as int
+        sendEvent ([ name: 'errors', value: val + 1, descriptionText: result.error ])
+    } else if (result.commandByte == 7 || result.commandByte == 9) { // COMMAND or HEARTBEAT ACK
+        if (!getQ().offer(result)) { LOG.warn "result received without waiting thread" }
     } else if (result.commandByte == 8 || result.commandByte == 10 ) { // STATUS or QUERY RESULTS
         Map json = new JsonSlurper().parseText(result.text)
         parseDeviceState(json.dps)
@@ -223,7 +229,7 @@ void parse(String message) {
 void parse(List<Map> description) {
     description.each { d ->
         if (device.currentValue(d.name) != d.value) {
-            if (d.descriptionText && txtEnable) { log.info "${device} ${d.descriptionText}" }
+            if (d.descriptionText && txtEnable) { LOG.info "${d.descriptionText}" }
             sendEvent(d)
         }
     }
@@ -236,14 +242,13 @@ void refresh() {
     if (!tuyaSendCommand(id, ipAddress, localKey, null, 'DP_QUERY')) {
         parent?.componentRefresh(device)
     } else {
-        log.info "Refreshing ${device}"
+        LOG.info 'refreshed local state'
     }
-
 }
 
 // Component command to set color
 void setColor(Map colorMap) {
-    log.info "Setting ${device} color to ${colorMap}"
+    LOG.info "setting color to ${colorMap}"
 
     Map functions = getFunctions(device)
     String code = getFunctionByCode(functions, tuyaFunctions.colour)
@@ -274,13 +279,13 @@ void setColor(Map colorMap) {
 
 // Send custom Dps command
 void sendCustomDps(BigDecimal dps, String value) {
-    log.info "Sending DPS ${dps} command ${value}"
+    LOG.info "sending DPS ${dps} command ${value}"
     repeatCommand([ (dps): value ])
 }
 
 // Component command to set color temperature
 void setColorTemperature(BigDecimal kelvin, BigDecimal level = null, BigDecimal duration = null) {
-    log.info "Setting ${device} color temperature to ${kelvin}K"
+    LOG.info "setting color temperature to ${kelvin}K"
 
     Map functions = getFunctions(device)
     String code = getFunctionByCode(functions, tuyaFunctions.temperature)
@@ -301,7 +306,7 @@ void setColorTemperature(BigDecimal kelvin, BigDecimal level = null, BigDecimal 
 }
 
 void setEffect(BigDecimal effect) {
-    log.info "Setting ${device} effect to ${effect}"
+    LOG.info "setting effect to ${effect}"
     String value = "scene${effect}"
     if (repeatCommand([ 2: value ])) {
         sendEvent( [ name: 'effectName', value: value, descriptionText: "scene is ${value}" ] )
@@ -337,7 +342,7 @@ void setHue(BigDecimal hue) {
 
 // Component command to set level
 void setLevel(BigDecimal level, BigDecimal duration = 0) {
-    log.info "Setting ${device} level to ${level}%"
+    LOG.info "setting level to ${level}%"
 
     String colorMode = device.currentValue('colorMode')
     if (colorMode == 'CT') {
@@ -371,30 +376,30 @@ void setSaturation(BigDecimal saturation) {
 // Socket status updates
 void socketStatus(String message) {
     if (message.contains('error')) {
-        log.error "${device} socket ${message}"
+        LOG.error "socket ${message}"
         int val = (device.currentValue('errors') ?: 0) as int
-        sendEvent ([ name: 'errors', value: val + 1 ])
+        sendEvent ([ name: 'errors', value: val + 1, descriptionText: message ])
     } else {
-        log.info "${device} socket ${message}"
+        LOG.info "socket ${message}"
     }
 }
 
 // Called when the device is removed
 void uninstalled() {
-    log.info "${device} driver uninstalled"
+    LOG.info "driver uninstalled"
 }
 
 // Called when the settings are updated
 void updated() {
-    log.info "${device} driver configuration updated"
-    log.debug settings
+    LOG.info "driver configuration updated"
+    LOG.debug settings
     initialize()
     if (logEnable) { runIn(1800, 'logsOff') }
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void logsOff() {
-    log.warn "debug logging disabled for ${device}"
+    LOG.warn 'debug logging disabled'
     device.updateSetting('logEnable', [value: 'false', type: 'bool'] )
 }
 
@@ -447,7 +452,7 @@ private SynchronousQueue getQ() {
 }
 
 private void parseDeviceState(Map dps) {
-    if (logEnable) { log.debug "${device} parsing dps ${dps}" }
+    LOG.debug "parsing dps ${dps}"
     Map functions = getFunctions(device)
 
     String colorMode = device.currentValue('colorMode')
@@ -511,7 +516,7 @@ private void parseDeviceState(Map dps) {
 
     events.each { e ->
         if (device.currentValue(e.name) != e.value) {
-            if (e.descriptionText && txtEnable) { log.info "${device} ${e.descriptionText}" }
+            if (e.descriptionText && txtEnable) { LOG.info "${e.descriptionText}" }
             sendEvent(e)
         }
     }
@@ -525,20 +530,20 @@ private Map repeatCommand(Map dps) {
 
     for (i = 1; i <= repeat; i++) {
         try {
-            if (logEnable) { log.debug "Sending DPS command ${dps} to ${device}" }
+            LOG.debug "sending DPS command ${dps}"
             tuyaSendCommand(id, ipAddress, localKey, dps, 'CONTROL')
         } catch (e) {
-            log.error "${device} tuya send exception: ${e}"
+            LOG.error "tuya send exception", e
             pauseExecution(250)
             continue
         }
 
         result = getQ().poll(timeoutSecs, TimeUnit.SECONDS)
         if (result) {
-            log.info "Received ${device} command acknowledgement"
+            LOG.info "received device ack"
             break
         } else {
-            log.warn "${device} command timeout (${i} of ${repeat})"
+            LOG.warn "command timeout (${i} of ${repeat})"
             int val = (device.currentValue('retries') ?: 0) as int
             sendEvent ([ name: 'retries', value: val + 1 ])
         }
@@ -546,3 +551,19 @@ private Map repeatCommand(Map dps) {
 
     return result
 }
+
+@Field private final LOG = [
+    debug: { s -> if (settings.logEnable == true) { log.debug(s) } },
+    info: { s -> log.info(s) },
+    warn: { s -> log.warn(s) },
+    error: { s -> log.error(s) },
+    exception: { message, exception ->
+        List<StackTraceElement> relevantEntries = exception.stackTrace.findAll { entry -> entry.className.startsWith("user_app") }
+        int line = relevantEntries[0].lineNumber
+        String method = relevantEntries[0].methodName
+        log.error("${message}: ${exception} at line ${line} (${method})")
+        if (settings.logEnable) {
+            log.debug("App exception stack trace:\n${relevantEntries.join("\n")}")
+        }
+    }
+]

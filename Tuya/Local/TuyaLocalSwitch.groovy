@@ -169,6 +169,8 @@ void parse(String message) {
     if (logEnable) { log.debug "${device} received ${result}" }
     if (result.error) {
         log.error "${device} received error ${result.error}"
+        int val = (device.currentValue('errors') ?: 0) as int
+        sendEvent ([ name: 'errors', value: val + 1, descriptionText: result.error ])
     } else if (result.commandByte == 7) { // COMMAND ACK
         if (!getQ().offer(result)) { log.warn "${device} ACK received but no thread waiting for it" }
     } else if (result.commandByte == 9) { // HEARTBEAT ACK
@@ -212,7 +214,7 @@ void socketStatus(String message) {
     if (message.contains('error')) {
         log.error "${device} socket ${message}"
         int val = (device.currentValue('errors') ?: 0) as int
-        sendEvent ([ name: 'errors', value: val + 1 ])
+        sendEvent ([ name: 'errors', value: val + 1, descriptionText: message ])
     } else {
         log.info "${device} socket ${message}"
     }
