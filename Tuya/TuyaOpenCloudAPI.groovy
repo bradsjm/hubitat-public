@@ -1028,12 +1028,14 @@ private static Map country(String country, String countryCode, String endpoint =
  */
 private void createChildDevices(Map d) {
     Map driver = mapTuyaCategory(d)
-    if (!driver.devices != null) {
+
+    // Tuya Device to Single Hubitat Device
+    if (driver.devices == null) {
         createChildDevice("${device.id}-${d.id}", driver, d)
         return
     }
 
-    // Multiple child device support
+    // Tuya Device to Multiple Hubitat Devices
     String baseName = d.name
     Map baseFunctions = d.functions
     Map baseStatusSet = d.statusSet
