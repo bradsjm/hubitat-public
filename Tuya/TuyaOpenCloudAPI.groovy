@@ -1564,8 +1564,12 @@ private void tuyaGetDeviceSpecificationsResponse(AsyncResponse response, Map dat
 }
 
 private void tuyaGetHomesAsync() {
-    LOG.info "Requesting Tuya Home list"
-    tuyaGetAsync("/v1.0/users/${state.tokenInfo.uid}/homes", null, 'tuyaGetHomesResponse')
+    if (state.tokenInfo?.uid != null) {
+        LOG.info "Requesting Tuya Home list"
+        tuyaGetAsync("/v1.0/users/${state.tokenInfo.uid}/homes", null, 'tuyaGetHomesResponse')
+    } else {
+        LOG.error "Unable to request homes (null uid token: ${state.tokenInfo})"
+    }
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
@@ -1766,7 +1770,7 @@ private boolean tuyaCheckResponse(AsyncResponse response) {
 
     if (response.json?.success != true) {
         LOG.error "Cloud API request failed: ${response.data}"
-        sendEvent([ name: 'state', value: 'error', descriptionText: "${response.data.code} ${response.data.msg}" ])
+        sendEvent([ name: 'state', value: 'error', descriptionText: "${response.data}" ])
         return false
     }
 
