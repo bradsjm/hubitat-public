@@ -225,8 +225,7 @@ void parse(String message) {
     LOG.debug "received ${result}"
     if (result.error) {
         LOG.error "received error ${result.error}"
-        int val = (device.currentValue('errors') ?: 0) as int
-        sendEvent ([ name: 'errors', value: val + 1, descriptionText: result.error ])
+        increaseErrorCount()
     } else if (result.commandByte == 7 || result.commandByte == 9) { // COMMAND or HEARTBEAT ACK
         if (!getQ().offer(result)) { LOG.warn "result received without waiting thread" }
     } else if (result.commandByte == 8 || result.commandByte == 10 ) { // STATUS or QUERY RESULTS
@@ -532,6 +531,16 @@ private void parseDeviceState(Map dps) {
     }
 }
 
+private void increaseErrorCount() {
+    int val = (device.currentValue('errors') ?: 0) as int
+    sendEvent ([ name: 'errors', value: val + 1, descriptionText: e.message ])
+}
+
+private void increaseRetryCount() {
+    int val = (device.currentValue('retries') ?: 0) as int
+    sendEvent ([ name: 'retries', value: val + 1 ])
+}
+
 private Map repeatCommand(Map dps) {
     Map result
     String id = getDataValue('id')
@@ -547,8 +556,10 @@ private Map repeatCommand(Map dps) {
                 LOG.debug "sending DPS command ${dps}"
                 tuyaSendCommand(id, ipAddress, localKey, dps, 'CONTROL')
             } catch (e) {
-                LOG.error "tuya send exception", e
+                LOG.exception "tuya send exception", e
+                increaseErrorCount()
                 pauseExecution(250)
+                increaseRetryCount()
                 continue
             }
 
@@ -558,8 +569,7 @@ private Map repeatCommand(Map dps) {
                 break
             } else {
                 LOG.warn "command timeout (${i} of ${repeat})"
-                int val = (device.currentValue('retries') ?: 0) as int
-                sendEvent ([ name: 'retries', value: val + 1 ])
+                increaseRetryCount()
             }
         }
     }
@@ -574,8 +584,8 @@ private Map repeatCommand(Map dps) {
     error: { s -> log.error(s) },
     exception: { message, exception ->
         List<StackTraceElement> relevantEntries = exception.stackTrace.findAll { entry -> entry.className.startsWith("user_app") }
-        int line = relevantEntries[0].lineNumber
-        String method = relevantEntries[0].methodName
+        Integer line = relevantEntries[0]?.lineNumber
+        String method = relevantEntries[0]?.methodName
         log.error("${message}: ${exception} at line ${line} (${method})")
         if (settings.logEnable) {
             log.debug("App exception stack trace:\n${relevantEntries.join("\n")}")

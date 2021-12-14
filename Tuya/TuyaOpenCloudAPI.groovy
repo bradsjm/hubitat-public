@@ -1699,7 +1699,7 @@ private void tuyaHubConnectAsync() {
             state.mqttInfo.username,
             state.mqttInfo.password)
     } catch (e) {
-        LOG.error "MQTT connection error: " + e
+        LOG.exception 'MQTT connection error', e
         runIn(15 + random.nextInt(45), 'tuyaHubConnectAsync')
     }
 }
@@ -1809,8 +1809,8 @@ private String tuyaGetStringToSign(String method, String path, Map query, Map bo
     error: { s -> log.error(s) },
     exception: { message, exception ->
         List<StackTraceElement> relevantEntries = exception.stackTrace.findAll { entry -> entry.className.startsWith("user_app") }
-        int line = relevantEntries[0].lineNumber
-        String method = relevantEntries[0].methodName
+        Integer line = relevantEntries[0]?.lineNumber
+        String method = relevantEntries[0]?.methodName
         log.error("${message}: ${exception} at line ${line} (${method})")
         if (settings.logEnable) {
             log.debug("App exception stack trace:\n${relevantEntries.join("\n")}")
