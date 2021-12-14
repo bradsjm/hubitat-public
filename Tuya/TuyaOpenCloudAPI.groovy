@@ -670,7 +670,7 @@ private static Map mapTuyaCategory(Map d) {
                 namespace: 'hubitat',
                 name: 'Generic Component Switch',
                 devices: [
-                    'switch': '',
+                    'switch': 'Switch',
                     'switch_1': 'Socket 1',
                     'switch_2': 'Socket 2',
                     'switch_3': 'Socket 3',
@@ -1028,6 +1028,7 @@ private static Map country(String country, String countryCode, String endpoint =
  */
 private void createChildDevices(Map d) {
     Map driver = mapTuyaCategory(d)
+    LOG.debug "Tuya category ${d.category} driver ${driver}"
 
     // Tuya Device to Single Hubitat Device
     if (driver.devices == null) {

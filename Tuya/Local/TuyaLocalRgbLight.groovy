@@ -70,6 +70,13 @@ preferences {
               title: 'Device IP',
               required: true
 
+        input name: 'powerDps',
+              title: 'Power DPS',
+              type: 'number',
+              required: true,
+              range: '1..255',
+              defaultValue: '1'
+
         input name: 'repeat',
               title: 'Command Retries',
               type: 'number',
@@ -192,7 +199,7 @@ void initialize() {
 void on() {
     LOG.info "switching on"
 
-    if (repeatCommand([ '1': true ])) {
+    if (repeatCommand([ (powerDps as String): true ])) {
         sendEvent([ name: 'switch', value: 'on', descriptionText: 'switch is on' ])
     } else {
         parent?.componentOn(device)
@@ -203,7 +210,7 @@ void on() {
 void off() {
     LOG.info "switching off"
 
-    if (repeatCommand([ '1': false ])) {
+    if (repeatCommand([ (powerDps as String): false ])) {
         sendEvent([ name: 'switch', value: 'off', descriptionText: 'switch is off' ])
     } else {
         parent?.componentOff(device)
@@ -461,8 +468,8 @@ private void parseDeviceState(Map dps) {
     String colorMode = device.currentValue('colorMode')
     List<Map> events = []
 
-    if (dps.containsKey('1')) {
-        String value = dps['1'] ? 'on' : 'off'
+    if (dps.containsKey(powerDps as String)) {
+        String value = dps[powerDps as String] ? 'on' : 'off'
         events << [ name: 'switch', value: value, descriptionText: "switch is ${value}" ]
     }
 
