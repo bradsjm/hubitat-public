@@ -92,14 +92,8 @@ Map pageMain() {
 
         section {
             if (state.triggered?.active) {
-                String ago
                 int elapsed = (now() - state.triggered.active) / 1000
-                if (elapsed < 120) {
-                    ago = "${elapsed} second(s) ago"
-                } else {
-                    elapsed /= 60
-                    ago = "${elapsed} minutes ago"
-                }
+                String ago = getDuration(elapsed)
                 if (state.triggered.running) {
                     paragraph "<b>Triggered</b>: ${ago} by ${state.triggered.device} ${state.triggered.type} sensor"
                 } else {
@@ -811,6 +805,24 @@ void updated() {
 /*
  * Internal Application Logic
  */
+
+private static String getDuration(long elapsed) {
+    String ago = ''
+    if (elapsed < 60) {
+        ago = "${elapsed} second(s) ago"
+    } else if (elapsed < 3600) {
+        elapsed /= 60
+        ago = "${elapsed} minutes ago"
+    } else if (elapsed < 86400) {
+        elapsed /= 3600
+        ago = "${elapsed} hours ago"
+    } else {
+        elapsed /= 86400
+        ago = "${elapsed} days ago"
+    }
+
+    return ago
+}
 
 // Capture state of lights
 private void captureLightState(List lights) {
