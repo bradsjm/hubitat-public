@@ -269,6 +269,8 @@ void componentOn(DeviceWrapper dw) {
         if (sceneId && homeId) {
             log.info "Triggering ${dw} automation"
             tuyaTriggerScene(homeId as Integer, sceneId)
+        } else {
+            LOG.error "Unable to determine off function code in ${functions}"
         }
     }
 }
@@ -281,6 +283,8 @@ void componentOff(DeviceWrapper dw) {
     if (code != null) {
         LOG.info "Turning ${dw} off"
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': false ])
+    } else {
+        LOG.error "Unable to determine off function code in ${functions}"
     }
 }
 
@@ -292,6 +296,8 @@ void componentOpen(DeviceWrapper dw) {
     if (code != null) {
         LOG.info "Opening ${dw}"
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': 'open' ])
+    } else {
+        LOG.error "Unable to determine open function code in ${functions}"
     }
 }
 
@@ -308,6 +314,8 @@ void componentPush(DeviceWrapper dw, BigDecimal button) {
         String sceneId = dw.getDataValue("sceneId")
         if (sceneId && homeId) {
             tuyaTriggerScene(homeId as Integer, sceneId)
+        } else {
+            LOG.error "Unable to determine push function code in ${functions}"
         }
     }
 }
@@ -339,6 +347,8 @@ void componentSetColor(DeviceWrapper dw, Map colorMap) {
             [ 'code': code, 'value': value ],
             [ 'code': 'work_mode', 'value': 'colour']
         )
+    } else {
+        LOG.error "Unable to determine set color function code in ${functions}"
     }
 }
 
@@ -355,7 +365,11 @@ void componentSetColorTemperature(DeviceWrapper dw, BigDecimal kelvin,
             [ 'code': code, 'value': value ],
             [ 'code': 'work_mode', 'value': 'white']
         )
+    } else {
+        LOG.error "Unable to determine color temperature function code in ${functions}"
     }
+
+
     if (level != null && dw.currentValue('level') != level) {
         componentSetLevel(dw, level, duration)
     }
@@ -373,6 +387,8 @@ void componentSetHeatingSetpoint(DeviceWrapper dw, BigDecimal temperature) {
     if (code != null) {
         LOG.info "Setting ${dw} heating set point to ${temperature}"
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': temperature ])
+    } else {
+        LOG.error "Unable to determine heating setpoint function code in ${functions}"
     }
 }
 
@@ -397,6 +413,8 @@ void componentSetLevel(DeviceWrapper dw, BigDecimal level, BigDecimal duration =
             Integer value = Math.ceil(remap(level, 0, 100, bright.min, bright.max))
             LOG.info "Setting ${dw} level to ${level}%"
             tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': value ])
+        } else {
+            LOG.error "Unable to determine set level function code in ${functions}"
         }
     } else {
         componentSetColor(dw, [
@@ -423,6 +441,8 @@ void componentSetPosition(DeviceWrapper dw, BigDecimal position) {
     if (code != null) {
         LOG.info "Setting ${dw} position to ${position}"
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': position as int ])
+    } else {
+        LOG.error "Unable to determine set position function code in ${functions}"
     }
 }
 
@@ -476,8 +496,9 @@ void componentSetSpeed(DeviceWrapper dw, String speed) {
         int speedVal = ['low', 'medium-low', 'medium', 'medium-high', 'high'].indexOf(speed)
         int value = remap(speedVal, 0, 4, speedFunc.min as int, speedFunc.max as int)
         tuyaSendDeviceCommandsAsync(id, [ 'code': fanSpeedPercent, 'value': value ])
+    } else {
+        LOG.error "Unable to determine set speed function code in ${functions}"
     }
-
 }
 
 // Component command to start level change (up or down)
@@ -512,6 +533,8 @@ void componentStopPositionChange(DeviceWrapper dw) {
     if (code != null) {
         LOG.info "Stopping ${dw}"
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': 'stop' ])
+    } else {
+        LOG.error "Unable to determine stop position change function code in ${functions}"
     }
 }
 
