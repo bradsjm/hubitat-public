@@ -230,6 +230,8 @@ void componentClose(DeviceWrapper dw) {
     if (code != null) {
         LOG.info "Closing ${dw}"
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': 'close' ])
+    } else {
+        LOG.error "Unable to determine close function code in ${functions}"
     }
 }
 
