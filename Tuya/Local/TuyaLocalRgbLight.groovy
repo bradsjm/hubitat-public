@@ -50,6 +50,17 @@ metadata {
         attribute 'retries', 'number'
         attribute 'errors', 'number'
 
+        command 'scanNetwork', [
+            [
+                name: 'startIp',
+                type: 'STRING'
+            ],
+            [
+                name: 'endIp',
+                type: 'STRING'
+            ]
+        ]
+
         command 'sendCustomDps', [
             [
                 name: 'Dps',
@@ -225,7 +236,7 @@ void parse(String message) {
     LOG.debug "received ${result}"
     if (result.error) {
         LOG.error "received error ${result.error}"
-        increaseErrorCount()
+        increaseErrorCount(result.error)
     } else if (result.commandByte == 7 || result.commandByte == 9) { // COMMAND or HEARTBEAT ACK
         if (!getQ().offer(result)) { LOG.warn "result received without waiting thread" }
     } else if (result.commandByte == 8 || result.commandByte == 10 ) { // STATUS or QUERY RESULTS
@@ -255,13 +266,45 @@ void refresh() {
     }
 }
 
+void scanNetwork(String startIp, String endIp) {
+    LOG.info "scan network from ${startIp} to ${endIp}"
+    scanNetworkAction([
+        startIp: ipToLong(startIp),
+        endIp: ipToLong(endIp)
+    ])
+}
+
+void scanNetworkAction(Map data) {
+    String id = getDataValue('id')
+    String localKey = getDataValue('local_key')
+    SynchronousQueue queue = getQ()
+    String ip = getIPFromInt(data.startIp)
+    LOG.info "scanning for tuya device at ${ip}"
+    try {
+        tuyaSendCommand(id, ip, localKey, [(powerDps as String): true], 'CONTROL')
+        if (queue.poll(250, TimeUnit.MILLISECONDS)?.commandByte == 7 ) {
+            LOG.info "found Tuya device at ${ip}"
+            device.updateSetting('ipAddress', [value: ip, type: 'text'] )
+            updated()
+            return
+        }
+    } catch (ConnectException) { }
+
+    if (data.startIp < data.endIp) {
+        data.startIp++
+        runInMillis(0, 'scanNetworkAction', [data: data])
+    } else {
+        log.info 'completed network scanning, device not found'
+    }
+}
+
 // Component command to set color
 void setColor(Map colorMap) {
     LOG.info "setting color to ${colorMap}"
 
     Map functions = getFunctions(device)
     String code = getFunctionByCode(functions, tuyaFunctions.colour)
-    Map color = functions[code]
+    Map color = functions[code] ?: defaults[code]
     Map bright = functions['bright_value'] ?: functions['bright_value_v2'] ?: color.v
     int h = remap(colorMap.hue, 0, 100, color.h.min, color.h.max)
     int s = remap(colorMap.saturation, 0, 100, color.s.min, color.s.max)
@@ -289,6 +332,15 @@ void setColor(Map colorMap) {
 // Send custom Dps command
 void sendCustomDps(BigDecimal dps, String value) {
     LOG.info "sending DPS ${dps} command ${value}"
+    switch (value.toLowerCase()) {
+        case 'true':
+            repeatCommand([ (dps): true ])
+            return
+        case 'false':
+            repeatCommand([ (dps): false ])
+            return
+    }
+
     repeatCommand([ (dps): value ])
 }
 
@@ -298,7 +350,7 @@ void setColorTemperature(BigDecimal kelvin, BigDecimal level = null, BigDecimal 
 
     Map functions = getFunctions(device)
     String code = getFunctionByCode(functions, tuyaFunctions.temperature)
-    Map temp = functions[code]
+    Map temp = functions[code] ?: defaults[code]
     Integer value = temp.max - Math.ceil(remap(1000000 / kelvin, minMireds, maxMireds, temp.min, temp.max))
 
     if (repeatCommand([ '4': value ])) {
@@ -357,7 +409,7 @@ void setLevel(BigDecimal level, BigDecimal duration = 0) {
     if (colorMode == 'CT') {
         Map functions = getFunctions(device)
         String code = getFunctionByCode(functions, tuyaFunctions.brightness)
-        Map bright = functions[code]
+        Map bright = functions[code] ?: defaults[code]
         Integer value = Math.ceil(remap(level, 0, 100, bright.min, bright.max))
         if (repeatCommand([ '3': value ])) {
             sendEvent([ name: 'level', value: level, unit: '%', descriptionText: "level is ${level}%" ])
@@ -414,13 +466,31 @@ private void logsOff() {
 
 #include tuya.tuyaProtocols
 
+private static String getIPFromInt(long ipaslong) {
+    return String.format("%d.%d.%d.%d",
+        (ipaslong >>> 24) & 0xff,
+        (ipaslong >>> 16) & 0xff,
+        (ipaslong >>>  8) & 0xff,
+        (ipaslong       ) & 0xff)
+}
+
+public static long ipToLong(String ipAddress) {
+    long result = 0
+    String[] ipAddressInArray = ipAddress.split('\\.')
+    for (int i = 3; i >= 0; i--) {
+        long ip = Long.parseLong(ipAddressInArray[3 - i])
+        result |= ip << (i * 8)
+    }
+
+    return result;
+}
+
 private static Map getFunctions(DeviceWrapper device) {
     return new JsonSlurper().parseText(device.getDataValue('functions'))
 }
 
 private static String getFunctionByCode(Map functions, List codes) {
     return codes.find { c -> tuyaFunctions.containsKey(c) } ?: codes.first()
-    // TODO: Include default function values
 }
 
 private static BigDecimal remap(BigDecimal oldValue, BigDecimal oldMin, BigDecimal oldMax,
@@ -531,14 +601,14 @@ private void parseDeviceState(Map dps) {
     }
 }
 
-private void increaseErrorCount() {
+private void increaseErrorCount(msg = '') {
     int val = (device.currentValue('errors') ?: 0) as int
-    sendEvent ([ name: 'errors', value: val + 1, descriptionText: e.message ])
+    sendEvent ([ name: 'errors', value: val + 1, descriptionText: msg ])
 }
 
-private void increaseRetryCount() {
+private void increaseRetryCount(msg = '') {
     int val = (device.currentValue('retries') ?: 0) as int
-    sendEvent ([ name: 'retries', value: val + 1 ])
+    sendEvent ([ name: 'retries', value: val + 1,, descriptionText: msg ])
 }
 
 private Map repeatCommand(Map dps) {
@@ -557,7 +627,7 @@ private Map repeatCommand(Map dps) {
                 tuyaSendCommand(id, ipAddress, localKey, dps, 'CONTROL')
             } catch (e) {
                 LOG.exception "tuya send exception", e
-                increaseErrorCount()
+                increaseErrorCount(e.message)
                 pauseExecution(250)
                 increaseRetryCount()
                 continue
