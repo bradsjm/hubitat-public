@@ -24,7 +24,7 @@
  */
 
 metadata {
-    definition (
+    definition(
         name: 'WeatherFlow (MQTT)',
         namespace: 'nrgup',
         author: 'Jonathan Bradshaw'
@@ -80,9 +80,7 @@ import groovy.json.JsonSlurper
 import groovy.transform.Field
 
 @Field static final List<String> topics = [
-    'homeassistant/sensor/weatherflow2mqtt/obs_air/state',
-    'homeassistant/sensor/weatherflow2mqtt/obs_sky/state',
-    'homeassistant/sensor/weatherflow2mqtt/hub_status/state'
+    'homeassistant/sensor/weatherflow2mqtt_ST-00045963/observation/state'
 ]
 
 @Field static final Map mapping = [
@@ -91,7 +89,7 @@ import groovy.transform.Field
     'air_temperature': [ name: 'temperature', unit: '&deg;F', f: { c -> (c * 1.8) + 32 } ],
     'uv': [ name: 'ultravioletIndex' ],
     'precipitation_type': [ name: 'water', f: { t -> t == 'None' ? 'dry' : 'wet' } ],
-    'battery_level_tempest': [ name: 'battery', unit: '%' ],
+    'battery_level': [ name: 'battery', unit: '%' ],
     'illuminance': [ name: 'illuminance', unit: 'lx' ],
     'rain_rate': [ name: 'rate' ],
     'battery': [ name: 'voltage', unit: 'V' ]
