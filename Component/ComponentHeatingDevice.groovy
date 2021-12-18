@@ -1,13 +1,14 @@
 metadata {
-    definition (name: 'Generic Component Heating Device', namespace: 'component', author: 'Jonathan Bradshaw') {
+    definition(name: 'Generic Component Thermostat', namespace: 'component', author: 'Jonathan Bradshaw') {
         capability 'Actuator'
+        capability 'Initialize'
         capability 'Switch'
-        capability 'TemperatureMeasurement'
-        capability 'ThermostatHeatingSetpoint'
-        capability 'ThermostatMode'
+        capability 'Thermostat'
         capability 'Refresh'
     }
 }
+
+import groovy.json.JsonOutput
 
 preferences {
     section {
@@ -30,14 +31,22 @@ void installed() {
     log.info "${device} driver installed"
 }
 
+void initialize() {
+    sendEvent([ name: 'supportedThermostatModes', value: JsonOutput.toJson(['heat', 'off']) ])
+}
+
 // Component command to turn on device
 void on() {
     parent?.componentOn(device)
+    sendEvent([ name: 'thermostatMode', value: 'heat' ])
+    sendEvent([ name: 'thermostatOperatingState', value: 'heating' ])
 }
 
 // Component command to turn off device
 void off() {
     parent?.componentOff(device)
+    sendEvent([ name: 'thermostatMode', value: 'off' ])
+    sendEvent([ name: 'thermostatOperatingState', value: 'idle' ])
 }
 
 // Component command to refresh device
@@ -52,6 +61,11 @@ void parse(List<Map> description) {
         if (d.descriptionText && txtEnable) { log.info "${device} ${d.descriptionText}" }
         sendEvent(d)
     }
+}
+
+// Component command to set position of device
+void setCoolingSetpoint(BigDecimal temperature) {
+    parent?.componentSetCoolingSetpoint(device, temperature)
 }
 
 // Component command to set position of device
@@ -73,6 +87,10 @@ void setThermostatMode(String thermostatMode) {
             off()
             break
     }
+}
+
+void setThermostatFanMode() {
+    parent?.componentSetThermostatFanMode(device)
 }
 
 void auto() {
