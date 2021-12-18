@@ -570,9 +570,17 @@ void doLevelChange() {
 
 // Called when the device is started
 void initialize() {
-    LOG.info "Driver initializing"
+    String version = '0.2.2'
+    LOG.info "Driver v${version} initializing"
     state.clear()
     unschedule()
+
+    state.with {
+        tokenInfo = [ access_token: '', expire: now() ] // initialize token
+        uuid = state?.uuid ?: UUID.randomUUID().toString()
+        driver_version = version
+        lang = 'en'
+    }
 
     sendEvent([ name: 'deviceCount', value: 0 ])
     Map datacenter = tuyaCountries.find { c -> c.country == settings.appCountry }
@@ -582,13 +590,7 @@ void initialize() {
     } else {
         LOG.error "Country not set in configuration"
         sendEvent([ name: 'state', value: 'error', descriptionText: 'Country not set in configuration'])
-    }
-
-    state.with {
-        tokenInfo = [ access_token: '', expire: now() ] // initialize token
-        uuid = state?.uuid ?: UUID.randomUUID().toString()
-        driver_version = '0.2'
-        lang = 'en'
+        return
     }
 
     tuyaAuthenticateAsync()
