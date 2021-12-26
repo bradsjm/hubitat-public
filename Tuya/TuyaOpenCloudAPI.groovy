@@ -672,13 +672,15 @@ private static Map mapTuyaCategory(Map d) {
         case 'dj':    // Light
         case 'tgq':   // Dimmer Light
         case 'tyndj': // Solar Light
+        case 'qjdcz': // Night Light
         case 'xdd':   // Ceiling Light
         case 'ykq':   // Remote Control
             if (getFunctionCode(d.statusSet, tuyaFunctions.colour)) {
                 return [
                     driver: 'Generic Component RGBW',
                     devices: [
-                        'switch': [ suffix: 'Switch', driver: 'Generic Component Switch' ]
+                        'switch': [ suffix: 'Switch', driver: 'Generic Component Switch' ],
+                        'switch_1': [ suffix: 'Switch 1', driver: 'Generic Component Switch' ]
                     ]
                 ]
             } else if (getFunctionCode(d.statusSet, tuyaFunctions.ct)) {
