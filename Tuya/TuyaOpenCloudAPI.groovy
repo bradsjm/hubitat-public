@@ -585,7 +585,7 @@ void initialize() {
     sendEvent([ name: 'deviceCount', value: 0 ])
     Map datacenter = tuyaCountries.find { c -> c.country == settings.appCountry }
     if (datacenter != null) {
-        LOG.error "setting ${settings.appCountry} datacenter ${datacenter}"
+        LOG.info "setting ${settings.appCountry} datacenter ${datacenter}"
         state.endPoint = datacenter.endpoint
         state.countryCode = datacenter.countryCode
     } else {
@@ -675,79 +675,88 @@ private static Map mapTuyaCategory(Map d) {
         case 'xdd':   // Ceiling Light
         case 'ykq':   // Remote Control
             if (getFunctionCode(d.statusSet, tuyaFunctions.colour)) {
-                return [ namespace: 'hubitat', name: 'Generic Component RGBW' ]
+                return [
+                    driver: 'Generic Component RGBW',
+                    devices: [
+                        'switch': [ suffix: 'Switch', driver: 'Generic Component Switch' ]
+                    ]
+                ]
             } else if (getFunctionCode(d.statusSet, tuyaFunctions.ct)) {
-                return [ namespace: 'hubitat', name: 'Generic Component CT' ]
+                return [ driver: 'Generic Component CT' ]
             } else if (getFunctionCode(d.statusSet, tuyaFunctions.brightness)) {
-                return [ namespace: 'hubitat', name: 'Generic Component Dimmer' ]
+                return [ driver: 'Generic Component Dimmer' ]
             }
         case 'fsd ':  // Ceiling Fan (with Light)
-            return [ namespace: 'hubitat', name: 'Generic Component Fan Control' ]
+            return [
+                driver: 'Generic Component Fan Control',
+                devices: [
+                    'light': [ suffix: 'Light', driver: 'Generic Component Switch' ]
+                ]
+            ]
 
         // Electrical
         case 'tgkg':  // Dimmer Switch
-            return [ namespace: 'hubitat', name: 'Generic Component Dimmer' ]
+            return [ driver: 'Generic Component Dimmer' ]
         case 'wxkg':  // Scene Switch (TS004F in 'Device trigger' mode only; TS0044)
-            return [ namespace: 'hubitat', name: 'Generic Component Central Scene Switch' ]
+            return [ driver: 'Generic Component Central Scene Switch' ]
         case 'cl':    // Curtain Motor (uses custom driver)
         case 'clkg':
-            return [ namespace: 'component', name: 'Generic Component Window Shade' ]
+            return [ namespace: 'component', driver: 'Generic Component Window Shade' ]
         case 'cwwsq': // Pet Feeder (https://developer.tuya.com/en/docs/iot/f?id=K9gf468bl11rj)
-            return [ namespace: 'hubitat', name: 'Generic Component Button Controller' ]
+            return [ driver: 'Generic Component Button Controller' ]
         case 'cz':    // Socket (https://developer.tuya.com/en/docs/iot/s?id=K9gf7o5prgf7s)
         case 'kg':    // Switch
         case 'cz':    // Socket
         case 'pc':    // Power Strip (https://developer.tuya.com/en/docs/iot/s?id=K9gf7o5prgf7s)
             return [
-                namespace: 'hubitat',
-                name: 'Generic Component Switch',
+                driver: 'Generic Component Switch',
                 devices: [
-                    'switch': 'Switch',
-                    'switch_1': 'Socket 1',
-                    'switch_2': 'Socket 2',
-                    'switch_3': 'Socket 3',
-                    'switch_4': 'Socket 4',
-                    'switch_5': 'Socket 5',
-                    'switch_6': 'Socket 6',
-                    'switch_usb1': 'USB 1',
-                    'switch_usb2': 'USB 2',
-                    'switch_usb3': 'USB 3',
-                    'switch_usb4': 'USB 4',
-                    'switch_usb5': 'USB 5',
-                    'switch_usb6': 'USB 6'
+                    'switch': [ suffix: 'Switch' ],
+                    'switch_1': [ suffix: 'Socket 1' ],
+                    'switch_2': [ suffix: 'Socket 2' ],
+                    'switch_3': [ suffix: 'Socket 3' ],
+                    'switch_4': [ suffix: 'Socket 4' ],
+                    'switch_5': [ suffix: 'Socket 5' ],
+                    'switch_6': [ suffix: 'Socket 6' ],
+                    'switch_usb1': [ suffix: 'USB 1' ],
+                    'switch_usb2': [ suffix: 'USB 2' ],
+                    'switch_usb3': [ suffix: 'USB 3' ],
+                    'switch_usb4': [ suffix: 'USB 4' ],
+                    'switch_usb5': [ suffix: 'USB 5' ],
+                    'switch_usb6': [ suffix: 'USB 6' ]
                 ]
             ]
 
         // Security & Sensors
         case 'ms':    // Lock
-            return [ namespace: 'hubitat', name: 'Generic Component Lock' ]
+            return [ driver: 'Generic Component Lock' ]
         case 'ldcg':  // Brightness, temperature, humidity, CO2 sensors
         case 'wsdcg':
         case 'zd':    // Vibration sensor as motion
-            return [ namespace: 'hubitat', name: 'Generic Component Omni Sensor' ]
+            return [ driver: 'Generic Component Omni Sensor' ]
         case 'mcs':   // Contact Sensor
-            return [ namespace: 'hubitat', name: 'Generic Component Contact Sensor' ]
+            return [ driver: 'Generic Component Contact Sensor' ]
         case 'sj':    // Water Sensor
-            return [ namespace: 'hubitat', name: 'Generic Component Water Sensor' ]
+            return [ driver: 'Generic Component Water Sensor' ]
         case 'ywbj':  // Smoke Detector
-            return [ namespace: 'hubitat', name: 'Generic Component Smoke Detector' ]
+            return [ driver: 'Generic Component Smoke Detector' ]
         case 'cobj':  // CO Detector
-            return [ namespace: 'hubitat', name: 'Generic Component Carbon Monoxide Detector' ]
+            return [ driver: 'Generic Component Carbon Monoxide Detector' ]
         case 'co2bj': // CO2 Sensor
-            return [ namespace: 'hubitat', name: 'Generic Component Carbon Dioxide Detector' ]
+            return [ driver: 'Generic Component Carbon Dioxide Detector' ]
         case 'pir':   // Motion Sensor
-            return [ namespace: 'hubitat', name: 'Generic Component Motion Sensor' ]
+            return [ driver: 'Generic Component Motion Sensor' ]
 
         // Large Home Appliances
 
         // Small Home Appliances
         case 'qn':    // Heater
-            return [ namespace: 'component', name: 'Generic Component Heating Device' ]
+            return [ namespace: 'component', driver: 'Generic Component Heating Device' ]
 
         // Kitchen Appliances
     }
 
-    return [ namespace: 'hubitat', name: 'Generic Component Switch' ]
+    return [ driver: 'Generic Component Switch' ]
 }
 
 private static Map<String, Map> getFunctions(DeviceWrapper dw) {
@@ -1059,12 +1068,12 @@ private static Map country(String country, String countryCode, String endpoint =
  *  Driver Capabilities Implementation
  */
 private void createChildDevices(Map d) {
-    Map driver = mapTuyaCategory(d)
-    LOG.debug "Tuya category ${d.category} driver ${driver}"
+    Map mapping = mapTuyaCategory(d)
+    LOG.debug "Tuya category ${d.category} driver ${mapping}"
 
     // Tuya Device to Single Hubitat Device
-    if (driver.devices == null) {
-        createChildDevice("${device.id}-${d.id}", driver, d)
+    if (mapping.devices == null) {
+        createChildDevice("${device.id}-${d.id}", mapping, d)
         return
     }
 
@@ -1072,29 +1081,31 @@ private void createChildDevices(Map d) {
     String baseName = d.name
     Map baseFunctions = d.functions
     Map baseStatusSet = d.statusSet
-    Map subdevices = driver.devices.findAll { entry -> entry.key in baseFunctions.keySet() }
-    subdevices.each { code, description ->
-        d.name = "${baseName} ${description}"
+    Map subdevices = mapping.devices.findAll { entry -> entry.key in baseFunctions.keySet() }
+    subdevices.each { code, submap ->
+        d.name = "${baseName} ${submap.suffix ?: code}"
         d.functions = [ (code): baseFunctions[(code)] ]
         d.statusSet = [ (code): baseStatusSet[(code)] ]
-        createChildDevice("${device.id}-${d.id}-${code}", driver, d)
+        createChildDevice("${device.id}-${d.id}-${code}", [
+            namespace: submap.namespace ?: mapping.namespace,
+            driver: submap.driver ?: mapping.driver
+        ], d)
     }
 }
 
-private ChildDeviceWrapper createChildDevice(String dni, Map driver, Map d) {
+private ChildDeviceWrapper createChildDevice(String dni, Map mapping, Map d) {
     ChildDeviceWrapper dw = getChildDevice(dni)
     if (dw == null) {
-        LOG.info "Creating device ${d.name} using ${driver.name} driver"
+        LOG.info "Creating device ${d.name} using ${mapping.driver} driver"
         try {
-            dw = addChildDevice(driver.namespace, driver.name, dni,
+            dw = addChildDevice(mapping.namespace ?: 'hubitat', mapping.driver, dni,
                 [
                     name: d.product_name,
                     label: d.name,
-                    //location: add room support if we can get from Tuya
                 ]
             )
         } catch (UnknownDeviceTypeException e) {
-            LOG.exception("${driver.name} device creation failed", e)
+            LOG.exception("${d.name} device creation failed", e)
         }
     }
 
