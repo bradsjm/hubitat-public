@@ -213,6 +213,7 @@ metadata {
     ],
     'humidity_value': [ min: 0, max: 100, scale: 0, step: 1, type: 'Integer' ],
     'temp_current': [ min: -400, max: 2000, scale: 1, step: 1, unit: '°C', type: 'Integer' ],
+    'temp_set': [ min: -400, max: 2000, scale: 1, step: 1, unit: '°C', type: 'Integer' ],
     'va_humidity': [ min: 0, max: 1000, scale: 1, step: 1, type: 'Integer' ],
     'va_temperature': [ min: 0, max: 1000, scale: 1, step: 1, type: 'Integer' ],
     'manual_feed': [ min: 1, max: 50, scale:0, step: 1, type: 'Integer' ]
@@ -711,21 +712,20 @@ private static Map mapTuyaCategory(Map d) {
         case 'cz':    // Socket
         case 'pc':    // Power Strip (https://developer.tuya.com/en/docs/iot/s?id=K9gf7o5prgf7s)
             return [
-                driver: 'Generic Component Switch',
                 devices: [
-                    'switch': [ suffix: 'Switch' ],
-                    'switch_1': [ suffix: 'Socket 1' ],
-                    'switch_2': [ suffix: 'Socket 2' ],
-                    'switch_3': [ suffix: 'Socket 3' ],
-                    'switch_4': [ suffix: 'Socket 4' ],
-                    'switch_5': [ suffix: 'Socket 5' ],
-                    'switch_6': [ suffix: 'Socket 6' ],
-                    'switch_usb1': [ suffix: 'USB 1' ],
-                    'switch_usb2': [ suffix: 'USB 2' ],
-                    'switch_usb3': [ suffix: 'USB 3' ],
-                    'switch_usb4': [ suffix: 'USB 4' ],
-                    'switch_usb5': [ suffix: 'USB 5' ],
-                    'switch_usb6': [ suffix: 'USB 6' ]
+                    'switch': [ suffix: 'Switch', driver: 'Generic Component Switch' ],
+                    'switch_1': [ suffix: 'Socket 1', driver: 'Generic Component Switch' ],
+                    'switch_2': [ suffix: 'Socket 2', driver: 'Generic Component Switch' ],
+                    'switch_3': [ suffix: 'Socket 3', driver: 'Generic Component Switch' ],
+                    'switch_4': [ suffix: 'Socket 4', driver: 'Generic Component Switch' ],
+                    'switch_5': [ suffix: 'Socket 5', driver: 'Generic Component Switch' ],
+                    'switch_6': [ suffix: 'Socket 6', driver: 'Generic Component Switch' ],
+                    'switch_usb1': [ suffix: 'USB 1', driver: 'Generic Component Switch' ],
+                    'switch_usb2': [ suffix: 'USB 2', driver: 'Generic Component Switch' ],
+                    'switch_usb3': [ suffix: 'USB 3', driver: 'Generic Component Switch' ],
+                    'switch_usb4': [ suffix: 'USB 4', driver: 'Generic Component Switch' ],
+                    'switch_usb5': [ suffix: 'USB 5', driver: 'Generic Component Switch' ],
+                    'switch_usb6': [ suffix: 'USB 6', driver: 'Generic Component Switch' ]
                 ]
             ]
 
@@ -1073,11 +1073,11 @@ private void createChildDevices(Map d) {
     Map mapping = mapTuyaCategory(d)
     LOG.debug "Tuya category ${d.category} driver ${mapping}"
 
-    // Tuya Device to Single Hubitat Device
-    if (mapping.devices == null) {
+    if (mapping.driver != null) {
         createChildDevice("${device.id}-${d.id}", mapping, d)
-        return
     }
+
+    if (mapping.devices == null) { return }
 
     // Tuya Device to Multiple Hubitat Devices
     String baseName = d.name
@@ -1437,7 +1437,7 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
 
         if (status.code in tuyaFunctions.temperatureSet) {
             Map set = deviceStatusSet[status.code] ?: defaults[status.code]
-            String value = status.value
+            String value = scale(status.value, set.scale)
             String unit = set.unit
             if (txtEnable) { LOG.info "${dw} heating set point is ${value}${unit}" }
             return [ [ name: 'heatingSetpoint', value: value, unit: unit, descriptionText: "heating set point is ${value}${unit}" ] ]
