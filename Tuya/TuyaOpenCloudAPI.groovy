@@ -689,7 +689,8 @@ private static Map mapTuyaCategory(Map d) {
             } else if (getFunctionCode(d.statusSet, tuyaFunctions.brightness)) {
                 return [ driver: 'Generic Component Dimmer' ]
             }
-        case 'fsd ':  // Ceiling Fan (with Light)
+            break
+        case 'fsd':  // Ceiling Fan (with Light)
             return [
                 driver: 'Generic Component Fan Control',
                 devices: [
@@ -1636,7 +1637,10 @@ private void tuyaGetScenesAsync(Integer homeId) {
 
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
 private void tuyaGetScenesResponse(AsyncResponse response, Map data) {
-    if (tuyaCheckResponse(response) == false) { return }
+    if (tuyaCheckResponse(response) == false) {
+        log.warn "Check you have the Smart Home Scene Linkage service enabled for your Tuya account"
+        return
+    }
     if (!state.scenes) { state.scenes = [:] }
     List<Map> scenes = response.json.result ?: []
     scenes.each { scene -> createSceneDevice(data.homeId, scene) }
