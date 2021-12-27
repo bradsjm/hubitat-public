@@ -1299,14 +1299,14 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
                 String level = ['low', 'medium-low', 'medium', 'medium-high', 'high'].get(value)
                 if (txtEnable) { LOG.info "${dw} speed is ${level}" }
                 return [
-                    [ name: 'speed', value: level, descriptionText: "speed is ${level}" ]
+                    [ name: 'speed', value: level, descriptionText: "speed is ${level}" ],
                     [ name: 'switch', value: 'on', descriptionText: "fan is on" ]
                 ]
             }
 
             if (txtEnable) { LOG.info "${dw} speed is off" }
             return [
-                [ name: 'speed', value: 'off', descriptionText: 'speed is off' ]
+                [ name: 'speed', value: 'off', descriptionText: 'speed is off' ],
                 [ name: 'switch', value: 'off', descriptionText: 'fan is off' ]
             ]
         }
