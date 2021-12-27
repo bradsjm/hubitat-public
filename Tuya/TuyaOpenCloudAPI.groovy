@@ -51,6 +51,7 @@ import hubitat.scheduling.AsyncResponse
  *  12/02/21 - 0.2.1 - Added support for power strips and triggering Tuya scenes
  *  12/03/21 - 0.2.1 - Added basic support for pet feeder manual feeding button
  *  12/08/21 - 0.2.2 - Added support for additional types of sockets and switches
+ *  12/26/21 - 0.2.3 - Added more types of sockets
  *
  *  Custom component drivers located at https://github.com/bradsjm/hubitat-drivers/tree/master/Component
  */
@@ -571,7 +572,7 @@ void doLevelChange() {
 
 // Called when the device is started
 void initialize() {
-    String version = '0.2.2'
+    String version = '0.2.3'
     LOG.info "Driver v${version} initializing"
     state.clear()
     unschedule()
@@ -666,6 +667,22 @@ void removeDevices() {
   *  https://developer.tuya.com/en/docs/iot/standarddescription?id=K9i5ql6waswzq
   */
 private static Map mapTuyaCategory(Map d) {
+    Map switches = [
+        'switch': [ suffix: 'Switch', driver: 'Generic Component Switch' ],
+        'switch_1': [ suffix: 'Socket 1', driver: 'Generic Component Switch' ],
+        'switch_2': [ suffix: 'Socket 2', driver: 'Generic Component Switch' ],
+        'switch_3': [ suffix: 'Socket 3', driver: 'Generic Component Switch' ],
+        'switch_4': [ suffix: 'Socket 4', driver: 'Generic Component Switch' ],
+        'switch_5': [ suffix: 'Socket 5', driver: 'Generic Component Switch' ],
+        'switch_6': [ suffix: 'Socket 6', driver: 'Generic Component Switch' ],
+        'switch_usb1': [ suffix: 'USB 1', driver: 'Generic Component Switch' ],
+        'switch_usb2': [ suffix: 'USB 2', driver: 'Generic Component Switch' ],
+        'switch_usb3': [ suffix: 'USB 3', driver: 'Generic Component Switch' ],
+        'switch_usb4': [ suffix: 'USB 4', driver: 'Generic Component Switch' ],
+        'switch_usb5': [ suffix: 'USB 5', driver: 'Generic Component Switch' ],
+        'switch_usb6': [ suffix: 'USB 6', driver: 'Generic Component Switch' ]
+    ]
+
     switch (d.category) {
         // Lighting
         case 'dc':    // String Lights
@@ -677,17 +694,11 @@ private static Map mapTuyaCategory(Map d) {
         case 'xdd':   // Ceiling Light
         case 'ykq':   // Remote Control
             if (getFunctionCode(d.statusSet, tuyaFunctions.colour)) {
-                return [
-                    driver: 'Generic Component RGBW',
-                    devices: [
-                        'switch': [ suffix: 'Switch', driver: 'Generic Component Switch' ],
-                        'switch_1': [ suffix: 'Switch 1', driver: 'Generic Component Switch' ]
-                    ]
-                ]
+                return [ driver: 'Generic Component RGBW', devices: switches ]
             } else if (getFunctionCode(d.statusSet, tuyaFunctions.ct)) {
-                return [ driver: 'Generic Component CT' ]
+                return [ driver: 'Generic Component CT', devices: switches ]
             } else if (getFunctionCode(d.statusSet, tuyaFunctions.brightness)) {
-                return [ driver: 'Generic Component Dimmer' ]
+                return [ driver: 'Generic Component Dimmer', devices: switches ]
             }
             break
         case 'fsd':  // Ceiling Fan (with Light)
@@ -712,23 +723,12 @@ private static Map mapTuyaCategory(Map d) {
         case 'kg':    // Switch
         case 'cz':    // Socket
         case 'pc':    // Power Strip (https://developer.tuya.com/en/docs/iot/s?id=K9gf7o5prgf7s)
-            return [
-                devices: [
-                    'switch': [ suffix: 'Switch', driver: 'Generic Component Switch' ],
-                    'switch_1': [ suffix: 'Socket 1', driver: 'Generic Component Switch' ],
-                    'switch_2': [ suffix: 'Socket 2', driver: 'Generic Component Switch' ],
-                    'switch_3': [ suffix: 'Socket 3', driver: 'Generic Component Switch' ],
-                    'switch_4': [ suffix: 'Socket 4', driver: 'Generic Component Switch' ],
-                    'switch_5': [ suffix: 'Socket 5', driver: 'Generic Component Switch' ],
-                    'switch_6': [ suffix: 'Socket 6', driver: 'Generic Component Switch' ],
-                    'switch_usb1': [ suffix: 'USB 1', driver: 'Generic Component Switch' ],
-                    'switch_usb2': [ suffix: 'USB 2', driver: 'Generic Component Switch' ],
-                    'switch_usb3': [ suffix: 'USB 3', driver: 'Generic Component Switch' ],
-                    'switch_usb4': [ suffix: 'USB 4', driver: 'Generic Component Switch' ],
-                    'switch_usb5': [ suffix: 'USB 5', driver: 'Generic Component Switch' ],
-                    'switch_usb6': [ suffix: 'USB 6', driver: 'Generic Component Switch' ]
-                ]
-            ]
+            if (getFunctionCode(d.statusSet, tuyaFunctions.colour)) {
+                return [ driver: 'Generic Component RGBW', devices: switches ]
+            } else if (getFunctionCode(d.statusSet, tuyaFunctions.brightness)) {
+                return [ driver: 'Generic Component Dimmer', devices: switches ]
+            }
+            return [ devices: switches ]
 
         // Security & Sensors
         case 'ms':    // Lock
