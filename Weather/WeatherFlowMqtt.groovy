@@ -41,6 +41,10 @@ metadata {
         capability 'Voltage Measurement'
         capability 'Water Sensor'
 
+        attribute 'weather', 'string'
+        attribute 'lightningCount', 'number'
+        attribute 'lightningDistance', 'number'
+
         preferences {
             input name: 'mqttBroker',
                   type: 'text',
@@ -80,10 +84,14 @@ import groovy.json.JsonSlurper
 import groovy.transform.Field
 
 @Field static final List<String> topics = [
+    'homeassistant/sensor/weatherflow2mqtt/weather/state',
     'homeassistant/sensor/weatherflow2mqtt_ST-00045963/observation/state'
 ]
 
 @Field static final Map mapping = [
+    'weather': [ name: 'weather' ],
+    'lightning_strike_count': [ name: 'lightningCount' ],
+    'lightning_strike_distance': [ name: 'lightningDistance' ],
     'relative_humidity': [ name: 'humidity', unit: '%' ],
     'station_pressure': [ name: 'pressure', unit: 'mb' ],
     'air_temperature': [ name: 'temperature', unit: '&deg;F', f: { c -> (c * 1.8) + 32 } ],
