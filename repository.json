@@ -6,7 +6,7 @@
       "id": "aeb1abe9-6c31-4bd3-9c5b-4754922e30a6",
       "name": "Tuya IoT Platform (Cloud)",
       "category": "Integrations",
-      "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/development/Tuya/packageManifest.json",
+      "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/master/Tuya/packageManifest.json",
       "description": "Tuya IoT Platform (Cloud)",
       "tags": [
         "Cloud"
