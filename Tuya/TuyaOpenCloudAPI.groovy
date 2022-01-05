@@ -601,17 +601,17 @@ void initialize() {
 
 // Called when the device is first created
 void installed() {
-    LOG.info "Driver installed"
+    LOG.info 'Driver installed'
 }
 
 // Called when the device is removed
 void uninstalled() {
-    LOG.info "Driver uninstalled"
+    LOG.info 'Driver uninstalled'
 }
 
 // Called when the settings are updated
 void updated() {
-    LOG.info "Driver configuration updated"
+    LOG.info 'Driver configuration updated'
     LOG.debug settings
     if (settings.logEnable == true) { runIn(1800, 'logsOff') }
 
@@ -1853,7 +1853,7 @@ private String tuyaGetStringToSign(String method, String path, Map query, Map bo
     return method.toUpperCase() + '\n' + contentSHA256 + '\n' + headers + '\n' + url
 }
 
-@Field private final LOG = [
+@Field private final Map LOG = [
     debug: { s -> if (settings.logEnable == true) { log.debug(s) } },
     info: { s -> log.info(s) },
     warn: { s -> log.warn(s) },
