@@ -631,7 +631,7 @@ void buttonHandler(Event evt) {
     if (logEnabled) { log.trace "buttonHandler: ${evt.device} ${evt.value} (mode ${mode.name})" }
 
     if (evt.value == settings.activationButtonNumber) {
-        if (!state.triggered.running) {
+        if (state.triggered?.running != true) {
             state.triggered = [
                 type: 'button',
                 device: evt.device.displayName,
@@ -653,27 +653,30 @@ void contactHandler(Event evt) {
         (evt.device.id in settings.activationContactSensors*.id) ||
         (state.triggered?.running == true && evt.device.id in settings.additionalContactSensors*.id)
     ) {
-        state.triggered = [
-            type: 'contact',
-            device: evt.device.displayName,
-            value: evt.value
-        ]
-        performActiveAction(mode)
+        if (state.triggered?.running != true) {
+            state.triggered = [
+                type: 'contact',
+                device: evt.device.displayName,
+                value: evt.value
+            ]
+            performActiveAction(mode)
+        }
         scheduleInactiveAction(mode)
     }
 }
 
 // Called when disabled switch changes
 void disableHandler(Event evt) {
-    if (!state.triggered?.running == true) { return }
+    if (state.triggered?.running != true) { return }
 
     if ((evt.device.id in settings.disabledSwitchWhenOn*.id && evt.value == 'on') ||
         (evt.device.id in settings.disabledSwitchWhenOff*.id && evt.value == 'off') ) {
-        LOG.info "${app.name} disable switch activated (forcing inactive state)"
+        LOG.info "${app.name} mode disable switch activated"
         performInactiveAction()
     } else if ((evt.device.id in settings.disabledSwitchWhenOn*.id && evt.value == 'off') ||
         (evt.device.id in settings.disabledSwitchWhenOff*.id && evt.value == 'on') ) {
-        LOG.info "${app.name} disable switch deactivated (checking for active state)"
+        LOG.info "${app.name} mode disable switch deactivated"
+        Map mode = getActiveMode()
         performActiveAction(mode)
         scheduleInactiveAction(mode)
     }
@@ -710,7 +713,6 @@ void initialize() {
 
 // Called when a monitored light changes state
 void lightHandler(Event evt) {
-    if (!state.triggered.running) { return }
     if (evt.value == 'off' && settings.autoDisable == true) {
         LOG.info "${app.name} Disabling control of ${evt.device} for ${reenableDelay} minutes"
         sendEvent name: 'disable', value: evt.device, descriptionText: 'Disabling light control (turned off manually)'
@@ -745,12 +747,14 @@ void motionHandler(Event evt) {
         (evt.device.id in settings.activationMotionSensors*.id) ||
         (state.triggered?.running == true && evt.device.id in settings.additionalMotionSensors*.id)
     ) {
-        state.triggered = [
-            type: 'motion',
-            device: evt.device.displayName,
-            value: evt.value
-        ]
-        performActiveAction(mode)
+        if (state.triggered?.running != true) {
+            state.triggered = [
+                type: 'motion',
+                device: evt.device.displayName,
+                value: evt.value
+            ]
+            performActiveAction(mode)
+        }
         scheduleInactiveAction(mode)
     }
 }
@@ -762,12 +766,14 @@ void switchHandler(Event evt) {
 
     if ((evt.device.id in settings.activationOnSwitches*.id && evt.value == 'on') ||
         (evt.device.id in settings.activationOffSwitches*.id && evt.value == 'off')) {
-        state.triggered = [
-            type: 'switch',
-            device: evt.device.displayName,
-            value: evt.value
-        ]
-        performActiveAction(mode)
+        if (state.triggered?.running != true) {
+            state.triggered = [
+                type: 'switch',
+                device: evt.device.displayName,
+                value: evt.value
+            ]
+            performActiveAction(mode)
+        }
         scheduleInactiveAction(mode)
     }
 }
@@ -982,15 +988,13 @@ private void performInactiveAction(Map mode) {
     state.triggered.running = false
     state.triggered.inactive = now()
     unsubscribe(mode.activeLights)
-    if (checkEnabled(mode)) {
-        sendEvent name: 'inactive', value: mode.name
-        performAction(mode, 'inactive')
-    }
+    sendEvent name: 'inactive', value: mode.name
+    performAction(mode, 'inactive')
 }
 
 // Performs the configured actions when changing between modes
 private void performTransitionAction(Map oldMode, Map newMode) {
-    if (state.triggered.running == true) {
+    if (state.triggered?.running == true) {
         List newLights = newMode.active == 'none' ? [] : newMode.activeLights*.id
         if (newLights) {
             oldMode.activeLights = oldMode.activeLights.findAll { device -> !(device.id in newLights) }
@@ -1196,7 +1200,7 @@ private void setLights(List lights, String action, Object[] value) {
 
 @Field private final LOG = [
     debug: { s -> if (settings.logEnable == true) { log.debug(s) } },
-    info: { s -> LOG.info(s) },
+    info: { s -> log.info(s) },
     warn: { s -> log.warn(s) },
     error: { s -> log.error(s) },
     exception: { message, exception ->
