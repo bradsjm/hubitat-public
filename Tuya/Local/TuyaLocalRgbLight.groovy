@@ -527,7 +527,7 @@ private static String translateColor(Integer hue, Integer saturation) {
 }
 
 private SynchronousQueue getQ() {
-    return queues.computeIfAbsent(device.id) { k -> new SynchronousQueue() };
+    return queues.computeIfAbsent(device.id) { k -> new SynchronousQueue() }
 }
 
 private void parseDeviceState(Map dps) {
@@ -608,7 +608,7 @@ private void increaseErrorCount(msg = '') {
 
 private void increaseRetryCount(msg = '') {
     int val = (device.currentValue('retries') ?: 0) as int
-    sendEvent ([ name: 'retries', value: val + 1,, descriptionText: msg ])
+    sendEvent ([ name: 'retries', value: val + 1, descriptionText: msg ])
 }
 
 private Map repeatCommand(Map dps) {
@@ -647,7 +647,7 @@ private Map repeatCommand(Map dps) {
     return result
 }
 
-@Field private final LOG = [
+@Field private final Map LOG = [
     debug: { s -> if (settings.logEnable == true) { log.debug(s) } },
     info: { s -> log.info(s) },
     warn: { s -> log.warn(s) },
