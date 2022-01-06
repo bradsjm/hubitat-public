@@ -52,6 +52,7 @@ import hubitat.scheduling.AsyncResponse
  *  12/03/21 - 0.2.1 - Added basic support for pet feeder manual feeding button
  *  12/08/21 - 0.2.2 - Added support for additional types of sockets and switches
  *  12/26/21 - 0.2.3 - Added more types of sockets
+ *  01/06/22 - 0.2.4 - Added humidifer support (by simon)
  *
  *  Custom component drivers located at https://github.com/bradsjm/hubitat-drivers/tree/master/Component
  */
@@ -142,6 +143,9 @@ metadata {
     'control'        : [ 'control' ],
     'fanSpeed'       : [ 'fan_speed' ],
     'light'          : [ 'switch_led', 'switch_led_1', 'light' ],
+    'humiditySet'    : [ 'dehumidify_set_value' ],                                                                                       /* Inserted by SJB */
+    'humiditySpeed'  : [ 'fan_speed_enum' ],
+    'humidity'       : [ 'temp_indoor', 'swing', 'child_lock', 'fan_speed_enum', 'dehumidify_set_value', 'humidity_indoor', 'switch' ],
     'meteringSwitch' : [ 'countdown_1' , 'add_ele' , 'cur_current', 'cur_power', 'cur_voltage' , 'relay_status', 'light_mode' ],
     'omniSensor'     : [ 'bright_value', 'humidity_value', 'va_humidity', 'bright_sensitivity', 'shock_state', 'inactive_state', 'sensitivity' ],
     'pir'            : [ 'pir' ],
@@ -393,6 +397,27 @@ void componentSetHeatingSetpoint(DeviceWrapper dw, BigDecimal temperature) {
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': temperature ])
     } else {
         LOG.error "Unable to determine heating setpoint function code in ${functions}"
+    }
+}
+
+// Component command to set humidity setpoint
+void componentSetHumiditySetpoint(DeviceWrapper dw, BigDecimal humidityNeeded) {
+    Map<String, Map> functions = getFunctions(dw)
+    String code = getFunctionCode(functions, tuyaFunctions.humiditySet)
+    if (code != null) {
+        log.info "Setting ${dw} humidity set point to ${humidityNeeded}"
+        BigDecimal setHumidity = BigDecimal.valueOf(Integer.valueOf(humidityNeeded))
+        tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': setHumidity ])
+    }
+}
+
+// Component command to set dehumidifier speed
+void componentSetHumidifierSpeed(DeviceWrapper dw, BigDecimal speedNeeded) {
+    Map<String, Map> functions = getFunctions(dw)
+    String code = getFunctionCode(functions, tuyaFunctions.humiditySpeed)
+    if (code != null) {
+        log.info "Setting ${dw} dehumidifier speed to ${speedNeeded}"
+        tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': speedNeeded ])
     }
 }
 
@@ -755,7 +780,9 @@ private static Map mapTuyaCategory(Map d) {
         // Small Home Appliances
         case 'qn':    // Heater
             return [ namespace: 'component', driver: 'Generic Component Heating Device' ]
-
+        case 'cs':    // DeHumidifer
+            return [ namespace: 'component', driver: 'Generic Component Dehumidifier' ]
+    
         // Kitchen Appliances
     }
 
@@ -1465,6 +1492,52 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
                 case 'colour':
                     if (txtEnable) { LOG.info "${dw} color mode is RGB" }
                     return [ [ name: 'colorMode', value: 'RGB', descriptionText: 'color mode is RGB' ] ]
+            }
+        }
+
+        if (status.code in tuyaFunctions.humidity) {
+            Map set = deviceStatusSet[status.code] ?: defaults[status.code]
+            String name
+            String value
+            String unit = ''
+            switch (status.code) {
+                case 'temp_indoor':
+                    name = 'temperature'
+                    value = scale(status.value, set.scale)
+                    unit = set.unit
+                    break
+                case 'swing':
+                    name = 'swing'
+                    value = status.value
+                    unit = ''
+                    break
+                case 'child_lock':
+                    name = 'child_lock'
+                    value = status.value
+                    unit = ''
+                    break
+                case 'fan_speed_enum':
+                    name = 'speed'
+                    value = status.value
+                    unit = ''
+                    break
+                case 'dehumidify_set_value':
+                    name = 'humiditySetpoint'
+                    value = scale(status.value, set.scale)
+                    unit = 'RH%'
+                    break
+                case 'humidity_indoor':
+                    name = 'humidity'
+                    value = scale(status.value, set.scale)
+                    unit = 'RH%'
+                    break
+                default:
+                    LOG.warn "${dw} unsupported Dehumidifier status.code ${status.code}"
+            }
+            
+            if (name != null && value != null) {
+                if (txtEnable) { LOG.info "${dw} ${name} is ${value} ${unit}" }
+                return [ [ name: name, value: value, descriptionText: "${name} is ${value} ${unit}", unit: unit ] ]
             }
         }
 
