@@ -52,7 +52,7 @@ import hubitat.scheduling.AsyncResponse
  *  12/03/21 - 0.2.1 - Added basic support for pet feeder manual feeding button
  *  12/08/21 - 0.2.2 - Added support for additional types of sockets and switches
  *  12/26/21 - 0.2.3 - Added more types of sockets
- *  01/06/22 - 0.2.4 - Added humidifer support (by simon)
+ *  01/06/22 - 0.2.4 - Added humidifier support (by simon)
  *
  *  Custom component drivers located at https://github.com/bradsjm/hubitat-drivers/tree/master/Component
  */
