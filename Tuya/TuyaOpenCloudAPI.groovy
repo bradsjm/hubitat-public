@@ -53,6 +53,7 @@ import hubitat.scheduling.AsyncResponse
  *  12/08/21 - 0.2.2 - Added support for additional types of sockets and switches
  *  12/26/21 - 0.2.3 - Added more types of sockets
  *  01/06/22 - 0.2.4 - Added humidifier support (by simon)
+ *  01/07/22 - 0.2.5 - Added check for expired tokens
  *
  *  Custom component drivers located at https://github.com/bradsjm/hubitat-drivers/tree/master/Component
  */
@@ -234,7 +235,7 @@ void componentClose(DeviceWrapper dw) {
     String code = getFunctionCode(functions, tuyaFunctions.control)
 
     if (code != null) {
-        LOG.info "Closing ${dw}"
+        if (txtEnable) { LOG.info "Closing ${dw}" }
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': 'close' ])
     } else {
         LOG.error "Unable to determine close function code in ${functions}"
@@ -269,13 +270,13 @@ void componentOn(DeviceWrapper dw) {
     String code = getFunctionCode(functions, tuyaFunctions.light + tuyaFunctions.power)
 
     if (code != null) {
-        LOG.info "Turning ${dw} on"
+        if (txtEnable) { LOG.info "Turning ${dw} on" }
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': true ])
     } else {
         String homeId = dw.getDataValue("homeId")
         String sceneId = dw.getDataValue("sceneId")
         if (sceneId && homeId) {
-            log.info "Triggering ${dw} automation"
+            if (txtEnable) { LOG.info "Triggering ${dw} automation" }
             tuyaTriggerScene(homeId as Integer, sceneId)
         } else {
             LOG.error "Unable to determine off function code in ${functions}"
@@ -289,7 +290,7 @@ void componentOff(DeviceWrapper dw) {
     String code = getFunctionCode(functions, tuyaFunctions.light + tuyaFunctions.power)
 
     if (code != null) {
-        LOG.info "Turning ${dw} off"
+        if (txtEnable) { LOG.info "Turning ${dw} off" }
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': false ])
     } else {
         LOG.error "Unable to determine off function code in ${functions}"
@@ -302,7 +303,7 @@ void componentOpen(DeviceWrapper dw) {
     String code = getFunctionCode(functions, tuyaFunctions.control)
 
     if (code != null) {
-        LOG.info "Opening ${dw}"
+        if (txtEnable) { LOG.info "Opening ${dw}" }
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': 'open' ])
     } else {
         LOG.error "Unable to determine open function code in ${functions}"
@@ -315,7 +316,7 @@ void componentPush(DeviceWrapper dw, BigDecimal button) {
     String code = getFunctionCode(functions, tuyaFunctions.push)
 
     if (code != null) {
-        LOG.info "Pushing ${dw} button ${button}"
+        if (txtEnable) { LOG.info "Pushing ${dw} button ${button}" }
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': button ])
     } else {
         String homeId = dw.getDataValue("homeId")
@@ -350,7 +351,7 @@ void componentSetColor(DeviceWrapper dw, Map colorMap) {
             s: remap(colorMap.saturation, 0, 100, color.s.min, color.s.max),
             v: remap(colorMap.level, 0, 100, bright.min, bright.max)
         ]
-        LOG.info "Setting ${dw} color to ${colorMap}"
+        if (txtEnable) { LOG.info "Setting ${dw} color to ${colorMap}" }
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'),
             [ 'code': code, 'value': value ],
             [ 'code': 'work_mode', 'value': 'colour']
@@ -368,7 +369,7 @@ void componentSetColorTemperature(DeviceWrapper dw, BigDecimal kelvin,
     if (code != null) {
         Map temp = functions[code] ?: defaults[code]
         Integer value = temp.max - Math.ceil(remap(1000000 / kelvin, minMireds, maxMireds, temp.min, temp.max))
-        LOG.info "Setting ${dw} color temperature to ${kelvin}K"
+        if (txtEnable) { LOG.info "Setting ${dw} color temperature to ${kelvin}K" }
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'),
             [ 'code': code, 'value': value ],
             [ 'code': 'work_mode', 'value': 'white']
@@ -393,7 +394,7 @@ void componentSetHeatingSetpoint(DeviceWrapper dw, BigDecimal temperature) {
     Map<String, Map> functions = getFunctions(dw)
     String code = getFunctionCode(functions, tuyaFunctions.temperatureSet)
     if (code != null) {
-        LOG.info "Setting ${dw} heating set point to ${temperature}"
+        if (txtEnable) { LOG.info "Setting ${dw} heating set point to ${temperature}" }
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': temperature ])
     } else {
         LOG.error "Unable to determine heating setpoint function code in ${functions}"
@@ -405,7 +406,7 @@ void componentSetHumiditySetpoint(DeviceWrapper dw, BigDecimal humidityNeeded) {
     Map<String, Map> functions = getFunctions(dw)
     String code = getFunctionCode(functions, tuyaFunctions.humiditySet)
     if (code != null) {
-        log.info "Setting ${dw} humidity set point to ${humidityNeeded}"
+        if (txtEnable) { LOG.info "Setting ${dw} humidity set point to ${humidityNeeded}" }
         BigDecimal setHumidity = BigDecimal.valueOf(Integer.valueOf(humidityNeeded))
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': setHumidity ])
     }
@@ -416,7 +417,7 @@ void componentSetHumidifierSpeed(DeviceWrapper dw, BigDecimal speedNeeded) {
     Map<String, Map> functions = getFunctions(dw)
     String code = getFunctionCode(functions, tuyaFunctions.humiditySpeed)
     if (code != null) {
-        log.info "Setting ${dw} dehumidifier speed to ${speedNeeded}"
+        if (txtEnable) { LOG.info "Setting ${dw} dehumidifier speed to ${speedNeeded}" }
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': speedNeeded ])
     }
 }
@@ -440,7 +441,7 @@ void componentSetLevel(DeviceWrapper dw, BigDecimal level, BigDecimal duration =
         if (code != null) {
             Map bright = functions[code] ?: defaults[code]
             Integer value = Math.ceil(remap(level, 0, 100, bright.min, bright.max))
-            LOG.info "Setting ${dw} level to ${level}%"
+            if (txtEnable) { LOG.info "Setting ${dw} level to ${level}%" }
             tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': value ])
         } else {
             LOG.error "Unable to determine set level function code in ${functions}"
@@ -468,7 +469,7 @@ void componentSetPosition(DeviceWrapper dw, BigDecimal position) {
     String code = getFunctionCode(functions, tuyaFunctions.percentControl)
 
     if (code != null) {
-        LOG.info "Setting ${dw} position to ${position}"
+        if (txtEnable) { LOG.info "Setting ${dw} position to ${position}" }
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': position as int ])
     } else {
         LOG.error "Unable to determine set position function code in ${functions}"
@@ -491,7 +492,7 @@ void componentSetSpeed(DeviceWrapper dw, String speed) {
     String fanSpeedPercent = getFunctionCode(functions, tuyaFunctions.percentControl)
     String id = dw.getDataValue('id')
     if (fanSpeedCode != null) {
-        LOG.info "Setting speed to ${speed}"
+        if (txtEnable) { LOG.info "Setting speed to ${speed}" }
         switch (speed) {
             case 'on':
                 tuyaSendDeviceCommandsAsync(id, [ 'code': 'switch', 'value': true ])
@@ -533,13 +534,13 @@ void componentSetSpeed(DeviceWrapper dw, String speed) {
 // Component command to start level change (up or down)
 void componentStartLevelChange(DeviceWrapper dw, String direction) {
     levelChanges[dw.deviceNetworkId] = (direction == 'down') ? -10 : 10
-    LOG.info "Starting level change ${direction} for ${dw}"
+    if (txtEnable) { LOG.info "Starting level change ${direction} for ${dw}" }
     runInMillis(1000, 'doLevelChange')
 }
 
 // Component command to stop level change
 void componentStopLevelChange(DeviceWrapper dw) {
-    LOG.info "Stopping level change for ${dw}"
+    if (txtEnable) { LOG.info "Stopping level change for ${dw}" }
     levelChanges.remove(dw.deviceNetworkId)
 }
 
@@ -560,7 +561,7 @@ void componentStopPositionChange(DeviceWrapper dw) {
     String code = getFunctionCode(functions, tuyaFunctions.control)
 
     if (code != null) {
-        LOG.info "Stopping ${dw}"
+        if (txtEnable) { LOG.info "Stopping ${dw}" }
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': 'stop' ])
     } else {
         LOG.error "Unable to determine stop position change function code in ${functions}"
@@ -1572,7 +1573,7 @@ private void tuyaAuthenticateAsync() {
 
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
 private void tuyaAuthenticateResponse(AsyncResponse response, Map data) {
-    if (!tuyaCheckResponse(response)) {
+    if (tuyaCheckResponse(response) == false) {
         runIn(60 + random.nextInt(300), 'tuyaAuthenticateAsync')
         return
     }
@@ -1758,6 +1759,7 @@ private void tuyaRefreshTokenResponse(AsyncResponse response, Map data) {
         expire: result.expire_time * 1000 + now(),
     ]
     LOG.info "Received Tuya access token (valid for ${result.expire_time}s)"
+    sendEvent([ name: 'state', value: 'authenticated', descriptionText: "Received refresh access token ${result.access_token}" ])
     runIn(result.expire_time - 60, 'tuyaRefreshTokenAsync')
     tuyaGetHubConfigAsync()
 }
@@ -1899,15 +1901,22 @@ private boolean tuyaCheckResponse(AsyncResponse response) {
         return false
     }
 
-    if (response.json?.success != true) {
-        LOG.error "Cloud API request failed: ${response.data}"
-        sendEvent([ name: 'state', value: 'error', descriptionText: "${response.data}" ])
-        return false
+    if (response.json?.success == true) { return true }
+
+    LOG.error "Cloud API request failed: ${response.data}"
+    sendEvent([ name: 'state', value: 'error', descriptionText: "${response.json?.msg ?: response.data}" ])
+
+    switch (response.json?.code) {
+        case 1002: // token is null
+        case 1010: // token is expired
+        case 1011: // token invalid
+        case 1012: // token status invalid
+        case 1400: // token invalid
+            tuyaAuthenticateAsync()
+            break
     }
 
-    LOG.debug "Cloud API response ${response.json ?: response.data}"
-
-    return true
+    return false
 }
 
 private String tuyaCalculateSignature(String accessToken, long timestamp, String stringToSign) {
