@@ -394,8 +394,9 @@ void componentSetHeatingSetpoint(DeviceWrapper dw, BigDecimal temperature) {
     Map<String, Map> functions = getFunctions(dw)
     String code = getFunctionCode(functions, tuyaFunctions.temperatureSet)
     if (code != null) {
-        if (txtEnable) { LOG.info "Setting ${dw} heating set point to ${temperature}" }
-        tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': temperature ])
+        BigDecimal value = toCelcius(temperature)
+        if (txtEnable) { LOG.info "Setting ${dw} heating set point to ${value}" }
+        tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': value ])
     } else {
         LOG.error "Unable to determine heating setpoint function code in ${functions}"
     }
@@ -1464,16 +1465,16 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
 
         if (status.code in tuyaFunctions.temperature) {
             Map set = deviceStatusSet[status.code] ?: defaults[status.code]
-            String value = scale(status.value, set.scale)
-            String unit = set.unit
+            String value = fromCelcius(scale(status.value, set.scale))
+            String unit = location.temperatureScale
             if (txtEnable) { LOG.info "${dw} temperature is ${value}${unit}" }
             return [ [ name: 'temperature', value: value, unit: unit, descriptionText: "temperature is ${value}${unit}" ] ]
         }
 
         if (status.code in tuyaFunctions.temperatureSet) {
             Map set = deviceStatusSet[status.code] ?: defaults[status.code]
-            String value = scale(status.value, set.scale)
-            String unit = set.unit
+            String value = fromCelcius(scale(status.value, set.scale))
+            String unit = location.temperatureScale
             if (txtEnable) { LOG.info "${dw} heating set point is ${value}${unit}" }
             return [ [ name: 'heatingSetpoint', value: value, unit: unit, descriptionText: "heating set point is ${value}${unit}" ] ]
         }
@@ -1543,6 +1544,22 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
         }
 
         return []
+    }
+}
+
+private BigDecimal toCelcius(BigDecimal temperature) {
+    if (location.temperatureScale == 'F') {
+        return ((temperature - 32) * 5) / 9
+    } else {
+        return temperature
+    }
+}
+
+private BigDecimal fromCelcius(BigDecimal temperature) {
+    if (location.temperatureScale == 'F') {
+        return (temperature * 1.8) + 32
+    } else {
+        return temperature
     }
 }
 
