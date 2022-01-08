@@ -1,12 +1,13 @@
 metadata {
     definition(name: 'QolSys IQ Partition Child', namespace: 'nrgup', author: 'Jonathan Bradshaw') {
         capability 'Actuator'
+        capability 'Switch'
 
         attribute 'isSecure', 'enum', ['true', 'false' ]
         attribute 'secureArm', 'enum', ['true', 'false' ]
-        attribute 'alarm', 'text'
-        attribute 'error', 'text'
-        attribute 'openZones', 'text'
+        attribute 'alarm', 'string'
+        attribute 'error', 'string'
+        attribute 'openZones', 'string'
 
         attribute 'state', 'enum', [
             'disarmed',
@@ -47,7 +48,7 @@ preferences {
               defaultValue: false
 
         input name: 'userCode',
-              type: 'text',
+              type: 'password',
               title: 'User Pin',
               required: false,
               defaultValue: '1234'
@@ -72,10 +73,8 @@ void alarm(String alarmType) {
     }
 
     Map command = [
-        source: 'C4',
         action: 'ALARM',
         alarm_type: alarmType,
-        version: 1,
         partition_id: getDataValue('partition_id') as int,
     ]
 
@@ -97,6 +96,14 @@ void disarm() {
 // Called when the device is first created
 void installed() {
     log.info "${device} driver installed"
+}
+
+void off() {
+    arm('DISARM')
+}
+
+void on() {
+    arm('ARM_STAY')
 }
 
 // parse commands from parent
@@ -128,11 +135,10 @@ private void arm(String armingType) {
     }
 
     Map command = [
-        source: 'C4',
         action: 'ARMING',
         partition_id: getDataValue('partition_id') as int,
         arming_type: armingType,
-        version: 1
+        //instant: false
     ]
 
     if (settings.userCode.length() >= 4) {
