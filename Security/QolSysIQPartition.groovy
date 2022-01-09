@@ -1,10 +1,12 @@
+import com.hubitat.hub.domain.Event
+
 metadata {
     definition(name: 'QolSys IQ Partition Child', namespace: 'nrgup', author: 'Jonathan Bradshaw') {
         capability 'Actuator'
+        capability 'Initialize'
         capability 'Switch'
 
         attribute 'isSecure', 'enum', ['true', 'false' ]
-        attribute 'secureArm', 'enum', ['true', 'false' ]
         attribute 'alarm', 'string'
         attribute 'error', 'string'
         attribute 'openZones', 'string'
@@ -53,6 +55,12 @@ preferences {
               required: false,
               defaultValue: '1234'
 
+        input name: 'hsmEnable',
+              type: 'bool',
+              title: 'Enable HSM arming',
+              required: false,
+              defaultValue: false
+
         input name: 'logEnable',
               type: 'bool',
               title: 'Enable debug logging',
@@ -93,6 +101,33 @@ void disarm() {
     arm('DISARM')
 }
 
+// try to map hsm events to partition arming commands
+void hsmSetArmHandler(Event evt) {
+    switch (evt.value) {
+        case 'armAll':
+        case 'armAway':
+            armAway()
+            break
+        case 'armHome':
+        case 'armNight':
+            armHome()
+            break
+        case 'disarm':
+        case 'disarmAll':
+        case 'CancelAlerts':
+            disarm()
+            break
+    }
+}
+
+// Called when the device is initialized
+void initialize() {
+    unsubscribe()
+    if (settings.hsmEnable == true) {
+        subscribe(location, 'hsmSetArm', hsmSetArmHandler)
+    }
+}
+
 // Called when the device is first created
 void installed() {
     log.info "${device} driver installed"
@@ -110,8 +145,10 @@ void on() {
 void parse(List<Map> description) {
     if (logEnable) { log.debug description }
     description.each { d ->
-        if (d.descriptionText && txtEnable) { log.info "${device} ${d.descriptionText}" }
-        sendEvent(d)
+        if (device.currentValue(d.name) != d.value) {
+            if (d.descriptionText && txtEnable) { log.info "${device} ${d.descriptionText}" }
+            sendEvent(d)
+        }
     }
 }
 

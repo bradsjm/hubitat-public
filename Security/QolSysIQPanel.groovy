@@ -31,7 +31,7 @@ import java.util.concurrent.SynchronousQueue
 import java.util.concurrent.TimeUnit
 
 metadata {
-    definition(name: 'QolSys IQ Panel', namespace: 'nrgup', author: 'Jonathan Bradshaw',
+    definition(name: 'QolSys IQ Panel 2+', namespace: 'nrgup', author: 'Jonathan Bradshaw',
                importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/master/Security/QolSysIQPanel.groovy') {
         capability 'Initialize'
         capability 'Refresh'
@@ -42,6 +42,7 @@ metadata {
         attribute 'errors', 'number'
         attribute 'state', 'enum', [
             'initializing',
+            'connecting',
             'error',
             'online'
         ]
@@ -58,27 +59,6 @@ metadata {
                 type: 'text',
                 title: 'Panel Access Token',
                 required: true
-
-            input name: 'repeat',
-                title: 'Command Retries',
-                type: 'number',
-                required: true,
-                range: '0..5',
-                defaultValue: '3'
-
-            input name: 'timeoutSecs',
-                title: 'Command Timeout (sec)',
-                type: 'number',
-                required: true,
-                range: '1..5',
-                defaultValue: '3'
-
-            // input name: 'heartbeatSecs',
-            //     title: 'Heartbeat interval (seconds)',
-            //     type: 'number',
-            //     required: true,
-            //     range: '1..300',
-            //     defaultValue: '60'
 
             input name: 'logEnable',
                 type: 'bool',
@@ -101,12 +81,12 @@ metadata {
 // Queue used for ACK tracking
 @Field static ConcurrentHashMap<String, SynchronousQueue> queues = new ConcurrentHashMap<>()
 
-// Called to check connection
-// void heartbeat() {
-//     connect()
-//     refresh()
-//     if (settings.heartbeatSecs) { runIn(settings.heartbeatSecs, 'heartbeat') }
-// }
+// Zone cache
+@Field static ConcurrentHashMap<String, Map> zoneCache = new ConcurrentHashMap<>()
+
+/*
+ * Public Methods
+ */
 
 // Called when the device is first created
 void installed() {
@@ -115,8 +95,7 @@ void installed() {
 
 // Called when the device is started
 void initialize() {
-    String version = '0.0.1'
-    LOG.info "Driver v${version} initializing"
+    LOG.info "Driver initializing"
     sendEvent([ name: 'retries', value: 0, descriptionText: 'reset' ])
     sendEvent([ name: 'errors', value: 0, descriptionText: 'reset' ])
     sendEvent([ name: 'state', value: 'initializing' ])
@@ -131,9 +110,8 @@ void initialize() {
         return
     }
 
-    LOG.info "connecting to panel at ${settings.ipAddress}"
-    connect()
-    refresh()
+    LOG.info "Connecting to panel at ${settings.ipAddress}"
+    runIn(0, 'connect')
 }
 
 void parse(String message) {
@@ -142,13 +120,15 @@ void parse(String message) {
     StringBuffer sb = buffers.computeIfAbsent(device.id) { k -> new StringBuffer() }
     sb.append(message)
     if (message[-1] != '\n') { return }
+    if (device.currentValue('state') != 'online') {
+        sendEvent([ name: 'state', value: 'online' ])
+    }
     try {
         if (sb.length() >= 3 && sb.substring(0, 3) == 'ACK') {
             q.offer(true)
         } else if (sb.length() >= 2 && sb.substring(0, 1) == '{') {
             Map json = new JsonSlurper().parseText(sb.toString())
-            LOG.debug "Received json: ${json}"
-            sendEvent([ name: 'state', value: 'online' ])
+            LOG.debug "received: ${json}"
             switch(json.event) {
                 case 'ALARM':
                     processAlarm(json)
@@ -197,7 +177,7 @@ void socketStatus(String message) {
         buffers.remove(device.id)
         increaseErrorCount(message)
     } else {
-        LOG.info "socket ${message}"
+        LOG.info message
     }
 }
 
@@ -215,9 +195,14 @@ void updated() {
     initialize()
 }
 
+/*
+ * Internal Implementation Methods
+ */
+
 // Connect to panel
 private void connect() {
     try {
+        sendEvent([ name: 'state', value: 'connecting' ])
         interfaces.rawSocket.connect(
             settings.ipAddress,
             12345,
@@ -227,8 +212,11 @@ private void connect() {
             convertReceivedDataToString: true
         )
         scheduleSocketKeepAlive()
+        refresh()
     } catch (e) {
         LOG.exception("Error connecting to panel at ${settings.ipAddress}", e)
+        increaseErrorCount(e.message)
+        runIn(60, 'connect')
     }
 }
 
@@ -236,17 +224,15 @@ private void createPartition(String namespace, String driver, Map partition) {
     String dni = "${device.deviceNetworkId}-p${partition.partition_id}"
     String deviceName = "${device.name} P${partition.partition_id + 1}"
     String deviceLabel = "${device} ${partition.name.capitalize()}"
-    LOG.info "initializing partition device for ${partition}"
+    LOG.info "Initializing partition #${partition.partition_id}: ${deviceLabel}"
+    LOG.debug "createPartition ${partition}"
     try {
         ChildDeviceWrapper dw = getChildDevice(dni) ?: addChildDevice(namespace, driver, dni, [ name: deviceName, label: deviceLabel ])
         dw.with {
             label = label ?: deviceLabel
             updateDataValue 'partition_id', partition.partition_id as String
+            updateDataValue 'secureArm', partition.secureArm
         }
-
-        dw.parse([
-            [ name: 'secureArm', value: partition.secure_arm as String ]
-        ])
     } catch (e) {
         LOG.exception("partition device creation failed", e)
     }
@@ -256,7 +242,9 @@ private ChildDeviceWrapper createZone(String namespace, String driver, Map zone)
     String dni = "${device.deviceNetworkId}-z${zone.zone_id}"
     String deviceName = "${device.name} P${zone.partition_id + 1} ${zone.type.replaceAll('_', ' ')}"
     String deviceLabel = zone.name.capitalize()
-    LOG.info "initializing zone device for ${zone}"
+    LOG.info "Initializing zone #${zone.zone_id}: ${deviceLabel} (${deviceName})"
+    LOG.debug "createZone ${zone}"
+    zoneCache.put(dni, zone)
     try {
         ChildDeviceWrapper dw = getChildDevice(dni) ?: addChildDevice(namespace, driver, dni, [ name: deviceName, label: deviceLabel ])
         dw.with {
@@ -290,23 +278,22 @@ private void increaseRetryCount(msg = '') {
     sendEvent([ name: 'retries', value: val + 1, descriptionText: msg ])
 }
 
-private void scheduleSocketKeepAlive() {
-    runIn(29, 'socketKeepAlive')
-}
-
-private void socketKeepAlive() {
-    LOG.debug '(sending socket keepalive)'
-    interfaces.rawSocket.sendMessage('\n')
-    scheduleSocketKeepAlive()
-}
-
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void logsOff() {
     LOG.warn 'debug logging disabled'
     device.updateSetting('logEnable', [value: 'false', type: 'bool'])
 }
 
-private processArming(Map json) {
+private void processAlarm(Map json) {
+    String dni = "${device.deviceNetworkId}-p${json.partition_id}"
+    String value = json.alarm_type ?: 'INTRUSION'
+    getChildDevice(dni)?.parse([
+        [ name: 'state', value: 'alarm', descriptionText: 'state is alarm' ],
+        [ name: 'alarm', value: value, descriptionText: "alarm is ${value}" ]
+    ])
+}
+
+private void processArming(Map json) {
     String value
     switch (json.arming_type ?: json.status) {
         case 'ARM_STAY': value = 'armed home'; break
@@ -326,16 +313,7 @@ private processArming(Map json) {
     ])
 }
 
-private processAlarm(Map json) {
-    String dni = "${device.deviceNetworkId}-p${json.partition_id}"
-    String value = json.alarm_type ?: 'INTRUSION'
-    getChildDevice(dni)?.parse([
-        [ name: 'state', value: 'alarm', descriptionText: 'state is alarm' ],
-        [ name: 'alarm', value: value, descriptionText: "alarm is ${value}" ]
-    ])
-}
-
-private processError(Map json) {
+private void processError(Map json) {
     String dni = "${device.deviceNetworkId}-p${json.partition_id}"
     String value = "${json.error_type}: ${json.description}"
     getChildDevice(dni)?.parse([
@@ -350,153 +328,122 @@ private void processSummary(Map json) {
         processArming(partition)
 
         partition.zone_list?.each { zone ->
-            switch (zone?.type) {
-                case 'Door_Window':
-                case 'Door_Window_M':
-                case 'TakeoverModule':
-                case 'Tilt':
+            switch (zone?.zone_type) {
+                case 1: // CONTACT
+                case 16: // TILT
+                case 110: // CONTACT_MULTI_FUNCTION
                     createZone('hubitat', 'Generic Component Contact Sensor', zone)
                     break
-                case 'GlassBreak':
-                case 'Panel Glass Break':
-                    break
-                case 'SmokeDetector':
-                case 'Smoke_M':
-                case 'Heat':
+                case 5: // SMOKE_HEAT
                     createZone('hubitat', 'Generic Component Smoke Detector', zone)
                     break
-                case 'CODetector':
+                case 6: // CARBON_MONOXIDE
                     createZone('hubitat', 'Generic Component Carbon Monoxide Sensor', zone)
                     break
-                case 'Motion':
-                case 'Panel Motion':
+                case 2: // MOTION
+                case 114: // OCCUPANCY
                     createZone('hubitat', 'Generic Component Motion Sensor', zone)
                     break
-                case 'Water':
+                case 15: // WATER
                     createZone('hubitat', 'Generic Component Water Sensor', zone)
                     break
-                case 'KeyFob':
-                case 'Auxiliary Pendant':
+                case 9: // PANIC BUTTON
+                case 102: // KEYFOB
+                case 103: // WALLFOB
                     createZone('hubitat', 'Generic Component Button Controller', zone)?.
                         sendEvent([ name: 'numberOfButtons', value: 1 ])
                     break
-                case 'Bluetooth':
-                case 'Z-Wave Siren':
-                    break
                 default:
-                    LOG.warn "Unable to create zone for unknown type ${zone}"
+                    LOG.debug "no driver mapping for zone ${zone}"
+                    return
             }
 
-            if (zone.state) {
-                processZoneState(zone)
-            }
+            processZoneState(zone)
         }
 
         processPartitionState(partition.partition_id)
     }
 }
 
-private processZoneEvent(Map zone) {
+private void processZoneEvent(Map zone) {
     //Instead it looks like the panel is reporting motion with zone_event_type,
     //as ZONE_ACTIVE (motion) and ZONE_UPDATE (clear). (TODO?)
     String dni = "${device.deviceNetworkId}-z${zone.zone_id}"
-    ChildDeviceWrapper dw = getChildDevice(dni)
-    if (dw != null) {
-        zone.type = dw.getDataValue('type')
-        zone.partition_id = dw.getDataValue('partition_id') as int
-        processZoneState(zone)
-        processPartitionState(zone.partition_id)
+    if (zoneCache.containsKey(dni) == false) {
+        refresh()
+        return
     }
+    Map z = (zoneCache[dni] += zone)
+    processZoneState(z)
+    processPartitionState(z.partition_id)
 }
 
-private processZoneState(Map zone) {
-    LOG.debug "Zone state: ${zone}"
-    boolean isOpen = zone.status == 'Open'
+private void processZoneState(Map zone) {
+    LOG.debug "zone state: ${zone}"
+    String dni = "${device.deviceNetworkId}-z${zone.zone_id}"
+    ChildDeviceWrapper dw = getChildDevice(dni)
+    if (dw == null) { return }
 
     Map event = [:]
-    switch (zone?.type) {
-        case 'Door_Window':
-        case 'Door_Window_M':
-        case 'TakeoverModule':
-        case 'Tilt':
-            event.name = 'contact'
-            event.value = isOpen ? 'open' : 'closed'
-            break
-        case 'GlassBreak':
-        case 'Panel Glass Break':
-            break
-        case 'SmokeDetector':
-        case 'Smoke_M':
-        case 'Heat':
-            event.name = 'smoke'
-            event.value = isOpen ? 'detected' : 'clear'
-            break
-        case 'CODetector':
-            event.name = 'carbonMonoxide'
-            event.value = isOpen ? 'detected' : 'clear'
-            break
-        case 'Motion':
-        case 'Panel Motion':
-            event.name = 'motion'
-            event.value = isOpen ? 'active' : 'inactive'
-            break
-        case 'Water':
-            event.name = 'water'
-            event.value = isOpen ? 'wet' : 'dry'
-            break
-        case 'KeyFob':
-        case 'Auxiliary Pendant':
-            event.name = 'pushed'
-            event.value = isOpen ? '1' : '0'
-            break
-        case 'Bluetooth':
-        case 'Z-Wave Siren':
-            break
-        default:
-            LOG.warn "Unknown zone type ${zone}"
-    }
+    boolean isOpen = zone.status == 'Open'
 
-    if (event.value == null) { return }
+    if (dw.hasAttribute('contact')) {
+        event.name = 'contact'
+        event.value = isOpen ? 'open' : 'closed'
+    } else if (dw.hasAttribute('smoke')) {
+        event.name = 'smoke'
+        event.value = isOpen ? 'detected' : 'clear'
+    } else if (dw.hasAttribute('carbonMonoxide')) {
+        event.name = 'carbonMonoxide'
+        event.value = isOpen ? 'detected' : 'clear'
+    } else if (dw.hasAttribute('motion')) {
+        event.name = 'motion'
+        event.value = isOpen ? 'active' : 'inactive'
+    } else if (dw.hasAttribute('water')) {
+        event.name = 'water'
+        event.value = isOpen ? 'wet' : 'dry'
+    } else if (dw.hasAttribute('pushed')) {
+        event.name = 'pushed'
+        event.value = isOpen ? '1' : '0'
+    } else {
+        LOG.warn "unknown driver for type ${zone}"
+        return
+    }
 
     // Update child zone device
-    String dni = "${device.deviceNetworkId}-z${zone.zone_id}"
     event.descriptionText = "${event.name} is ${event.value}"
-    getChildDevice(dni)?.parse([ event ])
+    dw.parse([ event ])
 
     // Update partition zone state mapping
-    SynchronousQueue q = queues.computeIfAbsent(device.id) { k -> new SynchronousQueue() }
-    synchronized (q) {
-        Map partitionState = state["partition${zone.partition_id}"] ?: [:]
-        partitionState[zone.zone_id] = isOpen
-        state["partition${zone.partition_id}"] = partitionState
-    }
+    updateZoneStateMap(zone)
 }
 
 private void processPartitionState(int partition_id) {
     Map partitionState = state["partition${partition_id}"] ?: [:]
-    LOG.debug "Partition ${partition_id} state is ${partitionState}"
     boolean isSecure = partitionState.every { z -> z.value == false }
     String openZoneText = 'None'
-    if (isSecure) {
-        LOG.info "partition ${partition_id} is secure"
-    } else {
-        Set openZones = partitionState.findAll { z -> z.value == true }.collect { z -> getChildDevice("${device.deviceNetworkId}-z${z.key}")?.toString() }
+    if (isSecure == false) {
+        Set openZones = partitionState.findAll { s -> s.value == true }.collect { s ->
+            zoneCache["${device.deviceNetworkId}-z${s.key}"]?.name
+        }
         openZoneText = openZones.sort().join(', ')
-        LOG.info "partition ${partition_id} open zones: ${openZoneText}"
+        LOG.debug "partition ${partition_id} open zones: ${openZoneText}"
     }
 
     String dni = "${device.deviceNetworkId}-p${partition_id}"
     getChildDevice(dni)?.parse([
-        [ name: 'isSecure', value: isSecure, descriptionText: "isSecure is ${isSecure}" ],
+        [ name: 'isSecure', value: isSecure as String, descriptionText: "isSecure is ${isSecure}" ],
         [ name: 'openZones', value: openZoneText, descriptionText: "open zones ${openZoneText}" ]
     ])
 }
 
 private boolean sendCommand(Map json) {
+    if (device.currentValue('state') == 'error') { return }
+
     SynchronousQueue q = queues.computeIfAbsent(device.id) { k -> new SynchronousQueue() }
     synchronized(q) {
         unschedule('socketKeepAlive')
-        for (i = 1; i <= settings.repeat; i++) {
+        for (i = 1; i <= 3; i++) {
             try {
                 json.version = 1
                 json.source = 'C4'
@@ -512,7 +459,7 @@ private boolean sendCommand(Map json) {
                 continue
             }
 
-            boolean result = q.poll(settings.timeoutSecs, TimeUnit.SECONDS)
+            boolean result = q.poll(3, TimeUnit.SECONDS)
             if (result) {
                 LOG.debug "received panel ack for ${json?.action}"
                 scheduleSocketKeepAlive()
@@ -530,6 +477,26 @@ private boolean sendCommand(Map json) {
     return false
 }
 
+private void scheduleSocketKeepAlive() {
+    // Websocket expects a keepalive every 30 seconds
+    runIn(29, 'socketKeepAlive')
+}
+
+private void socketKeepAlive() {
+    interfaces.rawSocket.sendMessage('\n')
+    scheduleSocketKeepAlive()
+}
+
+private void updateZoneStateMap(Map zone) {
+    SynchronousQueue q = queues.computeIfAbsent(device.id) { k -> new SynchronousQueue() }
+    synchronized (q) {
+        String key = "partition${zone.partition_id}"
+        Map partitionState = state[key] ?: [:]
+        partitionState[zone.zone_id] = zone.status == 'Open'
+        state[key] = partitionState
+    }
+}
+
 @Field private final Map LOG = [
     debug: { s -> if (settings.logEnable == true) { log.debug(s) } },
     info: { s -> log.info(s) },
@@ -539,68 +506,69 @@ private boolean sendCommand(Map json) {
         List<StackTraceElement> relevantEntries = exception.stackTrace.findAll { entry -> entry.className.startsWith('user_app') }
         Integer line = relevantEntries[0]?.lineNumber ?: 0
         String method = relevantEntries[0]?.methodName ?: ''
-        log.error("${message}: ${exception} at line ${line} (${method})")
-        sendEvent([ name: 'state', value: 'error', descriptionText: "${message}: ${exception?.message}" ])
-        if (settings.logEnable && relevantEntries.size() > 0) {
+        log.error("${message}: ${exception}" + (line ? " at line ${line} (${method})" : ''))
+        sendEvent([ name: 'state', value: 'error', descriptionText: "${message}: ${exception}" ])
+        if (settings.logEnable && relevantEntries) {
             log.debug("App exception stack trace:\n${relevantEntries.join('\n')}")
         }
     }
 ]
 
-/*
-ZoneTypes = {
-UNKNOWN = 0,
-CONTACT = 1,
-MOTION = 2,
-SOUND = 3 ,
-BREAKAGE = 4,
-SMOKE_HEAT = 5,
-CARBON_MONOXIDE = 6,
-RADON = 7,
-TEMPERATURE = 8,
-PANIC_BUTTON = 9,
-CONTROL = 10,
-CAMERA = 11,
-LIGHT = 12,
-GPS = 13,
-SIREN = 14,
-WATER = 15,
-TILT = 16,
-FREEZE = 17,
-TAKEOVER_MODULE = 18,
-GLASSBREAK = 19,
-TRANSLATOR = 20,
-MEDICAL_PENDANT = 21,
-WATER_IQ_FLOOD = 22,
-WATER_OTHER_FLOOD = 23,
-IMAGE_SENSOR = 30,
-WIRED_SENSOR = 100,
-RF_SENSOR = 101,
-KEYFOB = 102,
-WALLFOB = 103,
-RF_KEYPAD = 104,
-PANEL = 105,
-WTTS_OR_SECONDARY = 106,
-SHOCK = 107,
-SHOCK_SENSOR_MULTI_FUNCTION = 108,
-DOOR_BELL = 109,
-CONTACT_MULTI_FUNCTION = 110,
-SMOKE_MULTI_FUNCTION = 111,
-TEMPERATURE_MULTI_FUNCTION = 112,
-SHOCK_OTHERS = 113,
-OCCUPANCY_SENSOR = 114,
-BLUETOOTH = 115,
-PANEL_GLASS_BREAK = 116,
-POWERG_SIREN = 117,
-BLUETOOTH_SPEAKER = 118,
-PANEL_MOTION = 119,
-ZWAVE_SIREN = 120,
-COUNT = 121
+/* Reference:
+    Zone Physical Types:
+        UNKNOWN = 0,
+        CONTACT = 1,
+        MOTION = 2,
+        SOUND = 3 ,
+        BREAKAGE = 4,
+        SMOKE_HEAT = 5,
+        CARBON_MONOXIDE = 6,
+        RADON = 7,
+        TEMPERATURE = 8,
+        PANIC_BUTTON = 9,
+        CONTROL = 10,
+        CAMERA = 11,
+        LIGHT = 12,
+        GPS = 13,
+        SIREN = 14,
+        WATER = 15,
+        TILT = 16,
+        FREEZE = 17,
+        TAKEOVER_MODULE = 18,
+        GLASSBREAK = 19,
+        TRANSLATOR = 20,
+        MEDICAL_PENDANT = 21,
+        WATER_IQ_FLOOD = 22,
+        WATER_OTHER_FLOOD = 23,
+        IMAGE_SENSOR = 30,
+        WIRED_SENSOR = 100,
+        RF_SENSOR = 101,
+        KEYFOB = 102,
+        WALLFOB = 103,
+        RF_KEYPAD = 104,
+        PANEL = 105,
+        WTTS_OR_SECONDARY = 106,
+        SHOCK = 107,
+        SHOCK_SENSOR_MULTI_FUNCTION = 108,
+        DOOR_BELL = 109,
+        CONTACT_MULTI_FUNCTION = 110,
+        SMOKE_MULTI_FUNCTION = 111,
+        TEMPERATURE_MULTI_FUNCTION = 112,
+        SHOCK_OTHERS = 113,
+        OCCUPANCY_SENSOR = 114,
+        BLUETOOTH = 115,
+        PANEL_GLASS_BREAK = 116,
+        POWERG_SIREN = 117,
+        BLUETOOTH_SPEAKER = 118,
+        PANEL_MOTION = 119,
+        ZWAVE_SIREN = 120,
+        COUNT = 121
 
-ZONE_OPEN_VAL = ‘Open’
-ZONE_CLOSED_VAL = ‘Closed’
-ZONE_ACTIVE_VAL = ‘Active’
-ZONE_ACTIVATED_VAL = ‘Activated’
-ZONE_IDLE_VAL = ‘Idle’
-ZONE_NORMAL_VAL = ‘Normal’
+    Zone States:
+        ZONE_OPEN_VAL = ‘Open’
+        ZONE_CLOSED_VAL = ‘Closed’
+        ZONE_ACTIVE_VAL = ‘Active’
+        ZONE_ACTIVATED_VAL = ‘Activated’
+        ZONE_IDLE_VAL = ‘Idle’
+        ZONE_NORMAL_VAL = ‘Normal’
 */
