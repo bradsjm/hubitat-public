@@ -1547,20 +1547,14 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
     }
 }
 
+// Convert value to celcius only if we Hubitat is using F scale
 private BigDecimal toCelcius(BigDecimal temperature) {
-    if (location.temperatureScale == 'F') {
-        return ((temperature - 32) * 5) / 9
-    } else {
-        return temperature
-    }
+    return location.temperatureScale == 'F' ? fahrenheitToCelsius(temperature) : temperature
 }
 
+// Convert value from celcius only if we Hubitat is using F scale
 private BigDecimal fromCelcius(BigDecimal temperature) {
-    if (location.temperatureScale == 'F') {
-        return (temperature * 1.8) + 32
-    } else {
-        return temperature
-    }
+    return location.temperatureScale == 'F' ? celsiusToFahrenheit(temperature) : temperature
 }
 
 /**
