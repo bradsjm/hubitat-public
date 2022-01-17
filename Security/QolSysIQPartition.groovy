@@ -1,10 +1,6 @@
-import com.hubitat.hub.domain.Event
-
 metadata {
     definition(name: 'QolSys IQ Partition Child', namespace: 'nrgup', author: 'Jonathan Bradshaw') {
         capability 'Actuator'
-        capability 'Initialize'
-        capability 'Switch'
 
         attribute 'isSecure', 'enum', ['true', 'false' ]
         attribute 'alarm', 'string'
@@ -55,12 +51,6 @@ preferences {
               required: false,
               defaultValue: '1234'
 
-        input name: 'hsmEnable',
-              type: 'bool',
-              title: 'Enable HSM arming',
-              required: false,
-              defaultValue: false
-
         input name: 'logEnable',
               type: 'bool',
               title: 'Enable debug logging',
@@ -101,44 +91,9 @@ void disarm() {
     arm('DISARM')
 }
 
-// try to map hsm events to partition arming commands
-void hsmSetArmHandler(Event evt) {
-    switch (evt.value) {
-        case 'armAll':
-        case 'armAway':
-            armAway()
-            break
-        case 'armHome':
-        case 'armNight':
-            armHome()
-            break
-        case 'disarm':
-        case 'disarmAll':
-        case 'CancelAlerts':
-            disarm()
-            break
-    }
-}
-
-// Called when the device is initialized
-void initialize() {
-    unsubscribe()
-    if (settings.hsmEnable == true) {
-        subscribe(location, 'hsmSetArm', hsmSetArmHandler)
-    }
-}
-
 // Called when the device is first created
 void installed() {
     log.info "${device} driver installed"
-}
-
-void off() {
-    arm('DISARM')
-}
-
-void on() {
-    arm('ARM_STAY')
 }
 
 // parse commands from parent

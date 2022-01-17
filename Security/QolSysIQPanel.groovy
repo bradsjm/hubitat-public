@@ -38,8 +38,6 @@ metadata {
 
         command 'removeDevices'
 
-        attribute 'retries', 'number'
-        attribute 'errors', 'number'
         attribute 'state', 'enum', [
             'initializing',
             'connecting',
@@ -96,10 +94,10 @@ void installed() {
 // Called when the device is started
 void initialize() {
     LOG.info "Driver initializing"
-    sendEvent([ name: 'retries', value: 0, descriptionText: 'reset' ])
-    sendEvent([ name: 'errors', value: 0, descriptionText: 'reset' ])
-    sendEvent([ name: 'state', value: 'initializing' ])
+    sendEvent([ name: 'state', value: 'initializing', descriptionText: 'Initializing QolSys IQ Panel 2+ driver' ])
     state.clear()
+//    state.errors = 0
+    state.partitionCount = 0
     buffers.remove(device.id)
     queues.remove(device.id)
     interfaces.rawSocket.close()
@@ -111,21 +109,20 @@ void initialize() {
     }
 
     LOG.info "Connecting to panel at ${settings.ipAddress}"
-    runIn(0, 'connect')
+    connect()
 }
 
 void parse(String message) {
     if (!message) { return }
-    SynchronousQueue q = queues.computeIfAbsent(device.id) { k -> new SynchronousQueue() }
     StringBuffer sb = buffers.computeIfAbsent(device.id) { k -> new StringBuffer() }
     sb.append(message)
     if (message[-1] != '\n') { return }
     if (device.currentValue('state') != 'online') {
-        sendEvent([ name: 'state', value: 'online' ])
+        sendEvent([ name: 'state', value: 'online', descriptionText: "Connected to panel at ${settings.ipAddress}" ])
     }
     try {
         if (sb.length() >= 3 && sb.substring(0, 3) == 'ACK') {
-            q.offer(true)
+            getQ().offer(true)
         } else if (sb.length() >= 2 && sb.substring(0, 1) == '{') {
             Map json = new JsonSlurper().parseText(sb.toString())
             LOG.debug "received: ${json}"
@@ -175,7 +172,7 @@ void removeDevices() {
 void socketStatus(String message) {
     if (message.contains('error')) {
         buffers.remove(device.id)
-        increaseErrorCount(message)
+        LOG.warn message
     } else {
         LOG.info message
     }
@@ -201,8 +198,9 @@ void updated() {
 
 // Connect to panel
 private void connect() {
+    unschedule('connect')
     try {
-        sendEvent([ name: 'state', value: 'connecting' ])
+        sendEvent([ name: 'state', value: 'connecting', descriptionText: "Connecting to panel at ${settings.ipAddress}" ])
         interfaces.rawSocket.connect(
             settings.ipAddress,
             12345,
@@ -215,7 +213,6 @@ private void connect() {
         refresh()
     } catch (e) {
         LOG.exception("Error connecting to panel at ${settings.ipAddress}", e)
-        increaseErrorCount(e.message)
         runIn(60, 'connect')
     }
 }
@@ -268,15 +265,20 @@ private ChildDeviceWrapper createZone(String namespace, String driver, Map zone)
     return null
 }
 
-private void increaseErrorCount(msg = '') {
-    int val = (device.currentValue('errors') ?: 0) as int
-    sendEvent([ name: 'errors', value: val + 1, descriptionText: msg ])
+private SynchronousQueue getQ() {
+    return queues.computeIfAbsent(device.id) { k -> new SynchronousQueue() }
 }
 
-private void increaseRetryCount(msg = '') {
-    int val = (device.currentValue('retries') ?: 0) as int
-    sendEvent([ name: 'retries', value: val + 1, descriptionText: msg ])
-}
+// private void increaseErrorCount() {
+//     int val = (state.errors ?: 0) as int
+//     state.errors = val + 1
+//     (0..state.partitionCount-1).each { p ->
+//         String dni = "${device.deviceNetworkId}-p${p}"
+//         getChildDevice(dni)?.parse([
+//             [ name: 'state', value: 'error', descriptionText: 'state is error' ],
+//         ])
+//     }
+// }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void logsOff() {
@@ -310,6 +312,7 @@ private void processArming(Map json) {
     getChildDevice(dni)?.parse([
         [ name: 'state', value: value, descriptionText: "state is ${value}" ],
         [ name: 'alarm', value: 'None', descriptionText: "alarm cleared" ],
+        [ name: 'error', value: 'None' ]
     ])
 }
 
@@ -323,10 +326,9 @@ private void processError(Map json) {
 }
 
 private void processSummary(Map json) {
+    state.partitionCount = json.partition_list?.size() ?: 0
     json.partition_list?.each { partition ->
         createPartition('nrgup', 'QolSys IQ Partition Child', partition)
-        processArming(partition)
-
         partition.zone_list?.each { zone ->
             switch (zone?.zone_type) {
                 case 1: // CONTACT
@@ -342,6 +344,7 @@ private void processSummary(Map json) {
                     break
                 case 2: // MOTION
                 case 114: // OCCUPANCY
+                case 119: // PANEL MOTION
                     createZone('hubitat', 'Generic Component Motion Sensor', zone)
                     break
                 case 15: // WATER
@@ -362,6 +365,7 @@ private void processSummary(Map json) {
         }
 
         processPartitionState(partition.partition_id)
+        processArming(partition)
     }
 }
 
@@ -437,54 +441,42 @@ private void processPartitionState(int partition_id) {
     ])
 }
 
-private boolean sendCommand(Map json) {
-    if (device.currentValue('state') == 'error') { return }
-
-    SynchronousQueue q = queues.computeIfAbsent(device.id) { k -> new SynchronousQueue() }
-    synchronized(q) {
-        unschedule('socketKeepAlive')
-        for (i = 1; i <= 3; i++) {
-            try {
-                json.version = 1
-                json.source = 'C4'
-                json.token = settings.accessToken
-                LOG.debug "sending ${json}"
-                interfaces.rawSocket.sendMessage(JsonOutput.toJson(json))
-            } catch (e) {
-                LOG.exception "send exception", e
-                increaseErrorCount(e.message)
-                pauseExecution(500)
-                increaseRetryCount()
-                connect()
-                continue
-            }
-
-            boolean result = q.poll(3, TimeUnit.SECONDS)
-            if (result) {
-                LOG.debug "received panel ack for ${json?.action}"
-                scheduleSocketKeepAlive()
-                return true
-            } else {
-                LOG.warn "${json?.action} command timeout (${i} of ${settings.repeat})"
-                pauseExecution(500)
-                increaseRetryCount()
-                connect()
-            }
-        }
-    }
-
-    increaseErrorCount("${json?.action ?: 'action'} not acknowledged")
-    return false
-}
-
 private void scheduleSocketKeepAlive() {
     // Websocket expects a keepalive every 30 seconds
-    runIn(29, 'socketKeepAlive')
+    runIn(25, 'socketKeepAlive')
+}
+
+private void sendCommand(Map json) {
+    if (device.currentValue('state') == 'error') { return }
+
+    unschedule('socketKeepAlive')
+    try {
+        json.version = 1
+        json.source = 'C4'
+        json.token = settings.accessToken
+        LOG.debug "sending ${json}"
+        interfaces.rawSocket.sendMessage(JsonOutput.toJson(json))
+    } catch (e) {
+        LOG.exception "send exception", e
+    }
+
+    if (getQ().poll(3, TimeUnit.SECONDS)) {
+        LOG.debug "received panel ack for ${json?.action}"
+        scheduleSocketKeepAlive()
+    } else {
+        LOG.error "no panel ack for ${json?.action}"
+        runIn(5, 'connect')
+    }
 }
 
 private void socketKeepAlive() {
     interfaces.rawSocket.sendMessage('\n')
-    scheduleSocketKeepAlive()
+    if (getQ().poll(3, TimeUnit.SECONDS)) {
+        scheduleSocketKeepAlive()
+    } else {
+        LOG.error 'socket keepalive timeout'
+        runIn(5, 'connect')
+    }
 }
 
 private void updateZoneStateMap(Map zone) {
