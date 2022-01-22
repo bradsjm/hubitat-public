@@ -88,15 +88,14 @@ metadata {
 
 // Called when the device is first created
 void installed() {
-    LOG.info 'Driver installed'
+    LOG.info "${device} driver installed"
 }
 
 // Called when the device is started
 void initialize() {
-    LOG.info "Driver initializing"
+    LOG.info "${device} driver initializing"
     sendEvent([ name: 'state', value: 'initializing', descriptionText: 'Initializing QolSys IQ Panel 2+ driver' ])
     state.clear()
-//    state.errors = 0
     state.partitionCount = 0
     buffers.remove(device.id)
     queues.remove(device.id)
@@ -116,7 +115,10 @@ void parse(String message) {
     if (!message) { return }
     StringBuffer sb = buffers.computeIfAbsent(device.id) { k -> new StringBuffer() }
     sb.append(message)
-    if (message[-1] != '\n') { return }
+    if (message[-1] != '\n') {
+        LOG.debug "partial packet: ${message}"
+        return
+    }
     if (device.currentValue('state') != 'online') {
         sendEvent([ name: 'state', value: 'online', descriptionText: "Connected to panel at ${settings.ipAddress}" ])
     }
@@ -155,7 +157,8 @@ void parse(String message) {
 }
 
 void refresh() {
-    LOG.info 'Requesting panel summary'
+    unschedule('refresh')
+    LOG.info 'requesting panel summary'
     sendCommand([
         action: 'INFO',
         info_type: 'SUMMARY'
@@ -164,7 +167,7 @@ void refresh() {
 
 // Command to remove all the child devices
 void removeDevices() {
-    LOG.info "Removing all child devices"
+    LOG.info "removing all child devices"
     childDevices.each { device -> deleteChildDevice(device.deviceNetworkId) }
 }
 
@@ -180,12 +183,12 @@ void socketStatus(String message) {
 
 // Called when the device is removed
 void uninstalled() {
-    LOG.info 'Driver uninstalled'
+    LOG.info "${device} driver uninstalled"
 }
 
 // Called when the settings are updated
 void updated() {
-    LOG.info 'Driver configuration updated'
+    LOG.info "${device} driver configuration updated"
     LOG.debug settings
     if (settings.logEnable == true) { runIn(1800, 'logsOff') }
 
@@ -209,7 +212,6 @@ private void connect() {
             ignoreSSLIssues: true,
             convertReceivedDataToString: true
         )
-        scheduleSocketKeepAlive()
         refresh()
     } catch (e) {
         LOG.exception("Error connecting to panel at ${settings.ipAddress}", e)
@@ -269,17 +271,6 @@ private SynchronousQueue getQ() {
     return queues.computeIfAbsent(device.id) { k -> new SynchronousQueue() }
 }
 
-// private void increaseErrorCount() {
-//     int val = (state.errors ?: 0) as int
-//     state.errors = val + 1
-//     (0..state.partitionCount-1).each { p ->
-//         String dni = "${device.deviceNetworkId}-p${p}"
-//         getChildDevice(dni)?.parse([
-//             [ name: 'state', value: 'error', descriptionText: 'state is error' ],
-//         ])
-//     }
-// }
-
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void logsOff() {
     LOG.warn 'debug logging disabled'
@@ -311,8 +302,8 @@ private void processArming(Map json) {
     String dni = "${device.deviceNetworkId}-p${json.partition_id}"
     getChildDevice(dni)?.parse([
         [ name: 'state', value: value, descriptionText: "state is ${value}" ],
-        [ name: 'alarm', value: 'None', descriptionText: "alarm cleared" ],
-        [ name: 'error', value: 'None' ]
+        [ name: 'alarm', value: 'None', descriptionText: 'alarm cleared' ],
+        [ name: 'error', value: 'None', descriptionText: 'error cleared' ]
     ])
 }
 
@@ -374,7 +365,7 @@ private void processZoneEvent(Map zone) {
     //as ZONE_ACTIVE (motion) and ZONE_UPDATE (clear). (TODO?)
     String dni = "${device.deviceNetworkId}-z${zone.zone_id}"
     if (zoneCache.containsKey(dni) == false) {
-        refresh()
+        runIn(1, 'refresh')
         return
     }
     Map z = (zoneCache[dni] += zone)
@@ -436,8 +427,8 @@ private void processPartitionState(int partition_id) {
 
     String dni = "${device.deviceNetworkId}-p${partition_id}"
     getChildDevice(dni)?.parse([
-        [ name: 'isSecure', value: isSecure as String, descriptionText: "isSecure is ${isSecure}" ],
-        [ name: 'openZones', value: openZoneText, descriptionText: "open zones ${openZoneText}" ]
+        [ name: 'isSecure', value: isSecure as String, descriptionText: "partition is ${isSecure ? '' : 'not '}secure" ],
+        [ name: 'openZones', value: openZoneText, descriptionText: "${openZoneText} zone(s) open" ]
     ])
 }
 

@@ -1,6 +1,7 @@
 metadata {
     definition(name: 'QolSys IQ Partition Child', namespace: 'nrgup', author: 'Jonathan Bradshaw') {
         capability 'Actuator'
+        capability 'Sensor'
 
         attribute 'isSecure', 'enum', ['true', 'false' ]
         attribute 'alarm', 'string'
@@ -47,7 +48,7 @@ preferences {
 
         input name: 'userCode',
               type: 'password',
-              title: 'User Pin',
+              title: 'User pin for arming/disarming',
               required: false,
               defaultValue: '1234'
 
