@@ -784,7 +784,9 @@ private static Map mapTuyaCategory(Map d) {
             return [ namespace: 'component', driver: 'Generic Component Heating Device' ]
         case 'cs':    // DeHumidifer
             return [ namespace: 'component', driver: 'Generic Component Dehumidifier' ]
-    
+        case 'fs':  // Fan
+            return [ driver: 'Generic Component Fan Control' ]
+
         // Kitchen Appliances
     }
 
@@ -1137,7 +1139,12 @@ private ChildDeviceWrapper createChildDevice(String dni, Map mapping, Map d) {
                 ]
             )
         } catch (UnknownDeviceTypeException e) {
-            LOG.exception("${d.name} device creation failed", e)
+            if (mapping.namespace == 'component') {
+                LOG.error "${d.name} driver not found, try downloading from " +
+                          "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/Component/${mapping.driver}"
+            } else {
+                LOG.exception("${d.name} device creation failed", e)
+            }
         }
     }
 
