@@ -781,7 +781,7 @@ private static Map mapTuyaCategory(Map d) {
 
         // Small Home Appliances
         case 'qn':    // Heater
-            return [ namespace: 'component', driver: 'Generic Component Heating Device' ]
+            return [ namespace: 'component', driver: 'Generic Component Thermostat' ]
         case 'cs':    // DeHumidifer
             return [ namespace: 'component', driver: 'Generic Component Dehumidifier' ]
         case 'fs':  // Fan
