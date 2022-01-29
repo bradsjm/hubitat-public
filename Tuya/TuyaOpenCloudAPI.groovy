@@ -1759,7 +1759,6 @@ private void tuyaGetStateResponse(AsyncResponse response, Map data) {
 private void tuyaRefreshTokenAsync() {
     unschedule("tuyaRefreshTokenAsync")
     LOG.debug "Refreshing authentication token"
-    state.tokenInfo.access_token = ''
     tuyaGetAsync("/v1.0/token/${state.tokenInfo.refresh_token}", null, 'tuyaRefreshTokenResponse', null)
 }
 
@@ -1873,6 +1872,7 @@ private void tuyaPostAsync(String path, Map body, String callback, Map data = [:
 private void tuyaRequestAsync(String method, String path, String callback, Map query, Map body, Map data) {
     String accessToken = state?.tokenInfo?.access_token ?: ''
     String stringToSign = tuyaGetStringToSign(method, path, query, body)
+    if (path.startsWith('/v1.0/token/')) { accessToken = '' }
     long now = now()
     Map headers = [
       't': now,
