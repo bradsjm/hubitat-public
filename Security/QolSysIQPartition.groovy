@@ -7,6 +7,7 @@ metadata {
         attribute 'alarm', 'string'
         attribute 'error', 'string'
         attribute 'openZones', 'string'
+        attribute 'delay', 'number'
 
         attribute 'state', 'enum', [
             'disarmed',

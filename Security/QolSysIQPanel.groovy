@@ -298,12 +298,13 @@ private void processArming(Map json) {
             LOG.error "Unknown arming type: ${json.arming_type ?: json.status}"
             return
     }
-
+    int delay = json.delay ?: 0
     String dni = "${device.deviceNetworkId}-p${json.partition_id}"
     getChildDevice(dni)?.parse([
         [ name: 'state', value: value, descriptionText: "state is ${value}" ],
         [ name: 'alarm', value: 'None', descriptionText: 'alarm cleared' ],
-        [ name: 'error', value: 'None', descriptionText: 'error cleared' ]
+        [ name: 'error', value: 'None', descriptionText: 'error cleared' ],
+        [ name: 'delay', value: delay, descriptionText: "delay is ${delay} seconds"]
     ])
 }
 
@@ -320,6 +321,7 @@ private void processSummary(Map json) {
     state.partitionCount = json.partition_list?.size() ?: 0
     json.partition_list?.each { partition ->
         createPartition('nrgup', 'QolSys IQ Partition Child', partition)
+        state["partition${partition.partition_id}"] = [:]
         partition.zone_list?.each { zone ->
             switch (zone?.zone_type) {
                 case 1: // CONTACT
@@ -471,8 +473,7 @@ private void socketKeepAlive() {
 }
 
 private void updateZoneStateMap(Map zone) {
-    SynchronousQueue q = queues.computeIfAbsent(device.id) { k -> new SynchronousQueue() }
-    synchronized (q) {
+    synchronized (getQ()) {
         String key = "partition${zone.partition_id}"
         Map partitionState = state[key] ?: [:]
         partitionState[zone.zone_id] = zone.status == 'Open'
