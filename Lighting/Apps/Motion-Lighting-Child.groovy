@@ -115,9 +115,9 @@ Map pageMain() {
 
             href name: 'pageModeSettingsDefault',
                  page: 'pageMode',
-                 title: 'Motion Lighting devices',
+                 title: 'Default actions',
                  params: [modeName: 'Default', modeID: 0],
-                 description: getModeDescription(0) ?: 'Click to configure default lighting activity',
+                 description: getModeDescription(0) ?: 'Click to configure default actions',
                  state: getModeDescription(0) ? 'complete' : null
         }
 
@@ -447,7 +447,7 @@ Map pageModeSectionInactive(Long modeID) {
                 app.removeSetting("mode.${modeID}.inactiveTransitionTime")
 
                 input name: "mode.${modeID}.inactiveLights",
-                      title: '<i>Additional lights to turn off (optional)</i>',
+                      title: '<i>Override which lights to turn off (optional)</i>',
                       type: 'capability.switch',
                       multiple: true,
                       submitOnChange: true
@@ -581,40 +581,44 @@ String getTriggerDescription() {
     return description
 }
 
+String getLightNames(List lights) {
+    if (lights.size() <= 10) {
+        String description = ''
+        lights.eachWithIndex { element, index ->
+            if (index > 0 && index < lights.size() - 1) { description += ', ' }
+            else if (index > 0 && index == lights.size() - 1) { description += ' and ' }
+            description += element
+        }
+        return description
+    } else {
+        return "${lights.size()} lights configured"
+    }
+}
+
 // Returns String summary of per-mode settings, or empty string if that mode is not configured
 String getModeDescription(Long modeID) {
     Map mode = getModeSettings(modeID)
-    if (!mode.enable) { return '' }
+    String activeAction = activeActions.findResult { m -> m.get(mode.active) }
+    if (!mode.enable || !activeAction) { return '' }
 
-    String description = ''
+    String description = "When active: ${activeAction}"
     if (mode.active != 'none' && mode.activeLights) {
         List lights = mode.activeLights*.displayName
         lights.sort()
-        if (lights.size() <= 10) {
-            lights.eachWithIndex { element, index ->
-                if (index > 0 && index < lights.size() - 1) { description += ', ' }
-                else if (index > 0 && index == lights.size() - 1) { description += ' and ' }
-                description += element
-            }
-        } else {
-            description = "${lights.size()} lights configured"
-        }
-        description += '\n'
+        description += ': ' + getLightNames(lights) + '\n'
     }
 
-    String activeAction = activeActions.findResult { m -> m.get(mode.active) }
-    if (activeAction) {
-        description += "When active: ${activeAction}\n"
-        String inactiveAction = inactiveActions.findResult { m -> m.get(mode.inactive) }
-        if (mode.active != 'none' && inactiveAction) {
-            description += "When inactive: ${inactiveAction}"
-            if (mode.inactiveMinutes) {
-                description += " after ${mode.inactiveMinutes} minute"
-                if (mode.inactiveMinutes > 1) { description += 's' }
-            }
-            if (mode.inactiveLights) {
-                description += ' (plus additional lights)'
-            }
+    String inactiveAction = inactiveActions.findResult { m -> m.get(mode.inactive) }
+    if (mode.active != 'none' && inactiveAction) {
+        description += "When inactive: ${inactiveAction}"
+        if (mode.inactiveMinutes) {
+            description += " after ${mode.inactiveMinutes} minute"
+            if (mode.inactiveMinutes > 1) { description += 's' }
+        }
+        if (mode.inactiveLights) {
+            List lights = mode.inactiveLights*.displayName
+            lights.sort()
+            description += ': ' + getLightNames(lights) + '\n'
         }
     }
 
@@ -933,7 +937,7 @@ private void performAction(Map mode, String action) {
             setLights(lights, 'setLevel', mode.inactiveLevel, mode.inactiveTransitionTime)
             break
         case 'off':
-            lights += (mode.inactiveLights ?: [])
+            if (mode.inactiveLights) { lights = mode.inactiveLights }
             lights = optimize ? lights.findAll { d -> d.currentValue('switch') !=  'off' } : lights
             setLights(lights, 'off')
             break
