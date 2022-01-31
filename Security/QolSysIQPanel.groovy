@@ -473,6 +473,7 @@ private void socketKeepAlive() {
 }
 
 private void updateZoneStateMap(Map zone) {
+    if (zone.group?.startsWith('safety')) { return }
     synchronized (getQ()) {
         String key = "partition${zone.partition_id}"
         Map partitionState = state[key] ?: [:]
