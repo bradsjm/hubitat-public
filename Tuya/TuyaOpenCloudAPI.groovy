@@ -195,6 +195,12 @@ metadata {
 // Random number generator
 @Field static final Random random = new Random()
 
+// Json Parser
+@Field static final JsonSlurper jsonParser = new JsonSlurper()
+
+// Cipher Cache
+@Field static final ConcurrentHashMap<String, Cipher> cipherCache = new ConcurrentHashMap<>()
+
 /*
  * Tuya default attributes used if missing from device details
  */
@@ -647,11 +653,9 @@ void updated() {
 
 // Called to parse received MQTT data
 void parse(String data) {
-    Map payload = new JsonSlurper().parseText(interfaces.mqtt.parseMessage(data).payload)
-    Cipher cipher = Cipher.getInstance('AES/ECB/PKCS5Padding')
-    cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(state.mqttInfo.password[8..23].bytes, 'AES'))
-    Map result = new JsonSlurper().parse(cipher.doFinal(payload.data.decodeBase64()), 'UTF-8')
-
+    Map payload = jsonParser.parseText(interfaces.mqtt.parseMessage(data).payload)
+    Cipher cipher = tuyaGetCipher(Cipher.DECRYPT_MODE)
+    Map result = jsonParser.parse(cipher.doFinal(payload.data.decodeBase64()), 'UTF-8')
     if (result.status != null && (result.id != null || result.devId != null)) {
         updateMultiDeviceStatus(result)
     } else if (result.bizCode != null && result.bizData != null) {
@@ -795,7 +799,7 @@ private static Map mapTuyaCategory(Map d) {
 
 private static Map<String, Map> getFunctions(DeviceWrapper dw) {
     return jsonCache.computeIfAbsent(dw.getDataValue('functions') ?: '{}') {
-        k -> new JsonSlurper().parseText(k)
+        k -> jsonParser.parseText(k)
     }
 }
 
@@ -809,7 +813,7 @@ private static String getFunctionCode(Map functions, List codes) {
 
 private static Map<String, Map> getStatusSet(DeviceWrapper dw) {
     return jsonCache.computeIfAbsent(dw.getDataValue('statusSet') ?: '{}') {
-        k -> new JsonSlurper().parseText(k)
+        k -> jsonParser.parseText(k)
     }
 }
 
@@ -1294,7 +1298,7 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
             Map colour = deviceStatusSet[status.code] ?: defaults[status.code]
             Map bright = getFunction(deviceStatusSet, tuyaFunctions.brightness) ?: colour.v
             Map value = status.value == '' ? [h: 100.0, s: 100.0, v: 100.0] :
-                        jsonCache.computeIfAbsent(status.value) { k -> new JsonSlurper().parseText(k) }
+                        jsonCache.computeIfAbsent(status.value) { k -> jsonParser.parseText(k) }
             Integer hue = Math.floor(remap(value.h, colour.h.min, colour.h.max, 0, 100))
             Integer saturation = Math.floor(remap(value.s, colour.s.min, colour.s.max, 0, 100))
             Integer level = Math.floor(remap(value.v, bright.min, bright.max, 0, 100))
@@ -1640,6 +1644,16 @@ private void tuyaAuthenticateResponse(AsyncResponse response, Map data) {
  *      update_time: The update time of device status
  *      status: Status set of the device
  */
+
+private Cipher tuyaGetCipher(int mode = Cipher.DECRYPT_MODE) {
+    return cipherCache.computeIfAbsent(device.deviceNetworkId) { k ->
+        Cipher cipher = Cipher.getInstance('AES/ECB/PKCS5Padding')
+        byte[] cipherKey = state.mqttInfo.password[8..23].bytes
+        cipher.init(mode, new SecretKeySpec(cipherKey, 'AES'))
+        return cipher
+    }
+}
+
 private void tuyaGetDevicesAsync(String last_row_key = '', Map data = [:]) {
     if (!jsonCache.empty) {
         LOG.info "Clearing json cache"
@@ -1678,12 +1692,11 @@ private void tuyaGetDeviceSpecificationsAsync(String deviceID, Map data = [:]) {
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
 private void tuyaGetDeviceSpecificationsResponse(AsyncResponse response, Map data) {
     if (tuyaCheckResponse(response) == true) {
-        JsonSlurper parser = new JsonSlurper()
         Map result = response.json.result
         data.category = result.category
         if (result.functions != null) {
             data.functions = result.functions.collectEntries { f ->
-                Map values = parser.parseText(f.values ?: '{}')
+                Map values = jsonParser.parseText(f.values ?: '{}')
                 values.type = f.type
                 return [ (f.code): values ]
             }
@@ -1692,7 +1705,7 @@ private void tuyaGetDeviceSpecificationsResponse(AsyncResponse response, Map dat
         }
         if (result.status != null) {
             data.statusSet = result.status.collectEntries { f ->
-                Map values = parser.parseText(f.values ?: '{}')
+                Map values = jsonParser.parseText(f.values ?: '{}')
                 values.type = f.type
                 return [ (f.code): values ]
             }
