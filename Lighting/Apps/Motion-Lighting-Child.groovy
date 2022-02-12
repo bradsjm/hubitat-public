@@ -282,8 +282,14 @@ Map pageTriggers() {
             } else {
                 app.removeSetting('activationButtonNumber')
             }
+
+            input name: 'activationPresenceSensors',
+                  title: 'Presence sensors when changing to present',
+                  type: 'capability.presenceSensor',
+                  multiple: true,
+                  required: false
         }
-                      }
+    }
 }
 
 // Mode configuration page
@@ -563,6 +569,7 @@ String getTriggerDescription() {
     devices.addAll(settings.activationButtons*.displayName ?: [])
     devices.addAll(settings.activationOnSwitches*.displayName ?: [])
     devices.addAll(settings.activationOffSwitches*.displayName ?: [])
+    devices.addAll(settings.activationPresenceSensors*.displayName ?: [])
     devices.sort()
 
     if (!devices) { return '' }
@@ -632,7 +639,7 @@ String getModeDescription(Long modeID) {
 // Called when a button is pressed on the settings page
 void buttonHandler(Event evt) {
     Map mode = getActiveMode()
-    if (logEnabled) { log.trace "buttonHandler: ${evt.device} ${evt.value} (mode ${mode.name})" }
+    LOG.trace "buttonHandler: ${evt.device} ${evt.value} (mode ${mode.name})"
 
     if (evt.value == settings.activationButtonNumber) {
         if (state.triggered?.running != true) {
@@ -650,7 +657,7 @@ void buttonHandler(Event evt) {
 // Called when a subscribed contact sensor changes
 void contactHandler(Event evt) {
     Map mode = getActiveMode()
-    if (logEnabled) { log.trace "contactHandler: ${evt.device} ${evt.value} (mode ${mode.name})" }
+    LOG.trace "contactHandler: ${evt.device} ${evt.value} (mode ${mode.name})"
     if (evt.value != 'open') { return }
 
     if (
@@ -702,7 +709,9 @@ void initialize() {
     subscribe(settings.activationOnSwitches, 'switch', switchHandler)
     subscribe(settings.activationOffSwitches, 'switch', switchHandler)
     subscribe(settings.activationButtons, 'pushed', buttonHandler)
+    subscribe(settings.activationPresenceSensors, 'presence', presenceHandler)
     subscribe(settings.disabledSwitchWhenOn, 'switch', disableHandler)
+    subscribe(settings.disabledSwitchWhenOff, 'switch', disableHandler)
     subscribe(settings.disabledSwitchWhenOff, 'switch', disableHandler)
     subscribe(location, 'mode', modeChangeHandler)
 
@@ -731,7 +740,7 @@ void lightHandler(Event evt) {
 // Called when a the mode changes
 void modeChangeHandler(Event evt) {
     Map mode = getActiveMode()
-    if (logEnabled) { log.trace "modeChangeHandler: location mode = ${evt.value}, active mode = ${mode.name}" }
+    LOG.trace "modeChangeHandler: location mode = ${evt.value}, active mode = ${mode.name}"
 
     Map lastMode = getModeSettings(state.lastMode)
     state.lastMode = mode.id
@@ -744,29 +753,47 @@ void modeChangeHandler(Event evt) {
 // Called when a subscribed motion sensor changes
 void motionHandler(Event evt) {
     Map mode = getActiveMode()
-    if (logEnabled) { log.trace "motionHandler: ${evt.device} ${evt.value} (mode ${mode.name})" }
-    if (evt.value != 'active') { return }
+    LOG.trace "motionHandler: ${evt.device} ${evt.value} (mode ${mode.name})"
 
     if (
         (evt.device.id in settings.activationMotionSensors*.id) ||
         (state.triggered?.running == true && evt.device.id in settings.additionalMotionSensors*.id)
     ) {
-        if (state.triggered?.running != true) {
+        if (evt.value == 'active' && state.triggered?.running != true) {
             state.triggered = [
                 type: 'motion',
                 device: evt.device.displayName,
                 value: evt.value
             ]
             performActiveAction(mode)
+        } else {
+            scheduleInactiveAction(mode)
         }
-        scheduleInactiveAction(mode)
+    }
+}
+
+// Called when a subscribed presence sensor changes
+void presenceHandler(Event evt) {
+    Map mode = getActiveMode()
+    LOG.trace "presenceHandler: ${evt.device} ${evt.value} (mode ${mode.name})"
+
+    if (evt.device.id in settings.activationPresenceSensors*.id) {
+        if (evt.value == 'present' && state.triggered?.running != true) {
+            state.triggered = [
+                type: 'presence',
+                device: evt.device.displayName,
+                value: evt.value
+            ]
+            performActiveAction(mode)
+            scheduleInactiveAction(mode)
+        }
     }
 }
 
 // Called when a subscribed switch changes
 void switchHandler(Event evt) {
     Map mode = getActiveMode()
-    if (logEnabled) { log.trace "switchHandler: ${evt.device} ${evt.value} (mode ${mode.name})" }
+    LOG.trace "switchHandler: ${evt.device} ${evt.value} (mode ${mode.name})"
 
     if ((evt.device.id in settings.activationOnSwitches*.id && evt.value == 'on') ||
         (evt.device.id in settings.activationOffSwitches*.id && evt.value == 'off')) {
@@ -1204,6 +1231,7 @@ private void setLights(List lights, String action, Object[] value) {
 
 @Field private final LOG = [
     debug: { s -> if (settings.logEnable == true) { log.debug(s) } },
+    trace: { s -> if (settings.logEnable == true) { log.trace(s) } },
     info: { s -> log.info(s) },
     warn: { s -> log.warn(s) },
     error: { s -> log.error(s) },
