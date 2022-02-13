@@ -96,7 +96,6 @@ void initialize() {
     LOG.info "${device} driver initializing"
     sendEvent([ name: 'state', value: 'initializing', descriptionText: 'Initializing QolSys IQ Panel 2+ driver' ])
     state.clear()
-    state.partitionCount = 0
     buffers.remove(device.id)
     queues.remove(device.id)
     interfaces.rawSocket.close()
@@ -318,10 +317,8 @@ private void processError(Map json) {
 }
 
 private void processSummary(Map json) {
-    state.partitionCount = json.partition_list?.size() ?: 0
     json.partition_list?.each { partition ->
         createPartition('nrgup', 'QolSys IQ Partition Child', partition)
-        state["partition${partition.partition_id}"] = [:]
         partition.zone_list?.each { zone ->
             switch (zone?.zone_type) {
                 case 1: // CONTACT
@@ -410,27 +407,23 @@ private void processZoneState(Map zone) {
     // Update child zone device
     event.descriptionText = "${event.name} is ${event.value}"
     dw.parse([ event ])
-
-    // Update partition zone state mapping
-    updateZoneStateMap(zone)
 }
 
 private void processPartitionState(int partition_id) {
-    Map partitionState = state["partition${partition_id}"] ?: [:]
-    boolean isSecure = partitionState.every { z -> z.value == false }
+    String dni = "${device.deviceNetworkId}-p${partition_id}"
     String openZoneText = 'None'
-    if (isSecure == false) {
-        Set openZones = partitionState.findAll { s -> s.value == true }.collect { s ->
-            zoneCache["${device.deviceNetworkId}-z${s.key}"]?.name
-        }
-        openZoneText = openZones.sort().join(', ')
+    boolean isSecure = true
+    LOG.debug "zonecache: ${zoneCache}"
+    List zones = zoneCache.values().findAll { z -> z.partition_id == partition_id && z.status == 'Open' }
+    if (zones.size() > 0) {
+        isSecure = false
+        openZoneText = zones*.name.sort().join(', ')
         LOG.debug "partition ${partition_id} open zones: ${openZoneText}"
     }
 
-    String dni = "${device.deviceNetworkId}-p${partition_id}"
     getChildDevice(dni)?.parse([
         [ name: 'isSecure', value: isSecure as String, descriptionText: "partition is ${isSecure ? '' : 'not '}secure" ],
-        [ name: 'openZones', value: openZoneText, descriptionText: "${openZoneText} zone(s) open" ]
+        [ name: 'openZones', value: openZoneText, descriptionText: "zone(s) open: ${openZoneText}" ]
     ])
 }
 
@@ -469,16 +462,6 @@ private void socketKeepAlive() {
     } else {
         LOG.error 'socket keepalive timeout'
         runIn(5, 'connect')
-    }
-}
-
-private void updateZoneStateMap(Map zone) {
-    if (zone.group?.startsWith('safety')) { return }
-    synchronized (getQ()) {
-        String key = "partition${zone.partition_id}"
-        Map partitionState = state[key] ?: [:]
-        partitionState[zone.zone_id] = zone.status == 'Open'
-        state[key] = partitionState
     }
 }
 
