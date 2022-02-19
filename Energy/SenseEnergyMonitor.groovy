@@ -112,9 +112,9 @@ metadata {
 
 // Called when the device is started.
 void initialize() {
-    log.info "${device.displayName} driver initializing"
+    LOG.info "${device.displayName} driver initializing"
     if (!settings.email || !settings.password) {
-        log.error 'Unable to connect because login and password are required'
+        LOG.error 'Unable to connect because login and password are required'
         return
     }
 
@@ -124,50 +124,48 @@ void initialize() {
 
 // Called when the device is first created.
 void installed() {
-    log.info "${device.displayName} driver installed"
+    LOG.info "${device.displayName} driver installed"
 }
 
 // command to remove all the child devices
 void removeDevices() {
-    log.info "${device.displayName} removing all child devices"
+    LOG.info "${device.displayName} removing all child devices"
     childDevices.each { device -> deleteChildDevice(device.deviceNetworkId) }
 }
 
 // Called to parse received socket data
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedMethodParameter */
 void parse(String data) {
-    //if (logEnable) { log.debug "Websocket received: ${data}" }
     Map json = parseJson(data)
     switch (json.type) {
         case 'realtime_update':
-            if (logEnable) { log.debug 'Realtime update received' }
+            LOG.debug "Realtime update received ${json.payload}"
             parseRealtimeUpdate(json.payload)
             break
         case 'error':
-            log.error json.payload
+            LOG.error json.payload
             break
     }
 }
 
 // Called with socket status messages
 void webSocketStatus(String socketStatus) {
-    log.trace socketStatus
-    if (logEnabled) { log.debug "socketStatus: ${socketStatus}" }
+    LOG.debug "socketStatus: ${socketStatus}"
 
     if (socketStatus.startsWith('status: open')) {
-        log.info "${device.displayName} - Connected"
+        LOG.info "${device.displayName} - Connected"
         sendEvent(name: 'presence', value: 'present')
         pauseExecution(500)
         state.remove('delay')
     } else if (socketStatus.startsWith('status: closing')) {
-        log.warn "${device.displayName} - Closing connection"
+        LOG.warn "${device.displayName} - Closing connection"
         sendEvent(name: 'presence', value: 'not present')
     } else if (socketStatus.startsWith('failure:')) {
-        log.warn "${device.displayName} - Connection has failed with error [${socketStatus}]"
+        LOG.warn "${device.displayName} - Connection has failed with error [${socketStatus}]"
         sendEvent(name: 'presence', value: 'not present')
         autoReconnectWebSocket()
     } else {
-        log.warn "${device.displayName} - reconnecting"
+        LOG.warn "${device.displayName} - reconnecting"
         sendEvent(name: 'presence', value: 'not present')
         autoReconnectWebSocket()
     }
@@ -175,31 +173,31 @@ void webSocketStatus(String socketStatus) {
 
 // Called when the device is removed.
 void uninstalled() {
-    log.info "${device.displayName} driver uninstalled"
+    LOG.info "${device.displayName} driver uninstalled"
     disconnect()
 }
 
 // Called when the settings are updated.
 void updated() {
-    log.info "${device.displayName} driver configuration updated"
-    log.debug settings
+    LOG.info "${device.displayName} driver configuration updated"
+    LOG.debug settings
     initialize()
 
     if (logEnable) { runIn(1800, 'logsOff') }
 }
 
 void componentOn(DeviceWrapper device) {
-    log.warn "${device} Command Not supported"
+    LOG.warn "${device} Command Not supported"
 }
 
 void componentOff(DeviceWrapper device) {
-    log.warn "${device} Command Not supported"
+    LOG.warn "${device} Command Not supported"
 }
 
 void componentRefresh(DeviceWrapper device) {
     List<Map> events = []
     String dni = device.getDeviceNetworkId()
-    if (logEnable) log.debug "Refresh ${device} ..."
+    LOG.debug "Refresh ${device} ..."
 
     BigDecimal dw = rollingAverage(dni + 'w').setScale(0, RoundingMode.HALF_UP)
     String state = dw >= minimumWatts ? 'on' : 'off'
@@ -216,7 +214,7 @@ void componentRefresh(DeviceWrapper device) {
 }
 
 void refresh() {
-    if (logEnable) log.debug 'Refresh ...'
+    LOG.debug 'Refresh ...'
     List<Map> events = []
     String dni = device.getDeviceNetworkId()
 
@@ -236,7 +234,7 @@ void refresh() {
 
     events.each { e ->
         if (device.currentValue(e.name) != e.value) { 
-            if (e.descriptionText) { log.info e.descriptionText }
+            if (settings.logTextEnable) { LOG.info e.descriptionText }
             sendEvent(e)
         }
     }
@@ -256,22 +254,22 @@ private void authenticate() {
         body: "email=${settings.email}&password=${settings.password}",
         timeout: 5
     ]
-    log.info "Authenticating to Sense API as ${settings.email}"
+    LOG.info "Authenticating to Sense API as ${settings.email}"
     asynchttpPost('authHandler', params)
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
 private void authHandler(AsyncResponse response, Object data) {
     if (response.status == 200) {
-        if (logEnable) { log.debug "Sense API returned: ${response.data}" }
+        LOG.debug "Sense API returned: ${response.data}"
         if (response.json) {
-            log.info 'Received Sense API access token'
+            LOG.info 'Received Sense API access token'
             connect(response.json.monitors[0].id, response.json.access_token)
         }
     } else if (response.status == 401 || response.status == 400) {
-        log.error 'Authentication failed! Check email/password and try again.'
+        LOG.error 'Authentication failed! Check email/password and try again.'
     } else {
-        log.error "Sense returned HTTP status ${response.status}"
+        LOG.error "Sense returned HTTP status ${response.status}"
     }
 }
 
@@ -279,34 +277,34 @@ private void autoReconnectWebSocket() {
     state.delay = (state.delay ?: 0) + 30
     if (state.delay > 600) { state.delay = 600 }
 
-    log.warn "${device.displayName} - Connection lost, will try to reconnect in ${state.delay} seconds"
+    LOG.warn "${device.displayName} - Connection lost, will try to reconnect in ${state.delay} seconds"
     runIn(state.delay, 'authenticate')
 }
 
 private void connect(int monitorId, String token) {
-    log.info "Connecting to Sense Live Data Stream for monitor ${monitorId}"
+    LOG.info "Connecting to Sense Live Data Stream for monitor ${monitorId}"
     try {
         String url = "wss://clientrt.sense.com/monitors/${monitorId}/realtimefeed?access_token=${token}"
-        if (logEnable) { log.debug "Sense socket url: ${url}" }
+        LOG.debug "Sense socket url: ${url}"
         interfaces.webSocket.connect(url)
         runIn(3, 'refresh')
         runIn(15 * 60, 'authenticate')
     } catch (e) {
-        log.error "connect error: ${e}"
+        LOG.error "connect error: ${e}"
         autoReconnectWebSocket()
     }
 }
 
 private void disconnect() {
     unschedule()
-    log.info 'Disconnecting from Sense Live Data Stream'
+    LOG.info 'Disconnecting from Sense Live Data Stream'
     interfaces.webSocket.close()
     rollingAverage.clear()
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void logsOff() {
-    log.warn "debug logging disabled for ${device.displayName}"
+    LOG.warn "debug logging disabled for ${device.displayName}"
     device.updateSetting('logEnable', [value: 'false', type: 'bool'] )
 }
 
@@ -317,7 +315,7 @@ private Map newEvent(String device, String name, Object value, String unit = nul
         name: name,
         value: value,
         unit: unit,
-        descriptionText: settings.logTextEnable ? description : ''
+        descriptionText: description
     ]
 }
 
@@ -353,10 +351,10 @@ private ChildDeviceWrapper getOrCreateDevice(Map payload) {
 
     ChildDeviceWrapper childDevice = getChildDevice(deviceNetworkId)
     if (!childDevice) {
-        log.info "Creating child device ${name} [${deviceNetworkId}]"
+        LOG.info "Creating child device ${name} [${deviceNetworkId}]"
         childDevice = addChildDevice(
             'hubitat',
-            'Generic Component Metering Switch',
+            'Generic Component Energy Meter',
             deviceNetworkId,
             [
                 name: name,
@@ -400,10 +398,27 @@ private void updateDevice(Map payload) {
     if (payload.tags['DeviceListAllowed'] == 'true' && payload.containsKey('w')) {
         BigDecimal w = rollingAverage(getDni(payload.id) + 'w', payload.w)
         ChildDeviceWrapper childDevice = getOrCreateDevice(payload)
-        if (w >= settings.minimumWatts && childDevice.currentValue('switch') == 'off') {
-            childDevice.parse([newEvent(childDevice.displayName, 'switch', 'on')])
-        } else if (w < settings.minimumWatts && childDevice.currentValue('switch') == 'on') {
-            childDevice.parse([newEvent(childDevice.displayName, 'switch', 'off')])
-        }
+        // if (w >= settings.minimumWatts && childDevice.currentValue('switch') == 'off') {
+        //     childDevice.parse([newEvent(childDevice.displayName, 'switch', 'on')])
+        // } else if (w < settings.minimumWatts && childDevice.currentValue('switch') == 'on') {
+        //     childDevice.parse([newEvent(childDevice.displayName, 'switch', 'off')])
+        // }
     }
 }
+
+@Field private final Map LOG = [
+    debug: { s -> if (settings.logEnable == true) { log.debug(s) } },
+    info: { s -> log.info(s) },
+    warn: { s -> log.warn(s) },
+    error: { s -> log.error(s); sendEvent([ name: 'state', value: 'error', descriptionText: s ]) },
+    exception: { message, exception ->
+        List<StackTraceElement> relevantEntries = exception.stackTrace.findAll { entry -> entry.className.startsWith('user_app') }
+        Integer line = relevantEntries[0]?.lineNumber ?: 0
+        String method = relevantEntries[0]?.methodName ?: ''
+        log.error("${message}: ${exception}" + (line ? " at line ${line} (${method})" : ''))
+        sendEvent([ name: 'state', value: 'error', descriptionText: "${message}: ${exception}" ])
+        if (settings.logEnable && relevantEntries) {
+            log.debug("App exception stack trace:\n${relevantEntries.join('\n')}")
+        }
+    }
+]
