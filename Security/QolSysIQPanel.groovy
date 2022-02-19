@@ -266,6 +266,10 @@ private ChildDeviceWrapper createZone(String namespace, String driver, Map zone)
     return null
 }
 
+private List getOpenZones(int partition_id) {
+    return zoneCache.values().findAll { z -> z.partition_id == partition_id && z.status == 'Open' }
+}
+
 private SynchronousQueue getQ() {
     return queues.computeIfAbsent(device.id) { k -> new SynchronousQueue() }
 }
@@ -287,10 +291,11 @@ private void processAlarm(Map json) {
 
 private void processArming(Map json) {
     String value
+    String bypass = getOpenZones(json.partition_id)
     switch (json.arming_type ?: json.status) {
         case 'ARM_STAY': value = 'armed home'; break
         case 'ARM_AWAY': value = 'armed away'; break
-        case 'DISARM': value = 'disarmed'; break
+        case 'DISARM': value = 'disarmed'; bypass = 'None'; break
         case 'EXIT_DELAY': value = 'exit delay'; break
         case 'ENTRY_DELAY': value = 'entry delay'; break
         default:
@@ -301,6 +306,7 @@ private void processArming(Map json) {
     String dni = "${device.deviceNetworkId}-p${json.partition_id}"
     getChildDevice(dni)?.parse([
         [ name: 'state', value: value, descriptionText: "state is ${value}" ],
+        [ name: 'bypass', value: bypass, descriptionText: "bypass is ${bypass}" ],
         [ name: 'alarm', value: 'None', descriptionText: 'alarm cleared' ],
         [ name: 'error', value: 'None', descriptionText: 'error cleared' ],
         [ name: 'delay', value: delay, descriptionText: "delay is ${delay} seconds"]
@@ -414,7 +420,7 @@ private void processPartitionState(int partition_id) {
     String openZoneText = 'None'
     boolean isSecure = true
     LOG.debug "zonecache: ${zoneCache}"
-    List zones = zoneCache.values().findAll { z -> z.partition_id == partition_id && z.status == 'Open' }
+    List zones = getOpenZones(partition_id)
     if (zones.size() > 0) {
         isSecure = false
         openZoneText = zones*.name.sort().join(', ')

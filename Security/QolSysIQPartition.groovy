@@ -8,6 +8,7 @@ metadata {
         attribute 'error', 'string'
         attribute 'openZones', 'string'
         attribute 'delay', 'number'
+        attribute 'bypass', 'string'
 
         attribute 'state', 'enum', [
             'disarmed',
