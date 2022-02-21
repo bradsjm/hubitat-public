@@ -1484,9 +1484,8 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
 
         if (status.code in tuyaFunctions.temperatureSet) {
             Map set = deviceStatusSet[status.code] ?: defaults[status.code]
-            //String value = fromCelcius(scale(status.value, set.scale as int))
             String value = fromCelcius(scale(status.value, set.scale as int))
-            String unit = set.unit // location.temperatureScale
+            String unit = location.temperatureScale
             if (txtEnable) { LOG.info "${dw} heating set point is ${value}${unit} (${status})" }
             return [ [ name: 'heatingSetpoint', value: value, unit: unit, descriptionText: "heating set point is ${value}${unit}" ] ]
         }
