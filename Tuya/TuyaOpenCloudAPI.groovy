@@ -1265,7 +1265,7 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
 
         if (status.code in tuyaFunctions.co2) {
             Map co2 = deviceStatusSet[status.code] ?: defaults[status.code]
-            String value = scale(status.value, co2.scale)
+            String value = scale(status.value, co2.scale as int)
             if (txtEnable) { LOG.info "${dw} carbon dioxide level is ${value}" }
             return [ [ name: 'carbonDioxide', value: value, unit: 'ppm', descriptionText: "carbon dioxide level is ${value}" ] ]
         }
@@ -1365,7 +1365,7 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
             switch (status.code) {
                 case 'cur_power':
                     name = 'power'
-                    value = scale(status.value, code.scale)
+                    value = scale(status.value, code.scale as int)
                     unit = 'W'
                     break
                 case 'cur_voltage':
@@ -1392,14 +1392,14 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
             switch (status.code) {
                 case 'bright_value':
                     name = 'illuminance'
-                    value = scale(status.value, code.scale)
+                    value = scale(status.value, code.scale as int)
                     unit = 'Lux'
                     break
                 case 'humidity_value':
                 case 'va_humidity':
                     value = status.value
                     if (status.code == 'humidity_value') {
-                        value = scale(status.value, code.scale)
+                        value = scale(status.value, code.scale as int)
                     }
                     name = 'humidity'
                     unit = 'RH%'
@@ -1407,7 +1407,7 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
                 case 'bright_sensitivity':
                 case 'sensitivity':
                     name = 'sensitivity'
-                    value = scale(status.value, code.scale)
+                    value = scale(status.value, code.scale as int)
                     unit = '%'
                     break
                 case 'shock_state':    // vibration sensor TS0210
@@ -1476,7 +1476,7 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
 
         if (status.code in tuyaFunctions.temperature) {
             Map set = deviceStatusSet[status.code] ?: defaults[status.code]
-            String value = fromCelcius(scale(status.value, set.scale))
+            String value = fromCelcius(scale(status.value, set.scale as int))
             String unit = location.temperatureScale
             if (txtEnable) { LOG.info "${dw} temperature is ${value}${unit}" }
             return [ [ name: 'temperature', value: value, unit: unit, descriptionText: "temperature is ${value}${unit}" ] ]
@@ -1484,7 +1484,7 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
 
         if (status.code in tuyaFunctions.temperatureSet) {
             Map set = deviceStatusSet[status.code] ?: defaults[status.code]
-            String value = fromCelcius(scale(status.value, set.scale))
+            String value = fromCelcius(scale(status.value, set.scale as int))
             String unit = location.temperatureScale
             if (txtEnable) { LOG.info "${dw} heating set point is ${value}${unit}" }
             return [ [ name: 'heatingSetpoint', value: value, unit: unit, descriptionText: "heating set point is ${value}${unit}" ] ]
@@ -1516,7 +1516,7 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
             switch (status.code) {
                 case 'temp_indoor':
                     name = 'temperature'
-                    value = scale(status.value, set.scale)
+                    value = scale(status.value, set.scale as int)
                     unit = set.unit
                     break
                 case 'swing':
@@ -1536,12 +1536,12 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
                     break
                 case 'dehumidify_set_value':
                     name = 'humiditySetpoint'
-                    value = scale(status.value, set.scale)
+                    value = scale(status.value, set.scale as int)
                     unit = 'RH%'
                     break
                 case 'humidity_indoor':
                     name = 'humidity'
-                    value = scale(status.value, set.scale)
+                    value = scale(status.value, set.scale as int)
                     unit = 'RH%'
                     break
                 default:
