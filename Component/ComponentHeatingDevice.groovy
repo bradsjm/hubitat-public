@@ -5,6 +5,7 @@ metadata {
         capability 'TemperatureMeasurement'
         capability 'ThermostatHeatingSetpoint'
         capability 'ThermostatMode'
+        capability 'ThermostatOperatingState'
         capability 'Refresh'
     }
 }
