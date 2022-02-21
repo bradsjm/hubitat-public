@@ -785,7 +785,7 @@ private static Map mapTuyaCategory(Map d) {
 
         // Small Home Appliances
         case 'qn':    // Heater
-            return [ namespace: 'component', driver: 'Generic Component Thermostat' ]
+            return [ namespace: 'component', driver: 'Generic Component Heating Device' ]
         case 'cs':    // DeHumidifer
             return [ namespace: 'component', driver: 'Generic Component Dehumidifier' ]
         case 'fs':  // Fan
@@ -1478,15 +1478,16 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
             Map set = deviceStatusSet[status.code] ?: defaults[status.code]
             String value = fromCelcius(scale(status.value, set.scale as int))
             String unit = location.temperatureScale
-            if (txtEnable) { LOG.info "${dw} temperature is ${value}${unit}" }
+            if (txtEnable) { LOG.info "${dw} temperature is ${value}${unit} (${status})" }
             return [ [ name: 'temperature', value: value, unit: unit, descriptionText: "temperature is ${value}${unit}" ] ]
         }
 
         if (status.code in tuyaFunctions.temperatureSet) {
             Map set = deviceStatusSet[status.code] ?: defaults[status.code]
+            //String value = fromCelcius(scale(status.value, set.scale as int))
             String value = fromCelcius(scale(status.value, set.scale as int))
-            String unit = location.temperatureScale
-            if (txtEnable) { LOG.info "${dw} heating set point is ${value}${unit}" }
+            String unit = set.unit // location.temperatureScale
+            if (txtEnable) { LOG.info "${dw} heating set point is ${value}${unit} (${status})" }
             return [ [ name: 'heatingSetpoint', value: value, unit: unit, descriptionText: "heating set point is ${value}${unit}" ] ]
         }
 

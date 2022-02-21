@@ -1,5 +1,5 @@
 metadata {
-    definition(name: 'Generic Component Dehumidifier', namespace: 'component', author: 'Jonathan Bradshaw') {
+    definition(name: 'Generic Component DeHumidifer Device', namespace: 'component', author: 'Jonathan Bradshaw') {
         capability 'Actuator'
         capability 'Switch'
         capability 'TemperatureMeasurement'
@@ -10,8 +10,9 @@ metadata {
         attribute 'temperature', 'number'
         attribute 'swing', 'string'
         attribute 'child_lock', 'string'
-        attribute 'fan_speed_enum', 'enum'
+        attribute 'speed', 'enum'
         attribute 'humidity', 'number'
+        attribute 'switch', 'string'
     }
 
     command 'setHumidity', [[name:'humidityNeeded', type: 'ENUM', constraints: ['35', '40', '45', '50', '55', '60', '65', '70', '75', '80'], description: 'Set Humidity']]
@@ -42,11 +43,13 @@ void installed() {
 // Component command to turn on device
 void on() {
     parent?.componentOn(device)
+    runInMillis(500, 'refresh')
 }
 
 // Component command to turn off device
 void off() {
     parent?.componentOff(device)
+    runInMillis(500, 'refresh')
 }
 
 // Component command to refresh device
@@ -66,11 +69,13 @@ void parse(List<Map> description) {
 // Component command to set humidity
 void setHumidity(BigDecimal humidityNeeded) {
     parent?.componentSetHumiditySetpoint(device, humidityNeeded)
+    runInMillis(500, 'refresh')
 }
 
 // Component command to set fan speed
 void setFanSpeed(BigDecimal speedNeeded) {
     parent?.componentSetHumidifierSpeed(device, speedNeeded)
+    runInMillis(500, 'refresh')
 }
 
 // Called when the device is removed

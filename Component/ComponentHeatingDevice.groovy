@@ -1,22 +1,12 @@
 metadata {
-    definition(name: 'Generic Component DeHumidifer Device', namespace: 'component', author: 'Jonathan Bradshaw') {
+    definition(name: 'Generic Component Heating Device', namespace: 'component', author: 'Jonathan Bradshaw') {
         capability 'Actuator'
         capability 'Switch'
         capability 'TemperatureMeasurement'
-        capability 'RelativeHumidityMeasurement'
+        capability 'ThermostatHeatingSetpoint'
+        capability 'ThermostatMode'
         capability 'Refresh'
-
-        attribute 'humiditySetpoint', 'number'
-        attribute 'temperature', 'number'
-        attribute 'swing', 'string'
-        attribute 'child_lock', 'string'
-        attribute 'speed', 'enum'
-        attribute 'humidity', 'number'
-        attribute 'switch', 'string'
     }
-
-    command 'setHumidity', [[name:'humidityNeeded', type: 'ENUM', constraints: ['35', '40', '45', '50', '55', '60', '65', '70', '75', '80'], description: 'Set Humidity']]
-    command 'setFanSpeed', [[name:'speedNeeded', type: 'ENUM', constraints: ['low', 'high'], description: 'Fan Speed']]
 }
 
 preferences {
@@ -43,13 +33,11 @@ void installed() {
 // Component command to turn on device
 void on() {
     parent?.componentOn(device)
-    runInMillis(500, 'refresh')
 }
 
 // Component command to turn off device
 void off() {
     parent?.componentOff(device)
-    runInMillis(500, 'refresh')
 }
 
 // Component command to refresh device
@@ -62,20 +50,52 @@ void parse(List<Map> description) {
     if (logEnable) { log.debug description }
     description.each { d ->
         if (d.descriptionText && txtEnable) { log.info "${device} ${d.descriptionText}" }
+        switch (d.name) {
+            case 'switch':
+                sendEvent([ name: 'thermostatMode', value: d.value == 'on' ? 'heat' : 'off' ])
+                sendEvent([ name: 'thermostatOperatingState', value: d.value == 'on' ? 'heating' : 'idle' ])
+                break
+        }
+
         sendEvent(d)
     }
 }
 
-// Component command to set humidity
-void setHumidity(BigDecimal humidityNeeded) {
-    parent?.componentSetHumiditySetpoint(device, humidityNeeded)
-    runInMillis(500, 'refresh')
+// Component command to set position of device
+void setHeatingSetpoint(BigDecimal temperature) {
+    parent?.componentSetHeatingSetpoint(device, temperature)
 }
 
-// Component command to set fan speed
-void setFanSpeed(BigDecimal speedNeeded) {
-    parent?.componentSetHumidifierSpeed(device, speedNeeded)
-    runInMillis(500, 'refresh')
+// Set the thermostat mode, maps everything to on and off
+void setThermostatMode(String thermostatMode) {
+    switch (thermostatMode) {
+        case 'cool':
+            break
+        case 'heat':
+        case 'emergency heat':
+        case 'auto':
+            on()
+            break
+        case 'off':
+            off()
+            break
+    }
+}
+
+void auto() {
+    on()
+}
+
+void cool() {
+// do nothing
+}
+
+void emergencyHeat() {
+    on()
+}
+
+void heat() {
+    on()
 }
 
 // Called when the device is removed
