@@ -1692,13 +1692,7 @@ private void tuyaGetDeviceSpecificationsAsync(String deviceID, Map data = [:]) {
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
 private void tuyaGetDeviceSpecificationsResponse(AsyncResponse response, Map data) {
     if (tuyaCheckResponse(response) == true) {
-        Map result = [:]
-        // Tuya can give us dodgy json, so we can try to fix it
-        if (response.data.contains('\"\"')) {
-            result = jsonParser.parseText(response.data.replaceAll('\"\"', '\",\"'))
-        } else {
-            result = response.json.result
-        }
+        Map result = response.json.result
         data.category = result.category
         if (result.functions != null) {
             data.functions = result.functions.collectEntries { f ->
