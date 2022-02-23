@@ -620,11 +620,11 @@ void initialize() {
     sendEvent([ name: 'deviceCount', value: 0 ])
     Map datacenter = tuyaCountries.find { c -> c.country == settings.appCountry }
     if (datacenter != null) {
-        LOG.info "setting ${settings.appCountry} datacenter ${datacenter}"
+        LOG.info "Setting ${settings.appCountry} datacenter ${datacenter}"
         state.endPoint = datacenter.endpoint
         state.countryCode = datacenter.countryCode
     } else {
-        LOG.error 'country not set in configuration, please update settings'
+        LOG.error 'Country not set in configuration, please update settings'
         sendEvent([ name: 'state', value: 'error', descriptionText: 'Country not set in configuration'])
         return
     }
@@ -1809,6 +1809,7 @@ private void tuyaSendDeviceCommandsAsync(String deviceID, Map...params) {
     if (!state?.tokenInfo?.access_token) {
         LOG.error "tuyaSendDeviceCommandsAsync Error - Access token is null"
         sendEvent([ name: 'state', value: 'error', descriptionText: 'Access token not set (failed login?)'])
+        runIn(5, 'tuyaAuthenticateAsync')
         return
     }
     tuyaPostAsync("/v1.0/devices/${deviceID}/commands", [ 'commands': params ], 'tuyaSendDeviceCommandsResponse')
@@ -1842,8 +1843,12 @@ private void tuyaGetHubConfigAsync() {
 private void tuyaGetHubConfigResponse(AsyncResponse response, Map data) {
     if (tuyaCheckResponse(response) == false) { return }
     Map result = response.json.result
-    state.mqttInfo = result
-    tuyaHubConnectAsync()
+    if (result.url) {
+        state.mqttInfo = result
+        tuyaHubConnectAsync()
+    } else {
+        LOG.warn "Hub response did not contain mqtt details: ${result}"
+    }
 }
 
 private void tuyaHubConnectAsync() {
