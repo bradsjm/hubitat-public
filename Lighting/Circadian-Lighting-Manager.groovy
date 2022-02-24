@@ -149,7 +149,7 @@ preferences {
                         10: 'Every 10 minutes',
                         15: 'Every 15 minutes',
                         30: 'Every 30 minutes',
-                        45: 'Every 30 minutes'
+                        45: 'Every 45 minutes'
                     ]
 
             input name: 'logEnable',

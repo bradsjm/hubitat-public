@@ -71,13 +71,17 @@ Map pageMain() {
                 submitOnChange: true,
                 width: 8
 
-            input name: 'modelInterval',
-                title: 'ColorMind update frequency:',
-                type: 'number',
-                defaultValue: 60,
-                description: 'minutes',
-                range: '0..1440',
-                required: false,
+            input name: 'updateInterval',
+                title: 'Update interval',
+                type: 'enum',
+                defaultValue: 5,
+                options: [
+                    5: 'Every 5 minutes',
+                    10: 'Every 10 minutes',
+                    15: 'Every 15 minutes',
+                    30: 'Every 30 minutes',
+                    45: 'Every 45 minutes'
+                ],
                 width: 4
 
             input name: 'schemeType',
@@ -236,7 +240,12 @@ void initialize() {
     log.info "${app.name} initializing"
     state.seedColors = ['N', 'N', 'N', 'N', 'N']
     subscribe(settings.seed, 'seedChangeHandler')
-    schedule('0 0 3 ? * * *', 'getModels')
+    schedule('0 0 3 ? * * *', 'getModelList')
+
+    int interval = settings.updateInterval as int
+    log.info "Scheduling periodic updates every ${interval} minute(s)"
+    schedule("30 */${interval} * * * ?", 'getModelColors')
+
     getModelList()
 }
 
@@ -314,10 +323,6 @@ private void getModelListHandler(AsyncResponse response, Map data) {
 }
 
 private void getModelColors() {
-    if (settings.modelInterval) {
-        runIn(settings.modelInterval * 60, 'getModelColors')
-    }
-
     if (!checkEnabled()) { return }
 
     Map params = [
