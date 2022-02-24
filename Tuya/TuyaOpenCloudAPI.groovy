@@ -1479,7 +1479,7 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
             String value = fromCelcius(scale(status.value, set.scale as int))
             String unit = location.temperatureScale
             if (txtEnable) { LOG.info "${dw} temperature is ${value}${unit} (${status})" }
-            return [ [ name: 'temperature', value: value, unit: unit, descriptionText: "temperature is ${value}${unit}" ] ]
+            return [ [ name: 'temperature', value: value, unit: unit, descriptionText: "temperature is ${value}${unit} (${status})" ] ]
         }
 
         if (status.code in tuyaFunctions.temperatureSet) {
@@ -1487,7 +1487,7 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
             String value = fromCelcius(scale(status.value, set.scale as int))
             String unit = location.temperatureScale
             if (txtEnable) { LOG.info "${dw} heating set point is ${value}${unit} (${status})" }
-            return [ [ name: 'heatingSetpoint', value: value, unit: unit, descriptionText: "heating set point is ${value}${unit}" ] ]
+            return [ [ name: 'heatingSetpoint', value: value, unit: unit, descriptionText: "heating set point is ${value}${unit} (${status})" ] ]
         }
 
         if (status.code in tuyaFunctions.water) {
