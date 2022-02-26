@@ -224,8 +224,8 @@ metadata {
         v: [ min: 1, scale: 0, max: 1000, step: 1, type: 'Integer' ]
     ],
     'humidity_value': [ min: 0, max: 100, scale: 0, step: 1, type: 'Integer' ],
-    'temp_current': [ min: -400, max: 2000, scale: 1, step: 1, unit: '°C', type: 'Integer' ],
-    'temp_set': [ min: -400, max: 2000, scale: 1, step: 1, unit: '°C', type: 'Integer' ],
+    'temp_current': [ min: -400, max: 2000, scale: 0, step: 1, unit: '°C', type: 'Integer' ],
+    'temp_set': [ min: -400, max: 2000, scale: 0, step: 1, unit: '°C', type: 'Integer' ],
     'va_humidity': [ min: 0, max: 1000, scale: 1, step: 1, type: 'Integer' ],
     'va_temperature': [ min: 0, max: 1000, scale: 1, step: 1, type: 'Integer' ],
     'manual_feed': [ min: 1, max: 50, scale:0, step: 1, type: 'Integer' ]
@@ -1565,7 +1565,7 @@ private BigDecimal toCelcius(BigDecimal temperature) {
 
 // Convert value from celcius only if we Hubitat is using F scale
 private BigDecimal fromCelcius(BigDecimal temperature) {
-    return (location.temperatureScale == 'F' ? celsiusToFahrenheit(temperature).setScale(1, BigDecimal.ROUND_HALF_UP) : temperature).setScale(1, BigDecimal.ROUND_HALF_UP)
+    return (location.temperatureScale == 'F' ? celsiusToFahrenheit(temperature) : temperature).setScale(1, BigDecimal.ROUND_HALF_UP)
 }
 
 /**
