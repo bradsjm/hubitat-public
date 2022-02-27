@@ -266,8 +266,11 @@ private ChildDeviceWrapper createZone(String namespace, String driver, Map zone)
     return null
 }
 
-private List getOpenZones(int partition_id) {
-    return zoneCache.values().findAll { z -> z.partition_id == partition_id && z.status == 'Open' }
+private List getOpenZones(int partition_id, boolean includeSafety = false) {
+    return zoneCache.values().findAll { z ->
+        z.partition_id == partition_id && z.status == 'Open' &&
+        (includeSafety ? z.group.startsWith('safety') == false : true)
+    }
 }
 
 private SynchronousQueue getQ() {
@@ -295,7 +298,7 @@ private void processArming(Map json) {
     switch (json.arming_type ?: json.status) {
         case 'ARM_STAY': value = 'armed home'; break
         case 'ARM_AWAY': value = 'armed away'; break
-        case 'DISARM': value = 'disarmed'; bypass = 'None'; break
+        case 'DISARM': value = 'disarmed'; bypass = 'none'; break
         case 'EXIT_DELAY': value = 'exit delay'; break
         case 'ENTRY_DELAY': value = 'entry delay'; break
         default:
@@ -307,8 +310,8 @@ private void processArming(Map json) {
     getChildDevice(dni)?.parse([
         [ name: 'state', value: value, descriptionText: "state is ${value}" ],
         [ name: 'bypass', value: bypass, descriptionText: "bypass is ${bypass}" ],
-        [ name: 'alarm', value: 'None', descriptionText: 'alarm cleared' ],
-        [ name: 'error', value: 'None', descriptionText: 'error cleared' ],
+        [ name: 'alarm', value: 'none', descriptionText: 'alarm cleared' ],
+        [ name: 'error', value: 'none', descriptionText: 'error cleared' ],
         [ name: 'delay', value: delay, descriptionText: "delay is ${delay} seconds"]
     ])
 }
@@ -417,7 +420,7 @@ private void processZoneState(Map zone) {
 
 private void processPartitionState(int partition_id) {
     String dni = "${device.deviceNetworkId}-p${partition_id}"
-    String openZoneText = 'None'
+    String openZoneText = 'none'
     boolean isSecure = true
     LOG.debug "zonecache: ${zoneCache}"
     List zones = getOpenZones(partition_id)

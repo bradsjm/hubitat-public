@@ -1,7 +1,9 @@
 metadata {
     definition(name: 'QolSys IQ Partition Child', namespace: 'nrgup', author: 'Jonathan Bradshaw') {
         capability 'Actuator'
+        capability 'Initialize'
         capability 'Sensor'
+        capability 'PushableButton'
 
         attribute 'isSecure', 'enum', ['true', 'false' ]
         attribute 'alarm', 'string'
@@ -70,6 +72,7 @@ preferences {
 
 void alarm(String alarmType) {
     if (!settings.enableTrigger) {
+        log.warn 'Unable to trigger alarm (driver alarming disabled)'
         return
     }
 
@@ -79,6 +82,7 @@ void alarm(String alarmType) {
         partition_id: getDataValue('partition_id') as int,
     ]
 
+    log.info "Alarming ${command}"
     parent.sendCommand(command)
 }
 
@@ -99,6 +103,11 @@ void installed() {
     log.info "${device} driver installed"
 }
 
+void initialize() {
+    sendEvent(name: 'numberOfButtons', value: 6)
+    state.Buttons = '1 - Disarm, 2 - Arm Away, 3 - Arm Home, 4 - Police, 5 - Fire, 6 - Aux'
+}
+
 // parse commands from parent
 void parse(List<Map> description) {
     if (logEnable) { log.debug description }
@@ -110,6 +119,23 @@ void parse(List<Map> description) {
     }
 }
 
+void push(BigDecimal buttonNumber) {
+    log.info "Button ${buttonNumber} pushed"
+    switch (buttonNumber) {
+        case 1: disarm()
+            break
+        case 2: armAway()
+            break
+        case 3: armHome()
+            break
+        case 4: alarm('POLICE')
+            break
+        case 5: alarm('FIRE')
+            break
+        case 6: alarm('AUXILIARY')
+    }
+}
+
 // Called when the device is removed
 void uninstalled() {
     log.info "${device} driver uninstalled"
@@ -118,6 +144,7 @@ void uninstalled() {
 // Called when the settings are updated
 void updated() {
     log.info "${device} driver configuration updated"
+    initialize()
     if (logEnable) {
         log.debug settings
         runIn(1800, 'logsOff')
@@ -126,6 +153,7 @@ void updated() {
 
 private void arm(String armingType) {
     if (!settings.enableArming) {
+        log.warn 'Unable to arm (driver arming disabled)'
         return
     }
 
@@ -133,13 +161,14 @@ private void arm(String armingType) {
         action: 'ARMING',
         partition_id: getDataValue('partition_id') as int,
         arming_type: armingType,
-        //instant: false
+    //instant: false
     ]
 
     if (settings.userCode.length() >= 4) {
         command.usercode = settings.userCode
     }
 
+    log.info "Arming ${command}"
     parent.sendCommand(command)
 }
 
