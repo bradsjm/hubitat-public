@@ -400,7 +400,7 @@ void componentSetHeatingSetpoint(DeviceWrapper dw, BigDecimal temperature) {
     Map<String, Map> functions = getFunctions(dw)
     String code = getFunctionCode(functions, tuyaFunctions.temperatureSet)
     if (code != null) {
-        BigDecimal value = toCelcius(temperature)
+        int value = toCelcius(temperature) as int
         if (txtEnable) { LOG.info "Setting ${dw} heating set point to ${value}" }
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': value ])
     } else {
@@ -414,7 +414,7 @@ void componentSetHumiditySetpoint(DeviceWrapper dw, BigDecimal humidityNeeded) {
     String code = getFunctionCode(functions, tuyaFunctions.humiditySet)
     if (code != null) {
         if (txtEnable) { LOG.info "Setting ${dw} humidity set point to ${humidityNeeded}" }
-        BigDecimal setHumidity = BigDecimal.valueOf(Integer.valueOf(humidityNeeded))
+        int setHumidity = humidityNeeded as int
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': setHumidity ])
     }
 }
