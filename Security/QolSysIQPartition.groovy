@@ -4,6 +4,7 @@ metadata {
         capability 'Initialize'
         capability 'Sensor'
         capability 'PushableButton'
+        capability 'Switch'
 
         attribute 'isSecure', 'enum', ['true', 'false' ]
         attribute 'alarm', 'string'
@@ -55,6 +56,16 @@ preferences {
               title: 'User pin for arming/disarming',
               required: false,
               defaultValue: '1234'
+
+        input name: 'switchMapping',
+              title: 'Map switch to mode',
+              type: 'enum',
+              defaultValue: 'none',
+              options: [
+                none: 'Nothing',
+                home: 'Arm Home',
+                away: 'Arm Away'
+              ]
 
         input name: 'logEnable',
               type: 'bool',
@@ -108,6 +119,21 @@ void initialize() {
     state.Buttons = '1 - Disarm, 2 - Arm Away, 3 - Arm Home, 4 - Police, 5 - Fire, 6 - Aux'
 }
 
+void on() {
+    switch (settings.switchMapping) {
+        case 'home':
+            armHome()
+            break
+        case 'away':
+            armAway()
+            break
+    }
+}
+
+void off() {
+    disarm()
+}
+
 // parse commands from parent
 void parse(List<Map> description) {
     if (logEnable) { log.debug description }
@@ -115,6 +141,10 @@ void parse(List<Map> description) {
         if (device.currentValue(d.name) != d.value) {
             if (d.descriptionText && txtEnable) { log.info "${device} ${d.descriptionText}" }
             sendEvent(d)
+        }
+
+        if (d.name == 'state') {
+            sendEvent(name: 'switch', value: d.value == 'disarmed' ? 'off' : 'on')
         }
     }
 }

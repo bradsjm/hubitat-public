@@ -294,7 +294,7 @@ private void processAlarm(Map json) {
 
 private void processArming(Map json) {
     String value
-    String bypass = getOpenZones(json.partition_id)
+    String bypass = getOpenZones(json.partition_id)*.name.sort().join(', ') ?: 'none'
     switch (json.arming_type ?: json.status) {
         case 'ARM_STAY': value = 'armed home'; break
         case 'ARM_AWAY': value = 'armed away'; break
@@ -305,6 +305,7 @@ private void processArming(Map json) {
             LOG.error "Unknown arming type: ${json.arming_type ?: json.status}"
             return
     }
+
     int delay = json.delay ?: 0
     String dni = "${device.deviceNetworkId}-p${json.partition_id}"
     getChildDevice(dni)?.parse([
