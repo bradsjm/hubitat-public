@@ -277,6 +277,13 @@ void componentSetColor(DeviceWrapper device, Map colormap) {
         "HsbColor ${colormap.hue * 3.6},${colormap.saturation},${colormap.level}")
 }
 
+void componentSetEffect(DeviceWrapper device, BigDecimal effect) {
+    Map config = getDeviceConfig(device)
+    String topic = getCommandTopic(config, 'scheme')
+    log.info "Setting ${device} scheme to ${effect}"
+    mqttPublish(topic, effect)
+}
+
 void componentSetHue(DeviceWrapper device, BigDecimal hue) {
     Map config = getDeviceConfig(device)
     String topic = getCommandTopic(config)
@@ -845,7 +852,7 @@ private String getDeviceDriver(int relaytype, Map config) {
                     case 2: return 'Generic Component CT'
                     case 3: return 'Generic Component RGB'
                     case 4:
-                    case 5: return 'Generic Component RGBW'
+                    case 5: return 'Generic Component RGBW Light Effects'
                 }
             }
             break
