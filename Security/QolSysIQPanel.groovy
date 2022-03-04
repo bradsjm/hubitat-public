@@ -269,7 +269,7 @@ private ChildDeviceWrapper createZone(String namespace, String driver, Map zone)
 private List getOpenZones(int partition_id, boolean includeSafety = false) {
     return zoneCache.values().findAll { z ->
         z.partition_id == partition_id && z.status == 'Open' &&
-        (includeSafety ? z.group.startsWith('safety') == false : true)
+        (includeSafety ? true : z.group.startsWith('safety') == false)
     }
 }
 
@@ -353,8 +353,8 @@ private void processSummary(Map json) {
                 case 9: // PANIC BUTTON
                 case 102: // KEYFOB
                 case 103: // WALLFOB
-                    createZone('hubitat', 'Generic Component Button Controller', zone)?.
-                        sendEvent([ name: 'numberOfButtons', value: 1 ])
+                    //createZone('hubitat', 'Generic Component Button Controller', zone)?.
+                    //    sendEvent([ name: 'numberOfButtons', value: 1 ])
                     break
                 default:
                     LOG.debug "no driver mapping for zone ${zone}"
