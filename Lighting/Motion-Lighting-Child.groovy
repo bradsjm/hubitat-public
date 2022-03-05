@@ -1,4 +1,3 @@
-/* groovylint-disable UnnecessaryObjectReferences */
 /**
  *  MIT License
  *  Copyright 2021 Jonathan Bradshaw (jb@nrgup.net)
@@ -26,7 +25,7 @@ import groovy.transform.Field
 import hubitat.helper.ColorUtils
 import java.util.concurrent.ConcurrentHashMap
 
-definition (
+definition(
     name: 'Motion Lighting Instance',
     namespace: 'nrgup',
     parent: 'nrgup:Motion Lighting',
@@ -45,6 +44,8 @@ preferences {
     page name: 'pageMode', content: 'pageMode'
 }
 
+@Field static final Map<Integer, Long> disabledDevices = new ConcurrentHashMap<Integer, Long>()
+
 @Field static final List<Map<String,String>> activeActions = [
    [on: 'Turn on lights'],
    [onLevel: 'Turn on and set brightness'],
@@ -60,8 +61,6 @@ preferences {
    [restore: 'Restore previous state'],
    [none: 'No action (do not turn off)']
 ]
-
-@Field static final ConcurrentHashMap<Integer, Long> disabledDevices = new ConcurrentHashMap<>()
 
 /*
  * Configuration UI
@@ -562,15 +561,17 @@ String getDisabledDescription() {
 // Returns String summary of device settings, or empty string if that mode is not configured
 String getTriggerDescription() {
     List devices = []
-    devices.addAll(settings.activationMotionSensors*.displayName ?: [])
-    devices.addAll(settings.additionalMotionSensors*.displayName ?: [])
-    devices.addAll(settings.activationContactSensors*.displayName ?: [])
-    devices.addAll(settings.additionalContactSensors*.displayName ?: [])
-    devices.addAll(settings.activationButtons*.displayName ?: [])
-    devices.addAll(settings.activationOnSwitches*.displayName ?: [])
-    devices.addAll(settings.activationOffSwitches*.displayName ?: [])
-    devices.addAll(settings.activationPresenceSensors*.displayName ?: [])
-    devices.sort()
+    device.with {
+        addAll(settings.activationMotionSensors*.displayName ?: [])
+        addAll(settings.additionalMotionSensors*.displayName ?: [])
+        addAll(settings.activationContactSensors*.displayName ?: [])
+        addAll(settings.additionalContactSensors*.displayName ?: [])
+        addAll(settings.activationButtons*.displayName ?: [])
+        addAll(settings.activationOnSwitches*.displayName ?: [])
+        addAll(settings.activationOffSwitches*.displayName ?: [])
+        addAll(settings.activationPresenceSensors*.displayName ?: [])
+        sort()
+    }
 
     if (!devices) { return '' }
 
@@ -597,9 +598,9 @@ String getLightNames(List lights) {
             description += element
         }
         return description
-    } else {
-        return "${lights.size()} lights configured"
     }
+
+    return "${lights.size()} lights configured"
 }
 
 // Returns String summary of per-mode settings, or empty string if that mode is not configured
@@ -635,7 +636,6 @@ String getModeDescription(Long modeID) {
 /*
  * Application Logic
  */
-
 // Called when a button is pressed on the settings page
 void buttonHandler(Event evt) {
     Map mode = getActiveMode()
@@ -681,11 +681,11 @@ void disableHandler(Event evt) {
     if (state.triggered?.running != true) { return }
 
     if ((evt.device.id in settings.disabledSwitchWhenOn*.id && evt.value == 'on') ||
-        (evt.device.id in settings.disabledSwitchWhenOff*.id && evt.value == 'off') ) {
+        (evt.device.id in settings.disabledSwitchWhenOff*.id && evt.value == 'off')) {
         LOG.info "${app.name} mode disable switch activated"
         performInactiveAction()
     } else if ((evt.device.id in settings.disabledSwitchWhenOn*.id && evt.value == 'off') ||
-        (evt.device.id in settings.disabledSwitchWhenOff*.id && evt.value == 'on') ) {
+        (evt.device.id in settings.disabledSwitchWhenOff*.id && evt.value == 'on')) {
         LOG.info "${app.name} mode disable switch deactivated"
         Map mode = getActiveMode()
         performActiveAction(mode)
@@ -748,7 +748,6 @@ void modeChangeHandler(Event evt) {
         performTransitionAction(lastMode, mode)
     }
 }
-
 
 // Called when a subscribed motion sensor changes
 void motionHandler(Event evt) {
@@ -830,7 +829,6 @@ void updated() {
 /*
  * Internal Application Logic
  */
-
 private static String getDuration(long elapsed) {
     String ago = ''
     if (elapsed < 60) {
@@ -944,18 +942,20 @@ private Map getModeSettings(Long id) {
 
     mode.enable = settings["mode.${mode.id}.enable"] as Boolean
     if (mode.enable == true) {
-        mode.active = (settings["mode.${mode.id}.active"] ?: settings["mode.0.active"]) as String
-        mode.activeColor = (settings["mode.${mode.id}.activeColor"] ?: settings["mode.0.activeColor"]) as String
-        mode.activeColorTemperature = (settings["mode.${mode.id}.activeCT"] ?: settings["mode.0.activeCT"]) as BigDecimal
-        mode.activeLevel = (settings["mode.${mode.id}.activeLevel"] ?: settings["mode.0.activeLevel"]) as BigDecimal
-        mode.activeLights = settings["mode.${mode.id}.activeLights"] ?: settings["mode.0.activeLights"]
-        mode.activeTransitionTime = (settings["mode.${mode.id}.activeTransitionTime"] ?: settings["mode.0.activeTransitionTime"]) as BigDecimal
+        mode.with {
+            active = (settings["mode.${mode.id}.active"] ?: settings['mode.0.active']) as String
+            activeColor = (settings["mode.${mode.id}.activeColor"] ?: settings['mode.0.activeColor']) as String
+            activeColorTemperature = (settings["mode.${mode.id}.activeCT"] ?: settings['mode.0.activeCT']) as BigDecimal
+            activeLevel = (settings["mode.${mode.id}.activeLevel"] ?: settings['mode.0.activeLevel']) as BigDecimal
+            activeLights = settings["mode.${mode.id}.activeLights"] ?: settings['mode.0.activeLights']
+            activeTransitionTime = (settings["mode.${mode.id}.activeTransitionTime"] ?: settings['mode.0.activeTransitionTime']) as BigDecimal
 
-        mode.inactive = (settings["mode.${mode.id}.inactive"] ?: settings["mode.0.inactive"]) as String
-        mode.inactiveLevel = (settings["mode.${mode.id}.inactiveLevel"] ?: settings["mode.0.inactiveLevel"]) as BigDecimal
-        mode.inactiveLights = settings["mode.${mode.id}.inactiveLights"] ?: settings["mode.0.inactiveLights"]
-        mode.inactiveMinutes = (settings["mode.${mode.id}.inactiveMinutes"] ?: settings['mode.0.inactiveMinutes']) as Integer
-        mode.inactiveTransitionTime = (settings["mode.${mode.id}.inactiveTransitionTime"] ?: settings['mode.0.inactiveMinutes']) as BigDecimal
+            inactive = (settings["mode.${mode.id}.inactive"] ?: settings['mode.0.inactive']) as String
+            inactiveLevel = (settings["mode.${mode.id}.inactiveLevel"] ?: settings['mode.0.inactiveLevel']) as BigDecimal
+            inactiveLights = settings["mode.${mode.id}.inactiveLights"] ?: settings['mode.0.inactiveLights']
+            inactiveMinutes = (settings["mode.${mode.id}.inactiveMinutes"] ?: settings['mode.0.inactiveMinutes']) as Integer
+            inactiveTransitionTime = (settings["mode.${mode.id}.inactiveTransitionTime"] ?: settings['mode.0.inactiveMinutes']) as BigDecimal
+        }
     }
 
     return mode
@@ -1016,7 +1016,7 @@ private void performActiveAction(Map mode) {
 // Performs the configured actions when specified mode becomes inactive
 private void performInactiveAction() {
     unschedule('performInactiveAction')
-    performInactiveAction( getActiveMode() )
+    performInactiveAction(getActiveMode())
 }
 
 private void performInactiveAction(Map mode) {
@@ -1235,19 +1235,19 @@ private void setLights(List lights, String action, Object[] value) {
     [name:'Yellow Green', rgb:'#9ACD32']
 ].asImmutable()
 
-@Field private final LOG = [
+@Field private final Map LOG = [
     debug: { s -> if (settings.logEnable == true) { log.debug(s) } },
     trace: { s -> if (settings.logEnable == true) { log.trace(s) } },
     info: { s -> log.info(s) },
     warn: { s -> log.warn(s) },
     error: { s -> log.error(s) },
     exception: { message, exception ->
-        List<StackTraceElement> relevantEntries = exception.stackTrace.findAll { entry -> entry.className.startsWith("user_app") }
+        List<StackTraceElement> relevantEntries = exception.stackTrace.findAll { entry -> entry.className.startsWith('user_app') }
         Integer line = relevantEntries[0]?.lineNumber
         String method = relevantEntries[0]?.methodName
         log.error("${message}: ${exception} at line ${line} (${method})")
         if (settings.logEnable) {
-            log.debug("App exception stack trace:\n${relevantEntries.join("\n")}")
+            log.debug("App exception stack trace:\n${relevantEntries.join('\n')}")
         }
     }
 ]
