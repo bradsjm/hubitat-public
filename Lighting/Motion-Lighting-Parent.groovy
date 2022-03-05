@@ -21,7 +21,7 @@
  *  SOFTWARE.
 */
 
-definition (
+definition(
     name: 'Motion Lighting',
     namespace: 'nrgup',
     author: 'Jonathan Bradshaw',

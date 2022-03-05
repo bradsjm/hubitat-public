@@ -755,19 +755,25 @@ void motionHandler(Event evt) {
     Map mode = getActiveMode()
     LOG.trace "motionHandler: ${evt.device} ${evt.value} (mode ${mode.name})"
 
-    if (
-        (evt.device.id in settings.activationMotionSensors*.id) ||
-        (state.triggered?.running == true && evt.device.id in settings.additionalMotionSensors*.id)
-    ) {
-        if (evt.value == 'active' && state.triggered?.running != true) {
-            state.triggered = [
-                type: 'motion',
-                device: evt.device.displayName,
-                value: evt.value
-            ]
-            performActiveAction(mode)
-        } else {
-            scheduleInactiveAction(mode)
+    if (evt.device.id in settings.activationMotionSensors*.id ||
+           (state.triggered?.running == true && evt.device.id in settings.additionalMotionSensors*.id)) {
+        switch (evt.value) {
+            case 'active':
+                unschedule('performInactiveAction')
+                if (state.triggered?.running != true) {
+                    state.triggered = [
+                        type: 'motion',
+                        device: evt.device.displayName,
+                        value: evt.value
+                    ]
+                    performActiveAction(mode)
+                }
+                break
+            case 'inactive':
+                if (state.triggered?.running == true) {
+                    scheduleInactiveAction(mode)
+                }
+            break
         }
     }
 }
