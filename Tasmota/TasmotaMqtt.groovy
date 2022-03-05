@@ -254,7 +254,7 @@ void componentSetColorTemperature(DeviceWrapper device, BigDecimal kelvin,
 
     if (config['lt_st'] == 2 || config['lt_st'] == 5) {
         int mireds = 1000000f / kelvin
-        log.info "Setting ${device} color temperature to ${value}K (${mireds} mireds)"
+        log.info "Setting ${device} color temperature to ${kelvin}K (${mireds} mireds)"
         mqttPublish(topic, fadeCommand + "CT ${mireds}")
         if (level != null) {
             componentSetLevel(device, level, transitionTime)
