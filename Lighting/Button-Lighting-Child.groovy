@@ -31,58 +31,64 @@ definition(
     parent: 'nrgup:Button Lighting',
     author: 'Jonathan Bradshaw',
     category: 'Lighting',
-    description: 'Advanced control of lighting based on buttons',
+    description: 'Use main application parent',
     iconUrl: '',
     iconX2Url: '',
     installOnOpen: true,
     iconX3Url: ''
 )
 
+// Application Pages
 preferences {
-    page name: 'pageMain'
-    page name: 'pageMode'
-    page name: 'pageButtonConfig'
+    page name: 'mainPage', install: true, uninstall: true
+    page name: 'configureMode'
+    page name: 'configureButtons'
 }
 
-@Field static final Map<String,Map> eventMap = [
-   'pushed': [ capability: 'PushableButton', userAction: 'Push', maxPresses: 5 ],
-   'held': [ capability: 'HoldableButton', userAction: 'Hold', maxPresses: 1 ],
-   'released': [ capability: 'ReleasableButton', userAction: 'Release', maxPresses: 1 ],
-   'doubleTapped': [ capability: 'DoubleTapableButton', userAction: 'Double Tap', maxPresses: 5 ]
-]
+// Available actions for button presses
+@Field static final Map<String,String> buttonActions = [
+   on:       'Turn on',
+   onLevel:  'Turn on and set brightness',
+   onCT:     'Turn on and set color temperature',
+   onColor:  'Turn on and set light color',
+   dimDown:  'Start dimming down',
+   dimUp:    'Start dimming up',
+   stop:     'Stop dimming',
+   off:      'Turn off',
+   restore:  'Restore to previous state',
+   none:     'Ignore button press'
+].asImmutable()
 
+// Supported types of button events
+@Field static final Map<String,Map> eventMap = [
+   'pushed':       [ capability: 'PushableButton',      description: 'Push',       maxPresses: 5 ],
+   'held':         [ capability: 'HoldableButton',      description: 'Hold',       maxPresses: 1 ],
+   'released':     [ capability: 'ReleasableButton',    description: 'Release',    maxPresses: 1 ],
+   'doubleTapped': [ capability: 'DoubleTapableButton', description: 'Double Tap', maxPresses: 5 ]
+].asImmutable()
+
+// Convenience object to map number to ordinal string
 @Field static final Map<Integer, String> ordinals = [
     1: 'First',
     2: 'Second',
     3: 'Third',
     4: 'Fourth',
     5: 'Fifth'
-]
+].asImmutable()
 
-@Field static final Map<String,String> buttonActions = [
-   on: 'Turn on lights',
-   onLevel: 'Turn on and set brightness',
-   onCT: 'Turn on and set color temperature',
-   onColor: 'Turn on and set light color',
-   dimDown: 'Start dimming down',
-   dimUp: 'Start dimming up',
-   stop: 'Stop dimming',
-   off: 'Turn off lights',
-   restore: 'Restore previous state'
-]
+// Tracking for the number of presses of each button
+@Field static final Map<String, Map> counters = new ConcurrentHashMap<>()
 
-@Field static final Map<String, Map> counters = new ConcurrentHashMap<String, Map>()
+// Number of seconds before button press counter resets to zero
+@Field static final Integer pressTimeoutSeconds = 10
 
 /*
  * Configuration UI
  */
-/* groovylint-disable-next-line MethodSize */
-Map pageMain() {
-    state.remove('pageModeName')
-    state.remove('pageModeID')
+Map mainPage() {
+    atomicState.clear()
 
-    return dynamicPage(name: 'pageMain', title: 'Button Lighting Controller',
-                      install: true, uninstall: true, hideWhenEmpty: true) {
+    return dynamicPage(name: 'mainPage', title: 'Button Lighting Controller') {
         section {
             label title: 'Application Label',
                   required: false
@@ -103,48 +109,44 @@ Map pageMain() {
                       'a set of lighting devices with configurable behaviour.'
 
             input name: 'buttonDevices',
-                  title: 'Select button device(s)',
+                  title: 'Select button controller devices',
                   type: 'capability.pushableButton',
                   multiple: true,
                   required: true,
                   submitOnChange: true,
                   width: 12
 
-            paragraph 'Configure the individual button behaviour below:'
+            paragraph 'Configure the individual button behaviour modes:'
 
-            href name: 'pageModeSettingsDefault',
-                 page: 'pageMode',
-                 title: 'Default button mappings',
-                 params: [ modeId: 0 ],
-                 description: getModeDescription(0) ?: 'Click to configure default button mappings',
-                 state: settings['mode.0.enable'] ? 'complete' : null,
-                 width: 12
-        }
-
-        List configuredModes = getConfiguredModes()
-        section(configuredModes ? 'Mode Overrides:' : '') {
             Long activeId = getActiveMode().id
-            location.getModes().each { mode ->
-                if ((String)mode.id in settings?.modes || settings["mode.${mode.id}.enable"] == true) {
-                    href name: 'pageModeHref',
-                        page: 'pageMode',
-                        title: mode.id == activeId ? "<span style='font-weight: bold'>${mode.name} mode (currently active)</span>" : "${mode.name} mode",
-                        params: [ modeId: mode.id ],
-                        description: getModeDescription(mode.id) ?:
-                            "Click to override default button mappings in ${mode.name} mode",
-                        state: settings["mode.${mode.id}.enable"] ? 'complete' : null,
-                        width: 12
-                }
+            String modeDescription = getModeDescription()
+            href page: 'configureMode',
+                 title: 'Default Button Mappings' + (activeId == 0 ? ' <span style=\'font-weight: bold\'>(Active)</span>' : ''),
+                 params: [ modeId: 0 ],
+                 description: modeDescription ?: 'Click to configure button mappings',
+                 state: activeId == 0 ? 'complete' : null,
+                 width: 12
+
+            Map<Long, String> enabledModes = getEnabledModes()
+            enabledModes.each { Long id, String name ->
+                modeDescription = getModeDescription(id)
+                href page: 'configureMode',
+                     title: "${name} Mode Button Mappings" + (activeId == id ? ' <span style=\'font-weight: bold\'>(Active)</span>' : ''),
+                     params: [ modeId: id ],
+                     description: modeDescription ?: "Click to override default button mappings in ${name} mode",
+                     state: activeId == id ? 'complete' : null,
+                     width: 12
             }
 
-            List availableModes = getAvailableModes()
+            Map<Long, String> availableModes = getAvailableModes()
+            app.removeSetting('newMode')
             if (availableModes) {
-                input name: 'modes',
-                    title: 'Select mode to create override configuration',
-                    type: 'enum',
-                    options: availableModes,
-                    submitOnChange: true,
-                    width: 12
+                input name: 'newMode',
+                      title: 'Select mode name to create a mode specific configuration',
+                      type: 'enum',
+                      options: availableModes,
+                      submitOnChange: true,
+                      width: 12
             }
         }
 
@@ -171,76 +173,75 @@ Map pageMain() {
 }
 
 // Mode configuration page
-Map pageMode(Map params) {
-    Long modeId = params ? params.modeId : atomicState.modeId
-    Map mode = getModeSettings(modeId)
-    atomicState.modeId = modeId
+Map configureMode(Map params) {
+    Map mode = getMode(params ? params.modeId : atomicState.modeId)
+    atomicState.modeId = mode.id
 
-    return dynamicPage(name: 'pageMode', title: "${mode.name} Mode Actions") {
+    return dynamicPage(name: 'configureMode', title: "${mode.name} Mode Actions") {
         section {
             input name: "mode.${mode.id}.enable",
                     title: "Enable ${mode.name} mode actions",
                     type: 'bool',
                     defaultValue: true,
-                    submitOnChange: true
-        }
-
-        if (settings["mode.${mode.id}.enable"] != false) {
-            section {
-                input name: "mode.${mode.id}.lights",
-                    title: 'Select lights to turn on/off/dim',
-                    description: mode.id == 0 ? 'Click to set' : 'Click to override default lights',
-                    type: 'capability.switchLevel',
-                    multiple: true,
                     submitOnChange: false
             }
 
+        section('Configure Button Actions') {
             int buttonCount = getButtonCount()
             Map capabilities = getButtonCapabilities()
-
-            section('Configure Button Actions') {
-                for (int button in (1..buttonCount)) {
-                    capabilities.each { String action, Map capability ->
-                        Map p = [modeId: mode.id, button: button, action: action]
-                        String desc = capability.maxPresses > 1 ? 'Actions' : 'Action'
-                        String config = getButtonConfig(p)
-                        href name: 'pageButtonConfigHref',
-                            page: 'pageButtonConfig',
-                            title: "Button ${button} ${capability.userAction} ${desc}",
-                            params: p,
+            for (int button in (1..buttonCount)) {
+                capabilities.each { String event, Map capability ->
+                    String desc = capability.maxPresses > 1 ? 'Actions' : 'Action'
+                    String config = getButtonDescription(mode, button, event)
+                    href page: 'configureButtons',
+                            title: "Button ${button} ${capability.description} ${desc}",
+                            params: [ button: button, event: event ],
                             description: config ?: 'Click to configure button actions',
                             state: config ? 'complete' : null,
                             width: 12
-                    }
                 }
             }
         }
     }
 }
 
-Map pageButtonConfig(Map params) {
-    Long modeId = params ? params.modeId : atomicState.modeId
-    Map mode = getModeSettings(modeId)
+// Button Configuration Page
+Map configureButtons(Map params) {
+    Map mode = getMode(atomicState.modeId)
     Integer button = params ? params.button : atomicState.button
-    String action = params ? params.action : atomicState.action
-    atomicState.modeId = modeId
+    String event = params ? params.event : atomicState.event
     atomicState.button = button
-    atomicState.action = action
+    atomicState.event = event
 
     Map capability = eventMap[action]
-    int maxPresses = capability.maxPresses ?: 1
-    return dynamicPage(name: 'pageButtonConfig', title: "${mode.name} Mode Button ${button} ${capability.userAction} Settings") {
+    return dynamicPage(name: 'configureButtons', title: "${mode.name} Mode Button ${button} ${capability.description} Settings") {
         section {
+            int maxPresses = capability.maxPresses ?: 1
             for (int count in (1..maxPresses)) {
-                String name = "mode.${mode.id}.button.${button}.${action}.${count}"
+                String name = "mode.${mode.id}.button.${button}.${event}.${count}"
                 String ordinal = maxPresses > 1 ? ordinals[count] + ' ' : ''
-                input title: "On Button ${button} ${ordinal}${capability.userAction}:",
-                    name: name,
-                    type: 'enum',
-                    options: buttonActions,
-                    required: false,
-                    defaultValue: getDefaultButtonAction(button, action, count),
-                    submitOnChange: true
+                String defaultAction = getButtonDefaultAction(button, event, count)
+
+                input title: "On Button ${button} ${ordinal}${capability.description}:",
+                      name: name,
+                      type: 'enum',
+                      options: buttonActions,
+                      required: true,
+                      defaultValue: buttonActions[defaultAction],
+                      submitOnChange: true
+
+                String buttonAction = settings[name] ?: defaultAction
+                if (buttonAction != 'none') {
+                    String description = buttonActions[buttonAction].toLowerCase()
+                    input name: "${name}.lights",
+                          title: "Select lights to ${description}",
+                          description: mode.id == 0 ? 'Click to set lights' : 'Click to override default light selection',
+                          type: 'capability.switchLevel',
+                          multiple: true,
+                          submitOnChange: false
+                } else {
+                    app.removeSetting("${name}.lights")
+                }
 
                 switch (settings[name]) {
                     case 'onLevel':
@@ -288,181 +289,41 @@ Map pageButtonConfig(Map params) {
     }
 }
 
-// Returns the combined button capabiltiies
-Map getButtonCapabilities() {
-    Set allCapabilities = settings.buttonDevices*.getCapabilities()?.name?.flatten() ?: []
-    return eventMap.findAll { e -> e.value.capability in allCapabilities }
-}
-
-// Returns the combined largest number of buttons
-Integer getButtonCount() {
-    return settings.buttonDevices.collect { d -> d.currentValue('numberOfButtons') as Integer }?.max() ?: 0
-}
-
-// Returns description of button configuration
-String getButtonConfig(Map params) {
-    Map mode = getModeSettings(params.modeId)
-    Integer button = params.button
-    String action = params.action
-    Map capability = eventMap[action]
-    StringBuilder sb = new StringBuilder()
-
-    for (int count in (1..capability.maxPresses)) {
-        String name = "mode.${mode.id}.button.${button}.${action}.${count}"
-        if (settings[name] && settings[name] != 'none') {
-            String ordinal = capability.maxPresses > 1 ? ordinals[count] + ' ' : ''
-            sb << "<strong>${ordinal}${capability.userAction}:</strong> "
-            switch (settings[name]) {
-                case 'onLevel':
-                    sb << 'Set level to ' + settings[name + '.brightness'] + '%'
-                    break
-                case 'onCT':
-                    sb << 'Set color temperature to ' + settings[name + '.temperature'] + 'K'
-                    break
-                case 'onColor':
-                    sb << 'Set color to ' + settings[name + '.color']
-                    break
-                default:
-                    sb << buttonActions[settings[name]]
-            }
-            sb << '<br>'
-        }
-    }
-
-    return sb.toString()
-}
-
-// Returns list of modes that have been configured
-List getConfiguredModes() {
-    List configuredModes = []
-    location.getModes().each { mode ->
-        if ((String)mode.id in settings?.modes || settings["mode.${mode.id}.enable"] == true) {
-            configuredModes += mode
-        }
-    }
-
-    return configuredModes
-}
-
-// Returns list of modes available to be configured
-List getAvailableModes() {
-    List availableModes = []
-    location.getModes().each { mode ->
-        if (!((String)mode.id in settings?.modes || settings["mode.${mode.id}.enable"] == true)) {
-            availableModes += [ (mode.id): mode.name ]
-        }
-    }
-
-    return availableModes
-}
-
-// Helper to select common functions
-String getDefaultButtonAction(int button, String action, int count) {
-    switch (action) {
-        case 'pushed':
-            if (button == 1 && count == 1) {
-                return buttonActions['on']
-            }
-
-            if (button == 2 && count == 1) {
-                return buttonActions['off']
-            }
-            break
-        case 'held':
-            if (button == 1) {
-                return buttonActions['dimUp']
-            }
-
-            if (button == 2) {
-                return buttonActions['dimDown']
-            }
-            break
-        case 'released':
-            return buttonActions['stop']
-        default:
-            return ''
-    }
-}
-
-String getLightNames(List lights) {
-    if (lights.size() <= 10) {
-        String description = ''
-        lights.eachWithIndex { element, index ->
-            if (index > 0 && index < lights.size() - 1) { description += ', ' }
-            else if (index > 0 && index == lights.size() - 1) { description += ' and ' }
-            description += element
-        }
-        return description
-    }
-
-    return "${lights.size()} lights configured"
-}
-
-// Returns String summary of per-mode settings, or empty string if that mode is not configured
-String getModeDescription(Long modeID) {
-    Map mode = getModeSettings(modeID)
-    if (!mode.enable) { return '' }
-
-    StringBuilder sb = new StringBuilder()
-    if (mode.active != 'none' && mode.lights) {
-        List lights = mode.lights*.displayName
-        lights.sort()
-        sb << '<strong>Lights:</strong> ' + getLightNames(lights) + '<br>'
-
-        int buttonCount = getButtonCount()
-        Map capabilities = getButtonCapabilities()
-
-        for (int button in (1..buttonCount)) {
-            sb << "<br>Button ${button} Actions:<br>"
-            capabilities.keySet().each { String action ->
-                String desc = getButtonConfig([modeId: mode.id, button: button, action: action])
-                if (desc) {
-                    sb << '<div style="margin-left: 20px;">' << desc << '</div>'
-                }
-            }
-        }
-    }
-
-    return sb.toString()
-}
-
 /*
  * Application Logic
  */
 
 // Called when a button is pressed on the settings page
 void buttonHandler(Event evt) {
-    Map mode = getActiveMode()
-    LOG.trace "buttonHandler: ${evt.device} ${evt.name} ${evt.value} (mode ${mode.name})"
+    LOG.trace "buttonHandler: ${evt.device} ${evt.name} ${evt.value}"
     if (!checkEnabled(mode)) { return }
-    String action = evt.name
+    String event = evt.name
     int button = evt.value as int
     int maxPresses = eventMap[action]?.maxPresses ?: 1
     int count = Math.min(maxPresses, getCounter(evt))
-    String name = "mode.${mode.id}.button.${button}.${action}.${count}"
-    performAction(mode, settings[name])
+    performAction(button, event, count)
 }
 
 // Called when the app is first created.
 void installed() {
-    LOG.info "${app.name} installed"
+    LOG.info "${app} installed"
 }
 
 // Called when the driver is initialized.
 void initialize() {
-    LOG.info "${app.name} initializing"
+    LOG.info "${app} initializing"
     unsubscribe()
     subscribe(settings.buttonDevices, 'buttonHandler', [:])
 }
 
 // Called when the app is removed.
 void uninstalled() {
-    LOG.info "${app.name} uninstalled"
+    LOG.info "${app} uninstalled"
 }
 
 // Called when the settings are updated.
 void updated() {
-    LOG.info "${app.name} configuration updated"
+    LOG.info "${app} configuration updated"
     LOG.debug settings
     initialize()
 }
@@ -491,7 +352,7 @@ private void captureLightState(List lights) {
 
 // Returns true if the controller is enabled
 private boolean checkEnabled(Map mode) {
-    if (!mode?.enable) {
+    if (!mode.enable) {
         LOG.info "${mode.name} is disabled"
         return false
     }
@@ -511,9 +372,84 @@ private boolean checkEnabled(Map mode) {
 
 // Returns the currently active mode (which may be default if not overridden)
 private Map getActiveMode() {
-    Long id = location.currentMode.id
-    if (settings["mode.${id}.enable"] != true) { id = 0 }
-    return getModeSettings(id)
+    Map mode = getMode(location.currentMode.id)
+    return mode.enable ? mode : getMode(0)
+}
+
+// Returns list of modes available to be configured
+private Map<Long, String> getAvailableModes() {
+    return location.getModes()
+                   .findAll { m ->  m.id != settings.newMode as Long && settings["mode.${m.id}.enable"] as Boolean != true }
+                   .collectEntries { m -> [(m.id): m.name] }
+}
+
+// Returns the combined button capabiltiies
+private Map getButtonCapabilities() {
+    Set allCapabilities = settings.buttonDevices*.getCapabilities()?.name?.flatten() ?: []
+    return eventMap.findAll { e -> e.value.capability in allCapabilities }
+}
+
+// Returns the combined largest number of buttons
+private Integer getButtonCount() {
+    return settings.buttonDevices.collect { d -> d.currentValue('numberOfButtons') as Integer }?.max() ?: 0
+}
+
+// Helper to select common functions
+private String getButtonDefaultAction(int button, String event, int count) {
+    switch (event) {
+        case 'pushed':
+            if (button == 1 && count == 1) {
+                return 'on'
+            }
+
+            if (button == 2 && count == 1) {
+                return 'off'
+            }
+            break
+        case 'held':
+            if (button == 1) {
+                return 'dimUp'
+            }
+
+            if (button == 2) {
+                return 'dimDown'
+            }
+            break
+        case 'released':
+            return 'stop'
+    }
+
+    return 'none'
+}
+
+// Returns description of button configuration
+private String getButtonDescription(Map mode, Integer button, String action) {
+    Map capability = eventMap[action]
+    StringBuilder sb = new StringBuilder()
+
+    for (int count in (1..capability.maxPresses)) {
+        String name = "mode.${mode.id}.button.${button}.${action}.${count}"
+        if (settings[name] && settings[name] != 'none') {
+            String ordinal = capability.maxPresses > 1 ? ordinals[count] + ' ' : ''
+            sb << "<strong>${ordinal}${capability.description}:</strong> "
+            switch (settings[name]) {
+                case 'onLevel':
+                    sb << 'Set level to ' + settings[name + '.brightness'] + '%'
+                    break
+                case 'onCT':
+                    sb << 'Set color temperature to ' + settings[name + '.temperature'] + 'K'
+                    break
+                case 'onColor':
+                    sb << 'Set color to ' + settings[name + '.color']
+                    break
+                default:
+                    sb << buttonActions[settings[name]]
+            }
+            sb << '<br>'
+        }
+    }
+
+    return sb.toString()
 }
 
 // Return color map from RGB
@@ -522,65 +458,115 @@ private Map getColorByRGB(String rgb) {
     return [ hue: hue, saturation: saturation, level: level ]
 }
 
-// Tracks repeated events within last 15 seconds
+// Tracks repeated events within last 'pressTimeoutSeconds' seconds
 private Integer getCounter(Event evt) {
     counters.values().removeIf { v -> now() > v.expire }
+    int expire = now() + (pressTimeoutSeconds * 1000)
     String key = String.join('|', app.id as String, evt.device.id, evt.name, evt.value)
-    Map result = counters.computeIfAbsent(key) { k -> [count: 0, expire: now() + 15000] }
+    Map<String, Map> result = counters.computeIfAbsent(key) { k -> [ count: 0, expire: expire ] }
     result.count++
     return result.count
 }
 
-// Returns a map with the mode settings
-private Map getModeSettings(Long id) {
-    Map mode = [
-        id: id,
-        name: id > 0 ? location.getModes().find { m -> m.id == id }.name : 'Default',
-    ]
+// Returns list of modes that have been configured
+private Map<Long, String> getEnabledModes() {
+    return location.getModes()
+                   .findAll { m -> m.id == settings.newMode as Long || settings["mode.${m.id}.enable"] as Boolean == true }
+                   .collectEntries { m -> [(m.id): m.name] }
+}
 
-    mode.enable = settings["mode.${mode.id}.enable"] as Boolean
-    if (mode.enable == true) {
-        mode.lights = (settings["mode.${mode.id}.lights"] ?: settings['mode.0.lights'])
+private String getLightNames(List lights) {
+    if (lights.size() <= 10) {
+        String description = ''
+        lights.eachWithIndex { element, index ->
+            if (index > 0 && index < lights.size() - 1) { description += ', ' }
+            else if (index > 0 && index == lights.size() - 1) { description += ' and ' }
+            description += element
+        }
+        return description
     }
 
-    return mode
+    return "${lights.size()} lights configured"
+}
+
+// Returns a map with the mode settings
+private Map getMode(Long id) {
+    return [
+        id: id,
+        name: location.getModes().find { m -> m.id == id }?.name ?: 'Default',
+        enable: settings["mode.${id}.enable"] as Boolean
+    ]
+}
+
+// Returns String summary of per-mode settings, or empty string if that mode is not configured
+private String getModeDescription(Long modeID = 0) {
+    Map mode = getMode(modeID)
+    if (!mode.enable) { return '' }
+
+    StringBuilder sb = new StringBuilder()
+    // if (mode.lights) {
+    //     List lights = mode.lights*.displayName
+    //     lights.sort()
+    //     sb << '<strong>Lights:</strong> ' + getLightNames(lights) + '<br>'
+    // }
+
+    int buttonCount = getButtonCount()
+    Map capabilities = getButtonCapabilities()
+    for (int button in (1..buttonCount)) {
+        sb << "<br>Button ${button} Actions:<br>"
+        capabilities.keySet().each { String event ->
+            String desc = getButtonDescription(mode, button, event)
+            if (desc) {
+                sb << '<div style="margin-left: 20px;">' << desc << '</div>'
+            }
+        }
+    }
+
+    return sb.toString()
 }
 
 // Performs the action on the specified lights
-private void performAction(Map mode, String action) {
-    List lights = mode.lights ?: []
-    switch (mode[action]) {
+private void performAction(Integer button, String event, Integer count) {
+    Map mode = getActiveMode()
+    String name = "mode.${mode.id}.button.${button}.${event}.${count}"
+    String action = settings[name]
+    List lights = settings[name + '.lights']
+    Integer brightness = settings[name + '.brightness']
+    Integer transitionTime = settings[name + '.transitionTime']
+    Integer temperature = settings[name + '.temperature']
+    String color = settings[name + '.color']
+
+    switch (action) {
         case 'dimLevel':
-            lights = optimize ? lights.findAll { d -> d.currentValue('level') != mode.inactiveLevel } : lights
-            captureLightState(lights)
-            setLights(lights, 'setLevel', mode.brightness, mode.transitionTime)
-            if (settings.sendOn) { setLights(lights, 'on') }
+            List devices = optimize ? lights.findAll { d -> d.currentValue('level') != brightness } : lights
+            captureLightState(devices)
+            setLights(devices, 'setLevel', brightness, transitionTime)
+            if (settings.sendOn) { setLights(devices, 'on') }
             break
         case 'off':
-            if (mode.inactiveLights) { lights = mode.inactiveLights }
-            lights = optimize ? lights.findAll { d -> d.currentValue('switch') !=  'off' } : lights
-            captureLightState(lights)
-            setLights(lights, 'off')
+            List devices = optimize ? lights.findAll { d -> d.currentValue('switch') !=  'off' } : lights
+            captureLightState(devices)
+            setLights(devices, 'off')
             break
         case 'on':
-            lights = optimize ? lights.findAll { d -> d.currentValue('switch') !=  'on' } : lights
-            captureLightState(lights)
-            setLights(lights, 'on')
+            List devices = optimize ? lights.findAll { d -> d.currentValue('switch') !=  'on' } : lights
+            captureLightState(devices)
+            setLights(devices, 'on')
             break
         case 'onColor':
             captureLightState(lights)
-            setLights(lights, 'setColor', getColorByRGB(mode.color))
+            setLights(lights, 'setColor', getColorByRGB(color))
             if (settings.sendOn) { setLights(lights, 'on') }
             break
         case 'onCT':
-            lights = optimize ? lights.findAll { d -> d.currentValue('colorTemperature') != mode.activeColorTemperature } : lights
-            captureLightState(lights)
-            setLights(lights, 'setColorTemperature', mode.temperature)
-            if (settings.sendOn) { setLights(lights, 'on') }
+            List devices = optimize ? lights.findAll { d -> d.currentValue('colorTemperature') != temperature } : lights
+            captureLightState(devices)
+            setLights(devices, 'setColorTemperature', temperature)
+            if (settings.sendOn) { setLights(devices, 'on') }
             break
         case 'onLevel':
             captureLightState(lights)
-            setLights(lights, 'setLevel', mode.brightness, mode.transitionTime)
+            setLights(lights, 'setLevel', brightness, transitionTime)
             if (settings.sendOn) { setLights(lights, 'on') }
             break
         case 'dimDown':
