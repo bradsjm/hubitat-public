@@ -79,8 +79,8 @@ preferences {
 // Tracking for the number of presses of each button
 @Field static final Map<String, Map> counters = new ConcurrentHashMap<>()
 
-// Number of seconds before button press counter resets to zero
-@Field static final Integer pressTimeoutSeconds = 10
+// Number of seconds from first press the button counter resets to zero
+@Field static final Integer pressTimeoutSeconds = 15
 
 /*
  * Configuration UI
@@ -213,7 +213,7 @@ Map configureButtons(Map params) {
     atomicState.button = button
     atomicState.event = event
 
-    Map capability = eventMap[action]
+    Map capability = eventMap[event]
     return dynamicPage(name: 'configureButtons', title: "${mode.name} Mode Button ${button} ${capability.description} Settings") {
         section {
             int maxPresses = capability.maxPresses ?: 1
@@ -295,35 +295,37 @@ Map configureButtons(Map params) {
 
 // Called when a button is pressed on the settings page
 void buttonHandler(Event evt) {
-    LOG.trace "buttonHandler: ${evt.device} ${evt.name} ${evt.value}"
+    Map mode = getActiveMode()
     if (!checkEnabled(mode)) { return }
     String event = evt.name
     int button = evt.value as int
-    int maxPresses = eventMap[action]?.maxPresses ?: 1
+    int maxPresses = eventMap[event]?.maxPresses ?: 1
     int count = Math.min(maxPresses, getCounter(evt))
-    performAction(button, event, count)
+    LOG.trace "buttonHandler: ${evt.device} ${evt.name} ${evt.value} presses ${count} of ${maxPresses}"
+    Map action = getAction(mode.id, button, event, count)
+    performAction(action)
 }
 
 // Called when the app is first created.
 void installed() {
-    LOG.info "${app} installed"
+    LOG.info "${app.name} installed"
 }
 
 // Called when the driver is initialized.
 void initialize() {
-    LOG.info "${app} initializing"
+    LOG.info "${app.name} initializing"
     unsubscribe()
     subscribe(settings.buttonDevices, 'buttonHandler', [:])
 }
 
 // Called when the app is removed.
 void uninstalled() {
-    LOG.info "${app} uninstalled"
+    LOG.info "${app.name} uninstalled"
 }
 
 // Called when the settings are updated.
 void updated() {
-    LOG.info "${app} configuration updated"
+    LOG.info "${app.name} configuration updated"
     LOG.debug settings
     initialize()
 }
@@ -461,7 +463,7 @@ private Map getColorByRGB(String rgb) {
 // Tracks repeated events within last 'pressTimeoutSeconds' seconds
 private Integer getCounter(Event evt) {
     counters.values().removeIf { v -> now() > v.expire }
-    int expire = now() + (pressTimeoutSeconds * 1000)
+    long expire = now() + (pressTimeoutSeconds * 1000)
     String key = String.join('|', app.id as String, evt.device.id, evt.name, evt.value)
     Map<String, Map> result = counters.computeIfAbsent(key) { k -> [ count: 0, expire: expire ] }
     result.count++
@@ -525,65 +527,78 @@ private String getModeDescription(Long modeID = 0) {
     return sb.toString()
 }
 
-// Performs the action on the specified lights
-private void performAction(Integer button, String event, Integer count) {
-    Map mode = getActiveMode()
-    String name = "mode.${mode.id}.button.${button}.${event}.${count}"
-    String action = settings[name]
-    List lights = settings[name + '.lights']
-    Integer brightness = settings[name + '.brightness']
-    Integer transitionTime = settings[name + '.transitionTime']
-    Integer temperature = settings[name + '.temperature']
-    String color = settings[name + '.color']
+private Map getAction(Long modeId, Integer button, String event, Integer count) {
+    String activeKey = "mode.0.button.${button}.${event}."
+    String defaultKey = "mode.${modeId}.button.${button}.${event}."
+    for (c in (count..1)) {
+        if (settings[activeKey.concat((String)c)] && settings[activeKey.concat((String)c)] != 'none') {
+            activeKey += (String)c
+            defaultKey += (String)c
+            break
+        }
+    }
 
-    switch (action) {
+    return [
+        key: settings[activeKey],
+        lights: settings[activeKey + '.lights'] ?: settings[defaultKey + '.lights'],
+        brightness: settings[activeKey + '.brightness'],
+        transitionTime: settings[activeKey + '.transitionTime'],
+        temperature: settings[activeKey + '.temperature'],
+        color: settings[activeKey + '.color']
+    ]
+}
+
+// Performs the action on the specified lights
+private void performAction(Map action) {
+
+    switch (action.key) {
         case 'dimLevel':
-            List devices = optimize ? lights.findAll { d -> d.currentValue('level') != brightness } : lights
+            List devices = optimize ? action.lights.findAll { d -> d.currentValue('level') != action.brightness } : action.lights
             captureLightState(devices)
-            setLights(devices, 'setLevel', brightness, transitionTime)
+            setLights(devices, 'setLevel', action.brightness, action.transitionTime)
             if (settings.sendOn) { setLights(devices, 'on') }
             break
         case 'off':
-            List devices = optimize ? lights.findAll { d -> d.currentValue('switch') !=  'off' } : lights
+            List devices = optimize ? action.lights.findAll { d -> d.currentValue('switch') !=  'off' } : action.lights
             captureLightState(devices)
             setLights(devices, 'off')
             break
         case 'on':
-            List devices = optimize ? lights.findAll { d -> d.currentValue('switch') !=  'on' } : lights
+            List devices = optimize ? lights.findAll { d -> d.currentValue('switch') !=  'on' } : action.lights
             captureLightState(devices)
             setLights(devices, 'on')
             break
         case 'onColor':
-            captureLightState(lights)
-            setLights(lights, 'setColor', getColorByRGB(color))
-            if (settings.sendOn) { setLights(lights, 'on') }
+            captureLightState(action.lights)
+            setLights(lights, 'setColor', getColorByRGB(action.color))
+            if (settings.sendOn) { setLights(action.lights, 'on') }
             break
         case 'onCT':
-            List devices = optimize ? lights.findAll { d -> d.currentValue('colorTemperature') != temperature } : lights
+            List devices = optimize ? action.lights.findAll { d -> d.currentValue('colorTemperature') != action.temperature } : action.lights
             captureLightState(devices)
-            setLights(devices, 'setColorTemperature', temperature)
+            setLights(devices, 'setColorTemperature', action.temperature)
             if (settings.sendOn) { setLights(devices, 'on') }
             break
         case 'onLevel':
-            captureLightState(lights)
-            setLights(lights, 'setLevel', brightness, transitionTime)
-            if (settings.sendOn) { setLights(lights, 'on') }
+            captureLightState(action.lights)
+            setLights(action.lights, 'setLevel', action.brightness, action.transitionTime)
+            if (settings.sendOn) { setLights(action.lights, 'on') }
             break
         case 'dimDown':
-            captureLightState(lights)
-            if (settings.sendOn) { setLights(lights, 'on') }
-            setLights(lights, 'startLevelChange', 'down')
+            captureLightState(action.lights)
+            if (settings.sendOn) { setLights(action.lights, 'on') }
+            setLights(action.lights, 'startLevelChange', 'down')
             break
         case 'dimUp':
-            captureLightState(lights)
-            if (settings.sendOn) { setLights(lights, 'on') }
-            setLights(lights, 'startLevelChange', 'up')
+            captureLightState(action.lights)
+            if (settings.sendOn) { setLights(action.lights, 'on') }
+            setLights(action.lights, 'startLevelChange', 'up')
             break
         case 'stop':
-            setLights(lights, 'stopLevelChange')
+            setLights(action.lights, 'stopLevelChange')
             break
         case 'restore':
-            restoreLightState(lights)
+            restoreLightState(action.lights)
             break
     }
 }
