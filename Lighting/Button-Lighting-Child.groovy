@@ -47,6 +47,7 @@ preferences {
 
 // Available actions for button presses
 @Field static final Map<String,String> buttonActions = [
+   none:     'Ignore button',
    on:       'Turn on',
    onLevel:  'Turn on and set brightness',
    onCT:     'Turn on and set color temperature',
@@ -55,8 +56,7 @@ preferences {
    dimUp:    'Start dimming up',
    stop:     'Stop dimming',
    off:      'Turn off',
-   restore:  'Restore to previous state',
-   none:     'Ignore button press'
+   restore:  'Restore to previous state'
 ].asImmutable()
 
 // Supported types of button events
@@ -184,6 +184,9 @@ Map configureMode(Map params) {
                     defaultValue: true,
                     submitOnChange: false
 
+            String buttonDevices = getDeviceNames(settings.buttonDevices)
+            paragraph "<b>Button Controller${settings.buttonDevices.size() > 1 ? 's' : ''}:</b> ${buttonDevices}"
+
             int buttonCount = getButtonCount()
             Map capabilities = getButtonCapabilities()
             for (int button in (1..buttonCount)) {
@@ -191,7 +194,7 @@ Map configureMode(Map params) {
                     String desc = capability.maxPresses > 1 ? 'Actions' : 'Action'
                     String config = getButtonDescription(mode, button, event)
                     href page: 'configureButtons',
-                            title: "Button ${button} ${capability.description} ${desc}",
+                            title: "Button ${button} <b>${capability.description}</b> ${desc}",
                             params: [ button: button, event: event ],
                             description: config ?: 'Click to configure button actions',
                             state: config ? 'complete' : null,
@@ -217,14 +220,13 @@ Map configureButtons(Map params) {
             for (int count in (1..maxPresses)) {
                 String name = "mode.${mode.id}.button.${button}.${event}.${count}"
                 String ordinal = maxPresses > 1 ? ordinals[count] + ' ' : ''
-                String defaultAction = getButtonDefaultAction(button, event, count)
-                String buttonAction = settings[name] ?: defaultAction
+                String buttonAction = settings[name] ?: 'none'
 
                 input title: "On Button ${button} ${ordinal}${capability.description}:",
                       name: name,
                       type: 'enum',
                       options: buttonActions,
-                      defaultValue: buttonActions[defaultAction],
+                      defaultValue: buttonActions['none'],
                       submitOnChange: true
 
                 if (buttonAction != 'none') {
@@ -392,18 +394,17 @@ private Map<Long, String> getAvailableModes() {
 }
 
 private Map getButtonAction(Long modeId, Integer button, String event, Integer count) {
-    String activeKey = "mode.0.button.${button}.${event}."
-    String defaultKey = "mode.${modeId}.button.${button}.${event}."
-    String pushed = (count..1).find { c -> (settings[activeKey + (String)c] ?: 'none') != 'none' }
-    activeKey += pushed
+    String defaultKey = "mode.0.button.${button}.${event}.1"
+    String activeKey = "mode.${modeId}.button.${button}.${event}."
+    activeKey += (count..1).find { c -> (settings[activeKey + (String)c] ?: 'none') != 'none' }
 
     return [
         name: settings[activeKey],
         lights: settings[activeKey + '.lights'] ?: settings[defaultKey + '.lights'],
-        brightness: settings[activeKey + '.brightness'],
-        transitionTime: settings[activeKey + '.transitionTime'],
-        temperature: settings[activeKey + '.temperature'],
-        color: settings[activeKey + '.color']
+        brightness: settings[activeKey + '.brightness'] ?: settings[defaultKey + '.brightness'],
+        transitionTime: settings[activeKey + '.transitionTime'] ?: settings[defaultKey + '.transitionTime'],
+        temperature: settings[activeKey + '.temperature'] ?: settings[defaultKey + '.temperature'],
+        color: settings[activeKey + '.color'] ?: settings[defaultKey + '.color']
     ]
 }
 
@@ -415,35 +416,7 @@ private Map getButtonCapabilities() {
 
 // Returns the combined largest number of buttons
 private Integer getButtonCount() {
-    return settings.buttonDevices.collect { d -> d.currentValue('numberOfButtons') as Integer }?.max() ?: 0
-}
-
-// Helper to select common functions
-private String getButtonDefaultAction(int button, String event, int count) {
-    switch (event) {
-        case 'pushed':
-            if (button == 1 && count == 1) {
-                return 'on'
-            }
-
-            if (button == 2 && count == 1) {
-                return 'off'
-            }
-            break
-        case 'held':
-            if (button == 1) {
-                return 'dimUp'
-            }
-
-            if (button == 2) {
-                return 'dimDown'
-            }
-            break
-        case 'released':
-            return 'stop'
-    }
-
-    return 'none'
+    return settings.buttonDevices.collect { d -> d.currentValue('numberOfButtons') as Integer }?.max() ?: 1
 }
 
 // Returns description of button configuration
@@ -455,7 +428,7 @@ private String getButtonDescription(Map mode, Integer button, String event) {
         String name = "mode.${mode.id}.button.${button}.${event}.${count}"
         if (settings[name] && settings[name] != 'none') {
             Map buttonAction = getButtonAction(mode.id, button, event, count)
-            String lights = getLightNames(buttonAction.lights)
+            String lights = getDeviceNames(buttonAction.lights)
             String ordinal = capability.maxPresses > 1 ? ordinals[count] + ' ' : ''
             sb << "<strong>${ordinal}${capability.description}:</strong> "
             switch (settings[name]) {
@@ -494,26 +467,28 @@ private Integer getCounter(Event evt) {
     return result.count
 }
 
-// Returns list of modes that have been configured
-private Map<Long, String> getEnabledModes() {
-    return location.getModes()
-                   .findAll { m -> m.id == settings.newMode as Long || settings["mode.${m.id}.enable"] as Boolean == true }
-                   .collectEntries { m -> [(m.id): m.name] }
-}
-
-private String getLightNames(List lights) {
-    if (!lights) { return '' }
-    if (lights.size() <= 10) {
+// Gets human readable list of device names up to 10 devices
+private String getDeviceNames(List devices) {
+    if (!devices) { return '' }
+    int count = devices.size()
+    if (count <= 10) {
         String description = ''
-        lights.eachWithIndex { element, index ->
-            if (index > 0 && index < lights.size() - 1) { description += ', ' }
-            else if (index > 0 && index == lights.size() - 1) { description += ' and ' }
+        devices.eachWithIndex { element, index ->
+            if (index > 0 && index < count - 1) { description += ', ' }
+            else if (index > 0 && index == count - 1) { description += ' and ' }
             description += element
         }
         return description
     }
 
-    return "${lights.size()} lights configured"
+    return "${devices.size()} devices"
+}
+
+// Returns list of modes that have been configured
+private Map<Long, String> getEnabledModes() {
+    return location.getModes()
+                   .findAll { m -> m.id == settings.newMode as Long || settings["mode.${m.id}.enable"] as Boolean == true }
+                   .collectEntries { m -> [(m.id): m.name] }
 }
 
 // Returns a map with the mode settings
@@ -622,7 +597,7 @@ private void restoreLightState(List lights) {
 // Sets the specified lights using the provided action and optional value
 private void setLights(List lights, String action, Object[] value) {
     LOG.debug "setLights: ${lights} ${action} ${value ?: ''}"
-    sendEvent(name: 'action', value: action, descriptionText: getLightNames(lights))
+    sendEvent(name: 'action', value: action, descriptionText: getDeviceNames(lights))
 
     lights.each { device ->
         if (value) {
