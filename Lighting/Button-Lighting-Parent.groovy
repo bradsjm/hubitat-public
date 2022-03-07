@@ -22,11 +22,11 @@
 */
 
 definition(
-    name: 'Button Lighting',
+    name: 'Button Lighting Controller',
     namespace: 'nrgup',
     author: 'Jonathan Bradshaw',
     category: 'Lighting',
-    description: 'Advanced control of lighting based on buttons',
+    description: 'Advanced control of lighting based on button controllers',
     iconUrl: '',
     iconX2Url: '',
     installOnOpen: true,
@@ -34,13 +34,11 @@ definition(
 )
 
 preferences {
-    page(name: 'configuration', title: 'Button Lighting', install: true, uninstall: true) {
+    page(name: 'configuration', title: 'Button Lighting Controller', install: true, uninstall: true) {
         section {
             label title: 'Application Label',
                   required: false
-        }
 
-        section {
             input name: 'masterEnable',
                   type: 'bool',
                   title: 'Application enabled',
@@ -50,8 +48,10 @@ preferences {
         }
 
         section {
+            paragraph 'This app creates automations to bind light automatons to button controller devices.'
+
             app name: 'childApps',
-                appName: 'Button Lighting Instance',
+                appName: 'Button Lighting Controller (Child App)',
                 namespace: 'nrgup',
                 title: 'Add new button lighting controller',
                 multiple: true
