@@ -283,7 +283,7 @@ void componentOn(DeviceWrapper dw) {
         String sceneId = dw.getDataValue("sceneId")
         if (sceneId && homeId) {
             if (txtEnable) { LOG.info "Triggering ${dw} automation" }
-            tuyaTriggerScene(homeId as Integer, sceneId)
+            tuyaTriggerScene(homeId, sceneId)
         } else {
             LOG.error "Unable to determine off function code in ${functions}"
         }
@@ -328,7 +328,7 @@ void componentPush(DeviceWrapper dw, BigDecimal button) {
         String homeId = dw.getDataValue("homeId")
         String sceneId = dw.getDataValue("sceneId")
         if (sceneId && homeId) {
-            tuyaTriggerScene(homeId as Integer, sceneId)
+            tuyaTriggerScene(homeId, sceneId)
         } else {
             LOG.error "Unable to determine push function code in ${functions}"
         }
@@ -353,9 +353,9 @@ void componentSetColor(DeviceWrapper dw, Map colorMap) {
         // An oddity and workaround for mapping brightness values
         Map bright = getFunction(functions, functions.brightness) ?: color.v
         Map value = [
-            h: remap(colorMap.hue, 0, 100, color.h.min, color.h.max),
-            s: remap(colorMap.saturation, 0, 100, color.s.min, color.s.max),
-            v: remap(colorMap.level, 0, 100, bright.min, bright.max)
+            h: remap(colorMap.hue, 0, 100, (int)color.h.min, (int)color.h.max),
+            s: remap(colorMap.saturation, 0, 100, (int)color.s.min, (int)color.s.max),
+            v: remap(colorMap.level, 0, 100, (int)bright.min, (int)bright.max)
         ]
         if (txtEnable) { LOG.info "Setting ${dw} color to ${colorMap}" }
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'),
@@ -374,7 +374,7 @@ void componentSetColorTemperature(DeviceWrapper dw, BigDecimal kelvin,
     String code = getFunctionCode(functions, tuyaFunctions.ct)
     if (code != null) {
         Map temp = functions[code] ?: defaults[code]
-        Integer value = temp.max - Math.ceil(remap(1000000 / kelvin, minMireds, maxMireds, temp.min, temp.max))
+        Integer value = (int)temp.max - Math.ceil(remap(1000000 / kelvin, minMireds, maxMireds, (int)temp.min, (int)temp.max))
         if (txtEnable) { LOG.info "Setting ${dw} color temperature to ${kelvin}K" }
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'),
             [ 'code': code, 'value': value ],
@@ -400,7 +400,7 @@ void componentSetHeatingSetpoint(DeviceWrapper dw, BigDecimal temperature) {
     Map<String, Map> functions = getFunctions(dw)
     String code = getFunctionCode(functions, tuyaFunctions.temperatureSet)
     if (code != null) {
-        int value = toCelcius(temperature) as int
+        int value = toCelcius(temperature)
         if (txtEnable) { LOG.info "Setting ${dw} heating set point to ${value}" }
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': value ])
     } else {
@@ -414,7 +414,7 @@ void componentSetHumiditySetpoint(DeviceWrapper dw, BigDecimal humidityNeeded) {
     String code = getFunctionCode(functions, tuyaFunctions.humiditySet)
     if (code != null) {
         if (txtEnable) { LOG.info "Setting ${dw} humidity set point to ${humidityNeeded}" }
-        int setHumidity = humidityNeeded as int
+        int setHumidity = humidityNeeded
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': setHumidity ])
     }
 }
@@ -425,7 +425,7 @@ void componentSetHumidifierSpeed(DeviceWrapper dw, BigDecimal speedNeeded) {
     String code = getFunctionCode(functions, tuyaFunctions.humiditySpeed)
     if (code != null) {
         if (txtEnable) { LOG.info "Setting ${dw} dehumidifier speed to ${speedNeeded}" }
-        tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': speedNeeded ])
+        tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': (int)speedNeeded ])
     }
 }
 
@@ -447,7 +447,7 @@ void componentSetLevel(DeviceWrapper dw, BigDecimal level, BigDecimal duration =
         String code = getFunctionCode(functions, tuyaFunctions.brightness)
         if (code != null) {
             Map bright = functions[code] ?: defaults[code]
-            Integer value = Math.ceil(remap(level, 0, 100, bright.min, bright.max))
+            int value = Math.ceil(remap((int)level, 0, 100, (int)bright.min, (int)bright.max))
             if (txtEnable) { LOG.info "Setting ${dw} level to ${level}%" }
             tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': value ])
         } else {
@@ -477,7 +477,7 @@ void componentSetPosition(DeviceWrapper dw, BigDecimal position) {
 
     if (code != null) {
         if (txtEnable) { LOG.info "Setting ${dw} position to ${position}" }
-        tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': position as int ])
+        tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': (int)position ])
     } else {
         LOG.error "Unable to determine set position function code in ${functions}"
     }
@@ -516,10 +516,10 @@ void componentSetSpeed(DeviceWrapper dw, String speed) {
                 String value
                 switch (speedFunc.type) {
                     case 'Enum':
-                        value = speedFunc.range[remap(speedVal, 0, 4, 0, speedFunc.range.size() - 1) as int]
+                        value = speedFunc.range[remap(speedVal, 0, 4, 0, speedFunc.range.size() - 1)]
                         break
                     case 'Integer':
-                        value = remap(speedVal, 0, 4, speedFunc.min as int ?: 1, speedFunc.max as int ?: 100)
+                        value = remap(speedVal, 0, 4, (int)speedFunc.min, (int)speedFunc.max)
                         break
                     default:
                         LOG.warn "Unknown fan speed function type ${speedFunc}"
@@ -531,7 +531,7 @@ void componentSetSpeed(DeviceWrapper dw, String speed) {
     } else if (fanSpeedPercent) {
         Map speedFunc = functions[fanSpeedPercent] ?: defaults[fanSpeedPercent]
         int speedVal = ['low', 'medium-low', 'medium', 'medium-high', 'high'].indexOf(speed)
-        int value = remap(speedVal, 0, 4, speedFunc.min as int, speedFunc.max as int)
+        int value = remap(speedVal, 0, 4, (int)speedFunc.min, (int)speedFunc.max)
         tuyaSendDeviceCommandsAsync(id, [ 'code': fanSpeedPercent, 'value': value ])
     } else {
         LOG.error "Unable to determine set speed function code in ${functions}"
@@ -586,7 +586,7 @@ void doLevelChange() {
     active.each { kv ->
         ChildDeviceWrapper dw = getChildDevice(kv.key)
         if (dw != null) {
-            int newLevel = (dw.currentValue('level') as int) + kv.value
+            int newLevel = (int)dw.currentValue('level') + kv.value
             if (newLevel < 0) { newLevel = 0 }
             if (newLevel > 100) { newLevel = 100 }
             componentSetLevel(dw, newLevel)
@@ -1251,7 +1251,7 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
         if (status.code in tuyaFunctions.brightness && workMode != 'colour') {
             Map bright = deviceStatusSet[status.code] ?: defaults[status.code]
             if ( bright != null ) {
-                Integer value = Math.floor(remap(status.value, bright.min, bright.max, 0, 100))
+                Integer value = Math.floor(remap((int)status.value, (int)bright.min, (int)bright.max, 0, 100))
                 if (txtEnable) { LOG.info "${dw} level is ${value}%" }
                 return [ [ name: 'level', value: value, unit: '%', descriptionText: "level is ${value}%" ] ]
             }
@@ -1265,7 +1265,7 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
 
         if (status.code in tuyaFunctions.co2) {
             Map co2 = deviceStatusSet[status.code] ?: defaults[status.code]
-            String value = scale(status.value, co2.scale as int)
+            int value = scale((int)status.value, (int)co2.scale)
             if (txtEnable) { LOG.info "${dw} carbon dioxide level is ${value}" }
             return [ [ name: 'carbonDioxide', value: value, unit: 'ppm', descriptionText: "carbon dioxide level is ${value}" ] ]
         }
@@ -1287,8 +1287,8 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
 
         if (status.code in tuyaFunctions.ct) {
             Map temperature = deviceStatusSet[status.code] ?: defaults[status.code]
-            Integer value = Math.floor(1000000 / remap(temperature.max - status.value,
-                            temperature.min, temperature.max, minMireds, maxMireds))
+            Integer value = Math.floor(1000000 / remap((int)temperature.max - (int)status.value,
+                            (int)temperature.min, (int)temperature.max, minMireds, maxMireds))
             if (txtEnable) { LOG.info "${dw} color temperature is ${value}K" }
             return [ [ name: 'colorTemperature', value: value, unit: 'K',
                        descriptionText: "color temperature is ${value}K" ] ]
@@ -1299,9 +1299,9 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
             Map bright = getFunction(deviceStatusSet, tuyaFunctions.brightness) ?: colour.v
             Map value = status.value == '' ? [h: 100.0, s: 100.0, v: 100.0] :
                         jsonCache.computeIfAbsent(status.value) { k -> jsonParser.parseText(k) }
-            Integer hue = Math.floor(remap(value.h, colour.h.min, colour.h.max, 0, 100))
-            Integer saturation = Math.floor(remap(value.s, colour.s.min, colour.s.max, 0, 100))
-            Integer level = Math.floor(remap(value.v, bright.min, bright.max, 0, 100))
+            Integer hue = Math.floor(remap((int)value.h, (int)colour.h.min, (int)colour.h.max, 0, 100))
+            Integer saturation = Math.floor(remap((int)value.s, (int)colour.s.min, (int)colour.s.max, 0, 100))
+            Integer level = Math.floor(remap((int)value.v, (int)bright.min, (int)bright.max, 0, 100))
             String colorName = translateColorName(hue, saturation)
             if (txtEnable) { LOG.info "${dw} color is h:${hue} s:${saturation} (${colorName})" }
             List<Map> events = [
@@ -1328,12 +1328,12 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
             if (statusList['switch']) {
                 switch (speed.type) {
                     case 'Enum':
-                        value = remap(speed.range.indexOf(status.value), 0, speed.range.size() - 1, 0, 4) as int
+                        value = remap(speed.range.indexOf(status.value), 0, speed.range.size() - 1, 0, 4)
                         break
                     case 'Integer':
                         int min = (speed.min == null) ? 1 : speed.min
                         int max = (speed.max == null) ? 100 : speed.max
-                        value = remap(status.value as int, min, max, 0, 4) as int
+                        value = remap((int)status.value, min, max, 0, 4)
                         break
                 }
                 String level = ['low', 'medium-low', 'medium', 'medium-high', 'high'].get(value)
@@ -1365,7 +1365,7 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
             switch (status.code) {
                 case 'cur_power':
                     name = 'power'
-                    value = scale(status.value, code.scale as int)
+                    value = scale(status.value, (int)code.scale)
                     unit = 'W'
                     break
                 case 'cur_voltage':
@@ -1392,14 +1392,14 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
             switch (status.code) {
                 case 'bright_value':
                     name = 'illuminance'
-                    value = scale(status.value, code.scale as int)
+                    value = scale(status.value, (int)code.scale)
                     unit = 'Lux'
                     break
                 case 'humidity_value':
                 case 'va_humidity':
                     value = status.value
                     if (status.code == 'humidity_value') {
-                        value = scale(status.value, code.scale as int)
+                        value = scale(status.value, (int)code.scale)
                     }
                     name = 'humidity'
                     unit = 'RH%'
@@ -1407,7 +1407,7 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
                 case 'bright_sensitivity':
                 case 'sensitivity':
                     name = 'sensitivity'
-                    value = scale(status.value, code.scale as int)
+                    value = scale(status.value, (int)code.scale)
                     unit = '%'
                     break
                 case 'shock_state':    // vibration sensor TS0210
@@ -1476,7 +1476,7 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
 
         if (status.code in tuyaFunctions.temperature) {
             Map set = deviceStatusSet[status.code] ?: defaults[status.code]
-            String value = fromCelcius(scale(status.value, set.scale as int))
+            String value = fromCelcius(scale(status.value, (int)set.scale))
             String unit = location.temperatureScale
             if (txtEnable) { LOG.info "${dw} temperature is ${value}${unit} (${status})" }
             return [ [ name: 'temperature', value: value, unit: unit, descriptionText: "temperature is ${value}${unit} (${status})" ] ]
@@ -1484,7 +1484,7 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
 
         if (status.code in tuyaFunctions.temperatureSet) {
             Map set = deviceStatusSet[status.code] ?: defaults[status.code]
-            String value = fromCelcius(scale(status.value, set.scale as int))
+            String value = fromCelcius(scale(status.value, (int)set.scale))
             String unit = location.temperatureScale
             if (txtEnable) { LOG.info "${dw} heating set point is ${value}${unit} (${status})" }
             return [ [ name: 'heatingSetpoint', value: value, unit: unit, descriptionText: "heating set point is ${value}${unit} (${status})" ] ]
@@ -1516,7 +1516,7 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
             switch (status.code) {
                 case 'temp_indoor':
                     name = 'temperature'
-                    value = scale(status.value, set.scale as int)
+                    value = scale(status.value, (int)set.scale)
                     unit = set.unit
                     break
                 case 'swing':
@@ -1536,12 +1536,12 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
                     break
                 case 'dehumidify_set_value':
                     name = 'humiditySetpoint'
-                    value = scale(status.value, set.scale as int)
+                    value = scale(status.value, (int)set.scale)
                     unit = 'RH%'
                     break
                 case 'humidity_indoor':
                     name = 'humidity'
-                    value = scale(status.value, set.scale as int)
+                    value = scale(status.value, (int)set.scale)
                     unit = 'RH%'
                     break
                 default:
