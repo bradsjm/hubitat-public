@@ -54,6 +54,7 @@ import hubitat.scheduling.AsyncResponse
  *  12/26/21 - 0.2.3 - Added more types of sockets
  *  01/06/22 - 0.2.4 - Added humidifier support (by simon)
  *  01/07/22 - 0.2.5 - Added check for expired tokens
+ *  03/09/22 - 0.3.0 - Optimized device state parsing to remove duplicatation
  *
  *  Custom component drivers located at https://github.com/bradsjm/hubitat-drivers/tree/master/Component
  */
@@ -605,7 +606,7 @@ void doLevelChange() {
 
 // Called when the device is started
 void initialize() {
-    String version = '0.2.3'
+    String version = '0.3.0'
     LOG.info "Driver v${version} initializing"
     state.clear()
     unschedule()
@@ -1213,22 +1214,11 @@ private void parseBizData(String bizCode, Map bizData) {
 }
 
 private void updateMultiDeviceStatus(Map d) {
-    ChildDeviceWrapper dw = null
-    String baseDni = "${device.id}-${d.id ?: d.devId}"
-    List<Map> events = []
-    for (Map newState in d.status) {
-        String dni = "${baseDni}-${newState.code}"
-        if ((dw = getChildDevice(dni))) {
-            events = createEvents(dw, [ newState ])
-        } else if ((dw = getChildDevice(baseDni))) {
-            events = createEvents(dw, d.status)
-        }
-
-        if (dw != null && events.empty == false) {
-            LOG.debug "${dw} sending events ${events}"
-            dw.parse(events)
-        }
-    }
+    String base = "${device.id}-${d.id ?: d.devId}"
+    Map<String, ChildDeviceWrapper> children = getChildDevices().collectEntries { child -> [ (child.deviceNetworkId): child] }
+    Map groups = d.status.groupBy { s -> children["${base}-${s.code}"] ?: children[base] }
+    LOG.debug "Groups: ${groups}"
+    groups.each { dw, states -> dw.parse(createEvents(dw, states)) }
 }
 
 /* ---------------------------------------------------
@@ -1238,6 +1228,7 @@ private void updateMultiDeviceStatus(Map d) {
 private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
     String workMode = statusList['workMode'] ?: ''
     Map<String, Map> deviceStatusSet = getStatusSet(dw) ?: getFunctions(dw)
+
     return statusList.collectMany { status ->
         LOG.debug "${dw} status ${status}"
 
@@ -1713,7 +1704,7 @@ private void tuyaGetDeviceSpecificationsResponse(AsyncResponse response, Map dat
             data.statusSet = [:]
         }
 
-        LOG.debug "Device Data: ${data}"
+        //LOG.debug "Device Data: ${data}"
         createChildDevices(data)
         updateMultiDeviceStatus(data)
 
