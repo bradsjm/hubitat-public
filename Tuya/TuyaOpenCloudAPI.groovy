@@ -1300,7 +1300,7 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
                 [ name: 'saturation', value: saturation, descriptionText: "saturation is ${saturation}" ],
                 [ name: 'colorName', value: colorName, descriptionText: "color name is ${colorName}" ]
             ]
-            if (workMode == 'color') {
+            if (workMode in ['color', 'scene']) {
                 if (txtEnable) { LOG.info "${dw} level is ${level}%" }
                 events << [ name: 'level', value: level, unit: '%', descriptionText: "level is ${level}%" ]
             }
