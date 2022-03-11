@@ -136,7 +136,7 @@ metadata {
 // Tuya Function Categories
 @Field static final Map<String, List<String>> tuyaFunctions = [
     'battery'        : [ 'battery_percentage', 'va_battery' ],
-    'brightness'     : [ 'bright_value', 'bright_value_v2', 'bright_value_1' ],
+    'brightness'     : [ 'bright', 'bright_value', 'bright_value_v2', 'bright_value_1' ],
     'co'             : [ 'co_state' ],
     'co2'            : [ 'co2_value' ],
     'colour'         : [ 'colour_data', 'colour_data_v2' ],
