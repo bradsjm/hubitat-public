@@ -46,7 +46,7 @@ preferences {
 }
 
 // Available actions for button presses
-@Field static final Map<String,String> buttonActions = [
+@Field static final Map<String,String> ButtonActions = [
    none:     'Ignore button',
    on:       'Turn on',
    onLevel:  'Turn on and set brightness',
@@ -60,7 +60,7 @@ preferences {
 ].asImmutable()
 
 // Supported types of button events
-@Field static final Map<String,Map> eventMap = [
+@Field static final Map<String,Map> EventMap = [
    'pushed':       [ capability: 'PushableButton',      description: 'Push',       maxPresses: 5 ],
    'held':         [ capability: 'HoldableButton',      description: 'Hold',       maxPresses: 1 ],
    'released':     [ capability: 'ReleasableButton',    description: 'Release',    maxPresses: 1 ],
@@ -68,7 +68,7 @@ preferences {
 ].asImmutable()
 
 // Convenience object to map number to ordinal string
-@Field static final Map<Integer, String> ordinals = [
+@Field static final Map<Integer, String> Ordinals = [
     1: 'First',
     2: 'Second',
     3: 'Third',
@@ -77,10 +77,10 @@ preferences {
 ].asImmutable()
 
 // Tracking for the number of presses of each button
-@Field static final Map<String, Map> counters = new ConcurrentHashMap<>()
+@Field static final Map<String, Map> Counters = new ConcurrentHashMap<>()
 
 // Number of seconds from first press the button counter resets to zero
-@Field static final Integer pressTimeoutSeconds = 15
+@Field static final Integer PushTimeoutSeconds = 15
 
 /*
  * Configuration UI
@@ -213,24 +213,24 @@ Map configureButtons(Map params) {
     atomicState.button = button
     atomicState.event = event
 
-    Map capability = eventMap[event]
+    Map capability = EventMap[event]
     return dynamicPage(name: 'configureButtons', title: "${mode.name} Mode Button ${button} ${capability.description} Settings") {
         section {
             int maxPresses = capability.maxPresses ?: 1
             for (int count in (1..maxPresses)) {
                 String name = "mode.${mode.id}.button.${button}.${event}.${count}"
-                String ordinal = maxPresses > 1 ? ordinals[count] + ' ' : ''
+                String ordinal = maxPresses > 1 ? Ordinals[count] + ' ' : ''
                 String buttonAction = settings[name] ?: 'none'
 
                 input title: "On Button ${button} ${ordinal}${capability.description}:",
                       name: name,
                       type: 'enum',
-                      options: buttonActions,
-                      defaultValue: buttonActions['none'],
+                      options: ButtonActions,
+                      defaultValue: ButtonActions['none'],
                       submitOnChange: true
 
                 if (buttonAction != 'none') {
-                    String description = buttonActions[buttonAction].toLowerCase()
+                    String description = ButtonActions[buttonAction].toLowerCase()
                     input name: "${name}.lights",
                           title: "Select lights to ${description}",
                           description: mode.id == 0 ? 'Click to set lights' : 'Click to override default light selection',
@@ -306,7 +306,7 @@ void buttonHandler(Event evt) {
     if (checkEnabled(mode)) {
         String event = evt.name
         int button = evt.value as int
-        int maxPresses = eventMap[event]?.maxPresses ?: 1
+        int maxPresses = EventMap[event]?.maxPresses ?: 1
         int count = Math.min(maxPresses, getCounter(evt))
         LOG.trace "buttonHandler: ${evt.device} ${evt.name} ${evt.value} presses ${count} of ${maxPresses}"
         Map result = getButtonAction(mode.id, button, event, count)
@@ -411,7 +411,7 @@ private Map getButtonAction(Long modeId, Integer button, String event, Integer c
 // Returns the combined button capabiltiies
 private Map getButtonCapabilities() {
     Set allCapabilities = settings.buttonDevices*.getCapabilities()?.name?.flatten() ?: []
-    return eventMap.findAll { e -> e.value.capability in allCapabilities }
+    return EventMap.findAll { e -> e.value.capability in allCapabilities }
 }
 
 // Returns the combined largest number of buttons
@@ -421,7 +421,7 @@ private Integer getButtonCount() {
 
 // Returns description of button configuration
 private String getButtonDescription(Map mode, Integer button, String event) {
-    Map capability = eventMap[event]
+    Map capability = EventMap[event]
     StringBuilder sb = new StringBuilder()
 
     for (int count in (1..capability.maxPresses)) {
@@ -429,7 +429,7 @@ private String getButtonDescription(Map mode, Integer button, String event) {
         if (settings[name] && settings[name] != 'none') {
             Map buttonAction = getButtonAction(mode.id, button, event, count)
             String lights = getDeviceNames(buttonAction.lights)
-            String ordinal = capability.maxPresses > 1 ? ordinals[count] + ' ' : ''
+            String ordinal = capability.maxPresses > 1 ? Ordinals[count] + ' ' : ''
             sb << "<strong>${ordinal}${capability.description}:</strong> "
             switch (settings[name]) {
                 case 'onLevel':
@@ -442,7 +442,7 @@ private String getButtonDescription(Map mode, Integer button, String event) {
                     sb << 'Set ' << lights << ' color to ' + settings[name + '.color']
                     break
                 default:
-                    sb << buttonActions[settings[name]] << ' ' << lights
+                    sb << ButtonActions[settings[name]] << ' ' << lights
             }
             sb << '<br>'
         }
@@ -457,12 +457,12 @@ private Map getColorByRGB(String rgb) {
     return [ hue: hue, saturation: saturation, level: level ]
 }
 
-// Tracks repeated events within last 'pressTimeoutSeconds' seconds
+// Tracks repeated events within last 'PushTimeoutSeconds' seconds
 private Integer getCounter(Event evt) {
-    counters.values().removeIf { v -> now() > v.expire }
-    long expire = now() + (pressTimeoutSeconds * 1000)
+    Counters.values().removeIf { v -> now() > v.expire }
+    long expire = now() + (PushTimeoutSeconds * 1000)
     String key = String.join('|', app.id as String, evt.device.id, evt.name, evt.value)
-    Map<String, Map> result = counters.computeIfAbsent(key) { k -> [ count: 0, expire: expire ] }
+    Map<String, Map> result = Counters.computeIfAbsent(key) { k -> [ count: 0, expire: expire ] }
     result.count++
     return result.count
 }
