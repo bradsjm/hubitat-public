@@ -561,7 +561,7 @@ String getDisabledDescription() {
 // Returns String summary of device settings, or empty string if that mode is not configured
 String getTriggerDescription() {
     List devices = []
-    device.with {
+    devices.with {
         addAll(settings.activationMotionSensors*.displayName ?: [])
         addAll(settings.additionalMotionSensors*.displayName ?: [])
         addAll(settings.activationContactSensors*.displayName ?: [])
