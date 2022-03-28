@@ -4,7 +4,7 @@ metadata {
         capability 'Initialize'
         capability 'Sensor'
         capability 'PushableButton'
-        capability 'Switch'
+        capability 'Lock'
 
         attribute 'isSecure', 'enum', ['true', 'false' ]
         attribute 'alarm', 'string'
@@ -58,7 +58,7 @@ preferences {
               defaultValue: '1234'
 
         input name: 'switchMapping',
-              title: 'Map switch to mode',
+              title: 'Map lock action to arming mode',
               type: 'enum',
               defaultValue: 'none',
               options: [
@@ -119,7 +119,7 @@ void initialize() {
     state.Buttons = '1 - Disarm, 2 - Arm Away, 3 - Arm Home, 4 - Police, 5 - Fire, 6 - Aux'
 }
 
-void on() {
+void lock() {
     switch (settings.switchMapping) {
         case 'home':
             armHome()
@@ -130,7 +130,7 @@ void on() {
     }
 }
 
-void off() {
+void unlock() {
     disarm()
 }
 
@@ -144,7 +144,7 @@ void parse(List<Map> description) {
         }
 
         if (d.name == 'state') {
-            sendEvent(name: 'switch', value: d.value == 'disarmed' ? 'off' : 'on')
+            sendEvent(name: 'lock', value: d.value == 'disarmed' ? 'unlocked' : 'locked')
         }
     }
 }
