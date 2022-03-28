@@ -654,14 +654,20 @@ void updated() {
 // Called to parse received MQTT data
 void parse(String data) {
     Map payload = jsonParser.parseText(interfaces.mqtt.parseMessage(data).payload)
-    Cipher cipher = tuyaGetCipher(Cipher.DECRYPT_MODE)
-    Map result = jsonParser.parse(cipher.doFinal(payload.data.decodeBase64()), 'UTF-8')
-    if (result.status != null && (result.id != null || result.devId != null)) {
-        updateMultiDeviceStatus(result)
-    } else if (result.bizCode != null && result.bizData != null) {
-        parseBizData(result.bizCode, result.bizData)
-    } else {
-        LOG.warn "Unsupported mqtt packet: ${result}"
+    try {
+        Cipher cipher = tuyaGetCipher(Cipher.DECRYPT_MODE)
+        Map result = jsonParser.parse(cipher.doFinal(payload.data.decodeBase64()), 'UTF-8')
+        if (result.status != null && (result.id != null || result.devId != null)) {
+            updateMultiDeviceStatus(result)
+        } else if (result.bizCode != null && result.bizData != null) {
+            parseBizData(result.bizCode, result.bizData)
+        } else {
+            LOG.warn "Unsupported mqtt packet: ${result}"
+        }
+    } catch (javax.crypto.BadPaddingException e) {
+        LOG.warn "Decryption error: ${e}"
+        sendEvent([ name: 'state', value: 'error', descriptionText: e.message])
+        runIn(15 + (3 * random.nextInt(3)), initialize)
     }
 }
 
@@ -670,12 +676,12 @@ void mqttClientStatus(String status) {
     switch (status) {
         case 'Status: Connection succeeded':
             sendEvent([ name: 'state', value: 'connected', descriptionText: 'Connected to Tuya MQTT hub'])
-            runInMillis(1000, 'tuyaHubSubscribeAsync')
+            runIn(1, 'tuyaHubSubscribeAsync')
             break
         default:
             LOG.error 'MQTT connection error: ' + status
             sendEvent([ name: 'state', value: 'disconnected', descriptionText: 'Disconnected from Tuya MQTT hub'])
-            runIn(15 + random.nextInt(45), 'tuyaGetHubConfigAsync')
+            runIn(15 + (3 * random.nextInt(3)), initialize)
             break
     }
 }
@@ -1225,6 +1231,7 @@ private void updateMultiDeviceStatus(Map d) {
  * Convert Tuya device values to Hubitat device events
  */
 
+/* groovylint-disable-next-line MethodSize */
 private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
     String workMode = statusList['workMode'] ?: ''
     Map<String, Map> deviceStatusSet = getStatusSet(dw) ?: getFunctions(dw)
@@ -1587,7 +1594,7 @@ private void tuyaAuthenticateAsync() {
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
 private void tuyaAuthenticateResponse(AsyncResponse response, Map data) {
     if (tuyaCheckResponse(response) == false) {
-        runIn(60 + random.nextInt(300), 'tuyaAuthenticateAsync')
+        runIn(15 + (3 * random.nextInt(3)), initialize)
         return
     }
 
@@ -1603,7 +1610,7 @@ private void tuyaAuthenticateResponse(AsyncResponse response, Map data) {
     sendEvent([ name: 'state', value: 'authenticated', descriptionText: "Received access token ${result.access_token}" ])
 
     // Schedule next authentication
-    runIn(result.expire_time - 60, 'tuyaRefreshTokenAsync')
+    runIn((int)(result.expire_time * 0.90), 'tuyaRefreshTokenAsync')
 
     // Get MQTT details
     tuyaGetHubConfigAsync()
@@ -1783,7 +1790,7 @@ private void tuyaRefreshTokenResponse(AsyncResponse response, Map data) {
     ]
     LOG.info "Received Tuya access token (valid for ${result.expire_time}s)"
     sendEvent([ name: 'state', value: 'authenticated', descriptionText: "Received refresh access token ${result.access_token}" ])
-    runIn(result.expire_time - 60, 'tuyaRefreshTokenAsync')
+    runIn((int)(result.expire_time * 0.90), 'tuyaRefreshTokenAsync')
     tuyaGetHubConfigAsync()
 }
 
@@ -1802,7 +1809,7 @@ private void tuyaSendDeviceCommandsAsync(String deviceID, Map...params) {
     if (!state?.tokenInfo?.access_token) {
         LOG.error 'tuyaSendDeviceCommandsAsync Error - Access token is null'
         sendEvent([ name: 'state', value: 'error', descriptionText: 'Access token not set (failed login?)'])
-        runIn(5, 'tuyaAuthenticateAsync')
+        runIn(15 + (3 * random.nextInt(3)), initialize)
         return
     }
     tuyaPostAsync("/v1.0/devices/${deviceID}/commands", [ 'commands': params ], 'tuyaSendDeviceCommandsResponse')
@@ -1812,7 +1819,7 @@ private void tuyaSendDeviceCommandsAsync(String deviceID, Map...params) {
 private void tuyaSendDeviceCommandsResponse(AsyncResponse response, Map data) {
     if (tuyaCheckResponse(response) == true) { return }
     sendEvent([ name: 'state', value: 'error', descriptionText: 'Error sending device command'])
-    runIn(5, 'tuyaHubConnectAsync')
+    runIn(15 + (3 * random.nextInt(3)), initialize)
 }
 
 /**
@@ -1854,7 +1861,8 @@ private void tuyaHubConnectAsync() {
             state.mqttInfo.password)
     } catch (e) {
         LOG.exception 'MQTT connection error', e
-        runIn(15 + random.nextInt(45), 'tuyaHubConnectAsync')
+        sendEvent([ name: 'state', value: 'error', descriptionText: e.message])
+        runIn(15 + (3 * random.nextInt(3)), initialize)
     }
 }
 
@@ -1880,6 +1888,7 @@ private void tuyaPostAsync(String path, Map body, String callback, Map data = [:
     tuyaRequestAsync('post', path, callback, null, body ?: [:], data)
 }
 
+/* groovylint-disable-next-line ParameterCount */
 private void tuyaRequestAsync(String method, String path, String callback, Map query, Map body, Map data) {
     String accessToken = state?.tokenInfo?.access_token ?: ''
     String stringToSign = tuyaGetStringToSign(method, path, query, body)
