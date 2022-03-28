@@ -281,9 +281,9 @@ private boolean checkEnabled() {
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
-private void circadianUpdate() {
+private void circadianUpdate(Event event = null) {
     atomicState.current = currentCircadianValues()
-    log.info "Circadian State now: ${atomicState.current}"
+    log.info "Circadian State now: ${atomicState.current} ${event}"
     updateLamps()
 }
 
@@ -396,7 +396,7 @@ private void updateLamp(DeviceWrapper device) {
 
     if (device.id in settings.colorTemperatureOnDevices*.id &&
         device.currentValue('switch') == 'on' &&
-        device.currentValue('colorTemperature') &&
+        device.currentValue('colorTemperature') != null &&
         Math.abs(device.currentValue('colorTemperature') - current.colorTemperature) > 100) {
         log.info "Setting ${device} color temperature from ${device.currentValue('colorTemperature')}K " +
                  "to ${current.colorTemperature}K"
@@ -404,7 +404,7 @@ private void updateLamp(DeviceWrapper device) {
     }
 
     if (device.id in settings.colorTemperatureDevices*.id &&
-        device.currentValue('colorTemperature') &&
+        device.currentValue('colorTemperature') != null &&
         Math.abs(device.currentValue('colorTemperature') - current.colorTemperature) > 100) {
         log.info "Setting ${device} color temperature from ${device.currentValue('colorTemperature')}K " +
                  "to ${current.colorTemperature}K"
