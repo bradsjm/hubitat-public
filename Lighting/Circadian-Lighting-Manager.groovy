@@ -135,7 +135,7 @@ preferences {
             input name: 'disabledVariable',
                   title: 'Select variable to enable or disable:',
                   type: 'enum',
-                  options: getGlobalVarsByType('boolean').collect { v -> [(v.key): "${v.key} (currently ${v.value.value})"] }
+                  options: getGlobalVarsByType('boolean').collectEntries { v -> [(v.key): "${v.key} (currently ${v.value.value})"] },
                   multiple: false
         }
 
