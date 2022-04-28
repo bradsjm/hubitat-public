@@ -26,6 +26,7 @@ import groovy.json.JsonOutput
 import hubitat.helper.ColorUtils
 import hubitat.helper.NetworkUtils
 import java.math.RoundingMode
+import hubitat.scheduling.AsyncResponse
 
 /**
  *  This driver is designed to be used with ESPHome template:
@@ -58,6 +59,7 @@ metadata {
         ]
 
         attribute 'wifiSignal', 'enum', [
+            'unknown',
             'excellent',
             'good',
             'poor',
@@ -70,73 +72,76 @@ metadata {
     }
 
     preferences {
-        section {
-            input name: 'ipAddress',
-                  type: 'text',
-                  title: 'Device IP Address',
-                  required: true
+        input name: 'ipAddress',
+                type: 'text',
+                title: 'Device IP Address',
+                required: true
+
+        input name: 'rampRateOn',
+                type: 'number',
+                title: 'Default On Transition (seconds)',
+                required: false,
+                range: 0..20,
+                defaultValue: 2
+
+        input name: 'rampRateOff',
+                type: 'number',
+                title: 'Off Transition (seconds)',
+                required: false,
+                range: 0..20,
+                defaultValue: 1
+
+        input name: 'dimLevelMin',
+                type: 'number',
+                title: 'Minimum Dim Level (0-255)',
+                required: false,
+                range: 0..255,
+                defaultValue: 17
+
+        input name: 'dimLevelMax',
+                type: 'number',
+                title: 'Maximum Dim Level (1-255)',
+                required: false,
+                range: 1..255,
+                defaultValue: 255
+
+        input name: 'autoOffDelay',
+                type: 'number',
+                title: 'Auto Off Delay Seconds (0 to disable)',
+                required: false,
+                defaultValue: 0
+
+        input name: 'prestaging',
+                type: 'bool',
+                title: 'Enable Level Pre-staging',
+                required: true,
+                defaultValue: true
+
+        input name: 'flashColor',
+                type: 'enum',
+                title: 'Select Flash Color',
+                options: PredefinedColors.keySet(),
+                defaultValue: 'Red'
+
+        input name: 'logEnable',
+                type: 'bool',
+                title: 'Enable Debug Logging',
+                required: false,
+                defaultValue: false
+
+        // input name: 'logTextEnable',
+        //       type: 'bool',
+        //       title: 'Enable descriptionText logging',
+        //       required: false,
+        //       defaultValue: true
+        if (state.lights) {
+            input name: 'lightId',
+                type: 'enum',
+                title: 'Select Light Id',
+                options: state.lights
         }
 
-        section {
-            input name: 'rampRateOn',
-                  type: 'number',
-                  title: 'Default on transition seconds',
-                  required: false,
-                  range: 0..20,
-                  defaultValue: 2
 
-            input name: 'rampRateOff',
-                  type: 'number',
-                  title: 'Default off transition seconds',
-                  required: false,
-                  range: 0..20,
-                  defaultValue: 1
-
-            input name: 'dimLevelMin',
-                  type: 'number',
-                  title: 'Minimum dim level (0-255)',
-                  required: false,
-                  range: 0..255,
-                  defaultValue: 17
-
-            input name: 'dimLevelMax',
-                  type: 'number',
-                  title: 'Maximum dim level (1-255)',
-                  required: false,
-                  range: 1..255,
-                  defaultValue: 255
-
-            input name: 'autoOffDelay',
-                  type: 'number',
-                  title: 'Auto off seconds (0 to disable)',
-                  required: false,
-                  defaultValue: 0
-
-            input name: 'prestaging',
-                  type: 'bool',
-                  title: 'Enable level pre-staging',
-                  required: true,
-                  defaultValue: true
-
-            input name: 'flashColor',
-                  type: 'enum',
-                  title: 'Select flash color',
-                  options: PredefinedColors.keySet()
-        }
-
-        section {
-            input name: 'logEnable',
-                  type: 'bool',
-                  title: 'Enable debug logging',
-                  required: false,
-                  defaultValue: false
-
-            // input name: 'logTextEnable',
-            //       type: 'bool',
-            //       title: 'Enable descriptionText logging',
-            //       required: false,
-            //       defaultValue: true
-        }
     }
 }
 
@@ -178,7 +183,9 @@ void eventStreamStatus(String message) {
 }
 
 void flash(BigDecimal rate = 1) {
+    if (!settings.lightId) { return }
     LOG.info "flash ${rate}"
+
     if (PredefinedColors.containsKey(settings.flashColor)) {
         def (int r, int g, int b) = ColorUtils.hexToRGB(PredefinedColors[settings.flashColor])
         int max = [ r, g, b ].max()
@@ -187,7 +194,8 @@ void flash(BigDecimal rate = 1) {
             g = (g / max) * 255
             b = (b / max) * 255
         }
-        post(state.lightId, 'turn_on', [
+
+        postAsync(settings.lightId, 'turn_on', [
             flash: rate as Integer,
             brightness: 255,
             r: r,
@@ -205,6 +213,12 @@ void initialize() {
     unschedule()        // Remove all scheduled functions
     reset()             // Reset state
     runIn(3, connect)   // Schedule device connection (which will populate state)
+
+    // Auto set the device label to the light name
+    if (state.lights?.containsKey(settings.lightId)) {
+        device.label = state.lights[settings.lightId]
+        LOG.info "setting device label to ${device.label}"
+    }
 
     // Schedule log disable for 30 minutes
     if (logEnable) {
@@ -224,14 +238,18 @@ void logsOff() {
 }
 
 void off() {
+    if (!settings.lightId) { return }
     LOG.info 'turn off'
-    post(state.lightId, 'turn_off', [
+
+    postAsync(settings.lightId, 'turn_off', [
         transition: settings.rampRateOff ?: 0
     ])
 }
 
 void on() {
+    if (!settings.lightId) { return }
     LOG.info 'turn on'
+
     int colorTemperature = device.currentValue('colorTemperature') ?: 2700
     int level = device.currentValue('level') ?: 100
     int hue = device.currentValue('hue') ?: 0
@@ -258,7 +276,7 @@ void on() {
         ]
     }
 
-    post(state.lightId, 'turn_on', options)
+    postAsync(settings.lightId, 'turn_on', options)
     if (settings.autoOffDelay > 0) { runIn(settings.autoOffDelay as int, off) }
 }
 
@@ -275,7 +293,7 @@ void parse(String message) {
         Map data = new JsonSlurper().parseText(message.trim())
         parseEventData(data)
     } else if (message.trim().size() > 0) {
-        LOG.debug message
+        LOG.debug message.replaceAll('\\[0[;0-9]*m', '').trim()
     }
 }
 
@@ -283,20 +301,22 @@ void parseEventData(Map eventData) {
     if (eventData['title']) {
         device.name = eventData['title']
         return
+    } else if (eventData['id'].startsWith('light-') && eventData['name']) {
+        setDeviceName(eventData['id'], eventData['name'])
     }
 
     switch (eventData['id']) {
-        case ~/sensor-.+_wifi_signal/:
+        case 'sensor-wifi_signal':
             int rssi = eventData['value']
             String value = translateRssi(rssi)
             sendEvent name: 'wifiSignal', value: value, descriptionText: "wifi signal is ${value}"
             sendEvent name: 'rssi', value: rssi, descriptionText: "wifi signal is ${rssi} dBm", unit: 'dBm'
             break
-        case ~/sensor-.+_power_consumption/:
+        case 'sensor-power':
             BigDecimal power = (eventData['value'] as BigDecimal).setScale(1, RoundingMode.HALF_UP)
             sendEvent name: 'power', value: power, descriptionText: "power is ${power} W", unit: 'W'
             break
-        case ~/sensor-.+_total_daily_energy/:
+        case 'sensor-total_daily_energy':
             BigDecimal energy = (eventData['value'] as BigDecimal).setScale(3, RoundingMode.HALF_UP)
             sendEvent name: 'energy', value: energy, descriptionText: "energy is ${energy} kWh", unit: 'kWh'
             break
@@ -310,9 +330,7 @@ void parseEventData(Map eventData) {
             }
             break
 
-        case ~/light-.+/:
-            state.lightId = eventData['id']
-            device.label = eventData['name'] ?: device.label
+        case settings.lightId:
             if (eventData['state'] in ['ON', 'OFF']) {
                 String value = eventData['state'].toLowerCase()
                 sendEvent name: 'switch', value: value, descriptionText: "switch is ${value}"
@@ -352,6 +370,7 @@ void parseEventData(Map eventData) {
                 sendEvent name: 'level', value: level, descriptionText: "level is ${level}%", unit: '%'
             }
             break
+
         default:
             LOG.debug "Unknown event data: ${eventData}"
             break
@@ -373,30 +392,47 @@ void ping() {
 
 void reset() {
     // Reset device state
-    state.connectCount = 0
-    state.effectNumber = 0
-    state.lastPingResult = ''
-    state.lightId = ''
-    state.sensors = [:]
+    state.with {
+        clear()
+        connectCount = 0
+        effectNumber = 0
+        lastPingResult = ''
+        lights = [:]
+        sensors = [:]
+    }
 
     // Reset device state
-    sendEvent name: 'switch', value: 'OFF'
-    sendEvent name: 'colorTemperature', value: 0
     sendEvent name: 'colorMode', value: 'CT'
-    sendEvent name: 'effectName', value: ''
-    sendEvent name: 'lightEffects', value: '{}'
+    sendEvent name: 'colorName', value: 'None'
+    sendEvent name: 'colorTemperature', value: 0
+    sendEvent name: 'effectName', value: 'None'
+    sendEvent name: 'energy', value: 0
     sendEvent name: 'hue', value: 0
-    sendEvent name: 'saturation', value: 0
     sendEvent name: 'level', value: 0
-    sendEvent name: 'colorName', value: ''
+    sendEvent name: 'lightEffects', value: '{}'
+    sendEvent name: 'power', value: 0
+    sendEvent name: 'rssi', value: 0
+    sendEvent name: 'saturation', value: 0
+    sendEvent name: 'switch', value: 'OFF'
+    sendEvent name: 'wifiSignal', value: 'unknown'
 
     // Reset data values
-    Set<String> keys = device.getData()*.key
-    keys.each { k -> device.removeDataValue(k) }
+    device.getData()*.key.each { k -> device.removeDataValue(k) }
+}
+
+void setDeviceName(String id, String name) {
+    state.lights[id] = name
+    if (!settings.lightId) {
+        LOG.info "setting default light to ${name} [${id}]"
+        device.updateSetting('lightId', [value: id, type: 'enum'])
+        device.label = device.label ?: name
+    }
 }
 
 void setColor(Map colorMap) {
+    if (!settings.lightId) { return }
     LOG.info "setColor ${colorMap}"
+
     if (device.currentValue('switch') == 'on' || settings.prestaging == false) {
         def (int r, int g, int b) = ColorUtils.hsvToRGB([colorMap.hue, colorMap.saturation, colorMap.level])
         int max = [ r, g, b ].max()
@@ -405,7 +441,8 @@ void setColor(Map colorMap) {
             g = (g / max) * 255
             b = (b / max) * 255
         }
-        post(state.lightId, 'turn_on', [
+
+        postAsync(settings.lightId, 'turn_on', [
             r: r, g: g, b: b,
             brightness: convertToBrightness(max),
             transition: settings.rampRateOn ?: 0
@@ -422,9 +459,11 @@ void setColor(Map colorMap) {
 }
 
 void setColorTemperature(BigDecimal kelvin, BigDecimal level = null, BigDecimal duration = null) {
+    if (!settings.lightId) { return }
     LOG.info "setColorTemperature ${kelvin}"
+
     if (device.currentValue('switch') == 'on' || settings.prestaging == false) {
-        post(state.lightId, 'turn_on', [
+        postAsync(settings.lightId, 'turn_on', [
             brightness: convertToBrightness(level ?: device.currentValue('level')),
             color_temp: (1000000f / kelvin).round(2),
             transition: duration != null ? duration : (settings.rampRateOn ?: 0)
@@ -437,13 +476,15 @@ void setColorTemperature(BigDecimal kelvin, BigDecimal level = null, BigDecimal 
 }
 
 void setEffect(BigDecimal effectNumber) {
+    if (!settings.lightId) { return }
     LOG.info "setEffect ${kelvin}"
+
     int value = effectNumber
     String[] lightEffects = new JsonSlurper().parseText(device.currentValue('lightEffects') ?: '[]')
     if (value < 1) { value = 1 }
     if (value > lightEffects.size()) { value = lightEffects.size() }
     state.effectNumber = value
-    post(state.lightId, 'turn_on', [
+    postAsync(settings.lightId, 'turn_on', [
         effect: lightEffects[value - 1]
     ])
     if (settings.autoOffDelay > 0) { runIn(settings.autoOffDelay as int, off) }
@@ -466,11 +507,13 @@ void setHue(BigDecimal hue) {
 }
 
 void setLevel(BigDecimal level, BigDecimal duration = null) {
+    if (!settings.lightId) { return }
     LOG.info "setLevel ${level}"
+
     if (level == 0) {
         off()
     } else if (device.currentValue('switch') == 'on' || settings.prestaging == false) {
-        post(state.lightId, 'turn_on', [
+        postAsync(settings.lightId, 'turn_on', [
             brightness: convertToBrightness(level),
             transition: duration != null ? duration : (settings.rampRateOn ?: 0)
         ])
@@ -720,21 +763,39 @@ private int convertFromBrightness(BigDecimal brightness) {
     return Math.floor(remap(brightness, min, max, 0, 100))
 }
 
-private void post(String id, String path, Map query = null) {
+private void postAsync(String id, String path, Map query = null) {
     if (id && path) {
-        LOG.debug "post: ${id} ${path} ${query}"
-        asynchttpPost(null,
-            [
-                uri: "http://${settings.ipAddress}/${id.replaceAll('-', '/')}/",
-                path: path,
-                query: query,
-                timeout: 5
-            ]
-        )
+        postAsyncData([ id: id, path: path, query: query, retries: 0 ])
+    }
+}
 
-        if (device.currentValue('state') == 'disconnected') {
-            LOG.info 'attempt reconnect to event stream'
-            runIn(1, connect)
+private void postAsyncData(Map data) {
+    LOG.debug "post: ${data.id} ${data.path} ${data.query}"
+    asynchttpPost('postAsyncResult', [
+        uri: "http://${settings.ipAddress}/${data.id.replaceAll('-', '/')}/",
+        path: data.path,
+        query: data.query,
+        timeout: 2
+    ], data)
+}
+
+/* groovylint-disable-next-line UnusedPrivateMethod */
+private void postAsyncResult(AsyncResponse response, Map data) {
+    if (response.hasError()) {
+        LOG.error "postAsync: ${response.status} ${response.errorMessage} ${response.errorData ?: ''} ${params ?: ''}"
+
+        if (response.status == 408 && data.retries <= 5) {
+            data.retries++
+            int delay = Math.min(Math.pow(2000, data.retries), 32000) + new Random().nextInt(1000)
+            LOG.debug "postAsync: retrying in ${delay}ms (${data.retries} retries)"
+            runInMillis(delay, 'postAsyncData', [data: data])
         }
+
+        return
+    }
+
+    if (device.currentValue('state') == 'disconnected') {
+        LOG.info 'reconnecting to event stream'
+        runIn(1, connect)
     }
 }

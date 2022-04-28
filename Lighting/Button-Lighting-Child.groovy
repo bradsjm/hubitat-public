@@ -326,6 +326,11 @@ void initialize() {
     subscribe(settings.buttonDevices, 'buttonHandler', [:])
 }
 
+void logsOff() {
+    log.warn 'debug logging disabled'
+    device.updateSetting('logEnable', [value: 'false', type: 'bool'])
+}
+
 // Called when the app is removed.
 void uninstalled() {
     LOG.info "${app.name} uninstalled"
@@ -334,8 +339,11 @@ void uninstalled() {
 // Called when the settings are updated.
 void updated() {
     LOG.info "${app.name} configuration updated"
-    LOG.debug settings
     initialize()
+    if (settings.logEnable) {
+        log.debug settings
+        runIn(1800, logsOff)
+    }
 }
 
 /*
