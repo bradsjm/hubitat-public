@@ -136,7 +136,7 @@ metadata {
 // Tuya Function Categories
 @Field static final Map<String, List<String>> tuyaFunctions = [
     'battery'        : [ 'battery_percentage', 'va_battery' ],
-    'brightness'     : [ 'bright', 'bright_value', 'bright_value_v2', 'bright_value_1' ],
+    'brightness'     : [ 'bright_value', 'bright_value_v2', 'bright_value_1' ],
     'co'             : [ 'co_state' ],
     'co2'            : [ 'co2_value' ],
     'colour'         : [ 'colour_data', 'colour_data_v2' ],
@@ -392,7 +392,13 @@ void componentSetColorTemperature(DeviceWrapper dw, BigDecimal kelvin,
 
 // Component command to set effect
 void componentSetEffect(DeviceWrapper dw, BigDecimal index) {
-    LOG.warn "Set effect {$index} command not supported for ${dw}"
+    Map value = ["scene_num":index]
+    if (txtEnable) { LOG.info "Setting ${dw} [work_mode:scene]" }
+    //if (txtEnable) { LOG.info "Setting ${dw} effects to ${value}" }
+    tuyaSendDeviceCommandsAsync(dw.getDataValue('id'),
+        [ 'code': 'work_mode', 'value': 'scene']
+        //[ 'code': 'scene_data', 'value': value ], //This Does not Work (but it should...)
+    )
 }
 
 // Component command to set heating setpoint
@@ -1233,8 +1239,14 @@ private void updateMultiDeviceStatus(Map d) {
 
 /* groovylint-disable-next-line MethodSize */
 private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
-    String workMode = statusList['workMode'] ?: ''
+    String workMode = ''
     Map<String, Map> deviceStatusSet = getStatusSet(dw) ?: getFunctions(dw)
+    statusList.each { status -> 
+        if (status.code in tuyaFunctions.workMode) {
+            workMode = status.value
+        }
+    }
+    LOG.debug "${dw} workMode ${workMode}"
 
     return statusList.collectMany { status ->
         LOG.debug "${dw} status ${status}"
@@ -1307,7 +1319,7 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
                 [ name: 'saturation', value: saturation, descriptionText: "saturation is ${saturation}" ],
                 [ name: 'colorName', value: colorName, descriptionText: "color name is ${colorName}" ]
             ]
-            if (workMode in ['color', 'scene']) {
+            if (workMode in ['colour', 'scene']) {
                 if (txtEnable) { LOG.info "${dw} level is ${level}%" }
                 events << [ name: 'level', value: level, unit: '%', descriptionText: "level is ${level}%" ]
             }
@@ -1503,6 +1515,9 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
                 case 'colour':
                     if (txtEnable) { LOG.info "${dw} color mode is RGB" }
                     return [ [ name: 'colorMode', value: 'RGB', descriptionText: 'color mode is RGB' ] ]
+                case 'scene':
+                    if (txtEnable) { LOG.info "${dw} color mode is EFFECTS" }
+                    return [ [ name: 'colorMode', value: 'EFFECTS', descriptionText: 'color mode is EFFECTS' ] ]
             }
         }
 
