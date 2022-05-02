@@ -142,7 +142,7 @@ metadata {
     'colour'         : [ 'colour_data', 'colour_data_v2' ],
     'contact'        : [ 'doorcontact_state' ],
     'ct'             : [ 'temp_value', 'temp_value_v2' ],
-    'control'        : [ 'control' ],
+    'control'        : [ 'control', 'mach_operate' ],
     'fanSpeed'       : [ 'fan_speed' ],
     'light'          : [ 'switch_led', 'switch_led_1', 'light' ],
     'humiditySet'    : [ 'dehumidify_set_value' ],                                                                                       /* Inserted by SJB */
@@ -152,8 +152,8 @@ metadata {
     'omniSensor'     : [ 'bright_value', 'humidity_value', 'va_humidity', 'bright_sensitivity', 'shock_state', 'inactive_state', 'sensitivity' ],
     'pir'            : [ 'pir' ],
     'power'          : [ 'Power', 'power', 'switch', 'switch_1', 'switch_2', 'switch_3', 'switch_4', 'switch_5', 'switch_6', 'switch_usb1', 'switch_usb2', 'switch_usb3', 'switch_usb4', 'switch_usb5', 'switch_usb6', 'alarm_switch' ],
-    'percentControl' : [ 'percent_control', 'fan_speed_percent' ],
-    'push'           : [ 'manual_feed', 'start' ],
+    'percentControl' : [ 'percent_control', 'fan_speed_percent', 'position' ],
+    'push'           : [ 'manual_feed' ],
     'sceneSwitch'    : [ 'switch1_value', 'switch2_value', 'switch3_value', 'switch4_value', 'switch_mode2', 'switch_mode3', 'switch_mode4' ],
     'smoke'          : [ 'smoke_sensor_status' ],
     'temperatureSet' : [ 'temp_set' ],
@@ -241,7 +241,10 @@ void componentClose(DeviceWrapper dw) {
     Map<String, Map> functions = getFunctions(dw)
     String code = getFunctionCode(functions, tuyaFunctions.control)
 
-    if (code != null) {
+    if (code == 'mach_operate') {
+        if (txtEnable) { LOG.info "Closing ${dw}" }
+        tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': 'ZZ' ])
+    } else if (code != null) {
         if (txtEnable) { LOG.info "Closing ${dw}" }
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': 'close' ])
     } else {
@@ -309,7 +312,10 @@ void componentOpen(DeviceWrapper dw) {
     Map<String, Map> functions = getFunctions(dw)
     String code = getFunctionCode(functions, tuyaFunctions.control)
 
-    if (code != null) {
+    if (code == 'mach_operate') {
+        if (txtEnable) { LOG.info "Opening ${dw}" }
+        tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': 'FZ' ])
+    } else if (code != null) {
         if (txtEnable) { LOG.info "Opening ${dw}" }
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': 'open' ])
     } else {
@@ -573,7 +579,10 @@ void componentStopPositionChange(DeviceWrapper dw) {
     Map<String, Map> functions = getFunctions(dw)
     String code = getFunctionCode(functions, tuyaFunctions.control)
 
-    if (code != null) {
+    if (code == 'mach_operate') {
+        if (txtEnable) { LOG.info "Stopping ${dw}" }
+        tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': 'STOP' ])
+    } else if (code != null) {
         if (txtEnable) { LOG.info "Stopping ${dw}" }
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': 'stop' ])
     } else {
@@ -1288,6 +1297,8 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
                 case 'opening': value = 'opening'; break
                 case 'close': value = 'closed'; break
                 case 'closing': value = 'closing'; break
+                case 'ZZ': value = 'closed'; break
+                case 'FZ': value = 'open'; break
                 case 'stop': value = 'unknown'; break
             }
             if (value) {
@@ -1448,7 +1459,7 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
             return [ [ name: 'motion', value: value, descriptionText: "motion is ${value}" ] ]
         }
 
-        if (status.code in tuyaFunctions.percent_control) {
+        if (status.code in tuyaFunctions.percentControl) {
             if (txtEnable) { LOG.info "${dw} position is ${status.value}%" }
             return [ [ name: 'position', value: status.value, descriptionText: "position is ${status.value}%", unit: '%' ] ]
         }
