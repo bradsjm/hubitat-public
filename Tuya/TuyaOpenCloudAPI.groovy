@@ -153,7 +153,7 @@ metadata {
     'pir'            : [ 'pir' ],
     'power'          : [ 'Power', 'power', 'switch', 'switch_1', 'switch_2', 'switch_3', 'switch_4', 'switch_5', 'switch_6', 'switch_usb1', 'switch_usb2', 'switch_usb3', 'switch_usb4', 'switch_usb5', 'switch_usb6', 'alarm_switch' ],
     'percentControl' : [ 'percent_control', 'fan_speed_percent' ],
-    'push'           : [ 'manual_feed' ],
+    'push'           : [ 'manual_feed', 'start' ],
     'sceneSwitch'    : [ 'switch1_value', 'switch2_value', 'switch3_value', 'switch4_value', 'switch_mode2', 'switch_mode3', 'switch_mode4' ],
     'smoke'          : [ 'smoke_sensor_status' ],
     'temperatureSet' : [ 'temp_set' ],
@@ -760,6 +760,7 @@ private static Map mapTuyaCategory(Map d) {
         case 'cl':    // Curtain Motor (uses custom driver)
         case 'clkg':
             return [ namespace: 'component', driver: 'Generic Component Window Shade' ]
+        case 'bh':    // Kettle
         case 'cwwsq': // Pet Feeder (https://developer.tuya.com/en/docs/iot/f?id=K9gf468bl11rj)
             return [ driver: 'Generic Component Button Controller' ]
         case 'cz':    // Socket (https://developer.tuya.com/en/docs/iot/s?id=K9gf7o5prgf7s)
