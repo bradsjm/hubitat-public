@@ -55,6 +55,7 @@ import hubitat.scheduling.AsyncResponse
  *  01/06/22 - 0.2.4 - Added humidifier support (by simon)
  *  01/07/22 - 0.2.5 - Added check for expired tokens
  *  03/09/22 - 0.3.0 - Optimized device state parsing to remove duplicatation
+ *  06/04/22 - 0.3.1 - Reduce events by filtering out values that have not changed
  *
  *  Custom component drivers located at https://github.com/bradsjm/hubitat-drivers/tree/master/Component
  */
@@ -231,6 +232,112 @@ metadata {
     'va_temperature': [ min: 0, max: 1000, scale: 1, step: 1, type: 'Integer' ],
     'manual_feed': [ min: 1, max: 50, scale:0, step: 1, type: 'Integer' ]
 ].asImmutable()
+
+/**
+  *  Tuya Standard Instruction Set Category Mapping to Hubitat Drivers
+  *  https://developer.tuya.com/en/docs/iot/standarddescription?id=K9i5ql6waswzq
+  */
+private static Map mapTuyaCategory(Map d) {
+    Map switches = [
+        'switch': [ suffix: 'Switch', driver: 'Generic Component Switch' ],
+        'switch_1': [ suffix: 'Socket 1', driver: 'Generic Component Switch' ],
+        'switch_2': [ suffix: 'Socket 2', driver: 'Generic Component Switch' ],
+        'switch_3': [ suffix: 'Socket 3', driver: 'Generic Component Switch' ],
+        'switch_4': [ suffix: 'Socket 4', driver: 'Generic Component Switch' ],
+        'switch_5': [ suffix: 'Socket 5', driver: 'Generic Component Switch' ],
+        'switch_6': [ suffix: 'Socket 6', driver: 'Generic Component Switch' ],
+        'switch_usb1': [ suffix: 'USB 1', driver: 'Generic Component Switch' ],
+        'switch_usb2': [ suffix: 'USB 2', driver: 'Generic Component Switch' ],
+        'switch_usb3': [ suffix: 'USB 3', driver: 'Generic Component Switch' ],
+        'switch_usb4': [ suffix: 'USB 4', driver: 'Generic Component Switch' ],
+        'switch_usb5': [ suffix: 'USB 5', driver: 'Generic Component Switch' ],
+        'switch_usb6': [ suffix: 'USB 6', driver: 'Generic Component Switch' ]
+    ]
+
+    switch (d.category) {
+        // Lighting
+        case 'dc':    // String Lights
+        case 'dd':    // Strip Lights
+        case 'dj':    // Light
+        case 'tgq':   // Dimmer Light
+        case 'tyndj': // Solar Light
+        case 'qjdcz': // Night Light
+        case 'xdd':   // Ceiling Light
+        case 'ykq':   // Remote Control
+            if (getFunctionCode(d.statusSet, tuyaFunctions.colour)) {
+                return [ driver: 'Generic Component RGBW', devices: switches ]
+            } else if (getFunctionCode(d.statusSet, tuyaFunctions.ct)) {
+                return [ driver: 'Generic Component CT', devices: switches ]
+            } else if (getFunctionCode(d.statusSet, tuyaFunctions.brightness)) {
+                return [ driver: 'Generic Component Dimmer', devices: switches ]
+            }
+            break
+        case 'fsd':  // Ceiling Fan (with Light)
+            return [
+                driver: 'Generic Component Fan Control',
+                devices: [
+                    'light': [ suffix: 'Light', driver: 'Generic Component Switch' ]
+                ]
+            ]
+
+        // Electrical
+        case 'tgkg':  // Dimmer Switch
+            return [ driver: 'Generic Component Dimmer' ]
+        case 'wxkg':  // Scene Switch (TS004F in 'Device trigger' mode only; TS0044)
+            return [ driver: 'Generic Component Central Scene Switch' ]
+        case 'cl':    // Curtain Motor (uses custom driver)
+        case 'clkg':
+            return [ namespace: 'component', driver: 'Generic Component Window Shade' ]
+        case 'bh':    // Kettle
+        case 'cwwsq': // Pet Feeder (https://developer.tuya.com/en/docs/iot/f?id=K9gf468bl11rj)
+            return [ driver: 'Generic Component Button Controller' ]
+        case 'cz':    // Socket (https://developer.tuya.com/en/docs/iot/s?id=K9gf7o5prgf7s)
+        case 'kg':    // Switch
+        case 'pc':    // Power Strip (https://developer.tuya.com/en/docs/iot/s?id=K9gf7o5prgf7s)
+            if (getFunctionCode(d.statusSet, tuyaFunctions.colour)) {
+                return [ driver: 'Generic Component RGBW', devices: switches ]
+            } else if (getFunctionCode(d.statusSet, tuyaFunctions.brightness)) {
+                return [ driver: 'Generic Component Dimmer', devices: switches ]
+            }
+            return [ devices: switches ]
+
+        // Security & Sensors
+        case 'ms':    // Lock
+            return [ driver: 'Generic Component Lock' ]
+        case 'ldcg':  // Brightness, temperature, humidity, CO2 sensors
+        case 'wsdcg':
+        case 'zd':    // Vibration sensor as motion
+            return [ driver: 'Generic Component Omni Sensor' ]
+        case 'mcs':   // Contact Sensor
+            return [ driver: 'Generic Component Contact Sensor' ]
+        case 'sj':    // Water Sensor
+            return [ driver: 'Generic Component Water Sensor' ]
+        case 'ywbj':  // Smoke Detector
+            return [ driver: 'Generic Component Smoke Detector' ]
+        case 'cobj':  // CO Detector
+            return [ driver: 'Generic Component Carbon Monoxide Detector' ]
+        case 'co2bj': // CO2 Sensor
+            return [ driver: 'Generic Component Carbon Dioxide Detector' ]
+        case 'pir':   // Motion Sensor
+            return [ driver: 'Generic Component Motion Sensor' ]
+
+        // Large Home Appliances
+        case 'rs':    // Heater
+            return [ namespace: 'component', driver: 'Generic Component Heating Device' ]
+
+        // Small Home Appliances
+        case 'qn':    // Heater
+            return [ namespace: 'component', driver: 'Generic Component Heating Device' ]
+        case 'cs':    // DeHumidifer
+            return [ namespace: 'component', driver: 'Generic Component Dehumidifier' ]
+        case 'fs':  // Fan
+            return [ driver: 'Generic Component Fan Control' ]
+
+        // Kitchen Appliances
+    }
+
+    return [ driver: 'Generic Component Switch' ]
+}
 
 /* -------------------------------------------------------
  * Implementation of component commands from child devices
@@ -620,7 +727,7 @@ void doLevelChange() {
 
 // Called when the device is started
 void initialize() {
-    String version = '0.3.0'
+    String version = '0.3'
     LOG.info "Driver v${version} initializing"
     state.clear()
     unschedule()
@@ -712,110 +819,6 @@ void refresh() {
 void removeDevices() {
     LOG.info 'Removing all child devices'
     childDevices.each { device -> deleteChildDevice(device.deviceNetworkId) }
-}
-
-/**
-  *  Tuya Standard Instruction Set Category Mapping to Hubitat Drivers
-  *  https://developer.tuya.com/en/docs/iot/standarddescription?id=K9i5ql6waswzq
-  */
-private static Map mapTuyaCategory(Map d) {
-    Map switches = [
-        'switch': [ suffix: 'Switch', driver: 'Generic Component Switch' ],
-        'switch_1': [ suffix: 'Socket 1', driver: 'Generic Component Switch' ],
-        'switch_2': [ suffix: 'Socket 2', driver: 'Generic Component Switch' ],
-        'switch_3': [ suffix: 'Socket 3', driver: 'Generic Component Switch' ],
-        'switch_4': [ suffix: 'Socket 4', driver: 'Generic Component Switch' ],
-        'switch_5': [ suffix: 'Socket 5', driver: 'Generic Component Switch' ],
-        'switch_6': [ suffix: 'Socket 6', driver: 'Generic Component Switch' ],
-        'switch_usb1': [ suffix: 'USB 1', driver: 'Generic Component Switch' ],
-        'switch_usb2': [ suffix: 'USB 2', driver: 'Generic Component Switch' ],
-        'switch_usb3': [ suffix: 'USB 3', driver: 'Generic Component Switch' ],
-        'switch_usb4': [ suffix: 'USB 4', driver: 'Generic Component Switch' ],
-        'switch_usb5': [ suffix: 'USB 5', driver: 'Generic Component Switch' ],
-        'switch_usb6': [ suffix: 'USB 6', driver: 'Generic Component Switch' ]
-    ]
-
-    switch (d.category) {
-        // Lighting
-        case 'dc':    // String Lights
-        case 'dd':    // Strip Lights
-        case 'dj':    // Light
-        case 'tgq':   // Dimmer Light
-        case 'tyndj': // Solar Light
-        case 'qjdcz': // Night Light
-        case 'xdd':   // Ceiling Light
-        case 'ykq':   // Remote Control
-            if (getFunctionCode(d.statusSet, tuyaFunctions.colour)) {
-                return [ driver: 'Generic Component RGBW', devices: switches ]
-            } else if (getFunctionCode(d.statusSet, tuyaFunctions.ct)) {
-                return [ driver: 'Generic Component CT', devices: switches ]
-            } else if (getFunctionCode(d.statusSet, tuyaFunctions.brightness)) {
-                return [ driver: 'Generic Component Dimmer', devices: switches ]
-            }
-            break
-        case 'fsd':  // Ceiling Fan (with Light)
-            return [
-                driver: 'Generic Component Fan Control',
-                devices: [
-                    'light': [ suffix: 'Light', driver: 'Generic Component Switch' ]
-                ]
-            ]
-
-        // Electrical
-        case 'tgkg':  // Dimmer Switch
-            return [ driver: 'Generic Component Dimmer' ]
-        case 'wxkg':  // Scene Switch (TS004F in 'Device trigger' mode only; TS0044)
-            return [ driver: 'Generic Component Central Scene Switch' ]
-        case 'cl':    // Curtain Motor (uses custom driver)
-        case 'clkg':
-            return [ namespace: 'component', driver: 'Generic Component Window Shade' ]
-        case 'bh':    // Kettle
-        case 'cwwsq': // Pet Feeder (https://developer.tuya.com/en/docs/iot/f?id=K9gf468bl11rj)
-            return [ driver: 'Generic Component Button Controller' ]
-        case 'cz':    // Socket (https://developer.tuya.com/en/docs/iot/s?id=K9gf7o5prgf7s)
-        case 'kg':    // Switch
-        case 'pc':    // Power Strip (https://developer.tuya.com/en/docs/iot/s?id=K9gf7o5prgf7s)
-            if (getFunctionCode(d.statusSet, tuyaFunctions.colour)) {
-                return [ driver: 'Generic Component RGBW', devices: switches ]
-            } else if (getFunctionCode(d.statusSet, tuyaFunctions.brightness)) {
-                return [ driver: 'Generic Component Dimmer', devices: switches ]
-            }
-            return [ devices: switches ]
-
-        // Security & Sensors
-        case 'ms':    // Lock
-            return [ driver: 'Generic Component Lock' ]
-        case 'ldcg':  // Brightness, temperature, humidity, CO2 sensors
-        case 'wsdcg':
-        case 'zd':    // Vibration sensor as motion
-            return [ driver: 'Generic Component Omni Sensor' ]
-        case 'mcs':   // Contact Sensor
-            return [ driver: 'Generic Component Contact Sensor' ]
-        case 'sj':    // Water Sensor
-            return [ driver: 'Generic Component Water Sensor' ]
-        case 'ywbj':  // Smoke Detector
-            return [ driver: 'Generic Component Smoke Detector' ]
-        case 'cobj':  // CO Detector
-            return [ driver: 'Generic Component Carbon Monoxide Detector' ]
-        case 'co2bj': // CO2 Sensor
-            return [ driver: 'Generic Component Carbon Dioxide Detector' ]
-        case 'pir':   // Motion Sensor
-            return [ driver: 'Generic Component Motion Sensor' ]
-
-        // Large Home Appliances
-
-        // Small Home Appliances
-        case 'qn':    // Heater
-            return [ namespace: 'component', driver: 'Generic Component Heating Device' ]
-        case 'cs':    // DeHumidifer
-            return [ namespace: 'component', driver: 'Generic Component Dehumidifier' ]
-        case 'fs':  // Fan
-            return [ driver: 'Generic Component Fan Control' ]
-
-        // Kitchen Appliances
-    }
-
-    return [ driver: 'Generic Component Switch' ]
 }
 
 private static Map<String, Map> getFunctions(DeviceWrapper dw) {
@@ -1240,7 +1243,16 @@ private void updateMultiDeviceStatus(Map d) {
     Map<String, ChildDeviceWrapper> children = getChildDevices().collectEntries { child -> [ (child.deviceNetworkId): child] }
     Map groups = d.status.groupBy { s -> children["${base}-${s.code}"] ?: children[base] }
     LOG.debug "Groups: ${groups}"
-    groups.each { dw, states -> dw.parse(createEvents(dw, states)) }
+    groups.each { dw, states ->
+        // send events to child for parsing
+        dw.parse(
+            // create events for the child
+            createEvents(dw, states).findAll { e ->
+                // filter to values that have changed
+                dw.currentValue(e.name) != e.value
+            }
+        )
+    }
 }
 
 /* ---------------------------------------------------
