@@ -334,8 +334,20 @@ private static Map mapTuyaCategory(Map d) {
             return [ namespace: 'component', driver: 'Generic Component Heating Device' ]
         case 'cs':    // DeHumidifer
             return [ namespace: 'component', driver: 'Generic Component Dehumidifier' ]
-        case 'fs':  // Fan
-            return [ driver: 'Generic Component Fan Control' ]
+        case 'fs':    // Fan
+            Map devices = [:]
+            if (getFunctionCode(d.statusSet, tuyaFunctions.colour)) {
+                devices['light'] = [ suffix: 'Light', driver: 'Generic Component RGBW' ]
+            } else if (getFunctionCode(d.statusSet, tuyaFunctions.brightness)) {
+                devices['bright_value'] = [ suffix: 'Dimmer', driver: 'Generic Component Dimmer' ]
+            } else {
+                devices['light'] = [ suffix: 'Light', driver: 'Generic Component Switch' ]
+            }
+
+            return [
+                driver: 'Generic Component Fan Control',
+                devices: devices
+            ]
 
         // Kitchen Appliances
     }
