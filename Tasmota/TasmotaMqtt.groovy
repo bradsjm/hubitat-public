@@ -74,17 +74,26 @@ metadata {
                   description: '(blank if none)',
                   required: false
 
-            input name: 'so20',
+            input name: 'levelPrestage',
                   type: 'bool',
-                  title: 'Update of Dimmer/Color/CT without turning power on',
+                  title: 'Enable Level Pre-staging',
+                  description: '(requires explicit on)',
                   required: false,
                   defaultValue: false
 
-            input name: 'telePeriod',
-                  type: 'number',
-                  title: 'Interval for telemetry updates in seconds (0 to disable)',
+            input name: 'colorPrestage',
+                  type: 'bool',
+                  title: 'Enable Color Pre-staging',
+                  description: '(requires explicit on)',
                   required: false,
-                  defaultValue: 300
+                  defaultValue: false
+
+            input name: 'tempPrestage',
+                  type: 'bool',
+                  title: 'Enable Color Temperature Pre-staging',
+                  description: '(requires explicit on)',
+                  required: false,
+                  defaultValue: false
 
             input name: 'energyReportingMode',
                     title: 'Energy Reporting Mode',
@@ -134,10 +143,6 @@ void initialize() {
     if (!settings.mqttBroker) {
         log.error 'Unable to connect because Broker setting not configured'
         return
-    }
-
-    if (settings.telePeriod) {
-        runIn(settings.telePeriod + 60, 'healthcheck')
     }
 
     mqttConnect()
@@ -228,7 +233,11 @@ void componentSetLevel(DeviceWrapper device, BigDecimal level, BigDecimal durati
     boolean isTuyaMcu = config['ty']
     String fadeCommand = fadeCommand(isTuyaMcu ? 0 : settings.fadeTime)
     log.info "Setting ${device} level to ${level}%" + (isTuyaMcu ? '' : " over ${seconds}s")
-    mqttPublish(topic, fadeCommand + "Dimmer${config.index ?: 1} ${level}")
+    if (settings.levelPrestage) {
+        mqttPublish(topic, fadeCommand + "Dimmer${config.index ?: 1} ${level}")
+    } else {
+        mqttPublish(topic, "POWER 1;" + fadeCommand + "Dimmer${config.index ?: 1} ${level}")
+    }
 }
 
 void componentStartLevelChange(DeviceWrapper device, String direction) {
@@ -265,7 +274,11 @@ void componentSetColorTemperature(DeviceWrapper device, BigDecimal kelvin,
     // ignore value of color temperature as there is only one white for this device
     int value = level ?: device.currentValue('level')
     log.info "Setting ${device} white channel to WHITE"
-    mqttPublish(topic, fadeCommand + "WHITE ${value}")
+    if (settings.levelPrestage) {
+        mqttPublish(topic, fadeCommand + "WHITE ${value}")
+    } else {
+        mqttPublish(topic, "POWER 1;" + fadeCommand + "WHITE ${value}")
+    }
 }
 
 void componentSetColor(DeviceWrapper device, Map colormap) {
@@ -273,8 +286,13 @@ void componentSetColor(DeviceWrapper device, Map colormap) {
     String topic = getCommandTopic(config)
     String fadeCommand = fadeCommand(duration ?: settings.fadeTime)
     log.info "Setting ${device} color to ${colormap}"
-    mqttPublish(topic, fadeCommand +
-        "HsbColor ${colormap.hue * 3.6},${colormap.saturation},${colormap.level}")
+    if (settings.colorPrestage) {
+        mqttPublish(topic, fadeCommand +
+            "HsbColor ${colormap.hue * 3.6},${colormap.saturation},${colormap.level}")
+    } else {
+        mqttPublish(topic, "POWER 1;" + fadeCommand +
+            "HsbColor ${colormap.hue * 3.6},${colormap.saturation},${colormap.level}")
+    }
 }
 
 void componentSetEffect(DeviceWrapper device, BigDecimal effect) {
@@ -289,8 +307,11 @@ void componentSetHue(DeviceWrapper device, BigDecimal hue) {
     String topic = getCommandTopic(config)
     String fadeCommand = fadeCommand(duration ?: settings.fadeTime)
     log.info "Setting ${device} hue to ${colormap}"
-    mqttPublish(topic, fadeCommand +
-        "HsbColor1 ${hue * 3.6}")
+    if (settings.colorPrestage) {
+        mqttPublish(topic, fadeCommand + "HsbColor1 ${hue * 3.6}")
+    } else {
+        mqttPublish(topic, "POWER 1;" + fadeCommand + "HsbColor1 ${hue * 3.6}")
+    }
 }
 
 void componentSetSaturation(DeviceWrapper device, BigDecimal saturation) {
@@ -298,8 +319,11 @@ void componentSetSaturation(DeviceWrapper device, BigDecimal saturation) {
     String topic = getCommandTopic(config)
     String fadeCommand = fadeCommand(duration ?: settings.fadeTime)
     log.info "Setting ${device} hue to ${colormap}"
-    mqttPublish(topic, fadeCommand +
-        "HsbColor2 ${saturation}")
+    if (settings.colorPrestage) {
+        mqttPublish(topic, fadeCommand + "HsbColor2 ${saturation}")
+    } else {
+        mqttPublish(topic, "POWER 1;" + fadeCommand + "HsbColor2 ${saturation}")
+    }
 }
 
 void componentRefresh(DeviceWrapper device) {
@@ -388,36 +412,6 @@ private void doLevelChange() {
     }
 }
 
-/* groovylint-disable-next-line UnusedPrivateMethod */
-private void healthcheck() {
-    if (lastHeard.isEmpty()) return
-
-    int allElapsed = (now() - lastHeard.values().max()) / 1000
-    if (allElapsed > settings.telePeriod) {
-        log.warn "No device has been heard from in ${allElapsed} seconds"
-        runIn(3, 'initialize')
-        return
-    }
-
-    String indicator = ' (Offline)'
-    childDevices.each { device ->
-        if (lastHeard.containsKey(device.id)) {
-            int elapsed = (now() - lastHeard[device.id]) / 1000
-            if (elapsed > settings.telePeriod) {
-                log.warn "${device} has not been heard from in ${elapsed} seconds"
-                if (!device.label.endsWith(indicator)) {
-                    device.label += indicator
-                }
-            } else if (device.label.endsWith(indicator)) {
-                device.label -= indicator
-                log.info "${device} is now reporting data again"
-            }
-        }
-    }
-
-    runIn(settings.telePeriod + 60, 'healthcheck')
-}
-
 private Map newEvent(ChildDeviceWrapper device, String name, Object value, Map params = [:]) {
     String splitName = splitCamelCase(name).toLowerCase()
     String oldValue = device.currentValue(name)
@@ -441,8 +435,8 @@ private void subscribeDeviceTopics(DeviceWrapper device) {
         getTeleTopic(config) + 'LWT'
     ]
     topics.each { topic ->
-        mqttSubscribe(topic)
         subscriptions.computeIfAbsent(topic) { k -> [] as Set }.add(dni)
+        mqttSubscribe(topic)
     }
 }
 
@@ -567,11 +561,11 @@ private void parseAutoDiscoveryRelay(int idx, int relaytype, Map config) {
     if (device.hasCapability('LightEffects')) {
         device.sendEvent(name: 'lightEffects', value: JsonOutput.toJson([
             0: 'None',
-            1: 'Blink',
-            2: 'Wakeup',
-            3: 'Cycle Up',
-            4: 'Cycle Down',
-            5: 'Random Cycle'
+            1: 'Wakeup',
+            2: 'Cycle Up',
+            3: 'Cycle Down',
+            4: 'Random Cycle',
+            5: 'DDP'
         ]))
     }
 
@@ -586,10 +580,11 @@ private void configureDeviceSettings(Map config) {
 
     payload += 'Latitude ' + location.latitude + ';'
     payload += 'Longitude ' + location.longitude + ';'
+    payload += 'so4 0;' // use RESULT topic
     payload += 'so17 1;' // use RGB not HEX results
-    payload += 'so20 ' + (!isTuyaMcu && settings['so20'] ? '1' : '0') + ';'
+    payload += 'so20 ' + (isTuyaMcu ? '0' : '1') + ';'
     payload += 'so59 0;' // do not send state for power command
-    payload += 'teleperiod ' + settings['telePeriod'] + ';'
+    payload += 'teleperiod 0' // disable teleperiod
 
     mqttPublish(topic, payload)
 }
