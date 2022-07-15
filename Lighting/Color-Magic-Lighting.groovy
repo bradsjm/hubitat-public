@@ -240,6 +240,9 @@ void initialize() {
     log.info "${app.name} initializing"
     state.seedColors = ['N', 'N', 'N', 'N', 'N']
     subscribe(settings.seed, 'seedChangeHandler')
+    subscribe(settings.disabledSwitchWhenOn, 'switch', 'eventHandler')
+    subscribe(settings.disabledSwitchWhenOff, 'switch', 'eventHandler')
+    subscribe(location, 'mode', 'eventHandler')
     schedule('0 0 3 ? * * *', 'getModelList')
 
     int interval = settings.updateInterval as int
@@ -247,6 +250,10 @@ void initialize() {
     schedule("30 */${interval} * * * ?", 'getModelColors')
 
     getModelList()
+}
+
+void eventHandler(Event evt) {
+    getModelColors()
 }
 
 // called when there is a change to the seed devices

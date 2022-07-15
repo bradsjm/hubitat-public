@@ -201,8 +201,14 @@ void initialize() {
         circadianUpdate()
 
         // Subscribe to mode changes and trigger an update
-        subscribe(location, 'mode', 'circadianUpdate')
+        subscribe(settings.disabledSwitchWhenOn, 'switch', 'eventHandler')
+        subscribe(settings.disabledSwitchWhenOff, 'switch', 'eventHandler')
+        subscribe(location, 'mode', 'eventHandler')
     }
+}
+
+void eventHandler(Event evt) {
+    circadianUpdate()
 }
 
 private static List<Integer> ctToRGB(int colorTemp) {
