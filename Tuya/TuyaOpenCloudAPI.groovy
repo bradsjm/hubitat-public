@@ -56,6 +56,8 @@ import hubitat.scheduling.AsyncResponse
  *  01/07/22 - 0.2.5 - Added check for expired tokens
  *  03/09/22 - 0.3.0 - Optimized device state parsing to remove duplicatation
  *  06/04/22 - 0.3.1 - Reduce events by filtering out values that have not changed
+ *  07/15/22 - 0.3.2 - When setting level also send power on state
+ *                     For covers, support 'situation_set' for fully_open and fully_closed states
  *
  *  Custom component drivers located at https://github.com/bradsjm/hubitat-drivers/tree/master/Component
  */
@@ -161,7 +163,8 @@ metadata {
     'temperature'    : [ 'temp_current', 'va_temperature' ],
     'water'          : [ 'watersensor_state' ],
     'workMode'       : [ 'work_mode' ],
-    'workState'      : [ 'work_state' ]
+    'workState'      : [ 'work_state' ],
+    'situationSet'   : [ 'situation_set' ]
 ].asImmutable()
 
 // Tuya -> Hubitat attributes mappings
@@ -565,11 +568,15 @@ void componentSetLevel(DeviceWrapper dw, BigDecimal level, BigDecimal duration =
     if (colorMode == 'CT') {
         Map<String, Map> functions = getFunctions(dw)
         String code = getFunctionCode(functions, tuyaFunctions.brightness)
+        String power = getFunctionCode(functions, tuyaFunctions.light + tuyaFunctions.power)
         if (code != null) {
             Map bright = functions[code] ?: defaults[code]
             int value = Math.ceil(remap((int)level, 0, 100, (int)bright.min, (int)bright.max))
             if (txtEnable) { LOG.info "Setting ${dw} level to ${level}%" }
-            tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': value ])
+            tuyaSendDeviceCommandsAsync(dw.getDataValue('id'),
+                ['code': power, 'value': true ],
+                ['code': code, 'value': value ]
+            )
         } else {
             LOG.error "Unable to determine set level function code in ${functions}"
         }
@@ -1303,7 +1310,7 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
             return [ [ name: 'carbonDioxide', value: value, unit: 'ppm', descriptionText: "carbon dioxide level is ${value}" ] ]
         }
 
-        if (status.code in tuyaFunctions.control + tuyaFunctions.workState) {
+        if (status.code in tuyaFunctions.control + tuyaFunctions.workState + tuyaFunctions.situationSet) {
             String value
             switch (status.value) {
                 case 'open': value = 'open'; break
@@ -1313,6 +1320,8 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
                 case 'ZZ': value = 'closed'; break
                 case 'FZ': value = 'open'; break
                 case 'stop': value = 'unknown'; break
+                case 'fully_open': value = 'open'; break
+                case 'fully_close': value = 'closed'; break
             }
             if (value) {
                 if (txtEnable) { LOG.info "${dw} control is ${value}" }
