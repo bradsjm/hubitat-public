@@ -482,6 +482,8 @@ void componentSetColor(DeviceWrapper dw, Map colorMap) {
         Map color = functions[code] ?: defaults[code]
         // An oddity and workaround for mapping brightness values
         Map bright = getFunction(functions, functions.brightness) ?: color.v
+        //level is optional, so fallback to the current device level if the colorMap doesn't include the level
+        colorMap.level  = (colorMap.level != null) ? colorMap.level : dw.currentValue('level')
         Map value = [
             h: remap(colorMap.hue, 0, 100, (int)color.h.min, (int)color.h.max),
             s: remap(colorMap.saturation, 0, 100, (int)color.s.min, (int)color.s.max),
