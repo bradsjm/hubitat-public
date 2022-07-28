@@ -22,11 +22,14 @@
  */
 import groovy.transform.Field
 import hubitat.helper.HexUtils
+import com.hubitat.app.ChildDeviceWrapper
+import com.hubitat.app.DeviceWrapper
+import com.hubitat.app.exception.UnknownDeviceTypeException
+import java.util.concurrent.ConcurrentHashMap
 
 metadata {
     definition(name: 'ESPHome Protobuf POC', namespace: 'ESPHome', author: 'Jonathan Bradshaw') {
         capability 'Actuator'
-        capability 'HealthCheck'
         capability 'Initialize'
         capability 'Refresh'
 
@@ -85,8 +88,11 @@ metadata {
     }
 }
 
-void connect() {
-    LOG.info "connecting to ESPHome API at ${ipAddress}:${portNumber}"
+/**
+ * Hubitat Driver Implementation
+ */
+public void connect() {
+    LOG.info "connecting to ESPHome native API at ${ipAddress}:${portNumber}"
     String state = device.currentValue('state')
     if (state != 'disconnected') {
         closeSocket()
@@ -94,7 +100,7 @@ void connect() {
     openSocket()
 }
 
-void disconnect() {
+public void disconnect() {
     String state = device.currentValue('state')
     sendEvent name: 'state', value: 'disconnecting'
     if (state == 'connected') {
@@ -107,7 +113,7 @@ void disconnect() {
 }
 
 // Called when the device is started.
-void initialize() {
+public void initialize() {
     LOG.info "${device} driver initializing"
 
     unschedule()        // Remove all scheduled functions
@@ -115,43 +121,33 @@ void initialize() {
 
     // Schedule log disable for 30 minutes
     if (logEnable) {
-        //runIn(1800, 'logsOff')
+        runIn(1800, 'logsOff')
     }
 }
 
 // Called when the device is first created.
-void installed() {
+public void installed() {
     LOG.info "${device} driver installed"
 }
 
 // Called to disable logging after timeout
-void logsOff() {
+public void logsOff() {
     device.updateSetting('logEnable', [value: 'false', type: 'bool'])
     LOG.info "${device} debug logging disabled"
 }
 
-// parse received protobuf messages
-void parse(String hexString) {
-    LOG.debug "ESPHome << received raw payload: ${hexString}"
-    ByteArrayInputStream stream = new ByteArrayInputStream(HexUtils.hexStringToByteArray(hexString))
-    if (stream.available() < 3) {
-        LOG.error "payload length too small (${stream.available()})"
-        return
-    }
-    receive(stream)
+public void parse(Map state) {
+    Map entity = getEntity(state.key) + state
+    LOG.info "ESPHome received state: ${entity}"
 }
 
-void ping() {
-    apiPingRequest()
-}
-
-void refresh() {
+public void refresh() {
     LOG.info 'refreshing device entities'
     apiListEntitiesRequest()
 }
 
 // Socket status updates
-void socketStatus(String message) {
+public void socketStatus(String message) {
     if (message.contains('error')) {
         log.error "${device} socket ${message}"
         closeSocket()
@@ -173,16 +169,116 @@ void updated() {
     initialize()
 }
 
-
 /**
  * ESPHome API Message Implementation
+ * https://github.com/esphome/aioesphomeapi/blob/main/aioesphomeapi/api.proto
  */
-private void apiBinarySensorStateResponse(Map tags) {
+@Field static final ConcurrentHashMap<String, Map> entities = new ConcurrentHashMap<>()
+
+private Map getEntity(long key) {
+    Map deviceEntities = entities.computeIfAbsent(device.id) { k -> new HashMap() };
+    return deviceEntities.get(key) ?: [:]
+}
+
+private synchronized void setEntity(Map entity) {
+    LOG.debug "setEntity: ${entity}"
+    Map deviceEntities = entities.computeIfAbsent(device.id) { k -> new HashMap() };
+    deviceEntities.put(entity.key, entity)
+}
+
+private void parseMessage(ByteArrayInputStream stream, long length) {
+    long msgType = readVarInt(stream, true)
+    if (msgType < 1 || msgType > 65) {
+        LOG.warn "ESPHome message type ${msgType} out of range, skipping"
+        return
+    }
+    LOG.debug "ESPHome extracting message type ${msgType} (length ${length})"
+    Map tags = length == 0 ? [:] : decodeProtobufMessage(stream, length)
+    switch (msgType) {
+        case 2:
+            // Confirmation of successful connection request.
+            // Can only be sent by the server and only at the beginning of the connection
+            apiHelloResponse(tags)
+            break
+        case 4:
+            // Confirmation of successful connection. After this the connection is available for all traffic.
+            // Can only be sent by the server and only at the beginning of the connection
+            apiConnectResponse()
+            break
+        case 5: // Device requests to close connection
+            disconnect()
+            break
+        case 6: // Device confirms our disconnect request
+            // Both parties are required to close the connection after this message has been received.
+            closeSocket()
+            break
+        case 7: // Ping Request (from device)
+            apiPingResponse()
+            break
+        case 8: // Ping Response (from device)
+            unschedule('timeout')
+            break
+        case 10: // Device Info Response
+            apiDeviceInfoResponse(tags)
+            break
+        case 12: // List Entities Binary Sensor Response
+            setEntity(apiListEntitiesBinarySensorResponse(tags))
+            break
+        case 13: // List Entities Cover Response
+            setEntity(apiListEntitiesCoverResponse(tags))
+            break
+        case 14: // List Entities Fan Response
+            setEntity(apiListEntitiesFanResponse(tags))
+            break
+        case 16: // List Entities Sensor Response
+            setEntity(apiListEntitiesSensorResponse(tags))
+            break
+        case 18: // List Entities Text Sensor Response
+            setEntity(apiListEntitiesTextSensorResponse(tags))
+            break
+        case 19: // List Entities Done Response
+            apiListEntitiesDoneResponse()
+            break
+        case 21: // Binary Sensor State Response
+            parse(apiBinarySensorStateResponse(tags))
+            break
+        case 22: // Cover State Response
+            parse(apiCoverStateResponse(tags))
+            break
+        case 23: // Fan State Response
+            parse(apiFanStateResponse(tags))
+            break
+        case 25: // Sensor State Response
+            parse(apiSensorStateResponse(tags))
+            break
+        case 26: // Switch State Response
+            parse(apiSwitchStateResponse(tags))
+            break
+        case 27: // Text Sensor State Response
+            parse(apiTextSensorStateResponse(tags))
+            break
+        case 49: // List Entities Number Response
+            apiListEntitiesNumberResponse(tags)
+            break
+        case 50: // Number State Response
+            parse(apiNumberStateResponse(tags))
+            break
+        case 61: // List Entities Button Response
+            setEntity(apiListEntitiesButtonResponse(tags))
+            break
+        default:
+            LOG.warn "ESPHome message type ${msgType} not suppported"
+            break
+    }
+}
+
+private Map apiBinarySensorStateResponse(Map tags) {
     LOG.trace '[R] Binary Sensor State Response'
-    long key = getLong(tags, 1)
-    boolean state = getBoolean(tags, 2)
-    boolean hasState = getBoolean(tags, 3, true)
-    LOG.info "Binary Sensor [key: ${key}, state: ${state}, hasState: ${hasState}]"
+    return [
+        key: getLong(tags, 1),
+        state: getBoolean(tags, 2),
+        hasState: getBoolean(tags, 3, true)
+    ]
 }
 
 private void apiConnectRequest(String password) {
@@ -201,13 +297,14 @@ private void apiConnectResponse() {
     apiDeviceInfoRequest()
 }
 
-private void apiCoverStateResponse(Map tags) {
+private Map apiCoverStateResponse(Map tags) {
     LOG.trace '[R] Cover State Response'
-    long key = getLong(tags, 1)
-    float position = getFloat(tags, 3)
-    float tilt = getFloat(tags, 4)
-    int currentOperation = getInt(tags, 5)
-    LOG.info "Cover [key: ${key}, position: ${position}, tilt: ${tilt}, currentOperation: ${currentOperation}]"
+    return [
+        key: getLong(tags, 1),
+        position: getFloat(tags, 3),
+        tilt: getFloat(tags, 4),
+        currentOperation: getInt(tags, 5)
+    ]
 }
 
 private void apiDeviceInfoRequest() {
@@ -242,8 +339,8 @@ private void apiDeviceInfoResponse(Map tags) {
         device.updateDataValue 'Web Server', "http://${ipAddress}:${tags[10]}"
     }
 
-    // Step 4: Subscribe to state updates
-    apiSubscribeStatesRequest()
+    // Step 4: Get device entities
+    apiListEntitiesRequest()
 
     // Step 5: Schedule pings
     schedulePing()
@@ -254,6 +351,18 @@ private void apiDisconnectRequest() {
     // Can be sent by both the client and server
     LOG.trace '[S] Disconnect Request'
     sendMessage(5)
+}
+
+private Map apiFanStateResponse(Map tags) {
+    LOG.trace '[R] Fan State Response'
+    return [
+        key: getLong(tags, 1),
+        state: getBoolean(tags, 2),
+        oscillating: getBoolean(tags, 3),
+        speed: getInt(tags, 4), // deprecated
+        direction: getInt(tags, 5),
+        speedLevel: getInt(tags, 6)
+    ]
 }
 
 private void apiHelloRequest() {
@@ -300,59 +409,102 @@ private void apiListEntitiesRequest() {
     sendMessage(11)
 }
 
-private void apiListEntitiesBinarySensorResponse(tags) {
+private Map apiListEntitiesBinarySensorResponse(Map tags) {
     LOG.trace '[R] List Entities Binary Sensor Response'
-    String objectId = getString(tags, 1)
-    long key = getLong(tags, 2)
-    String name = getString(tags, 3)
-    String uniqueId = getString(tags, 4)
-    String deviceClass = getString(tags, 5)
-    boolean isStatusBinarySensor = getBoolean(tags, 6)
-    boolean disabledByDefault = getBoolean(tags, 7)
-    String icon = getString(tags, 8)
-    int entityCategory = getInt(tags, 9)
-    LOG.info "binary sensor [objectId: ${objectId}, key: ${key}, name: ${name}, uniqueId: ${uniqueId}, deviceClass: ${deviceClass}, " +
-        "isStatusBinarySensor: ${isStatusBinarySensor}, disabledByDefault: ${disabledByDefault}, icon: ${icon}, entityCategory: ${entityCategory}]"
+    return parseEntity(tags) + [
+        isStatusBinarySensor: getBoolean(tags, 6),
+        disabledByDefault: getBoolean(tags, 7),
+        icon: getString(tags, 8),
+        entityCategory: getInt(tags, 9)
+    ]
 }
 
-private void apiListEntitiesCoverResponse(tags) {
+private Map apiListEntitiesButtonResponse(Map tags) {
+    LOG.trace '[R] List Entities Button Response'
+    return parseEntity(tags) + [
+        icon: getString(tags, 5),
+        disabledByDefault: getBoolean(tags, 6),
+        entityCategory: getInt(tags, 7),
+        deviceClass: getString(tags, 8)
+    ]
+}
+
+private Map apiListEntitiesCoverResponse(Map tags) {
     LOG.trace '[R] List Entities Cover Response'
-    String objectId = getString(tags, 1)
-    long key = getLong(tags, 2)
-    String name = getString(tags, 3)
-    String uniqueId = getString(tags, 4)
-    boolean assumedState = getBoolean(tags, 5)
-    boolean supportsPosition = getBoolean(tags, 6)
-    boolean supportsTilt = getBoolean(tags, 7)
-    String deviceClass = getString(tags, 8)
-    boolean disabledByDefault = getBoolean(tags, 9)
-    String icon = getString(tags, 10)
-    int entityCategory = getInt(tags, 11)
-    LOG.info "cover [objectId: ${objectId}, key: ${key}, name: ${name}, uniqueId: ${uniqueId}, deviceClass: ${deviceClass}, " +
-        "disabledByDefault: ${disabledByDefault}, icon: ${icon}, entityCategory: ${entityCategory}]"
+    return parseEntity(tags) + [
+        assumedState: getBoolean(tags, 5),
+        supportsPosition: getBoolean(tags, 6),
+        supportsTilt: getBoolean(tags, 7),
+        deviceClass: getString(tags, 8),
+        disabledByDefault: getBoolean(tags, 9),
+        icon: getString(tags, 10),
+        entityCategory: getInt(tags, 11)
+    ]
 }
 
-private void apiListEntitiesSensorResponse(tags) {
+private Map apiListEntitiesFanResponse(Map tags) {
+    LOG.trace '[R] List Entities Fan Response'
+    return parseEntity(tags) + [
+        supportsOscillation: getBoolean(tags, 5),
+        supportsSpeed: getBoolean(tags, 6),
+        supportsDirection: getBoolean(tags, 7),
+        supportedSpeedLevels: getInt(tags, 8),
+        disabledByDefault: getBoolean(tags, 9),
+        icon: getString(tags, 10),
+        entityCategory: getInt(tags, 11)
+    ]
+}
+
+private Map apiListEntitiesNumberResponse(Map tags) {
+    LOG.trace '[R] List Entities Number Response'
+    return parseEntity(tags) + [
+        icon: getString(tags, 5),
+        minValue: getFloat(tags, 6),
+        maxValue: getFloat(tags, 7),
+        step: getFloat(tags, 8),
+        disabledByDefault: getBoolean(tags, 9),
+        entityCategory: getInt(tags, 10),
+        unitOfMeasurement: getString(tags, 11),
+        numberMode: getInt(tags, 12)
+    ]
+}
+
+private Map apiListEntitiesSensorResponse(Map tags) {
     LOG.trace '[R] List Entities Sensor Response'
-    String objectId = getString(tags, 1)
-    long key = getLong(tags, 2)
-    String name = getString(tags, 3)
-    String uniqueId = getString(tags, 4)
-    String icon = getString(tags, 5)
-    String unitOfMeasurement = getString(tags, 6)
-    int accuracyDecimals = getInt(tags, 7)
-    boolean forceUpdate = getBoolean(tags, 8)
-    String deviceClass = getString(tags, 9)
-    int sensorStateClass = getInt(tags, 10)
-    int lastResetType = getInt(tags, 11)
-    boolean disabledByDefault = getBoolean(tags, 12)
-    int entityCategory = getInt(tags, 13)
-    LOG.info "sensor [objectId: ${objectId}, key: ${key}, name: ${name}, uniqueId: ${uniqueId}, deviceClass: ${deviceClass}, " +
-        "disabledByDefault: ${disabledByDefault}, icon: ${icon}, entityCategory: ${entityCategory}]"
+    return parseEntity(tags) + [
+        icon: getString(tags, 5),
+        unitOfMeasurement: getString(tags, 6),
+        accuracyDecimals: getInt(tags, 7),
+        forceUpdate: getBoolean(tags, 8),
+        deviceClass: getString(tags, 9),
+        sensorStateClass: getInt(tags, 10),
+        lastResetType: getInt(tags, 11),
+        disabledByDefault: getBoolean(tags, 12),
+        entityCategory: getInt(tags, 13)
+    ]
+}
+
+private Map apiListEntitiesTextSensorResponse(Map tags) {
+    LOG.trace '[R] List Entities Text Sensor Response'
+    return parseEntity(tags) + [
+        icon: getString(tags, 5),
+        disabledByDefault: getBoolean(tags, 6),
+        entityCategory: getInt(tags, 7)
+    ]
 }
 
 private void apiListEntitiesDoneResponse() {
     LOG.trace '[R] List Entities Done Response'
+    apiSubscribeStatesRequest()
+}
+
+private Map apiNumberStateResponse(Map tags) {
+    LOG.trace '[R] Number State Response'
+    return [
+        key: getLong(tags, 1),
+        state: getFloat(tags, 2),
+        hasState: getBoolean(tags, 3, true)
+    ]
 }
 
 private void apiPingRequest() {
@@ -368,12 +520,21 @@ private void apiPingResponse() {
     sendMessage(8)
 }
 
-private void apiSensorStateResponse(Map tags) {
+private Map apiSensorStateResponse(Map tags) {
     LOG.trace '[R] Sensor State Response'
-    long key = getLong(tags, 1)
-    float state = getFloat(tags, 2)
-    boolean hasState = getBoolean(tags, 3, true)
-    LOG.info "Sensor [key: ${key}, state: ${state}, hasState: ${hasState}]"
+    return [
+        key: getLong(tags, 1),
+        state: getFloat(tags, 2),
+        hasState: getBoolean(tags, 3, true)
+    ]
+}
+
+private Map apiSwitchStateResponse(Map tags) {
+    LOG.trace '[R] Switch State Response'
+    return [
+        key: getLong(tags, 1),
+        state: getBoolean(tags, 2)
+    ]
 }
 
 private void apiSubscribeStatesRequest() {
@@ -381,9 +542,18 @@ private void apiSubscribeStatesRequest() {
     sendMessage(20)
 }
 
+private Map apiTextSensorStateResponse(Map tags) {
+    LOG.trace '[R] Text Sensor State Response'
+    return [
+        key: getLong(tags, 1),
+        state: getString(tags, 2),
+        hasState: getBoolean(tags, 3, true)
+    ]
+}
+
 
 /**
- * ESPHome Raw Socket IO Implementation
+ * ESPHome Native API Plaintext Socket IO Implementation
  */
 private synchronized void closeSocket() {
     unschedule('closeSocket')
@@ -410,6 +580,26 @@ private boolean isConnected() {
     return device.currentValue('state') == 'connected'
 }
 
+private static Map parseEntity(Map tags) {
+    return [
+        objectId: getString(tags, 1),
+        key: getLong(tags, 2),
+        name: getString(tags, 3),
+        uniqueId: getString(tags, 4)
+    ]
+}
+
+// parse received protobuf messages
+public void parse(String hexString) {
+    LOG.debug "ESPHome << received raw payload: ${hexString}"
+    ByteArrayInputStream stream = new ByteArrayInputStream(HexUtils.hexStringToByteArray(hexString))
+    if (stream.available() < 3) {
+        LOG.error "payload length too small (${stream.available()})"
+        return
+    }
+    receive(stream)
+}
+
 private void receive(ByteArrayInputStream stream) {
     int count = 1
     int b
@@ -420,72 +610,13 @@ private void receive(ByteArrayInputStream stream) {
                 LOG.debug "ESPHome extracting protobuf message [count: ${count++}, length: ${length}]"
                 parseMessage(stream, length)
             }
+        } else if (b == 0x01) {
+            LOG.error 'Driver does not support ESPHome native API encryption'
+            return
         } else {
-            LOG.warn "ESPHome expecting delimiter 0x00 but got ${b} instead"
+            LOG.warn "ESPHome expecting delimiter 0x00 but got 0x${Integer.toHexString(b)} instead"
             return
         }
-    }
-}
-
-private void parseMessage(ByteArrayInputStream stream, long length) {
-    long msgType = readVarInt(stream, true)
-    if (msgType < 1 || msgType > 65) {
-        LOG.warn "ESPHome message type ${msgType} out of range, skipping"
-        return
-    }
-    LOG.debug "ESPHome extracting message type ${msgType} (length ${length})"
-    Map tags = length == 0 ? [:] : decodeProtobufMessage(stream, length)
-    switch (msgType) {
-        case 2:
-            // Confirmation of successful connection request.
-            // Can only be sent by the server and only at the beginning of the connection
-            apiHelloResponse(tags)
-            break
-        case 4:
-            // Confirmation of successful connection. After this the connection is available for all traffic.
-            // Can only be sent by the server and only at the beginning of the connection
-            apiConnectResponse()
-            break
-        case 5: // Device requests to close connection
-            disconnect()
-            break
-        case 6: // Device confirms our disconnect request
-            // Both parties are required to close the connection after this message has been received.
-            closeSocket()
-            break
-        case 7: // Ping Request (from device)
-            apiPingResponse()
-            break
-        case 8: // Ping Response (from device)
-            unschedule('timeout')
-            break
-        case 10: // Device Info Response
-            apiDeviceInfoResponse(tags)
-            break
-        case 12: // List Entities Binary Sensor Response
-            apiListEntitiesBinarySensorResponse(tags)
-            break
-        case 13: // List Entities Cover Response
-            apiListEntitiesCoverResponse(tags)
-            break
-        case 16: // List Entities Sensor Response
-            apiListEntitiesSensorResponse(tags)
-            break
-        case 19: // List Entities Done Response
-            apiListEntitiesDoneResponse()
-            break
-        case 21: // Binary Sensor State Response
-            apiBinarySensorStateResponse(tags)
-            break
-        case 22: // Cover State Response
-            apiCoverStateResponse(tags)
-            break
-        case 25: // Sensor State Response
-            apiSensorStateResponse(tags)
-            break
-        default:
-            LOG.warn "ESPHome message type ${msgType} not suppported"
-            break
     }
 }
 
@@ -509,18 +640,20 @@ private synchronized void sendMessage(int type, Map tags = [:]) {
 
 
 /**
- * Minimal Protobuf Implementation
+ * Minimal Protobuf Implementation for use with ESPHome
  */
-@Field static final int WIRETYPE_VARINT = 0;
-@Field static final int WIRETYPE_FIXED64 = 1;
-@Field static final int WIRETYPE_LENGTH_DELIMITED = 2;
-@Field static final int WIRETYPE_FIXED32 = 5;
+@Field static final int WIRETYPE_VARINT = 0
+@Field static final int WIRETYPE_FIXED64 = 1
+@Field static final int WIRETYPE_LENGTH_DELIMITED = 2
+@Field static final int WIRETYPE_FIXED32 = 5
+@Field static final int VARINT_MAX_BYTES = 10
 
 private Map decodeProtobufMessage(ByteArrayInputStream stream, long available) {
     Map tags = [:]
     while (available > 0) {
         long tagAndType = readVarInt(stream, true)
         if (tagAndType == -1) {
+            LOG.warn 'ESPHome unexpected EOF decoding protobuf message'
             break
         }
         available -= getVarIntSize(tagAndType)
@@ -569,7 +702,7 @@ private Map decodeProtobufMessage(ByteArrayInputStream stream, long available) {
     return tags
 }
 
-private int encodeProtobufMessage(ByteArrayOutputStream sink, Map tags) {
+private int encodeProtobufMessage(ByteArrayOutputStream stream, Map tags) {
     int bytes = 0
     for (entry in tags) {
         if (entry.value) {
@@ -577,15 +710,15 @@ private int encodeProtobufMessage(ByteArrayOutputStream sink, Map tags) {
             int wireType = entry.value instanceof String ? 2 : 0
             int tag = (fieldNumber << 3) | wireType
             LOG.debug "Protobuf encode [fieldNumber: ${fieldNumber}, wireType: ${wireType}, value: ${entry.value}]"
-            bytes += writeVarInt(sink, tag)
+            bytes += writeVarInt(stream, tag)
             switch (wireType) {
                 case WIRETYPE_VARINT:
-                    bytes += writeVarInt(sink, entry.value)
+                    bytes += writeVarInt(stream, entry.value)
                     break
                 case WIRETYPE_FIXED32:
                     int v = entry.value
                     for (int b = 0; b < 4; b++) {
-                        sink.write((int) (v & 0x0ff))
+                        stream.write((int) (v & 0x0ff))
                         bytes++
                         v >>= 8
                     }
@@ -593,15 +726,15 @@ private int encodeProtobufMessage(ByteArrayOutputStream sink, Map tags) {
                 case WIRETYPE_FIXED64:
                     long v = entry.value
                     for (int b = 0; b < 8; b++) {
-                        sink.write((int) (v & 0x0ff))
+                        stream.write((int) (v & 0x0ff))
                         bytes++
                         v >>= 8
                     }
                     break
                 case WIRETYPE_LENGTH_DELIMITED:
                     byte[] v = entry.value instanceof String ? entry.value.getBytes('UTF-8') : entry.value
-                    bytes += writeVarInt(sink, v.size())
-                    sink.write(v)
+                    bytes += writeVarInt(stream, v.size())
+                    stream.write(v)
                     bytes += v.size()
                     break
             }
@@ -610,12 +743,12 @@ private int encodeProtobufMessage(ByteArrayOutputStream sink, Map tags) {
     return bytes
 }
 
-private static String getString(Map tags, int index, String defaultValue = '') {
-    return tags[index] ? new String(tags[index], 'UTF-8') : defaultValue
-}
-
 private static boolean getBoolean(Map tags, int index, boolean invert = false) {
     return tags[index] ? !invert : invert
+}
+
+private static double getDouble(Map tags, int index, double defaultValue = 0.0) {
+    return tags[index] ? Double.intBitsToDouble(tags[index]) : defaultValue
 }
 
 private static float getFloat(Map tags, int index, float defaultValue = 0.0) {
@@ -630,9 +763,13 @@ private static long getLong(Map tags, int index, long defaultValue = 0) {
     return tags[index] ? tags[index] : defaultValue
 }
 
+private static String getString(Map tags, int index, String defaultValue = '') {
+    return tags[index] ? new String(tags[index], 'UTF-8') : defaultValue
+}
+
 private static int getVarIntSize(long i) {
     if (i < 0) {
-      return 10
+      return VARINT_MAX_BYTES
     }
     int size = 1
     while (i >= 128) {
@@ -642,27 +779,11 @@ private static int getVarIntSize(long i) {
     return size
 }
 
-private static int writeVarInt(ByteArrayOutputStream os, long value) {
-    int count = 0
-    for (int i = 0; i < 10; i++) {
-        int toWrite = (int) (value & 0x7f)
-        value >>>= 7
-        count++
-        if (value == 0) {
-            os.write(toWrite)
-            break;
-        } else {
-            os.write(toWrite | 0x080)
-        }
-    }
-    return count
-}
-
 private static long readVarInt(ByteArrayInputStream stream, boolean permitEOF) {
     long result = 0
     int shift = 0
     // max 10 byte wire format for 64 bit integer (7 bit data per byte)
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < VARINT_MAX_BYTES; i++) {
         int b = stream.read()
         if (b == -1) {
             if (i == 0 && permitEOF) {
@@ -680,12 +801,49 @@ private static long readVarInt(ByteArrayInputStream stream, boolean permitEOF) {
     return result
 }
 
+private static int writeVarInt(ByteArrayOutputStream stream, long value) {
+    int count = 0
+    for (int i = 0; i < VARINT_MAX_BYTES; i++) {
+        int toWrite = (int) (value & 0x7f)
+        value >>>= 7
+        count++
+        if (value == 0) {
+            stream.write(toWrite)
+            break;
+        } else {
+            stream.write(toWrite | 0x080)
+        }
+    }
+    return count
+}
+
 private static long zigZagDecode(long v) {
     return (v >>> 1) ^ -(v & 1)
 }
 
 private static long zigZagEncode(long v) {
     return ((v << 1) ^ -(v >>> 63))
+}
+
+/**
+ * Driver Helper Methods
+ */
+private ChildDeviceWrapper getChildDevice(String name, String dni, String driver, String namespace = 'hubitat') {
+    ChildDeviceWrapper dw = getChildDevice(dni)
+    if (dw == null) {
+        LOG.info "Creating device ${name} using ${driver} driver"
+        try {
+            dw = addChildDevice(namespace, driver, dni,
+                [
+                    name: name,
+                    label: name,
+                ]
+            )
+        } catch (UnknownDeviceTypeException e) {
+            LOG.exception("${name} device creation failed", e)
+        }
+    }
+    return dw
 }
 
 @Field private final Map LOG = [
@@ -706,7 +864,8 @@ private static long zigZagEncode(long v) {
 ].asImmutable()
 
 /**
- * ESPHome Enumerations
+ * ESPHome Protobuf Enumerations
+ * https://github.com/esphome/aioesphomeapi/blob/main/aioesphomeapi/api.proto
  */
 @Field static final int ENTITY_CATEGORY_NONE = 0
 @Field static final int ENTITY_CATEGORY_CONFIG = 1
