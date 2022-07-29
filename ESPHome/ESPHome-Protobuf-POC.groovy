@@ -105,7 +105,7 @@ public void disconnect() {
     sendEvent name: 'state', value: 'disconnecting'
     if (state == 'connected') {
         LOG.info 'disconnecting from ESPHome device'
-        apiDisconnectRequest()
+        espDisconnectRequest()
         runIn(5, 'closeSocket')
     } else {
         closeSocket()
@@ -143,7 +143,7 @@ public void parse(Map state) {
 
 public void refresh() {
     LOG.info 'refreshing device entities'
-    apiListEntitiesRequest()
+    espListEntitiesRequest()
 }
 
 // Socket status updates
@@ -198,12 +198,12 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
         case 2:
             // Confirmation of successful connection request.
             // Can only be sent by the server and only at the beginning of the connection
-            apiHelloResponse(tags)
+            espHelloResponse(tags)
             break
         case 4:
             // Confirmation of successful connection. After this the connection is available for all traffic.
             // Can only be sent by the server and only at the beginning of the connection
-            apiConnectResponse()
+            espConnectResponse()
             break
         case 5: // Device requests to close connection
             disconnect()
@@ -213,66 +213,101 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
             closeSocket()
             break
         case 7: // Ping Request (from device)
-            apiPingResponse()
+            espPingResponse()
             break
         case 8: // Ping Response (from device)
             unschedule('timeout')
             break
         case 10: // Device Info Response
-            apiDeviceInfoResponse(tags)
+            espDeviceInfoResponse(tags)
             break
         case 12: // List Entities Binary Sensor Response
-            setEntity(apiListEntitiesBinarySensorResponse(tags))
+            setEntity espListEntitiesBinarySensorResponse(tags)
             break
         case 13: // List Entities Cover Response
-            setEntity(apiListEntitiesCoverResponse(tags))
+            setEntity espListEntitiesCoverResponse(tags)
             break
         case 14: // List Entities Fan Response
-            setEntity(apiListEntitiesFanResponse(tags))
+            setEntity espListEntitiesFanResponse(tags)
+            break
+        case 15: // List Entities Light Response
+            setEntity espListEntitiesLightResponse(tags)
             break
         case 16: // List Entities Sensor Response
-            setEntity(apiListEntitiesSensorResponse(tags))
+            setEntity espListEntitiesSensorResponse(tags)
             break
         case 18: // List Entities Text Sensor Response
-            setEntity(apiListEntitiesTextSensorResponse(tags))
+            setEntity espListEntitiesTextSensorResponse(tags)
             break
         case 19: // List Entities Done Response
-            apiListEntitiesDoneResponse()
+            espListEntitiesDoneResponse()
             break
         case 21: // Binary Sensor State Response
-            parse(apiBinarySensorStateResponse(tags))
+            parse espBinarySensorStateResponse(tags)
             break
         case 22: // Cover State Response
-            parse(apiCoverStateResponse(tags))
+            parse espCoverStateResponse(tags)
             break
         case 23: // Fan State Response
-            parse(apiFanStateResponse(tags))
+            parse espFanStateResponse(tags)
+            break
+        case 24: // Light State Response
+            parse espLightStateResponse(tags)
             break
         case 25: // Sensor State Response
-            parse(apiSensorStateResponse(tags))
+            parse espSensorStateResponse(tags)
             break
         case 26: // Switch State Response
-            parse(apiSwitchStateResponse(tags))
+            parse espSwitchStateResponse(tags)
             break
         case 27: // Text Sensor State Response
-            parse(apiTextSensorStateResponse(tags))
+            parse espTextSensorStateResponse(tags)
+            break
+        case 29: // Subscribe Logs Response
+            espSubscribeLogsResponse()
+            break
+        case 36: // Get Time Request
+            espGetTimeRequest()
             break
         case 49: // List Entities Number Response
-            apiListEntitiesNumberResponse(tags)
+            espListEntitiesNumberResponse(tags)
+            break
+        case 43: // List Entities Camera Response
+            espListEntitiesCameraResponse(tags)
+            break
+        case 44: // Camera Image Response
+            espCameraImageResponse(tags)
             break
         case 50: // Number State Response
-            parse(apiNumberStateResponse(tags))
+            parse espNumberStateResponse(tags)
+            break
+        case 55: // List Entities Siren Response
+            espListEntitiesSirenResponse(tags)
+            break
+        case 56: // Siren State Response
+            parse espSirenStateResponse(tags)
+            break
+        case 58: // List Entities Lock Response
+            setEntity espListEntitiesLockResponse(tags)
+            break
+        case 59: // Lock State Response
+            parse espLockStateResponse(tags)
             break
         case 61: // List Entities Button Response
-            setEntity(apiListEntitiesButtonResponse(tags))
+            setEntity espListEntitiesButtonResponse(tags)
             break
+        case 63: // List Entities Media Player Response
+            setEntity espListEntitiesMediaPlayerResponse(tags)
+            break
+        case 64: // Media Player State Response
+            parse espMediaPlayerStateResponse(tags)
         default:
             LOG.warn "ESPHome message type ${msgType} not suppported"
             break
     }
 }
 
-private Map apiBinarySensorStateResponse(Map tags) {
+private Map espBinarySensorStateResponse(Map tags) {
     LOG.trace '[R] Binary Sensor State Response'
     return [
         key: getLong(tags, 1),
@@ -281,38 +316,73 @@ private Map apiBinarySensorStateResponse(Map tags) {
     ]
 }
 
-private void apiConnectRequest(String password) {
+private void espButtonCommandRequest(Long key) {
+    LOG.trace '[W] Button Command Request'
+    sendMessage(62, [ 1: (int) key ])
+}
+
+private void espCameraImageRequest(Boolean single, Boolean stream) {
+    LOG.trace '[W] Camera Image Request'
+    sendMessage(45, [
+        1: single,
+        2: stream
+    ])
+}
+
+private Map espCameraImageResponse(Map tags) {
+    LOG.trace '[R] Camera Image Response'
+    return [
+        key: getLong(tags, 1),
+        image: tags[2],
+        done: getBoolean(tags, 3)
+    ]
+}
+
+private void espConnectRequest(String password) {
     // Message sent at the beginning of each connection to authenticate the client
     // Can only be sent by the client and only at the beginning of the connection
     LOG.trace '[S] Connect Request'
     sendMessage(3, [ 1: password ])
 }
 
-private void apiConnectResponse() {
+private void espConnectResponse() {
     // todo: check for invalid password
     LOG.trace '[R] Connect Response'
     sendEvent name: 'state', value: 'connected'
 
     // Step 3: Send Device Info Request
-    apiDeviceInfoRequest()
+    espDeviceInfoRequest()
 }
 
-private Map apiCoverStateResponse(Map tags) {
+private void espCoverCommandRequest(Long key, Float position, Float tilt, Boolean stop) {
+    LOG.trace '[S] Cover Command Request'
+    sendMessage(30, [
+        1: (int) key,
+        4: position != null,
+        5: position,
+        6: tilt != null,
+        7: tilt,
+        8: stop
+    ])
+}
+
+private Map espCoverStateResponse(Map tags) {
     LOG.trace '[R] Cover State Response'
     return [
         key: getLong(tags, 1),
+        legacyState: getInt(tags, 2), // legacy: state has been removed in 1.13
         position: getFloat(tags, 3),
         tilt: getFloat(tags, 4),
         currentOperation: getInt(tags, 5)
     ]
 }
 
-private void apiDeviceInfoRequest() {
+private void espDeviceInfoRequest() {
     LOG.trace '[S] Device Info Request'
     sendMessage(9)
 }
 
-private void apiDeviceInfoResponse(Map tags) {
+private void espDeviceInfoResponse(Map tags) {
     LOG.trace '[R] Device Info Response'
     if (tags.containsKey(2)) {
         device.name = getString(tags, 2)
@@ -340,20 +410,32 @@ private void apiDeviceInfoResponse(Map tags) {
     }
 
     // Step 4: Get device entities
-    apiListEntitiesRequest()
-
-    // Step 5: Schedule pings
-    schedulePing()
+    espListEntitiesRequest()
 }
 
-private void apiDisconnectRequest() {
+private void espDisconnectRequest() {
     // Request to close the connection.
     // Can be sent by both the client and server
     LOG.trace '[S] Disconnect Request'
     sendMessage(5)
 }
 
-private Map apiFanStateResponse(Map tags) {
+private void espFanCommandRequest(Long key, Boolean state, Boolean oscillating, Integer direction, Integer speedLevel) {
+    LOG.trace '[S] Fan Command Request'
+    sendMessage(31, [
+        1: (int) key,
+        2: state != null,
+        3: state,
+        6: oscillating != null,
+        7: oscillating,
+        8: direction != null,
+        9: direction,
+        10: speedLevel != null,
+        11: speedLevel
+    ])
+}
+
+private Map espFanStateResponse(Map tags) {
     LOG.trace '[R] Fan State Response'
     return [
         key: getLong(tags, 1),
@@ -365,7 +447,12 @@ private Map apiFanStateResponse(Map tags) {
     ]
 }
 
-private void apiHelloRequest() {
+private void espGetTimeRequest() {
+    LOG.trace '[S] Get Time Request'
+    sendMessage(37, [ 1: (int) (new Date().getTime() / 1000) ])
+}
+
+private void espHelloRequest() {
     // Step 1: Send the HelloRequest message
     // Can only be sent by the client and only at the beginning of the connection
     LOG.trace '[S] Hello Request'
@@ -373,7 +460,7 @@ private void apiHelloRequest() {
     sendMessage(1, [ 1: client ])
 }
 
-private void apiHelloResponse(Map tags) {
+private void espHelloResponse(Map tags) {
     // Confirmation of successful connection request.
     // Can only be sent by the server and only at the beginning of the connection
     LOG.trace '[R] Hello Response'
@@ -401,15 +488,65 @@ private void apiHelloResponse(Map tags) {
     }
 
     // Step 2: Send the ConnectRequest message
-    apiConnectRequest(settings.password)
+    espConnectRequest(settings.password)
 }
 
-private void apiListEntitiesRequest() {
+private void espLightCommandRequest(Long key, Boolean state, Float masterBrightness, Integer colorMode, Float colorBrightness,
+        Float red, Float green, Float blue, Float white, Float colorTemperature, Float coldWhite, Float warmWhite, 
+        Integer transitionLength, Boolean flashLength, String effect, Boolean effectSpeed) {
+    LOG.trace '[S] Light Command Request'
+    sendMessage(32, [
+        1: (int) key,
+        2: state != null,
+        3: state,
+        4: masterBrightness != null,
+        5: masterBrightness,
+        6: red != null && blue != null && green != null,
+        7: red,
+        8: green,
+        9: blue,
+        10: white != null,
+        11: white,
+        12: colorTemperature != null,
+        13: colorTemperature,
+        14: transitionLength != null,
+        15: transitionLength,
+        16: flashLength != null,
+        17: flashLength,
+        18: effect != null,
+        19: effect,
+        20: colorBrightness != null,
+        21: colorBrightness,
+        22: colorMode != null,
+        23: colorMode
+    ])
+}
+
+private Map espLightStateResponse(Map tags) {
+    LOG.trace '[R] Light State Response'
+    return [
+        key: getLong(tags, 1),
+        state: getBoolean(tags, 2),
+        brightness: getFloat(tags, 3),
+        colorMode: getInt(tags, 11),
+        colorBrightness: getFloat(tags, 10),
+        red: getFloat(tags, 4),
+        green: getFloat(tags, 5),
+        blue: getFloat(tags, 6),
+        white: getFloat(tags, 7),
+        colorTemperature: getFloat(tags, 8),
+        coldWhite: getFloat(tags, 12),
+        warmWhite: getFloat(tags, 13),
+        effect: getString(tags, 9)
+    ]
+}
+
+private void espListEntitiesRequest() {
     LOG.trace '[S] List Entities Request'
     sendMessage(11)
 }
 
-private Map apiListEntitiesBinarySensorResponse(Map tags) {
+private Map espListEntitiesBinarySensorResponse(Map tags) {
     LOG.trace '[R] List Entities Binary Sensor Response'
     return parseEntity(tags) + [
         isStatusBinarySensor: getBoolean(tags, 6),
@@ -419,7 +556,7 @@ private Map apiListEntitiesBinarySensorResponse(Map tags) {
     ]
 }
 
-private Map apiListEntitiesButtonResponse(Map tags) {
+private Map espListEntitiesButtonResponse(Map tags) {
     LOG.trace '[R] List Entities Button Response'
     return parseEntity(tags) + [
         icon: getString(tags, 5),
@@ -429,7 +566,16 @@ private Map apiListEntitiesButtonResponse(Map tags) {
     ]
 }
 
-private Map apiListEntitiesCoverResponse(Map tags) {
+private Map espListEntitiesCameraResponse(Map tags) {
+    LOG.trace '[R] List Entities Camera Response'
+    return parseEntity(tags) + [
+        disabledByDefault: getBoolean(tags, 5),
+        icon: getString(tags, 6),
+        entityCategory: getInt(tags, 7)
+    ]
+}
+
+private Map espListEntitiesCoverResponse(Map tags) {
     LOG.trace '[R] List Entities Cover Response'
     return parseEntity(tags) + [
         assumedState: getBoolean(tags, 5),
@@ -442,7 +588,20 @@ private Map apiListEntitiesCoverResponse(Map tags) {
     ]
 }
 
-private Map apiListEntitiesFanResponse(Map tags) {
+private Map espListEntitiesLockResponse(Map tags) {
+    LOG.trace '[R] List Entities Lock Response'
+    return parseEntity(tags) + [
+        icon: getString(tags, 5),
+        disabledByDefault: getBoolean(tags, 6),
+        entityCategory: getInt(tags, 7),
+        assumedState: getBoolean(tags, 8),
+        supportsOpen: getBoolean(tags, 9),
+        requiresCode: getBoolean(tags, 10),
+        codeFormat: getString(tags, 11)
+    ]
+}
+
+private Map espListEntitiesFanResponse(Map tags) {
     LOG.trace '[R] List Entities Fan Response'
     return parseEntity(tags) + [
         supportsOscillation: getBoolean(tags, 5),
@@ -455,7 +614,29 @@ private Map apiListEntitiesFanResponse(Map tags) {
     ]
 }
 
-private Map apiListEntitiesNumberResponse(Map tags) {
+private Map espListEntitiesLightResponse(Map tags) {
+    LOG.trace '[R] List Entities Light Response'
+    return parseEntity(tags) + [
+        supportedColorModes: tags[12],
+        minMireds: getInt(tags, 9),
+        maxMireds: getInt(tags, 10),
+        effects: getString(tags, 11),
+        disabledByDefault: getBoolean(tags, 13),
+        icon: getString(tags, 14),
+        entityCategory: getInt(tags, 15)
+    ]
+}
+
+private Map espListEntitiesMediaPlayerResponse(Map tags) {
+    LOG.trace '[R] List Entities Media Player Response'
+    return parseEntity(tags) + [
+        icon: getString(tags, 5),
+        disabledByDefault: getBoolean(tags, 6),
+        entityCategory: getInt(tags, 7)
+    ]
+}
+
+private Map espListEntitiesNumberResponse(Map tags) {
     LOG.trace '[R] List Entities Number Response'
     return parseEntity(tags) + [
         icon: getString(tags, 5),
@@ -469,7 +650,7 @@ private Map apiListEntitiesNumberResponse(Map tags) {
     ]
 }
 
-private Map apiListEntitiesSensorResponse(Map tags) {
+private Map espListEntitiesSensorResponse(Map tags) {
     LOG.trace '[R] List Entities Sensor Response'
     return parseEntity(tags) + [
         icon: getString(tags, 5),
@@ -484,7 +665,19 @@ private Map apiListEntitiesSensorResponse(Map tags) {
     ]
 }
 
-private Map apiListEntitiesTextSensorResponse(Map tags) {
+private Map espListEntitiesSirenResponse(Map tags) {
+    LOG.trace '[R] List Entities Siren Response'
+    return parseEntity(tags) + [
+        icon: getString(tags, 5),
+        disabledByDefault: getBoolean(tags, 6),
+        // TODO repeated string: tones: getString(tags, 7),
+        supportsDuration: getBoolean(tags, 8),
+        supportsVolume: getBoolean(tags, 9),
+        entityCategory: getInt(tags, 10)
+    ]
+}
+
+private Map espListEntitiesTextSensorResponse(Map tags) {
     LOG.trace '[R] List Entities Text Sensor Response'
     return parseEntity(tags) + [
         icon: getString(tags, 5),
@@ -493,12 +686,60 @@ private Map apiListEntitiesTextSensorResponse(Map tags) {
     ]
 }
 
-private void apiListEntitiesDoneResponse() {
+private void espListEntitiesDoneResponse() {
     LOG.trace '[R] List Entities Done Response'
-    apiSubscribeStatesRequest()
+    LOG.debug entities.get(device.id) ?: 'No entities found'
+    schedulePing()
+    espSubscribeLogsRequest(settings.logEnable ? LOG_LEVEL_DEBUG : LOG_LEVEL_INFO)
+    espSubscribeStatesRequest()
 }
 
-private Map apiNumberStateResponse(Map tags) {
+private void espLockCommandRequest(Long key, Integer lockCommand, String code) {
+    LOG.trace '[S] Lock Command Request'
+    sendMessage(60, [
+        1: (int) key,
+        2: lockCommand,
+        3: code != null,
+        4: code
+    ])
+}
+
+private Map espLockStateResponse(Map tags) {
+    LOG.trace '[R] Lock State Response'
+    return [
+        key: getLong(tags, 1),
+        state: getInt(tags, 2),
+    ]
+}
+
+private void espMediaPlayerCommandRequest(Long key, Integer mediaPlayerCommand, Float volume, String mediaUrl) {
+    LOG.trace '[S] Media Player Command Request'
+    sendMessage(65, [
+        1: (int) key,
+        2: mediaPlayerCommand != null,
+        3: mediaPlayerCommand,
+        4: volume != null,
+        5: volume,
+        6: mediaUrl != null,
+        7: mediaUrl
+    ])
+}
+
+private Map espMediaPlayerStateResponse(Map tags) {
+    return [
+        key: getLong(tags, 1),
+        state: getInt(tags, 2),
+        volume: getFloat(tags, 3),
+        muted: getBoolean(tags, 4)
+    ]
+}
+
+private void espNumberCommandRequest(Long key, Float state) {
+    LOG.trace '[S] Number Command Request'
+    sendMessage(51, [ 1: (int) key, 2: state ])
+}
+
+private Map espNumberStateResponse(Map tags) {
     LOG.trace '[R] Number State Response'
     return [
         key: getLong(tags, 1),
@@ -507,20 +748,20 @@ private Map apiNumberStateResponse(Map tags) {
     ]
 }
 
-private void apiPingRequest() {
+private void espPingRequest() {
     // Ping request can be sent by either party
     LOG.trace '[S] Ping Request'
     sendMessage(7)
     schedulePing()
 }
 
-private void apiPingResponse() {
+private void espPingResponse() {
     // Ping response can be sent by either party
     LOG.trace '[S] Ping Response'
     sendMessage(8)
 }
 
-private Map apiSensorStateResponse(Map tags) {
+private Map espSensorStateResponse(Map tags) {
     LOG.trace '[R] Sensor State Response'
     return [
         key: getLong(tags, 1),
@@ -529,7 +770,38 @@ private Map apiSensorStateResponse(Map tags) {
     ]
 }
 
-private Map apiSwitchStateResponse(Map tags) {
+private void espSirenCommandRequest(Long key, Boolean state, String tone, Integer duration, Float volume) {
+    LOG.trace '[S] Siren Command Request'
+    sendMessage(57, [
+        1: (int) key,
+        2: state != null,
+        3: state,
+        4: tone != null,
+        5: tone,
+        6: duration != null,
+        7: duration,
+        8: volume != null,
+        9: volume
+    ])
+}
+
+private Map espSirenStateResponse(Map tags) {
+    LOG.trace '[R] Siren State Response'
+    return [
+        key: getLong(tags, 1),
+        state: getInt(tags, 2)
+    ]
+}
+
+private void espSwitchCommandRequest(Long key, Boolean state) {
+    LOG.trace '[S] Fan Command Request'
+    sendMessage(33, [
+        1: (int) key,
+        2: state
+    ])
+}
+
+private Map espSwitchStateResponse(Map tags) {
     LOG.trace '[R] Switch State Response'
     return [
         key: getLong(tags, 1),
@@ -537,12 +809,41 @@ private Map apiSwitchStateResponse(Map tags) {
     ]
 }
 
-private void apiSubscribeStatesRequest() {
+private void espSubscribeLogsRequest(Integer logLevel, Boolean dumpConfig) {
+    LOG.trace '[S] Subscribe Logs Request'
+    sendMessage(28, [
+        1: logLevel,
+        2: dumpConfig
+    ])
+}
+
+private void espSubscribeLogsResponse(Map tags) {
+    LOG.trace '[R] Subscribe Logs Response'
+    String message = getString(tags, 3)
+    switch (getInt(tags, 1)) {
+        case LOG_LEVEL_ERROR:
+            LOG.error message
+            break
+        case LOG_LEVEL_WARN:
+            LOG.warn message
+            break
+        case LOG_LEVEL_INFO:
+            LOG.info message
+            break
+        case LOG_LEVEL_VERY_VERBOSE:
+            LOG.trace message
+        default:
+            LOG.debug message
+            break
+    }
+}
+
+private void espSubscribeStatesRequest() {
     LOG.trace '[S] Subscribe States Request'
     sendMessage(20)
 }
 
-private Map apiTextSensorStateResponse(Map tags) {
+private Map espTextSensorStateResponse(Map tags) {
     LOG.trace '[R] Text Sensor State Response'
     return [
         key: getLong(tags, 1),
@@ -573,7 +874,7 @@ private synchronized void openSocket() {
         return
     }
     pauseExecution(100)
-    apiHelloRequest()
+    espHelloRequest()
 }
 
 private boolean isConnected() {
@@ -597,10 +898,7 @@ public void parse(String hexString) {
         LOG.error "payload length too small (${stream.available()})"
         return
     }
-    receive(stream)
-}
 
-private void receive(ByteArrayInputStream stream) {
     int count = 1
     int b
     while ((b = stream.read()) != -1) {
@@ -951,3 +1249,12 @@ private ChildDeviceWrapper getChildDevice(String name, String dni, String driver
 @Field static final int MEDIA_PLAYER_COMMAND_STOP = 2
 @Field static final int MEDIA_PLAYER_COMMAND_MUTE = 3
 @Field static final int MEDIA_PLAYER_COMMAND_UNMUTE = 4
+
+@Field static final int LOG_LEVEL_NONE = 0
+@Field static final int LOG_LEVEL_ERROR = 1
+@Field static final int LOG_LEVEL_WARN = 2
+@Field static final int LOG_LEVEL_INFO = 3
+@Field static final int LOG_LEVEL_CONFIG = 4
+@Field static final int LOG_LEVEL_DEBUG = 5
+@Field static final int LOG_LEVEL_VERBOSE = 6
+@Field static final int LOG_LEVEL_VERY_VERBOSE = 7
