@@ -58,7 +58,7 @@ import hubitat.scheduling.AsyncResponse
  *  06/04/22 - 0.3.1 - Reduce events by filtering out values that have not changed
  *  07/15/22 - 0.3.2 - When setting level also send power on state
  *                     For covers, support 'situation_set' for fully_open and fully_closed states
- *
+ *  08/03/22 - 0.3.3 - Add support for fskg fan speed switch
  *  Custom component drivers located at https://github.com/bradsjm/hubitat-drivers/tree/master/Component
  */
 
@@ -146,7 +146,7 @@ metadata {
     'contact'        : [ 'doorcontact_state' ],
     'ct'             : [ 'temp_value', 'temp_value_v2' ],
     'control'        : [ 'control', 'mach_operate' ],
-    'fanSpeed'       : [ 'fan_speed' ],
+    'fanSpeed'       : [ 'fan_speed_enum', 'fan_speed' ],
     'light'          : [ 'switch_led', 'switch_led_1', 'light' ],
     'humiditySet'    : [ 'dehumidify_set_value' ],                                                                                       /* Inserted by SJB */
     'humiditySpeed'  : [ 'fan_speed_enum' ],
@@ -348,7 +348,8 @@ private static Map mapTuyaCategory(Map d) {
                 driver: 'Generic Component Fan Control',
                 devices: devices
             ]
-
+        case 'fskg':  // Switch Fan
+            return [ driver: 'Generic Component Fan Control' ]
         // Kitchen Appliances
     }
 
