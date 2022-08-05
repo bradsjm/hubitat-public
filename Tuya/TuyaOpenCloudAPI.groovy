@@ -60,6 +60,7 @@ import hubitat.scheduling.AsyncResponse
  *                     For covers, support 'situation_set' for fully_open and fully_closed states
  *  08/03/22 - 0.3.3 - Add support for fskg fan speed switch
  *  08/04/22 - 0.3.4 - Fix for set color when level is not set
+ *                     Remove ciphercache so encryption key is not cached
  *
  *  Custom component drivers located at https://github.com/bradsjm/hubitat-drivers/tree/master/Component
  */
@@ -204,9 +205,6 @@ metadata {
 
 // Json Parser
 @Field static final JsonSlurper jsonParser = new JsonSlurper()
-
-// Cipher Cache
-@Field static final Map<String, Cipher> cipherCache = new ConcurrentHashMap<>()
 
 /*
  * Tuya default attributes used if missing from device details
@@ -1710,12 +1708,10 @@ private void tuyaAuthenticateResponse(AsyncResponse response, Map data) {
  */
 
 private Cipher tuyaGetCipher(int mode = Cipher.DECRYPT_MODE) {
-    return cipherCache.computeIfAbsent(device.deviceNetworkId) { k ->
-        Cipher cipher = Cipher.getInstance('AES/ECB/PKCS5Padding')
-        byte[] cipherKey = state.mqttInfo.password[8..23].bytes
-        cipher.init(mode, new SecretKeySpec(cipherKey, 'AES'))
-        return cipher
-    }
+    Cipher cipher = Cipher.getInstance('AES/ECB/PKCS5Padding')
+    byte[] cipherKey = state.mqttInfo.password[8..23].bytes
+    cipher.init(mode, new SecretKeySpec(cipherKey, 'AES'))
+    return cipher
 }
 
 private void tuyaGetDevicesAsync(String lastRowKey = '', Map data = [:]) {
