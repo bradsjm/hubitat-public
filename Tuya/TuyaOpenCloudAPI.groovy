@@ -59,6 +59,8 @@ import hubitat.scheduling.AsyncResponse
  *  07/15/22 - 0.3.2 - When setting level also send power on state
  *                     For covers, support 'situation_set' for fully_open and fully_closed states
  *  08/03/22 - 0.3.3 - Add support for fskg fan speed switch
+ *  08/04/22 - 0.3.4 - Fix for set color when level is not set
+ *
  *  Custom component drivers located at https://github.com/bradsjm/hubitat-drivers/tree/master/Component
  */
 
@@ -483,12 +485,12 @@ void componentSetColor(DeviceWrapper dw, Map colorMap) {
         Map color = functions[code] ?: defaults[code]
         // An oddity and workaround for mapping brightness values
         Map bright = getFunction(functions, functions.brightness) ?: color.v
-        //level is optional, so fallback to the current device level if the colorMap doesn't include the level
-        colorMap.level  = (colorMap.level != null) ? colorMap.level : dw.currentValue('level')
+        // level is optional, so fallback to the current device level if the colorMap doesn't include the level
+        int level = (colorMap.level != null) ? colorMap.level : dw.currentValue('level')
         Map value = [
             h: remap(colorMap.hue, 0, 100, (int)color.h.min, (int)color.h.max),
             s: remap(colorMap.saturation, 0, 100, (int)color.s.min, (int)color.s.max),
-            v: remap(colorMap.level, 0, 100, (int)bright.min, (int)bright.max)
+            v: remap(level, 0, 100, (int)bright.min, (int)bright.max)
         ]
         if (txtEnable) { LOG.info "Setting ${dw} color to ${colorMap}" }
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'),
