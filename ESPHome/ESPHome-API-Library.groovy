@@ -36,22 +36,35 @@ import hubitat.helper.HexUtils
  * https://github.com/esphome/aioesphomeapi/blob/main/aioesphomeapi/api.proto
  */
 
+@Field static final int PING_INTERVAL_SECONDS = 30
+@Field static final int PORT_NUMBER = 6053
+
 // parse received protobuf messages
 public void parse(String hexString) {
-    ByteArrayInputStream stream = new ByteArrayInputStream(HexUtils.hexStringToByteArray(hexString))
-    if (stream.available() < 3) {
-        log.error "payload length too small (${stream.available()})"
-        return
+    byte[] bytes
+    if (state.buffer instanceof String) {
+        bytes = HexUtils.hexStringToByteArray(state.buffer + hexString)
+        state.remove('buffer')
+    } else {
+        bytes = HexUtils.hexStringToByteArray(hexString)
     }
 
-    int count = 1
     int b
+    ByteArrayInputStream stream = new ByteArrayInputStream(bytes)
     while ((b = stream.read()) != -1) {
         if (b == 0x00) {
+            stream.mark(0)
             long length = readVarInt(stream, true)
-            if (length != -1) {
-                parseMessage(stream, length)
+            int available = stream.available()
+            if (length > available) {
+                stream.reset()
+                available = stream.available()
+                byte[] buffer = new byte[available + 1]
+                stream.read(buffer, 1, available)
+                state.buffer = HexUtils.byteArrayToHexString(buffer)
+                return
             }
+            parseMessage(stream, length)
         } else if (b == 0x01) {
             log.error 'Driver does not support ESPHome native API encryption'
             return
@@ -88,7 +101,7 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
         case 4:
             // Confirmation of successful connection. After this the connection is available for all traffic.
             // Can only be sent by the server and only at the beginning of the connection
-            espConnectResponse()
+            espConnectResponse(tags)
             break
         case 5: // Device requests to close connection
             disconnect()
@@ -120,6 +133,9 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
             break
         case 16: // List Entities Sensor Response
             parse espListEntitiesSensorResponse(tags)
+            break
+        case 17: // List Entities Switch Response
+            parse espListEntitiesSwitchResponse(tags)
             break
         case 18: // List Entities Text Sensor Response
             parse espListEntitiesTextSensorResponse(tags)
@@ -225,9 +241,8 @@ private void espConnectRequest(String password) {
     sendMessage(3, [ 1: password ])
 }
 
-private void espConnectResponse() {
+private void espConnectResponse(Map tags) {
     // todo: check for invalid password
-    sendEvent name: 'state', value: 'connected'
 
     // Step 3: Send Device Info Request
     espDeviceInfoRequest()
@@ -532,6 +547,16 @@ private Map espListEntitiesSirenResponse(Map tags) {
     ]
 }
 
+private Map espListEntitiesSwitchResponse(Map tags) {
+    return parseEntity(tags) + [
+        icon: getString(tags, 5),
+        assumedState: getBoolean(tags, 6),
+        disabledByDefault: getBoolean(tags, 7),
+        entityCategory: getInt(tags, 8),
+        deviceClass: getString(tags, 9)
+    ]
+}
+
 private Map espListEntitiesTextSensorResponse(Map tags) {
     return parseEntity(tags) + [
         icon: getString(tags, 5),
@@ -652,7 +677,7 @@ private Map espSwitchStateResponse(Map tags) {
 private void espSubscribeLogsRequest(Integer logLevel, Boolean dumpConfig = true) {
     sendMessage(28, [
         1: logLevel,
-        2: dumpConfig
+        2: dumpConfig ? 1 : 0
     ])
 }
 
@@ -695,13 +720,13 @@ private Map espTextSensorStateResponse(Map tags) {
 private synchronized void closeSocket() {
     unschedule('closeSocket')
     unschedule('espPingRequest')
-    log.info "ESPHome closing socket to ${ipAddress}:${portNumber}"
+    log.info "ESPHome closing socket to ${ipAddress}:${PORT_NUMBER}"
     interfaces.rawSocket.disconnect()
 }
 
 private synchronized void openSocket() {
     try {
-        interfaces.rawSocket.connect(settings.ipAddress, (int) settings.portNumber, byteInterface: true)
+        interfaces.rawSocket.connect(settings.ipAddress, PORT_NUMBER, byteInterface: true)
     } catch (e) {
         log.exception "ESPHome error opening socket", e
         return
@@ -720,7 +745,7 @@ private static Map parseEntity(Map tags) {
 }
 
 private synchronized void schedulePing() {
-    runIn(Integer.parseInt(settings.pingInterval), 'espPingRequest')
+    runIn(PING_INTERVAL_SECONDS, 'espPingRequest')
 }
 
 private synchronized void sendMessage(int type, Map tags = [:]) {
@@ -783,7 +808,8 @@ private Map decodeProtobufMessage(ByteArrayInputStream stream, long available) {
                 int pos = 0
                 while (pos < total) {
                     count = stream.read(data, pos, total - pos)
-                    if (count <= 0) {
+                    if (count < (total - pos)) {
+                        log.warn 'ESPHome unexpected EOF decoding protobuf message'
                         break
                     }
                     pos += count
@@ -808,7 +834,7 @@ private int encodeProtobufMessage(ByteArrayOutputStream stream, Map tags) {
             bytes += writeVarInt(stream, tag)
             switch (wireType) {
                 case WIRETYPE_VARINT:
-                    bytes += writeVarInt(stream, entry.value)
+                    bytes += writeVarInt(stream, (long) entry.value)
                     break
                 case WIRETYPE_FIXED32:
                     int v = entry.value

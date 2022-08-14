@@ -20,14 +20,12 @@
  *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  *  SOFTWARE.
  */
-import com.hubitat.app.ChildDeviceWrapper
-import com.hubitat.app.DeviceWrapper
-import com.hubitat.app.exception.UnknownDeviceTypeException
-
 metadata {
-    definition(name: 'ESPHome Garage Door Opener', namespace: 'esphome', author: 'Jonathan Bradshaw') {
+    definition(name: 'ESPHome Garage Door Control', namespace: 'esphome', author: 'Jonathan Bradshaw') {
         capability 'Actuator'
+        capability 'GarageDoorControl'
         capability 'Initialize'
+        capability 'Lock'
         capability 'Refresh'
 
         command 'connect'
@@ -40,29 +38,10 @@ metadata {
                 title: 'Device IP Address',
                 required: true
 
-        input name: 'portNumber',
-                type: 'number',
-                title: 'Port Number',
-                range: 1..65535,
-                defaultValue: '6053',
-                required: true
-
         input name: 'password',
                 type: 'text',
                 title: 'Device Password (if required)',
                 required: false
-
-        input name: 'pingInterval',
-                type: 'enum',
-                title: 'Device Ping Interval',
-                required: true,
-                defaultValue: 30,
-                options: [
-                    15: '15 Seconds',
-                    30: '30 Seconds',
-                    60: 'Every minute',
-                    120: 'Every 2 minutes'
-                ]
 
         input name: 'logEnable',
                 type: 'bool',
@@ -87,6 +66,22 @@ public void connect() {
     openSocket()
 }
 
+// Close door
+public void close() {
+    if (device.currentValue('lock') != 'locked') {
+        String doorState = device.currentValue('door')
+        if (logEnable) { log.debug "Current door state is ${doorState}" }
+        if (doorState != 'open' || doorState == 'closing') {
+            log.info "${device.displayName} ignoring close request (door is ${doorState})"
+            return
+        }
+        espCoverCommandRequest(state.key, 0.0)
+        publishState('closing')
+    } else {
+        log.warn "${device.displayName} is locked, cannot close"
+    }
+}
+
 public void disconnect() {
     espDisconnectRequest()
     runIn(1, 'closeSocket')
@@ -98,6 +93,7 @@ public void initialize() {
 
     unschedule()        // Remove all scheduled functions
     disconnect()        // Disconnect any existing connection
+    unlock()            // set state to enabled
 
     // Schedule log disable for 30 minutes
     if (logEnable) {
@@ -116,8 +112,38 @@ public void logsOff() {
     log.info "${device} debug logging disabled"
 }
 
+// Open door
+public void open() {
+    if (device.currentValue('lock') != 'locked') {
+        String doorState = device.currentValue('door')
+        if (logEnable) { log.debug "Current door state is ${doorState}" }
+        if (doorState != 'closed' || doorState == 'opening') {
+            log.info "${device.displayName} ignoring open request (door is ${doorState})"
+            return
+        }
+        espCoverCommandRequest(state.key, 1.0)
+        publishState('opening')
+    } else {
+        log.warn "${device.displayName} is locked, cannot open"
+    }
+}
+
+public void lock() {
+    sendEvent([ name: 'lock', value: 'locked' ])
+}
+
+// parse the JSON message from the ESPHome API
 public void parse(Map message) {
-    log.info "ESPHome received: ${message}"
+    if (logEnable) { log.debug "ESPHome received: ${message}" }
+    if (message.key && message.deviceClass == 'garage') {
+        state.key = message.key
+    } else if (state.key && message.key == state.key) {
+        if (message.position == 0.0) {
+            transitionState('closed')
+        } else if (message.position == 1.0) {
+            transitionState('open')
+        }
+    }
 }
 
 public void refresh() {
@@ -126,15 +152,52 @@ public void refresh() {
 }
 
 // Called when the device is removed.
-void uninstalled() {
+public void uninstalled() {
     disconnect()
     log.info "${device} driver uninstalled"
 }
 
+public void unlock() {
+    sendEvent([ name: 'lock', value: 'unlocked' ])
+}
+
 // Called when the settings are updated.
-void updated() {
+public void updated() {
     log.info "${device} driver configuration updated"
     initialize()
+}
+
+
+private void transitionState(String newState) {
+    String doorState = device.currentValue('door')
+    if (newState != doorState) {
+        if (logEnable) { log.debug "Current door state is ${doorState}" }
+        switch (doorState) {
+            case 'opening':
+                if (newState == 'open') {
+                    publishState(newState)
+                } else {
+                    runIn(20, 'publishState', [ data: newState ])
+                }
+                break
+            case 'closing':
+                if (newState == 'closed') {
+                    publishState(newState)
+                } else {
+                    runIn(20, 'publishState', [ data: newState ])
+                }
+                break
+            default:
+                publishState(newState)
+        }
+    }
+}
+
+private void publishState(String value) {
+    unschedule('publishState')
+    String doorState = device.currentValue('door')
+    if (logEnable) { log.debug "Update door state from ${doorState} to ${value}" }
+    sendEvent([name: 'door', value: value, descriptionText: settings.logTextEnable ? "Door is ${value}" : ''])
 }
 
 #include esphome.espHomeApi
