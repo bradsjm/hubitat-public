@@ -20,130 +20,46 @@
  *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  *  SOFTWARE.
  */
+
+library(
+    name: 'espHomeApi',
+    namespace: 'esphome',
+    author: 'jb@nrgup.net',
+    description: 'ESPHome Native Protobuf API'
+)
+
 import groovy.transform.Field
 import hubitat.helper.HexUtils
-import com.hubitat.app.ChildDeviceWrapper
-import com.hubitat.app.DeviceWrapper
-import com.hubitat.app.exception.UnknownDeviceTypeException
-import java.util.concurrent.ConcurrentHashMap
-
-metadata {
-    definition(name: 'ESPHome Protobuf POC', namespace: 'ESPHome', author: 'Jonathan Bradshaw') {
-        capability 'Actuator'
-        capability 'Initialize'
-        capability 'Refresh'
-
-        attribute 'state', 'enum', [
-            'connecting',
-            'connected',
-            'disconnecting',
-            'disconnected'
-        ]
-
-        command 'connect'
-        command 'disconnect'
-    }
-
-    preferences {
-        input name: 'ipAddress',
-                type: 'text',
-                title: 'Device IP Address',
-                required: true
-
-        input name: 'portNumber',
-                type: 'number',
-                title: 'Port Number',
-                range: 1..65535,
-                defaultValue: '6053',
-                required: true
-
-        input name: 'password',
-                type: 'text',
-                title: 'Device Password (if required)',
-                required: false
-
-        input name: 'pingInterval',
-                type: 'enum',
-                title: 'Device Ping Interval',
-                required: true,
-                defaultValue: 30,
-                options: [
-                    15: '15 Seconds',
-                    30: '30 Seconds',
-                    60: 'Every minute',
-                    120: 'Every 2 minutes'
-                ]
-
-        input name: 'logEnable',
-                type: 'bool',
-                title: 'Enable Debug Logging',
-                required: false,
-                defaultValue: false
-
-        input name: 'logTextEnable',
-              type: 'bool',
-              title: 'Enable descriptionText logging',
-              required: false,
-              defaultValue: true
-    }
-}
 
 /**
- * Hubitat Driver Implementation
+ * ESPHome API Message Implementation
+ * https://github.com/esphome/aioesphomeapi/blob/main/aioesphomeapi/api.proto
  */
-public void connect() {
-    LOG.info "connecting to ESPHome native API at ${ipAddress}:${portNumber}"
-    String state = device.currentValue('state')
-    if (state != 'disconnected') {
-        closeSocket()
+
+// parse received protobuf messages
+public void parse(String hexString) {
+    ByteArrayInputStream stream = new ByteArrayInputStream(HexUtils.hexStringToByteArray(hexString))
+    if (stream.available() < 3) {
+        log.error "payload length too small (${stream.available()})"
+        return
     }
-    openSocket()
-}
 
-public void disconnect() {
-    String state = device.currentValue('state')
-    sendEvent name: 'state', value: 'disconnecting'
-    if (state == 'connected') {
-        LOG.info 'disconnecting from ESPHome device'
-        espDisconnectRequest()
-        runIn(5, 'closeSocket')
-    } else {
-        closeSocket()
+    int count = 1
+    int b
+    while ((b = stream.read()) != -1) {
+        if (b == 0x00) {
+            long length = readVarInt(stream, true)
+            if (length != -1) {
+                parseMessage(stream, length)
+            }
+        } else if (b == 0x01) {
+            log.error 'Driver does not support ESPHome native API encryption'
+            return
+        } else {
+            log.warn "ESPHome expecting delimiter 0x00 but got 0x${Integer.toHexString(b)} instead"
+            return
+        }
     }
-}
-
-// Called when the device is started.
-public void initialize() {
-    LOG.info "${device} driver initializing"
-
-    unschedule()        // Remove all scheduled functions
-    disconnect()        // Disconnect any existing connection
-
-    // Schedule log disable for 30 minutes
-    if (logEnable) {
-        runIn(1800, 'logsOff')
-    }
-}
-
-// Called when the device is first created.
-public void installed() {
-    LOG.info "${device} driver installed"
-}
-
-// Called to disable logging after timeout
-public void logsOff() {
-    device.updateSetting('logEnable', [value: 'false', type: 'bool'])
-    LOG.info "${device} debug logging disabled"
-}
-
-public void parse(Map state) {
-    Map entity = getEntity(state.key) + state
-    LOG.info "ESPHome received state: ${entity}"
-}
-
-public void refresh() {
-    LOG.info 'refreshing device entities'
-    espListEntitiesRequest()
 }
 
 // Socket status updates
@@ -156,43 +72,12 @@ public void socketStatus(String message) {
     }
 }
 
-// Called when the device is removed.
-void uninstalled() {
-    disconnect()
-    LOG.info "${device} driver uninstalled"
-}
-
-// Called when the settings are updated.
-void updated() {
-    LOG.info "${device} driver configuration updated"
-    LOG.debug settings
-    initialize()
-}
-
-/**
- * ESPHome API Message Implementation
- * https://github.com/esphome/aioesphomeapi/blob/main/aioesphomeapi/api.proto
- */
-@Field static final ConcurrentHashMap<String, Map> entities = new ConcurrentHashMap<>()
-
-private Map getEntity(long key) {
-    Map deviceEntities = entities.computeIfAbsent(device.id) { k -> new HashMap() };
-    return deviceEntities.get(key) ?: [:]
-}
-
-private synchronized void setEntity(Map entity) {
-    LOG.debug "setEntity: ${entity}"
-    Map deviceEntities = entities.computeIfAbsent(device.id) { k -> new HashMap() };
-    deviceEntities.put(entity.key, entity)
-}
-
 private void parseMessage(ByteArrayInputStream stream, long length) {
     long msgType = readVarInt(stream, true)
     if (msgType < 1 || msgType > 65) {
-        LOG.warn "ESPHome message type ${msgType} out of range, skipping"
+        log.warn "ESPHome message type ${msgType} out of range, skipping"
         return
     }
-    LOG.debug "ESPHome extracting message type ${msgType} (length ${length})"
     Map tags = length == 0 ? [:] : decodeProtobufMessage(stream, length)
     switch (msgType) {
         case 2:
@@ -222,22 +107,22 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
             espDeviceInfoResponse(tags)
             break
         case 12: // List Entities Binary Sensor Response
-            setEntity espListEntitiesBinarySensorResponse(tags)
+            parse espListEntitiesBinarySensorResponse(tags)
             break
         case 13: // List Entities Cover Response
-            setEntity espListEntitiesCoverResponse(tags)
+            parse espListEntitiesCoverResponse(tags)
             break
         case 14: // List Entities Fan Response
-            setEntity espListEntitiesFanResponse(tags)
+            parse espListEntitiesFanResponse(tags)
             break
         case 15: // List Entities Light Response
-            setEntity espListEntitiesLightResponse(tags)
+            parse espListEntitiesLightResponse(tags)
             break
         case 16: // List Entities Sensor Response
-            setEntity espListEntitiesSensorResponse(tags)
+            parse espListEntitiesSensorResponse(tags)
             break
         case 18: // List Entities Text Sensor Response
-            setEntity espListEntitiesTextSensorResponse(tags)
+            parse espListEntitiesTextSensorResponse(tags)
             break
         case 19: // List Entities Done Response
             espListEntitiesDoneResponse()
@@ -264,7 +149,7 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
             parse espTextSensorStateResponse(tags)
             break
         case 29: // Subscribe Logs Response
-            espSubscribeLogsResponse()
+            espSubscribeLogsResponse(tags)
             break
         case 36: // Get Time Request
             espGetTimeRequest()
@@ -288,27 +173,26 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
             parse espSirenStateResponse(tags)
             break
         case 58: // List Entities Lock Response
-            setEntity espListEntitiesLockResponse(tags)
+            parse espListEntitiesLockResponse(tags)
             break
         case 59: // Lock State Response
             parse espLockStateResponse(tags)
             break
         case 61: // List Entities Button Response
-            setEntity espListEntitiesButtonResponse(tags)
+            parse espListEntitiesButtonResponse(tags)
             break
         case 63: // List Entities Media Player Response
-            setEntity espListEntitiesMediaPlayerResponse(tags)
+            parse espListEntitiesMediaPlayerResponse(tags)
             break
         case 64: // Media Player State Response
             parse espMediaPlayerStateResponse(tags)
         default:
-            LOG.warn "ESPHome message type ${msgType} not suppported"
+            log.warn "ESPHome message type ${msgType} not suppported"
             break
     }
 }
 
 private Map espBinarySensorStateResponse(Map tags) {
-    LOG.trace '[R] Binary Sensor State Response'
     return [
         key: getLong(tags, 1),
         state: getBoolean(tags, 2),
@@ -317,12 +201,10 @@ private Map espBinarySensorStateResponse(Map tags) {
 }
 
 private void espButtonCommandRequest(Long key) {
-    LOG.trace '[W] Button Command Request'
     sendMessage(62, [ 1: (int) key ])
 }
 
 private void espCameraImageRequest(Boolean single, Boolean stream) {
-    LOG.trace '[W] Camera Image Request'
     sendMessage(45, [
         1: single,
         2: stream
@@ -330,7 +212,6 @@ private void espCameraImageRequest(Boolean single, Boolean stream) {
 }
 
 private Map espCameraImageResponse(Map tags) {
-    LOG.trace '[R] Camera Image Response'
     return [
         key: getLong(tags, 1),
         image: tags[2],
@@ -341,13 +222,11 @@ private Map espCameraImageResponse(Map tags) {
 private void espConnectRequest(String password) {
     // Message sent at the beginning of each connection to authenticate the client
     // Can only be sent by the client and only at the beginning of the connection
-    LOG.trace '[S] Connect Request'
     sendMessage(3, [ 1: password ])
 }
 
 private void espConnectResponse() {
     // todo: check for invalid password
-    LOG.trace '[R] Connect Response'
     sendEvent name: 'state', value: 'connected'
 
     // Step 3: Send Device Info Request
@@ -355,7 +234,6 @@ private void espConnectResponse() {
 }
 
 private void espCoverCommandRequest(Long key, Float position, Float tilt, Boolean stop) {
-    LOG.trace '[S] Cover Command Request'
     sendMessage(30, [
         1: (int) key,
         4: position != null,
@@ -367,7 +245,6 @@ private void espCoverCommandRequest(Long key, Float position, Float tilt, Boolea
 }
 
 private Map espCoverStateResponse(Map tags) {
-    LOG.trace '[R] Cover State Response'
     return [
         key: getLong(tags, 1),
         legacyState: getInt(tags, 2), // legacy: state has been removed in 1.13
@@ -378,12 +255,10 @@ private Map espCoverStateResponse(Map tags) {
 }
 
 private void espDeviceInfoRequest() {
-    LOG.trace '[S] Device Info Request'
     sendMessage(9)
 }
 
 private void espDeviceInfoResponse(Map tags) {
-    LOG.trace '[R] Device Info Response'
     if (tags.containsKey(2)) {
         device.name = getString(tags, 2)
     }
@@ -416,12 +291,10 @@ private void espDeviceInfoResponse(Map tags) {
 private void espDisconnectRequest() {
     // Request to close the connection.
     // Can be sent by both the client and server
-    LOG.trace '[S] Disconnect Request'
     sendMessage(5)
 }
 
 private void espFanCommandRequest(Long key, Boolean state, Boolean oscillating, Integer direction, Integer speedLevel) {
-    LOG.trace '[S] Fan Command Request'
     sendMessage(31, [
         1: (int) key,
         2: state != null,
@@ -436,7 +309,6 @@ private void espFanCommandRequest(Long key, Boolean state, Boolean oscillating, 
 }
 
 private Map espFanStateResponse(Map tags) {
-    LOG.trace '[R] Fan State Response'
     return [
         key: getLong(tags, 1),
         state: getBoolean(tags, 2),
@@ -448,14 +320,12 @@ private Map espFanStateResponse(Map tags) {
 }
 
 private void espGetTimeRequest() {
-    LOG.trace '[S] Get Time Request'
     sendMessage(37, [ 1: (int) (new Date().getTime() / 1000) ])
 }
 
 private void espHelloRequest() {
     // Step 1: Send the HelloRequest message
     // Can only be sent by the client and only at the beginning of the connection
-    LOG.trace '[S] Hello Request'
     String client = "Hubitat ${location.hub.name}"
     sendMessage(1, [ 1: client ])
 }
@@ -463,13 +333,12 @@ private void espHelloRequest() {
 private void espHelloResponse(Map tags) {
     // Confirmation of successful connection request.
     // Can only be sent by the server and only at the beginning of the connection
-    LOG.trace '[R] Hello Response'
     if (tags.containsKey(1) && tags.containsKey(2)) {
         String version = tags[1] + '.' + tags[2]
-        LOG.info "ESPHome API version: ${version}"
+        log.info "ESPHome API version: ${version}"
         device.updateDataValue 'API Version', version
         if (tags[1] > 1) {
-            LOG.error 'ESPHome API version > 1 not supported - disconnecting'
+            log.error 'ESPHome API version > 1 not supported - disconnecting'
             closeSocket()
             return
         }
@@ -477,13 +346,13 @@ private void espHelloResponse(Map tags) {
 
     String info = getString(tags, 3)
     if (info) {
-        LOG.info "ESPHome server info: ${info}"
+        log.info "ESPHome server info: ${info}"
         device.updateDataValue 'Server Info', info
     }
 
     String name = getString(tags, 4)
     if (name) {
-        LOG.info "ESPHome device name: ${name}"
+        log.info "ESPHome device name: ${name}"
         device.name = name
     }
 
@@ -494,7 +363,6 @@ private void espHelloResponse(Map tags) {
 private void espLightCommandRequest(Long key, Boolean state, Float masterBrightness, Integer colorMode, Float colorBrightness,
         Float red, Float green, Float blue, Float white, Float colorTemperature, Float coldWhite, Float warmWhite, 
         Integer transitionLength, Boolean flashLength, String effect, Boolean effectSpeed) {
-    LOG.trace '[S] Light Command Request'
     sendMessage(32, [
         1: (int) key,
         2: state != null,
@@ -523,7 +391,6 @@ private void espLightCommandRequest(Long key, Boolean state, Float masterBrightn
 }
 
 private Map espLightStateResponse(Map tags) {
-    LOG.trace '[R] Light State Response'
     return [
         key: getLong(tags, 1),
         state: getBoolean(tags, 2),
@@ -542,12 +409,10 @@ private Map espLightStateResponse(Map tags) {
 }
 
 private void espListEntitiesRequest() {
-    LOG.trace '[S] List Entities Request'
     sendMessage(11)
 }
 
 private Map espListEntitiesBinarySensorResponse(Map tags) {
-    LOG.trace '[R] List Entities Binary Sensor Response'
     return parseEntity(tags) + [
         isStatusBinarySensor: getBoolean(tags, 6),
         disabledByDefault: getBoolean(tags, 7),
@@ -557,7 +422,6 @@ private Map espListEntitiesBinarySensorResponse(Map tags) {
 }
 
 private Map espListEntitiesButtonResponse(Map tags) {
-    LOG.trace '[R] List Entities Button Response'
     return parseEntity(tags) + [
         icon: getString(tags, 5),
         disabledByDefault: getBoolean(tags, 6),
@@ -567,7 +431,6 @@ private Map espListEntitiesButtonResponse(Map tags) {
 }
 
 private Map espListEntitiesCameraResponse(Map tags) {
-    LOG.trace '[R] List Entities Camera Response'
     return parseEntity(tags) + [
         disabledByDefault: getBoolean(tags, 5),
         icon: getString(tags, 6),
@@ -576,7 +439,6 @@ private Map espListEntitiesCameraResponse(Map tags) {
 }
 
 private Map espListEntitiesCoverResponse(Map tags) {
-    LOG.trace '[R] List Entities Cover Response'
     return parseEntity(tags) + [
         assumedState: getBoolean(tags, 5),
         supportsPosition: getBoolean(tags, 6),
@@ -589,7 +451,6 @@ private Map espListEntitiesCoverResponse(Map tags) {
 }
 
 private Map espListEntitiesLockResponse(Map tags) {
-    LOG.trace '[R] List Entities Lock Response'
     return parseEntity(tags) + [
         icon: getString(tags, 5),
         disabledByDefault: getBoolean(tags, 6),
@@ -602,7 +463,6 @@ private Map espListEntitiesLockResponse(Map tags) {
 }
 
 private Map espListEntitiesFanResponse(Map tags) {
-    LOG.trace '[R] List Entities Fan Response'
     return parseEntity(tags) + [
         supportsOscillation: getBoolean(tags, 5),
         supportsSpeed: getBoolean(tags, 6),
@@ -615,7 +475,6 @@ private Map espListEntitiesFanResponse(Map tags) {
 }
 
 private Map espListEntitiesLightResponse(Map tags) {
-    LOG.trace '[R] List Entities Light Response'
     return parseEntity(tags) + [
         supportedColorModes: tags[12],
         minMireds: getInt(tags, 9),
@@ -628,7 +487,6 @@ private Map espListEntitiesLightResponse(Map tags) {
 }
 
 private Map espListEntitiesMediaPlayerResponse(Map tags) {
-    LOG.trace '[R] List Entities Media Player Response'
     return parseEntity(tags) + [
         icon: getString(tags, 5),
         disabledByDefault: getBoolean(tags, 6),
@@ -637,7 +495,6 @@ private Map espListEntitiesMediaPlayerResponse(Map tags) {
 }
 
 private Map espListEntitiesNumberResponse(Map tags) {
-    LOG.trace '[R] List Entities Number Response'
     return parseEntity(tags) + [
         icon: getString(tags, 5),
         minValue: getFloat(tags, 6),
@@ -651,7 +508,6 @@ private Map espListEntitiesNumberResponse(Map tags) {
 }
 
 private Map espListEntitiesSensorResponse(Map tags) {
-    LOG.trace '[R] List Entities Sensor Response'
     return parseEntity(tags) + [
         icon: getString(tags, 5),
         unitOfMeasurement: getString(tags, 6),
@@ -666,7 +522,6 @@ private Map espListEntitiesSensorResponse(Map tags) {
 }
 
 private Map espListEntitiesSirenResponse(Map tags) {
-    LOG.trace '[R] List Entities Siren Response'
     return parseEntity(tags) + [
         icon: getString(tags, 5),
         disabledByDefault: getBoolean(tags, 6),
@@ -678,7 +533,6 @@ private Map espListEntitiesSirenResponse(Map tags) {
 }
 
 private Map espListEntitiesTextSensorResponse(Map tags) {
-    LOG.trace '[R] List Entities Text Sensor Response'
     return parseEntity(tags) + [
         icon: getString(tags, 5),
         disabledByDefault: getBoolean(tags, 6),
@@ -687,15 +541,12 @@ private Map espListEntitiesTextSensorResponse(Map tags) {
 }
 
 private void espListEntitiesDoneResponse() {
-    LOG.trace '[R] List Entities Done Response'
-    LOG.debug entities.get(device.id) ?: 'No entities found'
     schedulePing()
     espSubscribeLogsRequest(settings.logEnable ? LOG_LEVEL_DEBUG : LOG_LEVEL_INFO)
     espSubscribeStatesRequest()
 }
 
 private void espLockCommandRequest(Long key, Integer lockCommand, String code) {
-    LOG.trace '[S] Lock Command Request'
     sendMessage(60, [
         1: (int) key,
         2: lockCommand,
@@ -705,7 +556,6 @@ private void espLockCommandRequest(Long key, Integer lockCommand, String code) {
 }
 
 private Map espLockStateResponse(Map tags) {
-    LOG.trace '[R] Lock State Response'
     return [
         key: getLong(tags, 1),
         state: getInt(tags, 2),
@@ -713,7 +563,6 @@ private Map espLockStateResponse(Map tags) {
 }
 
 private void espMediaPlayerCommandRequest(Long key, Integer mediaPlayerCommand, Float volume, String mediaUrl) {
-    LOG.trace '[S] Media Player Command Request'
     sendMessage(65, [
         1: (int) key,
         2: mediaPlayerCommand != null,
@@ -735,12 +584,10 @@ private Map espMediaPlayerStateResponse(Map tags) {
 }
 
 private void espNumberCommandRequest(Long key, Float state) {
-    LOG.trace '[S] Number Command Request'
     sendMessage(51, [ 1: (int) key, 2: state ])
 }
 
 private Map espNumberStateResponse(Map tags) {
-    LOG.trace '[R] Number State Response'
     return [
         key: getLong(tags, 1),
         state: getFloat(tags, 2),
@@ -750,19 +597,16 @@ private Map espNumberStateResponse(Map tags) {
 
 private void espPingRequest() {
     // Ping request can be sent by either party
-    LOG.trace '[S] Ping Request'
     sendMessage(7)
     schedulePing()
 }
 
 private void espPingResponse() {
     // Ping response can be sent by either party
-    LOG.trace '[S] Ping Response'
     sendMessage(8)
 }
 
 private Map espSensorStateResponse(Map tags) {
-    LOG.trace '[R] Sensor State Response'
     return [
         key: getLong(tags, 1),
         state: getFloat(tags, 2),
@@ -771,7 +615,6 @@ private Map espSensorStateResponse(Map tags) {
 }
 
 private void espSirenCommandRequest(Long key, Boolean state, String tone, Integer duration, Float volume) {
-    LOG.trace '[S] Siren Command Request'
     sendMessage(57, [
         1: (int) key,
         2: state != null,
@@ -786,7 +629,6 @@ private void espSirenCommandRequest(Long key, Boolean state, String tone, Intege
 }
 
 private Map espSirenStateResponse(Map tags) {
-    LOG.trace '[R] Siren State Response'
     return [
         key: getLong(tags, 1),
         state: getInt(tags, 2)
@@ -794,7 +636,6 @@ private Map espSirenStateResponse(Map tags) {
 }
 
 private void espSwitchCommandRequest(Long key, Boolean state) {
-    LOG.trace '[S] Fan Command Request'
     sendMessage(33, [
         1: (int) key,
         2: state
@@ -802,15 +643,13 @@ private void espSwitchCommandRequest(Long key, Boolean state) {
 }
 
 private Map espSwitchStateResponse(Map tags) {
-    LOG.trace '[R] Switch State Response'
     return [
         key: getLong(tags, 1),
         state: getBoolean(tags, 2)
     ]
 }
 
-private void espSubscribeLogsRequest(Integer logLevel, Boolean dumpConfig) {
-    LOG.trace '[S] Subscribe Logs Request'
+private void espSubscribeLogsRequest(Integer logLevel, Boolean dumpConfig = true) {
     sendMessage(28, [
         1: logLevel,
         2: dumpConfig
@@ -818,33 +657,30 @@ private void espSubscribeLogsRequest(Integer logLevel, Boolean dumpConfig) {
 }
 
 private void espSubscribeLogsResponse(Map tags) {
-    LOG.trace '[R] Subscribe Logs Response'
-    String message = getString(tags, 3)
+    String message = getString(tags, 3).replaceAll(/\x1b\[[0-9;]*m/, '')
     switch (getInt(tags, 1)) {
         case LOG_LEVEL_ERROR:
-            LOG.error message
+            log.error message
             break
         case LOG_LEVEL_WARN:
-            LOG.warn message
+            log.warn message
             break
         case LOG_LEVEL_INFO:
-            LOG.info message
+            log.info message
             break
         case LOG_LEVEL_VERY_VERBOSE:
-            LOG.trace message
+            log.trace message
         default:
-            LOG.debug message
+            log.debug message
             break
     }
 }
 
 private void espSubscribeStatesRequest() {
-    LOG.trace '[S] Subscribe States Request'
     sendMessage(20)
 }
 
 private Map espTextSensorStateResponse(Map tags) {
-    LOG.trace '[R] Text Sensor State Response'
     return [
         key: getLong(tags, 1),
         state: getString(tags, 2),
@@ -858,27 +694,20 @@ private Map espTextSensorStateResponse(Map tags) {
  */
 private synchronized void closeSocket() {
     unschedule('closeSocket')
-    unschedule('apiPingRequest')
-    LOG.info "ESPHome closing socket to ${ipAddress}:${portNumber}"
-    sendEvent name: 'state', value: 'disconnected'
+    unschedule('espPingRequest')
+    log.info "ESPHome closing socket to ${ipAddress}:${portNumber}"
     interfaces.rawSocket.disconnect()
 }
 
 private synchronized void openSocket() {
-    sendEvent name: 'state', value: 'connecting'
     try {
         interfaces.rawSocket.connect(settings.ipAddress, (int) settings.portNumber, byteInterface: true)
     } catch (e) {
-        LOG.exception "ESPHome error opening socket", e
-        sendEvent name: 'state', value: 'disconnected'
+        log.exception "ESPHome error opening socket", e
         return
     }
     pauseExecution(100)
     espHelloRequest()
-}
-
-private boolean isConnected() {
-    return device.currentValue('state') == 'connected'
 }
 
 private static Map parseEntity(Map tags) {
@@ -890,37 +719,8 @@ private static Map parseEntity(Map tags) {
     ]
 }
 
-// parse received protobuf messages
-public void parse(String hexString) {
-    LOG.debug "ESPHome << received raw payload: ${hexString}"
-    ByteArrayInputStream stream = new ByteArrayInputStream(HexUtils.hexStringToByteArray(hexString))
-    if (stream.available() < 3) {
-        LOG.error "payload length too small (${stream.available()})"
-        return
-    }
-
-    int count = 1
-    int b
-    while ((b = stream.read()) != -1) {
-        if (b == 0x00) {
-            long length = readVarInt(stream, true)
-            if (length != -1) {
-                LOG.debug "ESPHome extracting protobuf message [count: ${count++}, length: ${length}]"
-                parseMessage(stream, length)
-            }
-        } else if (b == 0x01) {
-            LOG.error 'Driver does not support ESPHome native API encryption'
-            return
-        } else {
-            LOG.warn "ESPHome expecting delimiter 0x00 but got 0x${Integer.toHexString(b)} instead"
-            return
-        }
-    }
-}
-
 private synchronized void schedulePing() {
-    LOG.trace "ESPHome scheduling next device ping in ${settings.pingInterval} seconds"
-    runIn(Integer.parseInt(settings.pingInterval), 'apiPingRequest')
+    runIn(Integer.parseInt(settings.pingInterval), 'espPingRequest')
 }
 
 private synchronized void sendMessage(int type, Map tags = [:]) {
@@ -932,7 +732,6 @@ private synchronized void sendMessage(int type, Map tags = [:]) {
     writeVarInt(stream, type)
     payload.writeTo(stream)
     String output = HexUtils.byteArrayToHexString(stream.toByteArray())
-    LOG.debug "ESPHome >> sending msg type ${type} with tags ${tags} as: ${output}"
     interfaces.rawSocket.sendMessage(output)
 }
 
@@ -951,7 +750,7 @@ private Map decodeProtobufMessage(ByteArrayInputStream stream, long available) {
     while (available > 0) {
         long tagAndType = readVarInt(stream, true)
         if (tagAndType == -1) {
-            LOG.warn 'ESPHome unexpected EOF decoding protobuf message'
+            log.warn 'ESPHome unexpected EOF decoding protobuf message'
             break
         }
         available -= getVarIntSize(tagAndType)
@@ -992,10 +791,9 @@ private Map decodeProtobufMessage(ByteArrayInputStream stream, long available) {
                 tags[tag] = data
                 break
             default:
-                LOG.warn("Protobuf unknown wire type ${wireType}")
+                log.warn("Protobuf unknown wire type ${wireType}")
                 break
         }
-        LOG.debug "Protobuf decode [tag: ${tag}, wireType: ${wireType}, data: ${tags[tag]}]"
     }
     return tags
 }
@@ -1007,7 +805,6 @@ private int encodeProtobufMessage(ByteArrayOutputStream stream, Map tags) {
             int fieldNumber = entry.key
             int wireType = entry.value instanceof String ? 2 : 0
             int tag = (fieldNumber << 3) | wireType
-            LOG.debug "Protobuf encode [fieldNumber: ${fieldNumber}, wireType: ${wireType}, value: ${entry.value}]"
             bytes += writeVarInt(stream, tag)
             switch (wireType) {
                 case WIRETYPE_VARINT:
@@ -1042,27 +839,27 @@ private int encodeProtobufMessage(ByteArrayOutputStream stream, Map tags) {
 }
 
 private static boolean getBoolean(Map tags, int index, boolean invert = false) {
-    return tags[index] ? !invert : invert
+    return tags && tags[index] ? !invert : invert
 }
 
 private static double getDouble(Map tags, int index, double defaultValue = 0.0) {
-    return tags[index] ? Double.intBitsToDouble(tags[index]) : defaultValue
+    return tags && tags[index] ? Double.intBitsToDouble(tags[index]) : defaultValue
 }
 
 private static float getFloat(Map tags, int index, float defaultValue = 0.0) {
-    return tags[index] ? Float.intBitsToFloat((int) tags[index]) : defaultValue
+    return tags && tags[index] ? Float.intBitsToFloat((int) tags[index]) : defaultValue
 }
 
 private static int getInt(Map tags, int index, int defaultValue = 0) {
-    return tags[index] ? (int) tags[index] : defaultValue
+    return tags && tags[index] ? (int) tags[index] : defaultValue
 }
 
 private static long getLong(Map tags, int index, long defaultValue = 0) {
-    return tags[index] ? tags[index] : defaultValue
+    return tags && tags[index] ? tags[index] : defaultValue
 }
 
 private static String getString(Map tags, int index, String defaultValue = '') {
-    return tags[index] ? new String(tags[index], 'UTF-8') : defaultValue
+    return tags && tags[index] ? new String(tags[index], 'UTF-8') : defaultValue
 }
 
 private static int getVarIntSize(long i) {
@@ -1122,44 +919,6 @@ private static long zigZagDecode(long v) {
 private static long zigZagEncode(long v) {
     return ((v << 1) ^ -(v >>> 63))
 }
-
-/**
- * Driver Helper Methods
- */
-private ChildDeviceWrapper getChildDevice(String name, String dni, String driver, String namespace = 'hubitat') {
-    ChildDeviceWrapper dw = getChildDevice(dni)
-    if (dw == null) {
-        LOG.info "Creating device ${name} using ${driver} driver"
-        try {
-            dw = addChildDevice(namespace, driver, dni,
-                [
-                    name: name,
-                    label: name,
-                ]
-            )
-        } catch (UnknownDeviceTypeException e) {
-            LOG.exception("${name} device creation failed", e)
-        }
-    }
-    return dw
-}
-
-@Field private final Map LOG = [
-    debug: { s -> if (settings.logEnable) { log.debug(s) } },
-    trace: { s -> if (settings.logEnable) { log.trace(s) } },
-    info: { s -> log.info(s) },
-    warn: { s -> log.warn(s) },
-    error: { s -> log.error(s) },
-    exception: { message, exception ->
-        List<StackTraceElement> relevantEntries = exception.stackTrace.findAll { entry -> entry.className.startsWith('user_app') }
-        Integer line = relevantEntries[0]?.lineNumber
-        String method = relevantEntries[0]?.methodName
-        log.error("${message}: ${exception} at line ${line} (${method})")
-        if (settings.logEnable) {
-            log.debug("App exception stack trace:\n${relevantEntries.join('\n')}")
-        }
-    }
-].asImmutable()
 
 /**
  * ESPHome Protobuf Enumerations
