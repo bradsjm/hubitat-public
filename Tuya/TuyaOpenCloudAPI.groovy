@@ -150,6 +150,7 @@ metadata {
     'ct'             : [ 'temp_value', 'temp_value_v2' ],
     'control'        : [ 'control', 'mach_operate' ],
     'fanSpeed'       : [ 'fan_speed_enum', 'fan_speed' ],
+    'fanSwitch'      : [ 'switch_fan', 'switch' ],
     'light'          : [ 'switch_led', 'switch_led_1', 'light' ],
     'humiditySet'    : [ 'dehumidify_set_value' ],                                                                                       /* Inserted by SJB */
     'humiditySpeed'  : [ 'fan_speed_enum' ],
@@ -639,15 +640,16 @@ void componentSetSpeed(DeviceWrapper dw, String speed) {
     Map<String, Map> functions = getFunctions(dw)
     String fanSpeedCode = getFunctionCode(functions, tuyaFunctions.fanSpeed)
     String fanSpeedPercent = getFunctionCode(functions, tuyaFunctions.percentControl)
+    String fanSwitchCode = getFunctionCode(functions, tuyaFunctions.fanSwitch)
     String id = dw.getDataValue('id')
     if (fanSpeedCode != null) {
         if (txtEnable) { LOG.info "Setting speed to ${speed}" }
         switch (speed) {
             case 'on':
-                tuyaSendDeviceCommandsAsync(id, [ 'code': 'switch', 'value': true ])
+                tuyaSendDeviceCommandsAsync(id, [ 'code': fanSwitchCode, 'value': true ])
                 break
             case 'off':
-                tuyaSendDeviceCommandsAsync(id, [ 'code': 'switch', 'value': false ])
+                tuyaSendDeviceCommandsAsync(id, [ 'code': fanSwitchCode, 'value': false ])
                 break
             case 'auto':
                 LOG.warn 'Speed level auto is not supported'
@@ -658,7 +660,7 @@ void componentSetSpeed(DeviceWrapper dw, String speed) {
                 String value
                 switch (speedFunc.type) {
                     case 'Enum':
-                        value = speedFunc.range[remap(speedVal, 0, 4, 0, speedFunc.range.size() - 1)]
+                        value = speedFunc.range[(int)remap(speedVal, 0, 4, 0, speedFunc.range.size() - 1)]
                         break
                     case 'Integer':
                         value = remap(speedVal, 0, 4, (int)speedFunc.min, (int)speedFunc.max)
@@ -1383,16 +1385,21 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
 
         if (status.code in tuyaFunctions.fanSpeed) {
             Map speed = deviceStatusSet[status.code] ?: defaults[status.code]
+            String fanSwitchCode = getFunctionCode(functions, tuyaFunctions.fanSwitch)
             int value
-            if (statusList['switch']) {
+            if (statusList[fanSwitchCode]) {
                 switch (speed.type) {
                     case 'Enum':
-                        value = remap(speed.range.indexOf(status.value), 0, speed.range.size() - 1, 0, 4)
+                        if (speed.range.indexOf(status.value) > -1) {
+                            value = remap(speed.range.indexOf(status.value), 0, speed.range.size() - 1, 0, 4)
+                        }
                         break
                     case 'Integer':
-                        int min = (speed.min == null) ? 1 : speed.min
-                        int max = (speed.max == null) ? 100 : speed.max
-                        value = remap((int)status.value, min, max, 0, 4)
+                        if (status.value) {
+                            int min = (speed.min == null) ? 1 : speed.min
+                            int max = (speed.max == null) ? 100 : speed.max
+                            value = remap((int)status.value, min, max, 0, 4)
+                        }
                         break
                 }
                 String level = ['low', 'medium-low', 'medium', 'medium-high', 'high'].get(value)
