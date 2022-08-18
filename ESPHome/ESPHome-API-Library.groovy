@@ -80,6 +80,7 @@ public void socketStatus(String message) {
     if (message.contains('error')) {
         log.error "${device} socket ${message}"
         closeSocket()
+        reconnectSocket()
     } else {
         log.info "${device} socket ${message}"
     }
@@ -97,14 +98,16 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
             // Confirmation of successful connection request.
             // Can only be sent by the server and only at the beginning of the connection
             espHelloResponse(tags)
+            state.remove('reconnectDelay')
             break
         case 4:
             // Confirmation of successful connection. After this the connection is available for all traffic.
             // Can only be sent by the server and only at the beginning of the connection
             espConnectResponse(tags)
             break
-        case 5: // Device requests to close connection
-            disconnect()
+        case 5: // Device requests us to close connection
+            closeSocket()
+            reconnectSocket()
             break
         case 6: // Device confirms our disconnect request
             // Both parties are required to close the connection after this message has been received.
@@ -114,7 +117,6 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
             espPingResponse()
             break
         case 8: // Ping Response (from device)
-            unschedule('timeout')
             break
         case 10: // Device Info Response
             espDeviceInfoResponse(tags)
@@ -307,6 +309,7 @@ private void espDisconnectRequest() {
     // Request to close the connection.
     // Can be sent by both the client and server
     sendMessage(5)
+    runInMillis(250, 'closeSocket')
 }
 
 private void espFanCommandRequest(Long key, Boolean state, Boolean oscillating, Integer direction, Integer speedLevel) {
@@ -722,13 +725,16 @@ private synchronized void closeSocket() {
     unschedule('espPingRequest')
     log.info "ESPHome closing socket to ${ipAddress}:${PORT_NUMBER}"
     interfaces.rawSocket.disconnect()
+    state.remove('buffer')
 }
 
 private synchronized void openSocket() {
+    log.info "ESPHome opening socket to ${ipAddress}:${PORT_NUMBER}"
     try {
+        state.remove('buffer')
         interfaces.rawSocket.connect(settings.ipAddress, PORT_NUMBER, byteInterface: true)
     } catch (e) {
-        log.exception "ESPHome error opening socket", e
+        log.exception "ESPHome error opening socket: " + e
         return
     }
     pauseExecution(100)
@@ -760,6 +766,15 @@ private synchronized void sendMessage(int type, Map tags = [:]) {
     interfaces.rawSocket.sendMessage(output)
 }
 
+private void reconnectSocket() {
+    // first delay is 2 seconds, doubles every time
+    state.reconnectDelay = (state.reconnectDelay ?: 1) * 2
+    // don't let delay get too crazy, max it out at 10 minutes
+    if(state.reconnectDelay > 600) state.reconnectDelay = 600
+
+    log.info "ESPHome reconnecting in ${state.reconnectDelay} seconds"
+    runIn(state.reconnectDelay, 'openSocket')
+}
 
 /**
  * Minimal Protobuf Implementation for use with ESPHome
