@@ -25,6 +25,8 @@ metadata {
         capability 'Actuator'
         capability 'GarageDoorControl'
         capability 'Initialize'
+
+        attribute 'networkStatus', 'enum', [ 'online', 'offline' ]
     }
 
     preferences {
@@ -54,15 +56,15 @@ metadata {
 
 public void close() {
     String doorState = device.currentValue('door')
-    if (doorState != 'open' || doorState == 'closing') {
+    if (doorState != 'open') {
         log.info "${device.displayName} ignoring close request (door is ${doorState})"
         return
     }
-    espCoverCommandRequest(state.key, 0.0)
-    publishState('closing')
+    espCoverCommand(key: state.key, position: 0.0)
 }
 
 public void initialize() {
+    state.clear()
     openSocket()
 
     if (logEnable) {
@@ -75,18 +77,18 @@ public void installed() {
 }
 
 public void logsOff() {
+    espSubscribeLogsRequest(LOG_LEVEL_INFO, false)
     device.updateSetting('logEnable', [value: 'false', type: 'bool'])
     log.info "${device} debug logging disabled"
 }
 
 public void open() {
     String doorState = device.currentValue('door')
-    if (doorState != 'closed' || doorState == 'opening') {
-        log.info "${device.displayName} ignoring open request (door is ${doorState})"
+    if (doorState != 'closed') {
+        log.info "${device} ignoring open request (door is ${doorState})"
         return
     }
-    espCoverCommandRequest(state.key, 1.0)
-    publishState('opening')
+    espCoverCommand(key: state.key, position: 1.0)
 }
 
 public void parse(Map message) {
@@ -98,7 +100,11 @@ public void parse(Map message) {
             sendEvent([name: 'door', value: 'closed', descriptionText: settings.logTextEnable ? "Garage Door is closed" : ''])
         } else if (message.position == 1.0) {
             sendEvent([name: 'door', value: 'open', descriptionText: settings.logTextEnable ? "Garage Door is open" : ''])
+        } else {
+            log.warn "${device} received unknown state: ${message}"
         }
+    } else {
+        log.debug "${device} received unprocessed message: ${message}"
     }
 }
 
