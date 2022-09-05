@@ -30,6 +30,8 @@ import java.util.concurrent.ConcurrentHashMap
 
 metadata {
     definition (name: 'Tasmota IoT Platform', namespace: 'tasmota', author: 'Jonathan Bradshaw') {
+        singleThreaded: true
+
         capability 'Initialize'
         capability 'Refresh'
 

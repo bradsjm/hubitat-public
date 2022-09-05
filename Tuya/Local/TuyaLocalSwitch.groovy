@@ -36,6 +36,7 @@ import java.util.Random
 metadata {
     definition (name: 'Tuya Local Switch', namespace: 'tuya', author: 'Jonathan Bradshaw',
                 importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/master/Tuya/Local/TuyaLocalSwitch.groovy') {
+        singleThreaded: true
         capability 'Actuator'
         capability 'Initialize'
         capability 'Light'

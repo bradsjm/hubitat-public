@@ -37,7 +37,8 @@ definition(
     iconUrl: '',
     iconX2Url: '',
     installOnOpen: true,
-    iconX3Url: ''
+    iconX3Url: '',
+    singleThreaded: true
 )
 
 preferences {

@@ -68,6 +68,7 @@ import hubitat.scheduling.AsyncResponse
 metadata {
     definition(name: 'Tuya IoT Platform (Cloud)', namespace: 'tuya', author: 'Jonathan Bradshaw',
                 importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/Tuya/TuyaOpenCloudAPI.groovy') {
+        singleThreaded: true
         capability 'Initialize'
         capability 'Refresh'
 
@@ -1481,7 +1482,7 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
                     value = 'active'   // no 'inactive' state!
                     unit = ''
                     status.code = 'inactive_state'
-                    runIn(5, 'updateMultiDeviceStatus',  [data: d])
+                    runIn(5, 'updateMultiDeviceStatus', [data: d])
                     break
                 case 'inactive_state': // vibration sensor
                     name = 'motion'    // simulated motion
