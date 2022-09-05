@@ -22,6 +22,8 @@
  */
 metadata {
     definition(name: 'ESPHome Garage Door Control', namespace: 'esphome', author: 'Jonathan Bradshaw') {
+        singleThreaded: true
+
         capability 'Actuator'
         capability 'GarageDoorControl'
         capability 'Initialize'
@@ -37,8 +39,15 @@ metadata {
 
         input name: 'password',
                 type: 'text',
-                title: 'Device Password (if required)',
+                title: 'Device Password <i>(if required)</i>',
                 required: false
+
+        input name: 'cover',
+            type: 'enum',
+            title: 'ESPHome Cover Entity',
+            required: state.containsKey('entities'),
+            options: state.entities,
+            defaultValue: state.entities ? state.entities.keySet()[0] : ''
 
         input name: 'logEnable',
                 type: 'bool',
@@ -78,7 +87,7 @@ public void installed() {
 
 public void logsOff() {
     espSubscribeLogsRequest(LOG_LEVEL_INFO, false)
-    device.updateSetting('logEnable', [value: 'false', type: 'bool'])
+    device.updateSetting('logEnable', false)
     log.info "${device} debug logging disabled"
 }
 
@@ -93,9 +102,13 @@ public void open() {
 
 public void parse(Map message) {
     if (logEnable) { log.debug "ESPHome received: ${message}" }
-    if (message.key && message.deviceClass == 'garage') {
-        state.key = message.key
-    } else if (state.key && message.key == state.key) {
+
+    if (message.key && message.uniqueId?.contains('cover')) {
+        state.entities = (state.entities ?: [:]) + [ (message.key): message.name ]
+        return
+    }
+
+    if (settings.cover && settings.cover == message.key) {
         if (message.position == 0.0) {
             sendEvent([name: 'door', value: 'closed', descriptionText: settings.logTextEnable ? "Garage Door is closed" : ''])
         } else if (message.position == 1.0) {
@@ -103,8 +116,6 @@ public void parse(Map message) {
         } else {
             log.warn "${device} received unknown state: ${message}"
         }
-    } else {
-        log.debug "${device} received unprocessed message: ${message}"
     }
 }
 

@@ -30,16 +30,24 @@ library(
 
 import groovy.transform.Field
 import hubitat.helper.HexUtils
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedQueue
 
 /**
- * ESPHome API Message Implementation
+ * espHomeHome API Message Implementation
  * https://github.com/esphome/aioesphomeapi/blob/main/aioesphomeapi/api.proto
  */
 
 @Field static final int PING_INTERVAL_SECONDS = 30
+@Field static final int PING_TIMEOUT_SECONDS = 10
 @Field static final int PORT_NUMBER = 6053
+@Field static final int SEND_RETRY_COUNT = 3
+@Field static final int SEND_RETRY_MILLIS = 2000
 
-public void espCoverCommand(Map tags) {
+@Field static final ConcurrentHashMap<String, String> espReceiveBuffer = new ConcurrentHashMap<>()
+@Field static final ConcurrentHashMap<String, ConcurrentLinkedQueue> espHomeSentCmds = new ConcurrentHashMap<>()
+
+public void espHomeCoverCommand(Map tags) {
     if (tags.key) {
         sendMessage(30, [
             1: (int) tags.key,
@@ -53,133 +61,120 @@ public void espCoverCommand(Map tags) {
 }
 
 private void parseMessage(ByteArrayInputStream stream, long length) {
-    long msgType = readVarInt(stream, true)
+    int msgType = (int) readVarInt(stream, true)
     if (msgType < 1 || msgType > 65) {
         log.warn "ESPHome message type ${msgType} out of range, skipping"
         return
     }
     Map tags = length == 0 ? [:] : decodeProtobufMessage(stream, length)
+    supervisionAck(msgType, tags)
+
     switch (msgType) {
-        case 2:
-            // Confirmation of successful connection request.
-            // Can only be sent by the server and only at the beginning of the connection
-            espHelloResponse(tags)
-            state.remove('reconnectDelay')
-            break
-        case 4:
-            // Confirmation of successful connection. After this the connection is available for all traffic.
-            // Can only be sent by the server and only at the beginning of the connection
-            espConnectResponse(tags)
-            setDeviceState(true)
-            break
-        case 5: // Device requests us to close connection
-            closeSocket()
+        case MSG_DISCONNECT_REQUEST: // Device requests us to close connection
+            closeSocket("requested by device")
             scheduleConnect()
             break
-        case 6: // Device confirms our disconnect request
+        case MSG_DISCONNECT_RESPONSE: // Device confirms our disconnect request
             // Both parties are required to close the connection after this message has been received.
-            closeSocket()
+            closeSocket("driver")
             break
-        case 7: // Ping Request (from device)
-            sendMessage(8)
+        case MSG_PING_REQUEST: // Ping Request (from device)
+            sendMessage(MSG_PING_RESPONSE)
             break
-        case 8: // Ping Response (from device)
-            state.lastPingResponse = now()
+        case MSG_PING_RESPONSE: // Ping Response (from device)
             device.updateDataValue 'Last Ping Response', new Date().toString()
+            log.info 'ESPHome ping response received'
             break
-        case 10: // Device Info Response
-            espDeviceInfoResponse(tags)
+        case MSG_DEVICEINFO_RESPONSE: // Device Info Response
+            espHomeDeviceInfoResponse(tags)
             break
         case 12: // List Entities Binary Sensor Response
-            parse espListEntitiesBinarySensorResponse(tags)
+            parse espHomeListEntitiesBinarySensorResponse(tags)
             break
         case 13: // List Entities Cover Response
-            parse espListEntitiesCoverResponse(tags)
+            parse espHomeListEntitiesCoverResponse(tags)
             break
         case 14: // List Entities Fan Response
-            parse espListEntitiesFanResponse(tags)
+            parse espHomeListEntitiesFanResponse(tags)
             break
         case 15: // List Entities Light Response
-            parse espListEntitiesLightResponse(tags)
+            parse espHomeListEntitiesLightResponse(tags)
             break
         case 16: // List Entities Sensor Response
-            parse espListEntitiesSensorResponse(tags)
+            parse espHomeListEntitiesSensorResponse(tags)
             break
         case 17: // List Entities Switch Response
-            parse espListEntitiesSwitchResponse(tags)
+            parse espHomeListEntitiesSwitchResponse(tags)
             break
         case 18: // List Entities Text Sensor Response
-            parse espListEntitiesTextSensorResponse(tags)
+            parse espHomeListEntitiesTextSensorResponse(tags)
             break
         case 19: // List Entities Done Response
-            espListEntitiesDoneResponse()
+            espHomeListEntitiesDoneResponse()
             break
         case 21: // Binary Sensor State Response
-            parse espBinarySensorStateResponse(tags)
+            parse espHomeBinarySensorStateResponse(tags)
             break
         case 22: // Cover State Response
-            parse espCoverStateResponse(tags)
+            parse espHomeCoverStateResponse(tags)
             break
         case 23: // Fan State Response
-            parse espFanStateResponse(tags)
+            parse espHomeFanStateResponse(tags)
             break
         case 24: // Light State Response
-            parse espLightStateResponse(tags)
+            parse espHomeLightStateResponse(tags)
             break
         case 25: // Sensor State Response
-            parse espSensorStateResponse(tags)
+            parse espHomeSensorStateResponse(tags)
             break
         case 26: // Switch State Response
-            parse espSwitchStateResponse(tags)
+            parse espHomeSwitchStateResponse(tags)
             break
         case 27: // Text Sensor State Response
-            parse espTextSensorStateResponse(tags)
+            parse espHomeTextSensorStateResponse(tags)
             break
         case 29: // Subscribe Logs Response
-            espSubscribeLogsResponse(tags)
+            espHomeSubscribeLogsResponse(tags)
             break
         case 36: // Get Time Request
-            espGetTimeRequest()
+            espHomeGetTimeRequest()
             break
         case 49: // List Entities Number Response
-            espListEntitiesNumberResponse(tags)
+            espHomeListEntitiesNumberResponse(tags)
             break
         case 43: // List Entities Camera Response
-            espListEntitiesCameraResponse(tags)
+            espHomeListEntitiesCameraResponse(tags)
             break
         case 44: // Camera Image Response
-            espCameraImageResponse(tags)
+            espHomeCameraImageResponse(tags)
             break
         case 50: // Number State Response
-            parse espNumberStateResponse(tags)
+            parse espHomeNumberStateResponse(tags)
             break
         case 55: // List Entities Siren Response
-            espListEntitiesSirenResponse(tags)
+            espHomeListEntitiesSirenResponse(tags)
             break
         case 56: // Siren State Response
-            parse espSirenStateResponse(tags)
+            parse espHomeSirenStateResponse(tags)
             break
         case 58: // List Entities Lock Response
-            parse espListEntitiesLockResponse(tags)
+            parse espHomeListEntitiesLockResponse(tags)
             break
         case 59: // Lock State Response
-            parse espLockStateResponse(tags)
+            parse espHomeLockStateResponse(tags)
             break
         case 61: // List Entities Button Response
-            parse espListEntitiesButtonResponse(tags)
+            parse espHomeListEntitiesButtonResponse(tags)
             break
         case 63: // List Entities Media Player Response
-            parse espListEntitiesMediaPlayerResponse(tags)
+            parse espHomeListEntitiesMediaPlayerResponse(tags)
             break
         case 64: // Media Player State Response
-            parse espMediaPlayerStateResponse(tags)
-        default:
-            log.warn "ESPHome message type ${msgType} not suppported"
-            break
+            parse espHomeMediaPlayerStateResponse(tags)
     }
 }
 
-private Map espBinarySensorStateResponse(Map tags) {
+private Map espHomeBinarySensorStateResponse(Map tags) {
     return [
         key: getLong(tags, 1),
         state: getBoolean(tags, 2),
@@ -187,18 +182,18 @@ private Map espBinarySensorStateResponse(Map tags) {
     ]
 }
 
-private void espButtonCommandRequest(Long key) {
+private void espHomeButtonCommandRequest(Long key) {
     sendMessage(62, [ 1: (int) key ])
 }
 
-private void espCameraImageRequest(Boolean single, Boolean stream = false) {
+private void espHomeCameraImageRequest(Boolean single, Boolean stream = false) {
     sendMessage(45, [
         1: single,
         2: stream
     ])
 }
 
-private Map espCameraImageResponse(Map tags) {
+private Map espHomeCameraImageResponse(Map tags) {
     return [
         key: getLong(tags, 1),
         image: tags[2],
@@ -206,20 +201,35 @@ private Map espCameraImageResponse(Map tags) {
     ]
 }
 
-private void espConnectRequest(String password = null) {
+private void espHomeConnectRequest(String password = null) {
     // Message sent at the beginning of each connection to authenticate the client
     // Can only be sent by the client and only at the beginning of the connection
-    sendMessage(3, [ 1: password ])
+    sendMessage([
+        msgType: MSG_CONNECT_REQUEST,
+        tags: [ 1: password ],
+        expectedTypes: [ MSG_CONNECT_RESPONSE ],
+        onSuccess: 'espHomeConnectResponse',
+        onFailed: 'espHomeConnectTimeout'
+    ])
 }
 
-private void espConnectResponse(Map tags) {
+private void espHomeConnectResponse(Map tags) {
     // todo: check for invalid password
 
+    setNetworkStatus('online')
+    state.remove('reconnectDelay')
+    schedulePing()
+
     // Step 3: Send Device Info Request
-    espDeviceInfoRequest()
+    espHomeDeviceInfoRequest()
 }
 
-private Map espCoverStateResponse(Map tags) {
+private void espHomeConnectTimeout() {
+    closeSocket('connect request timeout')
+    scheduleConnect()
+}
+
+private Map espHomeCoverStateResponse(Map tags) {
     return [
         key: getLong(tags, 1),
         legacyState: getInt(tags, 2), // legacy: state has been removed in 1.13
@@ -229,11 +239,11 @@ private Map espCoverStateResponse(Map tags) {
     ]
 }
 
-private void espDeviceInfoRequest() {
+private void espHomeDeviceInfoRequest() {
     sendMessage(9)
 }
 
-private void espDeviceInfoResponse(Map tags) {
+private void espHomeDeviceInfoResponse(Map tags) {
     if (tags.containsKey(2)) {
         device.name = getString(tags, 2)
     }
@@ -260,17 +270,17 @@ private void espDeviceInfoResponse(Map tags) {
     }
 
     // Step 4: Get device entities
-    espListEntitiesRequest()
+    espHomeListEntitiesRequest()
 }
 
-private void espDisconnectRequest() {
+private void espHomeDisconnectRequest() {
     // Request to close the connection.
     // Can be sent by both the client and server
     sendMessage(5)
     runInMillis(250, 'closeSocket')
 }
 
-private void espFanCommandRequest(Long key, Boolean state, Boolean oscillating = null, Integer direction = null, Integer speedLevel = null) {
+private void espHomeFanCommandRequest(Long key, Boolean state, Boolean oscillating = null, Integer direction = null, Integer speedLevel = null) {
     sendMessage(31, [
         1: (int) key,
         2: state != null,
@@ -284,7 +294,7 @@ private void espFanCommandRequest(Long key, Boolean state, Boolean oscillating =
     ])
 }
 
-private Map espFanStateResponse(Map tags) {
+private Map espHomeFanStateResponse(Map tags) {
     return [
         key: getLong(tags, 1),
         state: getBoolean(tags, 2),
@@ -295,18 +305,26 @@ private Map espFanStateResponse(Map tags) {
     ]
 }
 
-private void espGetTimeRequest() {
+private void espHomeGetTimeRequest() {
     sendMessage(37, [ 1: (int) (new Date().getTime() / 1000) ])
 }
 
-private void espHelloRequest() {
+private void espHomeHelloRequest() {
     // Step 1: Send the HelloRequest message
     // Can only be sent by the client and only at the beginning of the connection
     String client = "Hubitat ${location.hub.name}"
     sendMessage(1, [ 1: client ])
+
+    sendMessage([
+        msgType: MSG_HELLO_REQUEST,
+        tags: [ 1: client ],
+        expectedTypes: [ MSG_HELLO_RESPONSE ],
+        onSuccess: 'espHomeHelloResponse',
+        onFailed: 'espHomeHelloTimeout'
+    ])
 }
 
-private void espHelloResponse(Map tags) {
+private void espHomeHelloResponse(Map tags) {
     // Confirmation of successful connection request.
     // Can only be sent by the server and only at the beginning of the connection
     if (tags.containsKey(1) && tags.containsKey(2)) {
@@ -315,7 +333,7 @@ private void espHelloResponse(Map tags) {
         device.updateDataValue 'API Version', version
         if (tags[1] > 1) {
             log.error 'ESPHome API version > 1 not supported - disconnecting'
-            closeSocket()
+            closeSocket('API version not supported')
             return
         }
     }
@@ -333,10 +351,15 @@ private void espHelloResponse(Map tags) {
     }
 
     // Step 2: Send the ConnectRequest message
-    espConnectRequest(settings.password)
+    espHomeConnectRequest(settings.password)
 }
 
-private void espLightCommandRequest(Long key, Boolean state, Float masterBrightness = null, Integer colorMode = null, Float colorBrightness = null,
+private void espHomeHelloTimeout() {
+    closeSocket('hello request timeout')
+    scheduleConnect()
+}
+
+private void espHomeLightCommandRequest(Long key, Boolean state, Float masterBrightness = null, Integer colorMode = null, Float colorBrightness = null,
         Float red = null, Float green = null, Float blue = null, Float white = null, Float colorTemperature = null, Float coldWhite = null, Float warmWhite = null, 
         Integer transitionLength = null, Boolean flashLength = null, String effect = null, Boolean effectSpeed = null) {
     sendMessage(32, [
@@ -366,7 +389,7 @@ private void espLightCommandRequest(Long key, Boolean state, Float masterBrightn
     ])
 }
 
-private Map espLightStateResponse(Map tags) {
+private Map espHomeLightStateResponse(Map tags) {
     return [
         key: getLong(tags, 1),
         state: getBoolean(tags, 2),
@@ -384,11 +407,11 @@ private Map espLightStateResponse(Map tags) {
     ]
 }
 
-private void espListEntitiesRequest() {
+private void espHomeListEntitiesRequest() {
     sendMessage(11)
 }
 
-private Map espListEntitiesBinarySensorResponse(Map tags) {
+private Map espHomeListEntitiesBinarySensorResponse(Map tags) {
     return parseEntity(tags) + [
         isStatusBinarySensor: getBoolean(tags, 6),
         disabledByDefault: getBoolean(tags, 7),
@@ -397,7 +420,7 @@ private Map espListEntitiesBinarySensorResponse(Map tags) {
     ]
 }
 
-private Map espListEntitiesButtonResponse(Map tags) {
+private Map espHomeListEntitiesButtonResponse(Map tags) {
     return parseEntity(tags) + [
         icon: getString(tags, 5),
         disabledByDefault: getBoolean(tags, 6),
@@ -406,7 +429,7 @@ private Map espListEntitiesButtonResponse(Map tags) {
     ]
 }
 
-private Map espListEntitiesCameraResponse(Map tags) {
+private Map espHomeListEntitiesCameraResponse(Map tags) {
     return parseEntity(tags) + [
         disabledByDefault: getBoolean(tags, 5),
         icon: getString(tags, 6),
@@ -414,7 +437,7 @@ private Map espListEntitiesCameraResponse(Map tags) {
     ]
 }
 
-private Map espListEntitiesCoverResponse(Map tags) {
+private Map espHomeListEntitiesCoverResponse(Map tags) {
     return parseEntity(tags) + [
         assumedState: getBoolean(tags, 5),
         supportsPosition: getBoolean(tags, 6),
@@ -426,7 +449,7 @@ private Map espListEntitiesCoverResponse(Map tags) {
     ]
 }
 
-private Map espListEntitiesLockResponse(Map tags) {
+private Map espHomeListEntitiesLockResponse(Map tags) {
     return parseEntity(tags) + [
         icon: getString(tags, 5),
         disabledByDefault: getBoolean(tags, 6),
@@ -438,7 +461,7 @@ private Map espListEntitiesLockResponse(Map tags) {
     ]
 }
 
-private Map espListEntitiesFanResponse(Map tags) {
+private Map espHomeListEntitiesFanResponse(Map tags) {
     return parseEntity(tags) + [
         supportsOscillation: getBoolean(tags, 5),
         supportsSpeed: getBoolean(tags, 6),
@@ -450,7 +473,7 @@ private Map espListEntitiesFanResponse(Map tags) {
     ]
 }
 
-private Map espListEntitiesLightResponse(Map tags) {
+private Map espHomeListEntitiesLightResponse(Map tags) {
     return parseEntity(tags) + [
         supportedColorModes: tags[12],
         minMireds: getInt(tags, 9),
@@ -462,7 +485,7 @@ private Map espListEntitiesLightResponse(Map tags) {
     ]
 }
 
-private Map espListEntitiesMediaPlayerResponse(Map tags) {
+private Map espHomeListEntitiesMediaPlayerResponse(Map tags) {
     return parseEntity(tags) + [
         icon: getString(tags, 5),
         disabledByDefault: getBoolean(tags, 6),
@@ -470,7 +493,7 @@ private Map espListEntitiesMediaPlayerResponse(Map tags) {
     ]
 }
 
-private Map espListEntitiesNumberResponse(Map tags) {
+private Map espHomeListEntitiesNumberResponse(Map tags) {
     return parseEntity(tags) + [
         icon: getString(tags, 5),
         minValue: getFloat(tags, 6),
@@ -483,7 +506,7 @@ private Map espListEntitiesNumberResponse(Map tags) {
     ]
 }
 
-private Map espListEntitiesSensorResponse(Map tags) {
+private Map espHomeListEntitiesSensorResponse(Map tags) {
     return parseEntity(tags) + [
         icon: getString(tags, 5),
         unitOfMeasurement: getString(tags, 6),
@@ -497,7 +520,7 @@ private Map espListEntitiesSensorResponse(Map tags) {
     ]
 }
 
-private Map espListEntitiesSirenResponse(Map tags) {
+private Map espHomeListEntitiesSirenResponse(Map tags) {
     return parseEntity(tags) + [
         icon: getString(tags, 5),
         disabledByDefault: getBoolean(tags, 6),
@@ -508,7 +531,7 @@ private Map espListEntitiesSirenResponse(Map tags) {
     ]
 }
 
-private Map espListEntitiesSwitchResponse(Map tags) {
+private Map espHomeListEntitiesSwitchResponse(Map tags) {
     return parseEntity(tags) + [
         icon: getString(tags, 5),
         assumedState: getBoolean(tags, 6),
@@ -518,7 +541,7 @@ private Map espListEntitiesSwitchResponse(Map tags) {
     ]
 }
 
-private Map espListEntitiesTextSensorResponse(Map tags) {
+private Map espHomeListEntitiesTextSensorResponse(Map tags) {
     return parseEntity(tags) + [
         icon: getString(tags, 5),
         disabledByDefault: getBoolean(tags, 6),
@@ -526,13 +549,12 @@ private Map espListEntitiesTextSensorResponse(Map tags) {
     ]
 }
 
-private void espListEntitiesDoneResponse() {
-    schedulePing()
-    espSubscribeStatesRequest()
-    espSubscribeLogsRequest(settings.logEnable ? LOG_LEVEL_DEBUG : LOG_LEVEL_INFO)
+private void espHomeListEntitiesDoneResponse() {
+    espHomeSubscribeStatesRequest()
+    espHomeSubscribeLogsRequest(settings.logEnable ? LOG_LEVEL_DEBUG : LOG_LEVEL_INFO)
 }
 
-private void espLockCommandRequest(Long key, Integer lockCommand, String code = null) {
+private void espHomeLockCommandRequest(Long key, Integer lockCommand, String code = null) {
     sendMessage(60, [
         1: (int) key,
         2: lockCommand,
@@ -541,14 +563,14 @@ private void espLockCommandRequest(Long key, Integer lockCommand, String code = 
     ])
 }
 
-private Map espLockStateResponse(Map tags) {
+private Map espHomeLockStateResponse(Map tags) {
     return [
         key: getLong(tags, 1),
         state: getInt(tags, 2),
     ]
 }
 
-private void espMediaPlayerCommandRequest(Long key, Integer mediaPlayerCommand = null, Float volume = null, String mediaUrl = null) {
+private void espHomeMediaPlayerCommandRequest(Long key, Integer mediaPlayerCommand = null, Float volume = null, String mediaUrl = null) {
     sendMessage(65, [
         1: (int) key,
         2: mediaPlayerCommand != null,
@@ -560,7 +582,7 @@ private void espMediaPlayerCommandRequest(Long key, Integer mediaPlayerCommand =
     ])
 }
 
-private Map espMediaPlayerStateResponse(Map tags) {
+private Map espHomeMediaPlayerStateResponse(Map tags) {
     return [
         key: getLong(tags, 1),
         state: getInt(tags, 2),
@@ -569,11 +591,11 @@ private Map espMediaPlayerStateResponse(Map tags) {
     ]
 }
 
-private void espNumberCommandRequest(Long key, Float state) {
+private void espHomeNumberCommandRequest(Long key, Float state) {
     sendMessage(51, [ 1: (int) key, 2: state ])
 }
 
-private Map espNumberStateResponse(Map tags) {
+private Map espHomeNumberStateResponse(Map tags) {
     return [
         key: getLong(tags, 1),
         state: getFloat(tags, 2),
@@ -581,18 +603,21 @@ private Map espNumberStateResponse(Map tags) {
     ]
 }
 
-private void espPingRequest() {
-    if (state.lastPingResponse && now() - state.lastPingResponse > PING_INTERVAL_SECONDS * 2000) {
-        log.error "ESPHome communications timeout (after ${(now() - state.lastPingResponse)/1000}s)"
-        closeSocket()
-        scheduleConnect()
-    } else {
-        sendMessage(7)
-        schedulePing()
-    }
+private void espHomePingRequest() {
+    log.info "ESPHome ping request (device ping)"
+    sendMessage([
+        msgType: MSG_PING_REQUEST,
+        expectedTypes: [ MSG_PING_RESPONSE ],
+        onFailed: 'espHomePingTimeout'
+    ])
 }
 
-private Map espSensorStateResponse(Map tags) {
+private void espHomePingTimeout() {
+    closeSocket('ping response timeout')
+    scheduleConnect()
+}
+
+private Map espHomeSensorStateResponse(Map tags) {
     return [
         key: getLong(tags, 1),
         state: getFloat(tags, 2),
@@ -600,7 +625,7 @@ private Map espSensorStateResponse(Map tags) {
     ]
 }
 
-private void espSirenCommandRequest(Long key, Boolean state, String tone = null, Integer duration = null, Float volume = null) {
+private void espHomeSirenCommandRequest(Long key, Boolean state, String tone = null, Integer duration = null, Float volume = null) {
     sendMessage(57, [
         1: (int) key,
         2: state != null,
@@ -614,35 +639,35 @@ private void espSirenCommandRequest(Long key, Boolean state, String tone = null,
     ])
 }
 
-private Map espSirenStateResponse(Map tags) {
+private Map espHomeSirenStateResponse(Map tags) {
     return [
         key: getLong(tags, 1),
         state: getInt(tags, 2)
     ]
 }
 
-private void espSwitchCommandRequest(Long key, Boolean state) {
+private void espHomeSwitchCommandRequest(Long key, Boolean state) {
     sendMessage(33, [
         1: (int) key,
         2: state
     ])
 }
 
-private Map espSwitchStateResponse(Map tags) {
+private Map espHomeSwitchStateResponse(Map tags) {
     return [
         key: getLong(tags, 1),
         state: getBoolean(tags, 2)
     ]
 }
 
-private void espSubscribeLogsRequest(Integer logLevel, Boolean dumpConfig = true) {
+private void espHomeSubscribeLogsRequest(Integer logLevel, Boolean dumpConfig = true) {
     sendMessage(28, [
         1: logLevel,
         2: dumpConfig ? 1 : 0
     ])
 }
 
-private void espSubscribeLogsResponse(Map tags) {
+private void espHomeSubscribeLogsResponse(Map tags) {
     String message = getString(tags, 3).replaceAll(/\x1b\[[0-9;]*m/, '')
     switch (getInt(tags, 1)) {
         case LOG_LEVEL_ERROR:
@@ -662,11 +687,11 @@ private void espSubscribeLogsResponse(Map tags) {
     }
 }
 
-private void espSubscribeStatesRequest() {
+private void espHomeSubscribeStatesRequest() {
     sendMessage(20)
 }
 
-private Map espTextSensorStateResponse(Map tags) {
+private Map espHomeTextSensorStateResponse(Map tags) {
     return [
         key: getLong(tags, 1),
         state: getString(tags, 2),
@@ -685,26 +710,33 @@ private static Map parseEntity(Map tags) {
 
 
 /**
- * ESPHome Native API Plaintext Socket IO Implementation
+ * espHomeHome Native API Plaintext Socket IO Implementation
  */
-private void clearState() {
-    state.remove('buffer')
-    state.remove('lastPingResponse')
-}
-
-private synchronized void closeSocket() {
+private synchronized void closeSocket(String reason = 'socket closed') {
     unschedule('closeSocket')
     unschedule('espPingRequest')
-    log.info "ESPHome closing socket to ${ipAddress}:${PORT_NUMBER}"
+    unschedule('supervisionCheck')
+    log.info "ESPHome closing socket to ${ipAddress}:${PORT_NUMBER} (${reason})"
     interfaces.rawSocket.disconnect()
-    clearState()
-    setDeviceState(false)
+    espReceiveBuffer.remove(device.id)
+    espHomeSentCmds.remove(device.id)
+    setNetworkStatus('offline', reason)
 }
 
-private synchronized void openSocket() {
+private String encodeMessage(int type, Map tags = [:]) {
+    ByteArrayOutputStream payload = new ByteArrayOutputStream()
+    int length = tags ? encodeProtobufMessage(payload, tags) : 0
+    ByteArrayOutputStream stream = new ByteArrayOutputStream()
+    stream.write(0x00)
+    writeVarInt(stream, length)
+    writeVarInt(stream, type)
+    payload.writeTo(stream)
+    return HexUtils.byteArrayToHexString(stream.toByteArray())
+}
+
+private void openSocket() {
     log.info "ESPHome opening socket to ${ipAddress}:${PORT_NUMBER}"
-    clearState()
-    setDeviceState(false)
+    setNetworkStatus('connecting')
     try {
         interfaces.rawSocket.connect(settings.ipAddress, PORT_NUMBER, byteInterface: true)
     } catch (e) {
@@ -713,15 +745,16 @@ private synchronized void openSocket() {
         return
     }
     pauseExecution(100)
-    espHelloRequest()
+    espHomeHelloRequest()
 }
 
 // parse received protobuf messages
 public void parse(String hexString) {
     byte[] bytes
-    if (state.buffer instanceof String) {
-        bytes = HexUtils.hexStringToByteArray(state.buffer + hexString)
-        state.remove('buffer')
+    String buffer = espReceiveBuffer.get(device.id)
+    if (buffer) {
+        bytes = HexUtils.hexStringToByteArray(buffer + hexString)
+        espReceiveBuffer.remove(device.id)
     } else {
         bytes = HexUtils.hexStringToByteArray(hexString)
     }
@@ -736,14 +769,14 @@ public void parse(String hexString) {
             if (length > available) {
                 stream.reset()
                 available = stream.available()
-                byte[] buffer = new byte[available + 1]
-                stream.read(buffer, 1, available)
-                state.buffer = HexUtils.byteArrayToHexString(buffer)
+                byte[] bufferArray = new byte[available + 1]
+                stream.read(bufferArray, 1, available)
+                espReceiveBuffer.put(device.id, HexUtils.byteArrayToHexString(bufferArray))
                 return
             }
             parseMessage(stream, length)
         } else if (b == 0x01) {
-            log.error 'Driver does not support ESPHome native API encryption'
+            log.error 'Driver does not support espHomeHome native API encryption'
             return
         } else {
             log.warn "ESPHome expecting delimiter 0x00 but got 0x${Integer.toHexString(b)} instead"
@@ -752,54 +785,108 @@ public void parse(String hexString) {
     }
 }
 
-private synchronized void scheduleConnect() {
+private void scheduleConnect() {
     state.reconnectDelay = (state.reconnectDelay ?: 1) * 2
     if (state.reconnectDelay > 60) { state.reconnectDelay = 60 }
     int jitter = (int) Math.ceil(state.reconnectDelay * 0.2)
     int interval = state.reconnectDelay + new Random().nextInt(jitter)
-
     log.info "ESPHome reconnecting in ${interval} seconds"
     runIn(interval, 'openSocket')
 }
 
-private synchronized void schedulePing() {
+private void schedulePing() {
     int jitter = (int) Math.ceil(PING_INTERVAL_SECONDS * 0.2)
     int interval = PING_INTERVAL_SECONDS + new Random().nextInt(jitter)
-    runIn(interval, 'espPingRequest')
+    runIn(interval, 'espHomePingRequest')
 }
 
-private synchronized void sendMessage(int type, Map tags = [:]) {
-    ByteArrayOutputStream payload = new ByteArrayOutputStream()
-    int length = tags ? encodeProtobufMessage(payload, tags) : 0
-    ByteArrayOutputStream stream = new ByteArrayOutputStream()
-    stream.write(0x00)
-    writeVarInt(stream, length)
-    writeVarInt(stream, type)
-    payload.writeTo(stream)
-    String output = HexUtils.byteArrayToHexString(stream.toByteArray())
-    interfaces.rawSocket.sendMessage(output)
-}
-
-private void setDeviceState(boolean isOnline) {
-    if (isOnline) {
-        sendEvent([ name: 'networkStatus', value: 'online', descriptionText: 'device is connected' ])
-    } else {
-        sendEvent([ name: 'networkStatus', value: 'offline', descriptionText: 'device is disconnected' ])
+private void sendMessage(int msgType, Map tags = [:]) {
+    if (msgType < 1 || msgType > 65) {
+        log.warn "ESPHome message type ${msgType} out of range, skipping"
+        return
     }
+    interfaces.rawSocket.sendMessage(encodeMessage(msgType, tags))
+}
+
+private void sendMessage(Map params = [:]) {
+    Map options = [
+        msgType: 0,
+        tags: [:],
+        expectedTypes: [],
+        retries: SEND_RETRY_COUNT,
+        onSuccess: '',
+        onFailed: ''
+    ]
+    options << params
+    espHomeSentCmds.computeIfAbsent(device.id) { k -> new ConcurrentLinkedQueue<Map>() }.add(options)
+    sendMessage(options.msgType, options.tags)
+    runInMillis(SEND_RETRY_MILLIS, 'supervisionCheck')
+}
+
+private void setNetworkStatus(String state, String reason = '') {
+    sendEvent([ name: 'networkStatus', value: state, descriptionText: reason ?: "${device} is ${state}" ])
 }
 
 public void socketStatus(String message) {
     if (message.contains('error')) {
-        log.error "${device} socket ${message}"
-        closeSocket()
+        log.error "ESPHome socket error: ${message}"
+        closeSocket(message)
         scheduleConnect()
     } else {
-        log.info "${device} socket ${message}"
+        log.info "ESPHome socket status: ${message}"
+    }
+}
+
+private void supervisionAck(int type, Map tags = [:]) {
+    ConcurrentLinkedQueue<Map> sent = espHomeSentCmds.get(device.id)
+    sent?.removeIf { options ->
+        if (type in options.expectedTypes) {
+            if (options.onSuccess) {
+                runInMillis(0, options.onSuccess, [ data: tags ])
+            }
+            return true
+        } else {
+            return false
+        }
+    }
+}
+
+private void supervisionCheck() {
+    ConcurrentLinkedQueue<Map> sent = espHomeSentCmds.get(device.id)
+    if (sent) {
+        List expired = []
+
+        // retry outstanding messages and decrement retry counter
+        sent.each { options ->
+            if (options.retries > 0) {
+                options.retries--
+                log.info "ESPHome retrying message type #${options.msgType} (retries left ${options.retries})"
+                sendMessage(options.msgType, options.tags)
+            } else {
+                log.info "ESPHome message type #${options.msgType} retries exceeded"
+                expired.add(options)
+            }
+        }
+
+        // for any expired messages call the onFailed handler if specified
+        expired.forEach { options ->
+            if (options.onFailed) {
+                runInMillis(200, options.onFailed)
+            }
+        }
+
+        // remove expired messages from sent commands
+        sent.removeAll(expired)
+
+        // reschedule check if there are outstanding messages
+        if (!sent.isEmpty()) {
+            runInMillis(SEND_RETRY_MILLIS, 'supervisionCheck')
+        }
     }
 }
 
 /**
- * Minimal Protobuf Implementation for use with ESPHome
+ * Minimal Protobuf Implementation for use with espHomeHome
  */
 @Field static final int WIRETYPE_VARINT = 0
 @Field static final int WIRETYPE_FIXED64 = 1
@@ -984,9 +1071,23 @@ private static long zigZagEncode(long v) {
 }
 
 /**
- * ESPHome Protobuf Enumerations
+ * espHomeHome Protobuf Enumerations
  * https://github.com/esphome/aioesphomeapi/blob/main/aioesphomeapi/api.proto
  */
+@Field static final int MSG_HELLO_REQUEST = 1
+@Field static final int MSG_HELLO_RESPONSE = 2
+@Field static final int MSG_CONNECT_REQUEST = 3
+@Field static final int MSG_CONNECT_RESPONSE = 4
+@Field static final int MSG_DISCONNECT_REQUEST = 5
+@Field static final int MSG_DISCONNECT_RESPONSE = 6
+@Field static final int MSG_PING_REQUEST = 7
+@Field static final int MSG_PING_RESPONSE = 8
+@Field static final int MSG_DEVICEINFO_REQUEST = 9
+@Field static final int MSG_DEVICEINFO_RESPONSE = 10
+@Field static final int MSG_LISTENTITIES_REQUEST = 11
+@Field static final int MSG_LISTENTITIES_RESPONSE = 19
+@Field static final int MSG_SUBSCRIBESTATES_REQUEST = 11
+
 @Field static final int ENTITY_CATEGORY_NONE = 0
 @Field static final int ENTITY_CATEGORY_CONFIG = 1
 @Field static final int ENTITY_CATEGORY_DIAGNOSTIC = 2
