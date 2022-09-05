@@ -21,11 +21,10 @@
  *  SOFTWARE.
  */
 metadata {
-    definition(name: 'ESPHome Garage Door Control', namespace: 'esphome', author: 'Jonathan Bradshaw') {
-        singleThreaded: true
+    definition(name: 'ESPHome Motion Sensor', namespace: 'esphome', author: 'Jonathan Bradshaw') {
 
-        capability 'Actuator'
-        capability 'GarageDoorControl'
+        capability 'Sensor'
+        capability 'MotionSensor'
         capability 'Initialize'
 
         // attribute populated by ESPHome API Library automatically
@@ -43,12 +42,12 @@ metadata {
                 title: 'Device Password <i>(if required)</i>',
                 required: false
 
-        input name: 'cover',        // allows the user to select which cover entity to use
+        input name: 'binarysensor', // allows the user to select which sensor entity to use
             type: 'enum',
-            title: 'ESPHome Cover Entity',
+            title: 'ESPHome Binary Sensor Entity',
             required: state.containsKey('entities'),
             options: state.entities,
-            defaultValue: state.entities ? state.entities.keySet()[0] : '' // default to first cover
+            defaultValue: state.entities ? state.entities.keySet()[0] : '' // default to first
 
         input name: 'logEnable',    // if enabled the library will log debug details
                 type: 'bool',
@@ -95,62 +94,31 @@ public void uninstalled() {
     log.info "${device} driver uninstalled"
 }
 
-// driver commands
-public void open() {
-    if (device.currentValue('networkStatus') == 'online') {
-        String doorState = device.currentValue('door')
-        if (doorState != 'closed') {
-            log.info "${device} ignoring open request (door is ${doorState})"
-            return
-        }
-        // API library cover command, entity key for the cover is required
-        espCoverCommand(key: state.key, position: 1.0)
-    } else {
-        log.error "${device} unable to open, device not online"
-    }
-}
-
-public void close() {
-    if (device.currentValue('networkStatus') == 'online') {
-        String doorState = device.currentValue('door')
-        if (doorState != 'open') {
-            log.info "${device} ignoring close request (door is ${doorState})"
-            return
-        }
-        // API library cover command, entity key for the cover is required
-        espCoverCommand(key: state.key, position: 0.0)
-    } else {
-        log.error "${device} unable to close, device not online"
-    }
-}
-
 // the parse method is invoked by the API library when messages are received
 public void parse(Map message) {
     if (logEnable) { log.debug "ESPHome received: ${message}" }
 
-    // This will populate the cover dropdown with all the cover entities
-    // discovered and the entity key which is required when sending commands
-    if (message.key && message.disabledByDefault != true && message.type == 'cover') {
+    // This will populate the cover dropdown with all the binary sensor entities
+    // discovered and the entity key used when receiving state updates
+    if (message.key && message.disabledByDefault != true && message.type == 'binary') {
         state.entities = (state.entities ?: [:]) + [ (message.key): message.name ]
         return
     }
 
-    // Check if the cover entity key matches the message entity key received to update device state
-    if (settings.cover == message.key) {
-        if (message.position == 0.0) {
+    // Check if the binary entity key matches the message entity key received to update device state
+    if (settings.binarysensor == message.key && message.hasState) {
+        if (message.state) {
             sendEvent([
-                name: 'door',
-                value: 'closed',
-                descriptionText: settings.logTextEnable ? 'Garage Door is closed' : ''
-            ])
-        } else if (message.position == 1.0) {
-            sendEvent([
-                name: 'door',
-                value: 'open',
-                descriptionText: settings.logTextEnable ? 'Garage Door is open' : ''
+                name: 'motion',
+                value: 'active',
+                descriptionText: settings.logTextEnable ? 'Motion is active' : ''
             ])
         } else {
-            log.warn "${device} received unknown state: ${message}"
+            sendEvent([
+                name: 'motion',
+                value: 'inactive',
+                descriptionText: settings.logTextEnable ? 'Motion is inactive' : ''
+            ])
         }
     }
 }
