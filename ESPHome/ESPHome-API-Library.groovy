@@ -49,24 +49,29 @@ import java.util.concurrent.ConcurrentLinkedQueue
 public void espHomeCoverCommand(Map tags) {
     if (tags.key) {
         sendMessage(MSG_COVER_COMMAND_REQUEST, [
-            1: (int) tags.key,
-            4: tags.position != null,
-            5: tags.position,
-            6: tags.tilt != null,
-            7: tags.tilt,
-            8: tags.stop
+            1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
+            4: [ tags.position != null ? 1 : 0, WIRETYPE_VARINT ],
+            5: [ tags.position as Float, WIRETYPE_FIXED32 ],
+            6: [ tags.tilt != null ? 1 : 0, WIRETYPE_VARINT ],
+            7: [ tags.tilt as Float, WIRETYPE_FIXED32 ],
+            8: [ tags.stop ? 1 : 0, WIRETYPE_VARINT ]
         ])
     }
 }
 
 private void parseMessage(ByteArrayInputStream stream, long length) {
     int msgType = (int) readVarInt(stream, true)
-    if (msgType < 1 || msgType > 65) {
+    if (msgType < 1) {
         log.warn "ESPHome message type ${msgType} out of range, skipping"
         return
     }
+
     Map tags = length == 0 ? [:] : decodeProtobufMessage(stream, length)
-    supervisionAck(msgType, tags)
+    if (logEnable) { log.debug "ESPHome received type #${msgType}: ${tags}" }
+    if (supervisionCheck(msgType, tags)) {
+        if (logEnable) { log.debug "ESPHome supervision check successful (type #${msgType})" }
+    }
+
     switch (msgType) {
         case MSG_DISCONNECT_REQUEST:
             closeSocket('requested by device')
@@ -104,31 +109,31 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
             espHomeListEntitiesDoneResponse()
             break
         case MSG_BINARY_SENSOR_STATE_RESPONSE:
-            parse espHomeBinarySensorStateResponse(tags)
+            parse espHomeBinarySensorState(tags)
             break
         case MSG_COVER_STATE_RESPONSE:
-            parse espHomeCoverStateResponse(tags)
+            parse espHomeCoverState(tags)
             break
         case MSG_FAN_STATE_RESPONSE:
-            parse espHomeFanStateResponse(tags)
+            parse espHomeFanState(tags)
             break
         case MSG_LIGHT_STATE_RESPONSE:
-            parse espHomeLightStateResponse(tags)
+            parse espHomeLightState(tags)
             break
         case MSG_SENSOR_STATE_RESPONSE:
-            parse espHomeSensorStateResponse(tags)
+            parse espHomeSensorState(tags)
             break
         case MSG_SWITCH_STATE_RESPONSE:
-            parse espHomeSwitchStateResponse(tags)
+            parse espHomeSwitchState(tags)
             break
         case MSG_TEXT_SENSOR_STATE_RESPONSE:
-            parse espHomeTextSensorStateResponse(tags)
+            parse espHomeTextSensorState(tags)
             break
         case MSG_SUBSCRIBE_LOGS_RESPONSE:
             espHomeSubscribeLogsResponse(tags)
             break
         case MSG_GET_TIME_REQUEST:
-            espHomeGetTimeResponse()
+            espHomeGetTimeRequest()
             break
         case MSG_LIST_NUMBER_RESPONSE:
             espHomeListEntitiesNumberResponse(tags)
@@ -140,19 +145,19 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
             espHomeCameraImageResponse(tags)
             break
         case MSG_NUMBER_STATE_RESPONSE:
-            parse espHomeNumberStateResponse(tags)
+            parse espHomeNumberState(tags)
             break
         case MSG_LIST_SIREN_RESPONSE:
             espHomeListEntitiesSirenResponse(tags)
             break
         case MSG_SIREN_STATE_RESPONSE:
-            parse espHomeSirenStateResponse(tags)
+            parse espHomeSirenState(tags)
             break
         case MSG_LIST_LOCK_RESPONSE:
             parse espHomeListEntitiesLockResponse(tags)
             break
         case MSG_LOCK_STATE_RESPONSE:
-            parse espHomeLockStateResponse(tags)
+            parse espHomeLockState(tags)
             break
         case MSG_LIST_BUTTON_RESPONSE:
             parse espHomeListEntitiesButtonResponse(tags)
@@ -161,52 +166,56 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
             parse espHomeListEntitiesMediaPlayerResponse(tags)
             break
         case MSG_MEDIA_STATE_RESPONSE:
-            parse espHomeMediaPlayerStateResponse(tags)
+            parse espHomeMediaPlayerState(tags)
     }
 }
 
-private Map espHomeBinarySensorStateResponse(Map tags) {
+private Map espHomeBinarySensorState(Map tags) {
     return [
-        type: 'binary',
-        key: getLong(tags, 1),
-        state: getBoolean(tags, 2),
-        hasState: getBoolean(tags, 3, true)
+        type: 'state',
+        platform: 'binary',
+        key: getLongTag(tags, 1),
+        state: getBooleanTag(tags, 2),
+        hasState: getBooleanTag(tags, 3, true)
     ]
 }
 
-private void espHomeButtonCommandRequest(Long key) {
-    sendMessage(MSG_BUTTON_COMMAND_REQUEST, [ 1: (int) key ])
+private void espHomeButtonCommand(Map tags) {
+    if (tags.key) {
+        sendMessage(MSG_BUTTON_COMMAND_REQUEST, [
+            1: [ tags.key as Integer, WIRETYPE_FIXED32 ]
+        ])
+    }
 }
 
-private void espHomeCameraImageRequest(Boolean single, Boolean stream = false) {
+private void espHomeCameraImageRequest(Map tags) {
     sendMessage(MSG_CAMERA_IMAGE_REQUEST, [
-        1: single,
-        2: stream
+        1: [ tags.single ? 1 : 0, WIRETYPE_VARINT ],
+        2: [ tags.stream ? 1 : 0, WIRETYPE_VARINT ]
     ])
 }
 
 private Map espHomeCameraImageResponse(Map tags) {
     return [
-        key: getLong(tags, 1),
+        type: 'state',
+        platform: 'camera',
+        key: getLongTag(tags, 1),
         image: tags[2],
-        done: getBoolean(tags, 3)
+        done: getBooleanTag(tags, 3)
     ]
 }
 
 private void espHomeConnectRequest(String password = null) {
-    // Message sent at the beginning of each connection to authenticate the client
+    // Message sent after the hello response to authenticate the client
     // Can only be sent by the client and only at the beginning of the connection
-    sendMessage([
-        msgType: MSG_CONNECT_REQUEST,
-        tags: [ 1: password ],
-        expectedTypes: [ MSG_CONNECT_RESPONSE ],
-        onSuccess: 'espHomeConnectResponse',
-        onFailed: 'espHomeConnectTimeout'
-    ])
+    sendMessage(MSG_CONNECT_REQUEST, [
+            1: [ password as String, WIRETYPE_LENGTH_DELIMITED ]
+        ], MSG_CONNECT_RESPONSE, 'espHomeConnectResponse', 'espHomeConnectTimeout'
+    )
 }
 
 private void espHomeConnectResponse(Map tags) {
-    Boolean invalidPassword = getBoolean(tags, 1)
+    Boolean invalidPassword = getBooleanTag(tags, 1)
     if (invalidPassword) {
         log.error "ESPHome invalid password (update configuration setting)"
         closeSocket('invalid password')
@@ -226,50 +235,49 @@ private void espHomeConnectTimeout() {
     scheduleConnect()
 }
 
-private Map espHomeCoverStateResponse(Map tags) {
+private Map espHomeCoverState(Map tags) {
     return [
-        type: 'cover',
-        key: getLong(tags, 1),
-        legacyState: getInt(tags, 2), // legacy: state has been removed in 1.13
-        position: getFloat(tags, 3),
-        tilt: getFloat(tags, 4),
-        currentOperation: getInt(tags, 5)
+        type: 'state',
+        platform: 'cover',
+        key: getLongTag(tags, 1),
+        legacyState: getIntTag(tags, 2), // legacy: state has been removed in 1.13
+        position: getFloatTag(tags, 3),
+        tilt: getFloatTag(tags, 4),
+        currentOperation: getIntTag(tags, 5)
     ]
 }
 
 private void espHomeDeviceInfoRequest() {
-    sendMessage([
-        msgType: MSG_DEVICEINFO_REQUEST,
-        expectedTypes: [ MSG_DEVICEINFO_RESPONSE ],
-        onSuccess: 'espHomeDeviceInfoResponse',
-        onFailed: 'espHomeDeviceInfoTimeout'
-    ])
+    sendMessage(
+        MSG_DEVICEINFO_REQUEST, [:],
+        MSG_DEVICEINFO_RESPONSE, 'espHomeDeviceInfoResponse', 'espHomeDeviceInfoTimeout'
+    )
 }
 
 private void espHomeDeviceInfoResponse(Map tags) {
     if (tags.containsKey(2)) {
-        device.name = getString(tags, 2)
+        device.name = getStringTag(tags, 2)
     }
     if (tags.containsKey(3)) {
-        device.updateDataValue 'MAC Address', getString(tags, 3)
+        device.updateDataValue 'MAC Address', getStringTag(tags, 3)
     }
     if (tags.containsKey(4)) {
-        device.updateDataValue 'ESPHome Version', getString(tags, 4)
+        device.updateDataValue 'ESPHome Version', getStringTag(tags, 4)
     }
     if (tags.containsKey(5)) {
-        device.updateDataValue 'Compile Time', getString(tags, 5)
+        device.updateDataValue 'Compile Time', getStringTag(tags, 5)
     }
     if (tags.containsKey(6)) {
-        device.updateDataValue 'Board Model', getString(tags, 6)
+        device.updateDataValue 'Board Model', getStringTag(tags, 6)
     }
     if (tags.containsKey(7)) {
-        device.updateDataValue 'Has Deep Sleep', getBoolean(tags, 6) ? 'yes' : 'no'
+        device.updateDataValue 'Has Deep Sleep', getBooleanTag(tags, 6) ? 'yes' : 'no'
     }
     if (tags.containsKey(8)) {
-        device.updateDataValue 'Project Name', getString(tags, 8)
+        device.updateDataValue 'Project Name', getStringTag(tags, 8)
     }
     if (tags.containsKey(9)) {
-        device.updateDataValue 'Project Version', getString(tags, 9)
+        device.updateDataValue 'Project Version', getStringTag(tags, 9)
     }
     if (tags.containsKey(10)) {
         device.updateDataValue 'Web Server', "http://${ipAddress}:${tags[10]}"
@@ -291,47 +299,49 @@ private void espHomeDisconnectRequest() {
     closeSocket('disconnect request')
 }
 
-private void espHomeFanCommandRequest(Long key, Boolean state, Boolean oscillating = null, Integer direction = null, Integer speedLevel = null) {
-    sendMessage(MSG_FAN_COMMAND_REQUEST, [
-        1: (int) key,
-        2: state != null,
-        3: state,
-        6: oscillating != null,
-        7: oscillating,
-        8: direction != null,
-        9: direction,
-        10: speedLevel != null,
-        11: speedLevel
-    ])
+private void espHomeFanCommand(Map tags) {
+    if (tags.key) {
+        sendMessage(MSG_FAN_COMMAND_REQUEST, [
+            1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
+            2: [ tags.state != null ? 1 : 0, WIRETYPE_VARINT ],
+            3: [ tags.state ? 1 : 0, WIRETYPE_VARINT ],
+            6: [ tags.oscillating != null ? 1 : 0, WIRETYPE_VARINT ],
+            7: [ tags.oscillating ? 1 : 0, WIRETYPE_VARINT ],
+            8: [ tags.direction != null ? 1 : 0, WIRETYPE_VARINT ],
+            9: [ tags.direction as Integer, WIRETYPE_VARINT ],
+            10: [ tags.speedLevel != null ? 1 : 0, WIRETYPE_VARINT ],
+            11: [ tags.speedLevel as Integer, WIRETYPE_VARINT ]
+        ])
+    }
 }
 
-private Map espHomeFanStateResponse(Map tags) {
+private Map espHomeFanState(Map tags) {
     return [
-        type: 'fan',
-        key: getLong(tags, 1),
-        state: getBoolean(tags, 2),
-        oscillating: getBoolean(tags, 3),
-        speed: getInt(tags, 4), // deprecated
-        direction: getInt(tags, 5),
-        speedLevel: getInt(tags, 6)
+        type: 'state',
+        platform: 'fan',
+        key: getLongTag(tags, 1),
+        state: getBooleanTag(tags, 2),
+        oscillating: getBooleanTag(tags, 3),
+        speed: getIntTag(tags, 4), // deprecated
+        direction: getIntTag(tags, 5),
+        speedLevel: getIntTag(tags, 6)
     ]
 }
 
-private void espHomeGetTimeResponse() {
-    sendMessage(MSG_GET_TIME_RESPONSE, [ 1: (int) (new Date().getTime() / 1000) ])
+private void espHomeGetTimeRequest() {
+    long value = new Date().getTime() / 1000
+    sendMessage(MSG_GET_TIME_RESPONSE, [
+        1: [ value as Long, WIRETYPE_VARINT ]
+    ])
 }
 
 private void espHomeHelloRequest() {
-    // Step 1: Send the HelloRequest message
     // Can only be sent by the client and only at the beginning of the connection
     String client = "Hubitat ${location.hub.name}"
-    sendMessage([
-        msgType: MSG_HELLO_REQUEST,
-        tags: [ 1: client ],
-        expectedTypes: [ MSG_HELLO_RESPONSE ],
-        onSuccess: 'espHomeHelloResponse',
-        onFailed: 'espHomeHelloTimeout'
-    ])
+    sendMessage(MSG_HELLO_REQUEST, [
+            1: [ client as String, WIRETYPE_LENGTH_DELIMITED ]
+        ], MSG_HELLO_RESPONSE, 'espHomeHelloResponse', 'espHomeHelloTimeout'
+    )
 }
 
 private void espHomeHelloResponse(Map tags) {
@@ -348,13 +358,13 @@ private void espHomeHelloResponse(Map tags) {
         }
     }
 
-    String info = getString(tags, 3)
+    String info = getStringTag(tags, 3)
     if (info) {
         log.info "ESPHome server info: ${info}"
         device.updateDataValue 'Server Info', info
     }
 
-    String name = getString(tags, 4)
+    String name = getStringTag(tags, 4)
     if (name) {
         log.info "ESPHome device name: ${name}"
         device.name = name
@@ -369,275 +379,300 @@ private void espHomeHelloTimeout() {
     scheduleConnect()
 }
 
-private void espHomeLightCommandRequest(Long key, Boolean state, Float masterBrightness = null, Integer colorMode = null, Float colorBrightness = null,
-        Float red = null, Float green = null, Float blue = null, Float white = null, Float colorTemperature = null, Float coldWhite = null, Float warmWhite = null, 
-        Integer transitionLength = null, Boolean flashLength = null, String effect = null, Boolean effectSpeed = null) {
-    sendMessage(MSG_LIGHT_COMMAND_REQUEST, [
-        1: (int) key,
-        2: state != null,
-        3: state,
-        4: masterBrightness != null,
-        5: masterBrightness,
-        6: red != null && blue != null && green != null,
-        7: red,
-        8: green,
-        9: blue,
-        10: white != null,
-        11: white,
-        12: colorTemperature != null,
-        13: colorTemperature,
-        14: transitionLength != null,
-        15: transitionLength,
-        16: flashLength != null,
-        17: flashLength,
-        18: effect != null,
-        19: effect,
-        20: colorBrightness != null,
-        21: colorBrightness,
-        22: colorMode != null,
-        23: colorMode
-    ])
+private void espHomeLightCommand(Map tags) {
+    if (tags.key) {
+        sendMessage(MSG_LIGHT_COMMAND_REQUEST, [
+            1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
+            2: [ tags.state != null ? 1 : 0, WIRETYPE_VARINT ],
+            3: [ tags.state ? 1 : 0, WIRETYPE_VARINT ],
+            4: [ tags.masterBrightness != null ? 1 : 0, WIRETYPE_VARINT ],
+            5: [ tags.masterBrightness as Float, WIRETYPE_FIXED32 ],
+            6: [ (tags.red != null && tags.blue != null && tags.green != null) ? 1 : 0, WIRETYPE_VARINT ],
+            7: [ tags.red as Float, WIRETYPE_FIXED32 ],
+            8: [ tags.green as Float, WIRETYPE_FIXED32 ],
+            9: [ tags.blue as Float, WIRETYPE_FIXED32 ],
+            10: [ tags.white != null ? 1 : 0, WIRETYPE_VARINT ],
+            11: [ tags.white as Float, WIRETYPE_FIXED32 ],
+            12: [ tags.colorTemperature != null ? 1 : 0, WIRETYPE_VARINT ],
+            13: [ tags.colorTemperature as Float, WIRETYPE_FIXED32 ],
+            14: [ tags.transitionLength != null ? 1 : 0, WIRETYPE_VARINT ],
+            15: [ tags.transitionLength as Integer, WIRETYPE_VARINT ],
+            16: [ tags.flashLength != null ? 1 : 0, WIRETYPE_VARINT ],
+            17: [ tags.flashLength as Integer, WIRETYPE_VARINT ],
+            18: [ tags.effect != null ? 1 : 0, WIRETYPE_VARINT ],
+            19: [ tags.effect as String, WIRETYPE_LENGTH_DELIMITED ],
+            20: [ tags.colorBrightness != null ? 1 : 0, WIRETYPE_VARINT ],
+            21: [ tags.colorBrightness as Float, WIRETYPE_FIXED32 ],
+            22: [ tags.colorMode != null ? 1 : 0, WIRETYPE_VARINT ],
+            23: [ tags.colorMode as Integer, WIRETYPE_VARINT ]
+        ])
+    }
 }
 
-private Map espHomeLightStateResponse(Map tags) {
+private Map espHomeLightState(Map tags) {
     return [
-        type: 'light',
-        key: getLong(tags, 1),
-        state: getBoolean(tags, 2),
-        brightness: getFloat(tags, 3),
-        colorMode: getInt(tags, 11),
-        colorBrightness: getFloat(tags, 10),
-        red: getFloat(tags, 4),
-        green: getFloat(tags, 5),
-        blue: getFloat(tags, 6),
-        white: getFloat(tags, 7),
-        colorTemperature: getFloat(tags, 8),
-        coldWhite: getFloat(tags, 12),
-        warmWhite: getFloat(tags, 13),
-        effect: getString(tags, 9)
+        type: 'state',
+        platform: 'light',
+        key: getLongTag(tags, 1),
+        state: getBooleanTag(tags, 2),
+        brightness: getFloatTag(tags, 3),
+        colorMode: getIntTag(tags, 11),
+        colorBrightness: getFloatTag(tags, 10),
+        red: getFloatTag(tags, 4),
+        green: getFloatTag(tags, 5),
+        blue: getFloatTag(tags, 6),
+        white: getFloatTag(tags, 7),
+        colorTemperature: getFloatTag(tags, 8),
+        coldWhite: getFloatTag(tags, 12),
+        warmWhite: getFloatTag(tags, 13),
+        effect: getStringTag(tags, 9)
     ]
 }
 
 private void espHomeListEntitiesRequest() {
+    if (logEnable) { log.debug 'ESPHome requesting entities list' }
     sendMessage(MSG_LIST_ENTITIES_REQUEST)
 }
 
 private Map espHomeListEntitiesBinarySensorResponse(Map tags) {
     return parseEntity(tags) + [
-        type: 'binary',
-        isStatusBinarySensor: getBoolean(tags, 6),
-        disabledByDefault: getBoolean(tags, 7),
-        icon: getString(tags, 8),
-        entityCategory: toEntityCategory(getInt(tags, 9))
+        type: 'entity',
+        platform: 'binary',
+        isStatusBinarySensor: getBooleanTag(tags, 6),
+        disabledByDefault: getBooleanTag(tags, 7),
+        icon: getStringTag(tags, 8),
+        entityCategory: toEntityCategory(getIntTag(tags, 9))
     ]
 }
 
 private Map espHomeListEntitiesButtonResponse(Map tags) {
     return parseEntity(tags) + [
-        type: 'button',
-        icon: getString(tags, 5),
-        disabledByDefault: getBoolean(tags, 6),
-        entityCategory: toEntityCategory(getInt(tags, 7)),
-        deviceClass: getString(tags, 8)
+        type: 'entity',
+        platform: 'button',
+        icon: getStringTag(tags, 5),
+        disabledByDefault: getBooleanTag(tags, 6),
+        entityCategory: toEntityCategory(getIntTag(tags, 7)),
+        deviceClass: getStringTag(tags, 8)
     ]
 }
 
 private Map espHomeListEntitiesCameraResponse(Map tags) {
     return parseEntity(tags) + [
-        type: 'camera',
-        disabledByDefault: getBoolean(tags, 5),
-        icon: getString(tags, 6),
-        entityCategory: toEntityCategory(getInt(tags, 7))
+        type: 'entity',
+        platform: 'camera',
+        disabledByDefault: getBooleanTag(tags, 5),
+        icon: getStringTag(tags, 6),
+        entityCategory: toEntityCategory(getIntTag(tags, 7))
     ]
 }
 
 private Map espHomeListEntitiesCoverResponse(Map tags) {
     return parseEntity(tags) + [
-        type: 'cover',
-        assumedState: getBoolean(tags, 5),
-        supportsPosition: getBoolean(tags, 6),
-        supportsTilt: getBoolean(tags, 7),
-        deviceClass: getString(tags, 8),
-        disabledByDefault: getBoolean(tags, 9),
-        icon: getString(tags, 10),
-        entityCategory: toEntityCategory(getInt(tags, 11))
+        type: 'entity',
+        platform: 'cover',
+        assumedState: getBooleanTag(tags, 5),
+        supportsPosition: getBooleanTag(tags, 6),
+        supportsTilt: getBooleanTag(tags, 7),
+        deviceClass: getStringTag(tags, 8),
+        disabledByDefault: getBooleanTag(tags, 9),
+        icon: getStringTag(tags, 10),
+        entityCategory: toEntityCategory(getIntTag(tags, 11))
     ]
 }
 
 private Map espHomeListEntitiesLockResponse(Map tags) {
     return parseEntity(tags) + [
-        type: 'lock',
-        icon: getString(tags, 5),
-        disabledByDefault: getBoolean(tags, 6),
-        entityCategory: toEntityCategory(getInt(tags, 7)),
-        assumedState: getBoolean(tags, 8),
-        supportsOpen: getBoolean(tags, 9),
-        requiresCode: getBoolean(tags, 10),
-        codeFormat: getString(tags, 11)
+        type: 'entity',
+        platform: 'lock',
+        icon: getStringTag(tags, 5),
+        disabledByDefault: getBooleanTag(tags, 6),
+        entityCategory: toEntityCategory(getIntTag(tags, 7)),
+        assumedState: getBooleanTag(tags, 8),
+        supportsOpen: getBooleanTag(tags, 9),
+        requiresCode: getBooleanTag(tags, 10),
+        codeFormat: getStringTag(tags, 11)
     ]
 }
 
 private Map espHomeListEntitiesFanResponse(Map tags) {
     return parseEntity(tags) + [
-        type: 'fan',
-        supportsOscillation: getBoolean(tags, 5),
-        supportsSpeed: getBoolean(tags, 6),
-        supportsDirection: getBoolean(tags, 7),
-        supportedSpeedLevels: getInt(tags, 8),
-        disabledByDefault: getBoolean(tags, 9),
-        icon: getString(tags, 10),
-        entityCategory: toEntityCategory(getInt(tags, 11))
+        type: 'entity',
+        platform: 'fan',
+        supportsOscillation: getBooleanTag(tags, 5),
+        supportsSpeed: getBooleanTag(tags, 6),
+        supportsDirection: getBooleanTag(tags, 7),
+        supportedSpeedLevels: getIntTag(tags, 8),
+        disabledByDefault: getBooleanTag(tags, 9),
+        icon: getStringTag(tags, 10),
+        entityCategory: toEntityCategory(getIntTag(tags, 11))
     ]
 }
 
 private Map espHomeListEntitiesLightResponse(Map tags) {
     return parseEntity(tags) + [
-        type: 'light',
+        type: 'entity',
+        platform: 'light',
         supportedColorModes: tags[12],
-        minMireds: getInt(tags, 9),
-        maxMireds: getInt(tags, 10),
-        effects: getString(tags, 11),
-        disabledByDefault: getBoolean(tags, 13),
-        icon: getString(tags, 14),
-        entityCategory: toEntityCategory(getInt(tags, 15))
+        minMireds: getFloatTag(tags, 9),
+        maxMireds: getFloatTag(tags, 10),
+        effects: getStringTag(tags, 11),
+        disabledByDefault: getBooleanTag(tags, 13),
+        icon: getStringTag(tags, 14),
+        entityCategory: toEntityCategory(getIntTag(tags, 15))
     ]
 }
 
 private Map espHomeListEntitiesMediaPlayerResponse(Map tags) {
     return parseEntity(tags) + [
-        type: 'media_player',
-        icon: getString(tags, 5),
-        disabledByDefault: getBoolean(tags, 6),
-        entityCategory: toEntityCategory(getInt(tags, 7))
+        type: 'entity',
+        platform: 'media_player',
+        icon: getStringTag(tags, 5),
+        disabledByDefault: getBooleanTag(tags, 6),
+        entityCategory: toEntityCategory(getIntTag(tags, 7))
     ]
 }
 
 private Map espHomeListEntitiesNumberResponse(Map tags) {
     return parseEntity(tags) + [
-        type: 'number',
-        icon: getString(tags, 5),
-        minValue: getFloat(tags, 6),
-        maxValue: getFloat(tags, 7),
-        step: getFloat(tags, 8),
-        disabledByDefault: getBoolean(tags, 9),
-        entityCategory: toEntityCategory(getInt(tags, 10)),
-        unitOfMeasurement: getString(tags, 11),
-        numberMode: getInt(tags, 12)
+        type: 'entity',
+        platform: 'number',
+        icon: getStringTag(tags, 5),
+        minValue: getFloatTag(tags, 6),
+        maxValue: getFloatTag(tags, 7),
+        step: getFloatTag(tags, 8),
+        disabledByDefault: getBooleanTag(tags, 9),
+        entityCategory: toEntityCategory(getIntTag(tags, 10)),
+        unitOfMeasurement: getStringTag(tags, 11),
+        numberMode: getIntTag(tags, 12)
     ]
 }
 
 private Map espHomeListEntitiesSensorResponse(Map tags) {
     return parseEntity(tags) + [
-        type: 'sensor',
-        icon: getString(tags, 5),
-        unitOfMeasurement: getString(tags, 6),
-        accuracyDecimals: getInt(tags, 7),
-        forceUpdate: getBoolean(tags, 8),
-        deviceClass: getString(tags, 9),
-        sensorStateClass: getInt(tags, 10),
-        lastResetType: getInt(tags, 11),
-        disabledByDefault: getBoolean(tags, 12),
-        entityCategory: toEntityCategory(getInt(tags, 13))
+        type: 'entity',
+        platform: 'sensor',
+        icon: getStringTag(tags, 5),
+        unitOfMeasurement: getStringTag(tags, 6),
+        accuracyDecimals: getIntTag(tags, 7),
+        forceUpdate: getBooleanTag(tags, 8),
+        deviceClass: getStringTag(tags, 9),
+        sensorStateClass: getIntTag(tags, 10),
+        lastResetType: getIntTag(tags, 11),
+        disabledByDefault: getBooleanTag(tags, 12),
+        entityCategory: toEntityCategory(getIntTag(tags, 13))
     ]
 }
 
 private Map espHomeListEntitiesSirenResponse(Map tags) {
     return parseEntity(tags) + [
-        type: 'siren',
-        icon: getString(tags, 5),
-        disabledByDefault: getBoolean(tags, 6),
-        // TODO repeated string: tones: getString(tags, 7),
-        supportsDuration: getBoolean(tags, 8),
-        supportsVolume: getBoolean(tags, 9),
-        entityCategory: toEntityCategory(getInt(tags, 10))
+        type: 'entity',
+        platform: 'siren',
+        icon: getStringTag(tags, 5),
+        disabledByDefault: getBooleanTag(tags, 6),
+        // TODO repeated string: tones: getStringTag(tags, 7),
+        supportsDuration: getBooleanTag(tags, 8),
+        supportsVolume: getBooleanTag(tags, 9),
+        entityCategory: toEntityCategory(getIntTag(tags, 10))
     ]
 }
 
 private Map espHomeListEntitiesSwitchResponse(Map tags) {
     return parseEntity(tags) + [
-        type: 'switch',
-        icon: getString(tags, 5),
-        assumedState: getBoolean(tags, 6),
-        disabledByDefault: getBoolean(tags, 7),
-        entityCategory: toEntityCategory(getInt(tags, 8)),
-        deviceClass: getString(tags, 9)
+        type: 'entity',
+        platform: 'switch',
+        icon: getStringTag(tags, 5),
+        assumedState: getBooleanTag(tags, 6),
+        disabledByDefault: getBooleanTag(tags, 7),
+        entityCategory: toEntityCategory(getIntTag(tags, 8)),
+        deviceClass: getStringTag(tags, 9)
     ]
 }
 
 private Map espHomeListEntitiesTextSensorResponse(Map tags) {
     return parseEntity(tags) + [
-        type: 'text',
-        icon: getString(tags, 5),
-        disabledByDefault: getBoolean(tags, 6),
-        entityCategory: toEntityCategory(getInt(tags, 7))
+        type: 'entity',
+        platform: 'text',
+        icon: getStringTag(tags, 5),
+        disabledByDefault: getBooleanTag(tags, 6),
+        entityCategory: toEntityCategory(getIntTag(tags, 7))
     ]
 }
 
 private void espHomeListEntitiesDoneResponse() {
     espHomeSubscribeStatesRequest()
-    espHomeSubscribeLogsRequest(settings.logEnable ? LOG_LEVEL_DEBUG : LOG_LEVEL_INFO)
+    espHomeSubscribeLogs(settings.logEnable ? LOG_LEVEL_DEBUG : LOG_LEVEL_INFO)
 }
 
-private void espHomeLockCommandRequest(Long key, Integer lockCommand, String code = null) {
-    sendMessage(MSG_LOCK_COMMAND_REQUEST, [
-        1: (int) key,
-        2: lockCommand,
-        3: code != null,
-        4: code
-    ])
+private void espHomeLockCommand(Map tags) {
+    if (tags.key) {
+        sendMessage(MSG_LOCK_COMMAND_REQUEST, [
+            1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
+            2: [ tags.lockCommand as Integer, WIRETYPE_VARINT ],
+            3: [ tags.code != null ? 1 : 0, WIRETYPE_VARINT ],
+            4: [ tags.code as String, WIRETYPE_LENGTH_DELIMITED ]
+        ])
+    }
 }
 
-private Map espHomeLockStateResponse(Map tags) {
+private Map espHomeLockState(Map tags) {
     return [
-        type: 'lock',
-        key: getLong(tags, 1),
-        state: getInt(tags, 2),
+        type: 'state',
+        platform: 'lock',
+        key: getLongTag(tags, 1),
+        state: getIntTag(tags, 2),
     ]
 }
 
-private void espHomeMediaPlayerCommandRequest(Long key, Integer mediaPlayerCommand = null, Float volume = null, String mediaUrl = null) {
-    sendMessage(MSG_MEDIA_COMMAND_REQUEST, [
-        1: (int) key,
-        2: mediaPlayerCommand != null,
-        3: mediaPlayerCommand,
-        4: volume != null,
-        5: volume,
-        6: mediaUrl != null,
-        7: mediaUrl
-    ])
+private void espHomeMediaPlayerCommand(Map tags) {
+    if (tags.key) {
+        sendMessage(MSG_MEDIA_COMMAND_REQUEST, [
+            1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
+            2: [ tags.mediaPlayerCommand != null ? 1 : 0, WIRETYPE_VARINT ],
+            3: [ tags.mediaPlayerCommand as Integer, WIRETYPE_VARINT ],
+            4: [ tags.volume != null ? 1 : 0, WIRETYPE_VARINT ],
+            5: [ tags.volume as Float, WIRETYPE_FIXED32 ],
+            6: [ tags.mediaUrl != null ? 1 : 0, WIRETYPE_VARINT ],
+            7: [ tags.mediaUrl as String, WIRETYPE_LENGTH_DELIMITED ]
+        ])
+    }
 }
 
-private Map espHomeMediaPlayerStateResponse(Map tags) {
+private Map espHomeMediaPlayerState(Map tags) {
     return [
-        type: 'media_player',
-        key: getLong(tags, 1),
-        state: getInt(tags, 2),
-        volume: getFloat(tags, 3),
-        muted: getBoolean(tags, 4)
+        type: 'state',
+        platform: 'media_player',
+        key: getLongTag(tags, 1),
+        state: getIntTag(tags, 2),
+        volume: getFloatTag(tags, 3),
+        muted: getBooleanTag(tags, 4)
     ]
 }
 
-private void espHomeNumberCommandRequest(Long key, Float state) {
-    sendMessage(MSG_NUMBER_COMMAND_REQUEST, [ 1: (int) key, 2: state ])
+private void espHomeNumberCommand(Map tags) {
+    if (tags.key) {
+        sendMessage(MSG_NUMBER_COMMAND_REQUEST, [
+            1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
+            2: [ tags.state as Float, WIRETYPE_FIXED32 ]
+        ])
+    }
 }
 
-private Map espHomeNumberStateResponse(Map tags) {
+private Map espHomeNumberState(Map tags) {
     return [
-        type: 'number',
-        key: getLong(tags, 1),
-        state: getFloat(tags, 2),
-        hasState: getBoolean(tags, 3, true)
+        type: 'state',
+        platform: 'number',
+        key: getLongTag(tags, 1),
+        state: getFloatTag(tags, 2),
+        hasState: getBooleanTag(tags, 3, true)
     ]
 }
 
 private void espHomePingRequest() {
     if (logEnable) { log.info 'ESPHome ping request sent to device' }
-    sendMessage([
-        msgType: MSG_PING_REQUEST,
-        expectedTypes: [ MSG_PING_RESPONSE ],
-        onSuccess: 'espHomePingResponse',
-        onFailed: 'espHomePingTimeout'
-    ])
+    sendMessage(
+        MSG_PING_REQUEST, [:],
+        MSG_PING_RESPONSE, 'espHomePingResponse', 'espHomePingTimeout'
+    )
 }
 
 private void espHomePingResponse() {
@@ -651,62 +686,69 @@ private void espHomePingTimeout() {
     scheduleConnect()
 }
 
-private Map espHomeSensorStateResponse(Map tags) {
+private Map espHomeSensorState(Map tags) {
     return [
-        type: 'sensor',
-        key: getLong(tags, 1),
-        state: getFloat(tags, 2),
-        hasState: getBoolean(tags, 3, true)
+        type: 'state',
+        platform: 'sensor',
+        key: getLongTag(tags, 1),
+        state: getFloatTag(tags, 2),
+        hasState: getBooleanTag(tags, 3, true)
     ]
 }
 
-private void espHomeSirenCommandRequest(Long key, Boolean state, String tone = null, Integer duration = null, Float volume = null) {
-    sendMessage(MSG_SIREN_COMMAND_REQUEST, [
-        1: (int) key,
-        2: state != null,
-        3: state,
-        4: tone != null,
-        5: tone,
-        6: duration != null,
-        7: duration,
-        8: volume != null,
-        9: volume
-    ])
+private void espHomeSirenCommand(Map tags) {
+    if (tags.key) {
+        sendMessage(MSG_SIREN_COMMAND_REQUEST, [
+            1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
+            2: [ tags.state != null ? 1 : 0, WIRETYPE_VARINT ],
+            3: [ tags.state ? 1 : 0, WIRETYPE_VARINT ],
+            4: [ tags.tone != null ? 1 : 0, WIRETYPE_VARINT ],
+            5: [ tags.tone as String, WIRETYPE_LENGTH_DELIMITED ],
+            6: [ tags.duration != null ? 1 : 0, WIRETYPE_VARINT ],
+            7: [ tags.duration as Integer, WIRETYPE_VARINT ],
+            8: [ tags.volume != null ? 1 : 0, WIRETYPE_VARINT ],
+            9: [ tags.volume as Float, WIRETYPE_FIXED32 ]
+        ])
+    }
 }
 
-private Map espHomeSirenStateResponse(Map tags) {
+private Map espHomeSirenState(Map tags) {
     return [
-        type: 'siren',
-        key: getLong(tags, 1),
-        state: getInt(tags, 2)
+        type: 'state',
+        platform: 'siren',
+        key: getLongTag(tags, 1),
+        state: getIntTag(tags, 2)
     ]
 }
 
-private void espHomeSwitchCommandRequest(Long key, Boolean state) {
-    sendMessage(MSG_SWITCH_COMMAND_REQUEST, [
-        1: (int) key,
-        2: state
-    ])
+private void espHomeSwitchCommand(Map tags) {
+    if (tags.key) {
+        sendMessage(MSG_SWITCH_COMMAND_REQUEST, [
+            1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
+            2: [ tags.state != null ? 1 : 0, WIRETYPE_VARINT ],
+        ])
+    }
 }
 
-private Map espHomeSwitchStateResponse(Map tags) {
+private Map espHomeSwitchState(Map tags) {
     return [
-        type: 'switch',
-        key: getLong(tags, 1),
-        state: getBoolean(tags, 2)
+        type: 'state',
+        platform: 'switch',
+        key: getLongTag(tags, 1),
+        state: getBooleanTag(tags, 2)
     ]
 }
 
-private void espHomeSubscribeLogsRequest(Integer logLevel, Boolean dumpConfig = true) {
+private void espHomeSubscribeLogs(Integer logLevel, Boolean dumpConfig = true) {
     sendMessage(MSG_SUBSCRIBE_LOGS_REQUEST, [
-        1: logLevel,
-        2: dumpConfig ? 1 : 0
+        1: [ logLevel as Integer, WIRETYPE_VARINT ],
+        2: [ dumpConfig ? 1 : 0, WIRETYPE_VARINT ]
     ])
 }
 
 private void espHomeSubscribeLogsResponse(Map tags) {
-    String message = getString(tags, 3).replaceAll(/\x1b\[[0-9;]*m/, '')
-    switch (getInt(tags, 1)) {
+    String message = getStringTag(tags, 3).replaceAll(/\x1b\[[0-9;]*m/, '')
+    switch (getIntTag(tags, 1)) {
         case LOG_LEVEL_ERROR:
             log.error message
             break
@@ -728,21 +770,22 @@ private void espHomeSubscribeStatesRequest() {
     sendMessage(MSG_SUBSCRIBE_STATES_REQUEST)
 }
 
-private Map espHomeTextSensorStateResponse(Map tags) {
+private Map espHomeTextSensorState(Map tags) {
     return [
-        type: 'text',
-        key: getLong(tags, 1),
-        state: getString(tags, 2),
-        hasState: getBoolean(tags, 3, true)
+        type: 'state',
+        platform: 'text',
+        key: getLongTag(tags, 1),
+        state: getStringTag(tags, 2),
+        hasState: getBooleanTag(tags, 3, true)
     ]
 }
 
 private static Map parseEntity(Map tags) {
     return [
-        objectId: getString(tags, 1),
-        key: getLong(tags, 2),
-        name: getString(tags, 3),
-        uniqueId: getString(tags, 4)
+        objectId: getStringTag(tags, 1),
+        key: getLongTag(tags, 2),
+        name: getStringTag(tags, 3),
+        uniqueId: getStringTag(tags, 4)
     ]
 }
 
@@ -760,9 +803,8 @@ private static String toEntityCategory(int value) {
  * ESPHome Native API Plaintext Socket IO Implementation
  */
 private void closeSocket(String reason) {
-    unschedule('closeSocket')
     unschedule('espHomePingRequest')
-    unschedule('supervisionCheck')
+    unschedule('supervisedRetry')
     espReceiveBuffer.remove(device.id)
     espHomeSupervised.remove(device.id)
     log.info "ESPHome closing socket to ${ipAddress}:${PORT_NUMBER} (${reason})"
@@ -771,6 +813,7 @@ private void closeSocket(String reason) {
 }
 
 private String encodeMessage(int type, Map tags = [:]) {
+    // creates hex string payload from message type and tags
     ByteArrayOutputStream payload = new ByteArrayOutputStream()
     int length = tags ? encodeProtobufMessage(payload, tags) : 0
     ByteArrayOutputStream stream = new ByteArrayOutputStream()
@@ -786,16 +829,15 @@ private void openSocket() {
     setNetworkStatus('connecting')
     try {
         interfaces.rawSocket.connect(settings.ipAddress, PORT_NUMBER, byteInterface: true)
+        runInMillis(200, 'espHomeHelloRequest')
     } catch (e) {
         log.error "ESPHome error opening socket: " + e
         scheduleConnect()
         return
     }
-    pauseExecution(100)
-    espHomeHelloRequest()
 }
 
-// parse received protobuf messages
+// parse received protobuf messages - do not change this function name or driver will break
 public void parse(String hexString) {
     byte[] bytes
     String buffer = espReceiveBuffer.get(device.id)
@@ -848,32 +890,28 @@ private void schedulePing() {
 }
 
 private void sendMessage(int msgType, Map tags = [:]) {
-    if (msgType < 1 || msgType > 65) {
-        log.warn "ESPHome message type ${msgType} out of range, skipping"
-        return
-    }
+    if (logEnable) { log.debug "ESPHome sending type ${msgType} with tags ${tags}" }
     interfaces.rawSocket.sendMessage(encodeMessage(msgType, tags))
 }
 
-private void sendMessage(Map params = [:]) {
-    Map options = [
-        msgType: 0,
-        tags: [:],
-        expectedTypes: [],
-        retries: SEND_RETRY_COUNT,
-        onSuccess: '',
-        onFailed: ''
-    ]
-    options << params
-    espHomeSupervised.computeIfAbsent(device.id) { k -> new ConcurrentLinkedQueue<Map>() }.add(options)
-    sendMessage(options.msgType, options.tags)
-    runInMillis(SEND_RETRY_MILLIS, 'supervisionCheck')
+private void sendMessage(int msgType, Map tags, int expectedMsgType, String onSuccess, String onTimeout = '') {
+    espHomeSupervised.computeIfAbsent(device.id) { k -> new ConcurrentLinkedQueue<Map>() }.add([
+        msgType: msgType,
+        tags: tags,
+        expectedMsgType: expectedMsgType,
+        onSuccess: onSuccess,
+        onTimeout: onTimeout,
+        retries: SEND_RETRY_COUNT
+    ])
+    sendMessage(msgType, tags)
+    runInMillis(SEND_RETRY_MILLIS, 'supervisedRetry')
 }
 
 private void setNetworkStatus(String state, String reason = '') {
     sendEvent([ name: 'networkStatus', value: state, descriptionText: reason ?: "${device} is ${state}" ])
 }
 
+// parse received socket status - do not change this function name or driver will break
 public void socketStatus(String message) {
     if (message.contains('error')) {
         log.error "ESPHome socket error: ${message}"
@@ -884,52 +922,52 @@ public void socketStatus(String message) {
     }
 }
 
-private void supervisionAck(int type, Map tags = [:]) {
-    ConcurrentLinkedQueue<Map> sent = espHomeSupervised.get(device.id)
-    sent?.removeIf { options ->
-        if (type in options.expectedTypes) {
-            if (options.onSuccess) {
-                runInMillis(0, options.onSuccess, [ data: tags ])
+private void supervisedRetry() {
+    ConcurrentLinkedQueue<Map> sentQueue = espHomeSupervised.get(device.id)
+    if (sentQueue) {
+        // retry outstanding messages and decrement retry counter
+        sentQueue.removeIf { entry ->
+            if (entry.retries > 0) {
+                entry.retries--
+                log.info "ESPHome retrying message type #${entry.msgType} (retries left ${entry.retries})"
+                sendMessage(entry.msgType, entry.tags)
+                return false
+            } else {
+                log.info "ESPHome message type #${entry.msgType} retries exceeded"
+                if (entry.onTimeout) {
+                    runInMillis(200, entry.onTimeout)
+                }
+                return true
             }
-            return true
-        } else {
-            return false
+        }
+
+        // reschedule check if there are outstanding messages
+        if (!sentQueue.isEmpty()) {
+            runInMillis(SEND_RETRY_MILLIS, 'supervisedRetry')
         }
     }
 }
 
-private void supervisionCheck() {
-    ConcurrentLinkedQueue<Map> sent = espHomeSupervised.get(device.id)
-    if (sent) {
-        List expired = []
-
-        // retry outstanding messages and decrement retry counter
-        sent.each { options ->
-            if (options.retries > 0) {
-                options.retries--
-                log.info "ESPHome retrying message type #${options.msgType} (retries left ${options.retries})"
-                sendMessage(options.msgType, options.tags)
+private boolean supervisionCheck(int msgType, Map tags = [:]) {
+    ConcurrentLinkedQueue<Map> sentQueue = espHomeSupervised.get(device.id)
+    // check for successful responses and remove from queue
+    boolean result
+    if (sentQueue) {
+        result = sentQueue.removeIf { entry ->
+            if (entry.expectedMsgType == msgType) {
+                if (entry.onSuccess) {
+                    runInMillis(10, entry.onSuccess, [ data: tags ])
+                }
+                return true
             } else {
-                log.info "ESPHome message type #${options.msgType} retries exceeded"
-                expired.add(options)
+                return false
             }
         }
-
-        // for any expired messages call the onFailed handler if specified
-        expired.forEach { options ->
-            if (options.onFailed) {
-                runInMillis(200, options.onFailed)
-            }
-        }
-
-        // remove expired messages from sent commands
-        sent.removeAll(expired)
-
-        // reschedule check if there are outstanding messages
-        if (!sent.isEmpty()) {
-            runInMillis(SEND_RETRY_MILLIS, 'supervisionCheck')
+        if (sentQueue.isEmpty()) {
+            unschedule('supervisedRetry')
         }
     }
+    return result
 }
 
 /**
@@ -954,22 +992,22 @@ private Map decodeProtobufMessage(ByteArrayInputStream stream, long available) {
         int tag = (int) (tagAndType >>> 3)
         switch (wireType) {
             case WIRETYPE_VARINT:
-                long v = readVarInt(stream, false)
-                available -= getVarIntSize(v)
-                tags[tag] = v
+                long val = readVarInt(stream, false)
+                available -= getVarIntSize(val)
+                tags[tag] = val
                 break
             case WIRETYPE_FIXED32:
             case WIRETYPE_FIXED64:
-                long v = 0
+                long val = 0
                 int shift = 0
                 int count = (wireType == WIRETYPE_FIXED32) ? 4 : 8
                 available -= count
                 while (count-- > 0) {
                     long l = stream.read()
-                    v |= l << shift
+                    val |= l << shift
                     shift += 8
                 }
-                tags[tag] = v
+                tags[tag] = val
                 break
             case WIRETYPE_LENGTH_DELIMITED:
                 int total = (int) readVarInt(stream, false)
@@ -997,65 +1035,67 @@ private Map decodeProtobufMessage(ByteArrayInputStream stream, long available) {
 
 private int encodeProtobufMessage(ByteArrayOutputStream stream, Map tags) {
     int bytes = 0
-    for (entry in tags) {
-        if (entry.value) {
-            int fieldNumber = entry.key
-            int wireType = entry.value instanceof String ? 2 : 0
-            int tag = (fieldNumber << 3) | wireType
-            bytes += writeVarInt(stream, tag)
-            switch (wireType) {
-                case WIRETYPE_VARINT:
-                    bytes += writeVarInt(stream, (long) entry.value)
-                    break
-                case WIRETYPE_FIXED32:
-                    int v = entry.value
-                    for (int b = 0; b < 4; b++) {
-                        stream.write((int) (v & 0x0ff))
-                        bytes++
-                        v >>= 8
-                    }
-                    break
-                case WIRETYPE_FIXED64:
-                    long v = entry.value
-                    for (int b = 0; b < 8; b++) {
-                        stream.write((int) (v & 0x0ff))
-                        bytes++
-                        v >>= 8
-                    }
-                    break
-                case WIRETYPE_LENGTH_DELIMITED:
-                    byte[] v = entry.value instanceof String ? entry.value.getBytes('UTF-8') : entry.value
-                    bytes += writeVarInt(stream, v.size())
-                    stream.write(v)
-                    bytes += v.size()
-                    break
-            }
+    for (entry in new TreeMap(tags).findAll { e -> e.value && e.value[0] }) {
+        int fieldNumber = entry.key
+        int wireType = entry.value[1]
+        int tag = (fieldNumber << 3) | wireType
+        bytes += writeVarInt(stream, tag)
+        switch (wireType) {
+            case WIRETYPE_VARINT:
+                long v = entry.value[0] as long
+                bytes += writeVarInt(stream, v)
+                break
+            case WIRETYPE_LENGTH_DELIMITED:
+                byte[] v = entry.value[0]
+                bytes += writeVarInt(stream, v.size())
+                stream.write(v)
+                bytes += v.size()
+                break
+            case WIRETYPE_FIXED32:
+                int v = entry.value[0] as int
+                for (int b = 0; b < 4; b++) {
+                    stream.write((int) (v & 0x0ff))
+                    bytes++
+                    v >>= 8
+                }
+                break
+            case WIRETYPE_FIXED64:
+                long v = entry.value[0] as long
+                for (int b = 0; b < 8; b++) {
+                    stream.write((int) (v & 0x0ff))
+                    bytes++
+                    v >>= 8
+                }
+                break
+            default:
+                log.warn "ESPHome invalid wiretype for field ${fieldNumber} (${wireType})"
+                break
         }
     }
     return bytes
 }
 
-private static boolean getBoolean(Map tags, int index, boolean invert = false) {
+private static boolean getBooleanTag(Map tags, int index, boolean invert = false) {
     return tags && tags[index] ? !invert : invert
 }
 
-private static double getDouble(Map tags, int index, double defaultValue = 0.0) {
+private static double getDoubleTag(Map tags, int index, double defaultValue = 0.0) {
     return tags && tags[index] ? Double.intBitsToDouble(tags[index]) : defaultValue
 }
 
-private static float getFloat(Map tags, int index, float defaultValue = 0.0) {
+private static float getFloatTag(Map tags, int index, float defaultValue = 0.0) {
     return tags && tags[index] ? Float.intBitsToFloat((int) tags[index]) : defaultValue
 }
 
-private static int getInt(Map tags, int index, int defaultValue = 0) {
+private static int getIntTag(Map tags, int index, int defaultValue = 0) {
     return tags && tags[index] ? (int) tags[index] : defaultValue
 }
 
-private static long getLong(Map tags, int index, long defaultValue = 0) {
+private static long getLongTag(Map tags, int index, long defaultValue = 0) {
     return tags && tags[index] ? tags[index] : defaultValue
 }
 
-private static String getString(Map tags, int index, String defaultValue = '') {
+private static String getStringTag(Map tags, int index, String defaultValue = '') {
     return tags && tags[index] ? new String(tags[index], 'UTF-8') : defaultValue
 }
 

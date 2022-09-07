@@ -28,7 +28,7 @@ metadata {
         capability 'Initialize'
 
         // attribute populated by ESPHome API Library automatically
-        attribute 'networkStatus', 'enum', [ 'online', 'offline' ]
+        attribute 'networkStatus', 'enum', [ 'connecting', 'online', 'offline' ]
     }
 
     preferences {
@@ -98,28 +98,25 @@ public void uninstalled() {
 public void parse(Map message) {
     if (logEnable) { log.debug "ESPHome received: ${message}" }
 
-    // This will populate the cover dropdown with all the binary sensor entities
-    // discovered and the entity key used when receiving state updates
-    if (message.key && message.disabledByDefault != true && message.type == 'binary') {
-        state.entities = (state.entities ?: [:]) + [ (message.key): message.name ]
-        return
-    }
-
-    // Check if the binary entity key matches the message entity key received to update device state
-    if (settings.binarysensor == message.key && message.hasState) {
-        if (message.state) {
-            sendEvent([
-                name: 'contact',
-                value: 'closed',
-                descriptionText: settings.logTextEnable ? 'Contact is closed' : ''
-            ])
-        } else {
-            sendEvent([
-                name: 'contact',
-                value: 'open',
-                descriptionText: settings.logTextEnable ? 'Contact is open' : ''
-            ])
-        }
+    switch (message.type) {
+        case 'entity':
+            // This will populate the cover dropdown with all the entities
+            // discovered and the entity key which is required when sending commands
+            if (message.platform == 'binary') {
+                state.entities = (state.entities ?: [:]) + [ (message.key): message.name ]
+            }
+            break
+        case 'state':
+            // Check if the entity key matches the message entity key received to update device state
+            if (settings.binarysensor as Integer == message.key) {
+                String value = message.state ? 'closed' : 'open'
+                sendEvent([
+                    name: 'motion',
+                    value: value,
+                    descriptionText: settings.logTextEnable ? "Contact is ${value}" : ''
+                ])
+            }
+            break
     }
 }
 

@@ -29,7 +29,7 @@ metadata {
         capability 'Initialize'
 
         // attribute populated by ESPHome API Library automatically
-        attribute 'networkStatus', 'enum', [ 'online', 'offline' ]
+        attribute 'networkStatus', 'enum', [ 'connecting', 'online', 'offline' ]
     }
 
     preferences {
@@ -104,7 +104,7 @@ public void open() {
             return
         }
         // API library cover command, entity key for the cover is required
-        espCoverCommand(key: state.key, position: 1.0)
+        espCoverCommand(key: settings.cover as int, position: 1.0)
     } else {
         log.error "${device} unable to open, device not online"
     }
@@ -118,7 +118,7 @@ public void close() {
             return
         }
         // API library cover command, entity key for the cover is required
-        espCoverCommand(key: state.key, position: 0.0)
+        espCoverCommand(key: settings.cover as int, position: 0.0)
     } else {
         log.error "${device} unable to close, device not online"
     }
@@ -128,30 +128,25 @@ public void close() {
 public void parse(Map message) {
     if (logEnable) { log.debug "ESPHome received: ${message}" }
 
-    // This will populate the cover dropdown with all the cover entities
-    // discovered and the entity key which is required when sending commands
-    if (message.key && message.disabledByDefault != true && message.type == 'cover') {
-        state.entities = (state.entities ?: [:]) + [ (message.key): message.name ]
-        return
-    }
-
-    // Check if the cover entity key matches the message entity key received to update device state
-    if (settings.cover == message.key) {
-        if (message.position == 0.0) {
-            sendEvent([
-                name: 'door',
-                value: 'closed',
-                descriptionText: settings.logTextEnable ? 'Garage Door is closed' : ''
-            ])
-        } else if (message.position == 1.0) {
-            sendEvent([
-                name: 'door',
-                value: 'open',
-                descriptionText: settings.logTextEnable ? 'Garage Door is open' : ''
-            ])
-        } else {
-            log.warn "${device} received unknown state: ${message}"
-        }
+    switch (message.type) {
+        case 'entity':
+            // This will populate the cover dropdown with all the entities
+            // discovered and the entity key which is required when sending commands
+            if (message.platform == 'binary') {
+                state.entities = (state.entities ?: [:]) + [ (message.key): message.name ]
+            }
+            break
+        case 'state':
+            // Check if the entity key matches the message entity key received to update device state
+            if (settings.cover as Integer == message.key) {
+                String value = message.position > 0 ? 'closed' : 'open'
+                sendEvent([
+                    name: 'door',
+                    value: value,
+                    descriptionText: settings.logTextEnable ? "Door is ${value}" : ''
+                ])
+            }
+            break
     }
 }
 

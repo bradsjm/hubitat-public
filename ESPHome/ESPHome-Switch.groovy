@@ -21,10 +21,11 @@
  *  SOFTWARE.
  */
 metadata {
-    definition(name: 'ESPHome Motion Sensor', namespace: 'esphome', author: 'Jonathan Bradshaw') {
+    definition(name: 'ESPHome Switch', namespace: 'esphome', author: 'Jonathan Bradshaw') {
+        singleThreaded: true
 
-        capability 'Sensor'
-        capability 'MotionSensor'
+        capability 'Actuator'
+        capability 'Switch'
         capability 'Initialize'
 
         // attribute populated by ESPHome API Library automatically
@@ -42,9 +43,9 @@ metadata {
                 title: 'Device Password <i>(if required)</i>',
                 required: false
 
-        input name: 'binarysensor', // allows the user to select which sensor entity to use
+        input name: 'switch',       // allows the user to select which entity to use
             type: 'enum',
-            title: 'ESPHome Binary Sensor Entity',
+            title: 'ESPHome Entity',
             required: state.containsKey('entities'),
             options: state.entities,
             defaultValue: state.entities ? state.entities.keySet()[0] : '' // default to first
@@ -94,6 +95,25 @@ public void uninstalled() {
     log.info "${device} driver uninstalled"
 }
 
+// driver commands
+public void on() {
+    if (device.currentValue('networkStatus') == 'online') {
+        // API library cover command, entity key is required
+        espHomeSwitchCommand(key: settings.switch as int, state: true)
+    } else {
+        log.error "${device} unable to turn on, device not online"
+    }
+}
+
+public void off() {
+    if (device.currentValue('networkStatus') == 'online') {
+        // API library cover command, entity key is required
+        espHomeSwitchCommand(key: settings.switch as int, state: false)
+    } else {
+        log.error "${device} unable to turn off, device not online"
+    }
+}
+
 // the parse method is invoked by the API library when messages are received
 public void parse(Map message) {
     if (logEnable) { log.debug "ESPHome received: ${message}" }
@@ -102,18 +122,18 @@ public void parse(Map message) {
         case 'entity':
             // This will populate the cover dropdown with all the entities
             // discovered and the entity key which is required when sending commands
-            if (message.platform == 'binary') {
+            if (message.platform == 'switch') {
                 state.entities = (state.entities ?: [:]) + [ (message.key): message.name ]
             }
             break
         case 'state':
             // Check if the entity key matches the message entity key received to update device state
-            if (settings.binarysensor as Integer == message.key) {
-                String value = message.state ? 'active' : 'inactive'
+            if (settings.switch as Integer == message.key) {
+                String value = message.state ? 'on' : 'off'
                 sendEvent([
-                    name: 'motion',
+                    name: 'switch',
                     value: value,
-                    descriptionText: settings.logTextEnable ? "Motion is ${value}" : ''
+                    descriptionText: settings.logTextEnable ? "Switch is ${value}" : ''
                 ])
             }
             break
