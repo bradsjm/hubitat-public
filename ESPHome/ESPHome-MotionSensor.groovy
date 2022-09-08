@@ -106,7 +106,7 @@ public void parse(Map message) {
         case 'entity':
             // This will populate the cover dropdown with all the entities
             // discovered and the entity key which is required when sending commands
-            if (message.platform == 'light') {
+            if (message.platform == 'binary') {
                 state.entities = (state.entities ?: [:]) + [ (message.key): message ]
             }
             break
