@@ -106,6 +106,7 @@ public void parse(Map message) {
                 state.entities = (state.entities ?: [:]) + [ (message.key): message.name ]
             }
             break
+
         case 'state':
             // Check if the entity key matches the message entity key received to update device state
             if (settings.binarysensor as Integer == message.key) {
@@ -113,7 +114,7 @@ public void parse(Map message) {
                 sendEvent([
                     name: 'motion',
                     value: value,
-                    descriptionText: settings.logTextEnable ? "Contact is ${value}" : ''
+                    descriptionText: "Contact is ${value}"
                 ])
             }
             break

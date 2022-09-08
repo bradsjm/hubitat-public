@@ -104,6 +104,7 @@ public void open() {
             return
         }
         // API library cover command, entity key for the cover is required
+        if (logTextEnable) { log.info "${device} open" }
         espCoverCommand(key: settings.cover as int, position: 1.0)
     } else {
         log.error "${device} unable to open, device not online"
@@ -118,6 +119,7 @@ public void close() {
             return
         }
         // API library cover command, entity key for the cover is required
+        if (logTextEnable) { log.info "${device} close" }
         espCoverCommand(key: settings.cover as int, position: 0.0)
     } else {
         log.error "${device} unable to close, device not online"
@@ -136,6 +138,7 @@ public void parse(Map message) {
                 state.entities = (state.entities ?: [:]) + [ (message.key): message.name ]
             }
             break
+
         case 'state':
             // Check if the entity key matches the message entity key received to update device state
             if (settings.cover as Integer == message.key) {
@@ -143,7 +146,7 @@ public void parse(Map message) {
                 sendEvent([
                     name: 'door',
                     value: value,
-                    descriptionText: settings.logTextEnable ? "Door is ${value}" : ''
+                    descriptionText: "Door is ${value}"
                 ])
             }
             break

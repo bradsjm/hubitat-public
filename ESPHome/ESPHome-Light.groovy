@@ -25,8 +25,11 @@ metadata {
         singleThreaded: true
 
         capability 'Actuator'
-        capability 'Switch'
         capability 'Bulb'
+        capability 'LevelPreset'
+        capability 'Light'
+        capability 'Switch'
+        capability 'SwitchLevel'
         capability 'Initialize'
 
         // attribute populated by ESPHome API Library automatically
@@ -99,7 +102,7 @@ public void uninstalled() {
 // driver commands
 public void on() {
     if (device.currentValue('networkStatus') == 'online') {
-        log.info "${device} on"
+        if (logTextEnable) { log.info "${device} on" }
         espHomeLightCommand(key: settings.light as int, state: true)
     } else {
         log.error "${device} unable to turn on, device not online"
@@ -110,9 +113,36 @@ public void off() {
     if (device.currentValue('networkStatus') == 'online') {
         log.info "${device} off"
         // API library cover command, entity key is required
+        if (logTextEnable) { log.info "${device} off" }
         espHomeLightCommand(key: settings.light as int, state: false)
     } else {
         log.error "${device} unable to turn off, device not online"
+    }
+}
+
+public void setLevel(BigDecimal level, BigDecimal duration = null) {
+    if (device.currentValue('networkStatus') == 'online') {
+        if (logTextEnable) { log.info "${device} set level ${level}%" }
+        espHomeLightCommand(
+            key: settings.light as int,
+            state: true,
+            masterBrightness: level / 100f,
+            transitionLength: duration != null ? duration * 1000 : null
+        )
+    } else {
+        log.error "${device} unable to set level, device not online"
+    }
+}
+
+public void presetLevel(BigDecimal level) {
+    if (device.currentValue('networkStatus') == 'online') {
+        if (logTextEnable) { log.info "${device} preset level ${level}%" }
+        espHomeLightCommand(
+            key: settings.light as int,
+            masterBrightness: level / 100f
+        )
+    } else {
+        log.error "${device} unable to set level, device not online"
     }
 }
 
@@ -128,14 +158,23 @@ public void parse(Map message) {
                 state.entities = (state.entities ?: [:]) + [ (message.key): message.name ]
             }
             break
+
         case 'state':
             // Check if the entity key matches the message entity key received to update device state
             if (settings.light as Integer == message.key) {
-                String value = message.state ? 'on' : 'off'
+                String state = message.state ? 'on' : 'off'
                 sendEvent([
                     name: 'switch',
-                    value: value,
-                    descriptionText: settings.logTextEnable ? "Light is ${value}" : ''
+                    value: state,
+                    descriptionText: "Light is ${state}"
+                ])
+
+                int level = message.masterBrightness * 100f
+                sendEvent([
+                    name: 'level',
+                    value: level,
+                    unit: '%',
+                    descriptionText: "Level is ${level}"
                 ])
             }
             break
