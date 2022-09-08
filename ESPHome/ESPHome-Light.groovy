@@ -50,8 +50,8 @@ metadata {
         input name: 'light',       // allows the user to select which entity to use
             type: 'enum',
             title: 'ESPHome Entity',
-            required: state.containsKey('entities'),
-            options: state.entities,
+            required: state.entities?.size() > 0,
+            options: state.entities?.collectEntries { k, v -> [ k, v.name ] }
             defaultValue: state.entities ? state.entities.keySet()[0] : '' // default to first
 
         input name: 'logEnable',    // if enabled the library will log debug details
@@ -84,7 +84,7 @@ public void installed() {
 }
 
 public void logsOff() {
-    espSubscribeLogsRequest(LOG_LEVEL_INFO, false) // disable device logging
+    espHomeSubscribeLogsRequest(LOG_LEVEL_INFO, false) // disable device logging
     device.updateSetting('logEnable', false)
     log.info "${device} debug logging disabled"
 }
@@ -95,55 +95,37 @@ public void updated() {
 }
 
 public void uninstalled() {
-    closeSocket() // make sure the socket is closed when uninstalling
+    closeSocket('driver uninstalled') // make sure the socket is closed when uninstalling
     log.info "${device} driver uninstalled"
 }
 
 // driver commands
 public void on() {
-    if (device.currentValue('networkStatus') == 'online') {
-        if (logTextEnable) { log.info "${device} on" }
-        espHomeLightCommand(key: settings.light as int, state: true)
-    } else {
-        log.error "${device} unable to turn on, device not online"
-    }
+    if (logTextEnable) { log.info "${device} on" }
+    espHomeLightCommand(key: settings.light as int, state: true)
 }
 
 public void off() {
-    if (device.currentValue('networkStatus') == 'online') {
-        log.info "${device} off"
-        // API library cover command, entity key is required
-        if (logTextEnable) { log.info "${device} off" }
-        espHomeLightCommand(key: settings.light as int, state: false)
-    } else {
-        log.error "${device} unable to turn off, device not online"
-    }
+    if (logTextEnable) { log.info "${device} off" }
+    espHomeLightCommand(key: settings.light as int, state: false)
 }
 
 public void setLevel(BigDecimal level, BigDecimal duration = null) {
-    if (device.currentValue('networkStatus') == 'online') {
-        if (logTextEnable) { log.info "${device} set level ${level}%" }
-        espHomeLightCommand(
-            key: settings.light as int,
-            state: true,
-            masterBrightness: level / 100f,
-            transitionLength: duration != null ? duration * 1000 : null
-        )
-    } else {
-        log.error "${device} unable to set level, device not online"
-    }
+    if (logTextEnable) { log.info "${device} set level ${level}%" }
+    espHomeLightCommand(
+        key: settings.light as int,
+        state: true,
+        masterBrightness: level / 100f,
+        transitionLength: duration != null ? duration * 1000 : null
+    )
 }
 
 public void presetLevel(BigDecimal level) {
-    if (device.currentValue('networkStatus') == 'online') {
-        if (logTextEnable) { log.info "${device} preset level ${level}%" }
-        espHomeLightCommand(
-            key: settings.light as int,
-            masterBrightness: level / 100f
-        )
-    } else {
-        log.error "${device} unable to set level, device not online"
-    }
+    if (logTextEnable) { log.info "${device} preset level ${level}%" }
+    espHomeLightCommand(
+        key: settings.light as int,
+        masterBrightness: level / 100f
+    )
 }
 
 // the parse method is invoked by the API library when messages are received
@@ -151,11 +133,15 @@ public void parse(Map message) {
     if (logEnable) { log.debug "ESPHome received: ${message}" }
 
     switch (message.type) {
+        case 'device':
+            // Device information
+            break
+
         case 'entity':
             // This will populate the cover dropdown with all the entities
             // discovered and the entity key which is required when sending commands
             if (message.platform == 'light') {
-                state.entities = (state.entities ?: [:]) + [ (message.key): message.name ]
+                state.entities = (state.entities ?: [:]) + [ (message.key): message ]
             }
             break
 

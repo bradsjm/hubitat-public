@@ -44,9 +44,9 @@ metadata {
 
         input name: 'binarysensor', // allows the user to select which sensor entity to use
             type: 'enum',
-            title: 'ESPHome Binary Sensor Entity',
-            required: state.containsKey('entities'),
-            options: state.entities,
+            title: 'ESPHome Entity',
+            required: state.entities?.size() > 0,
+            options: state.entities?.collectEntries { k, v -> [ k, v.name ] }
             defaultValue: state.entities ? state.entities.keySet()[0] : '' // default to first
 
         input name: 'logEnable',    // if enabled the library will log debug details
@@ -79,7 +79,7 @@ public void installed() {
 }
 
 public void logsOff() {
-    espSubscribeLogsRequest(LOG_LEVEL_INFO, false) // disable device logging
+    espHomeSubscribeLogsRequest(LOG_LEVEL_INFO, false) // disable device logging
     device.updateSetting('logEnable', false)
     log.info "${device} debug logging disabled"
 }
@@ -90,7 +90,7 @@ public void updated() {
 }
 
 public void uninstalled() {
-    closeSocket() // make sure the socket is closed when uninstalling
+    closeSocket('driver uninstalled') // make sure the socket is closed when uninstalling
     log.info "${device} driver uninstalled"
 }
 
@@ -99,11 +99,15 @@ public void parse(Map message) {
     if (logEnable) { log.debug "ESPHome received: ${message}" }
 
     switch (message.type) {
+        case 'device':
+            // Device information
+            break
+
         case 'entity':
             // This will populate the cover dropdown with all the entities
             // discovered and the entity key which is required when sending commands
-            if (message.platform == 'binary') {
-                state.entities = (state.entities ?: [:]) + [ (message.key): message.name ]
+            if (message.platform == 'light') {
+                state.entities = (state.entities ?: [:]) + [ (message.key): message ]
             }
             break
 
@@ -111,11 +115,13 @@ public void parse(Map message) {
             // Check if the entity key matches the message entity key received to update device state
             if (settings.binarysensor as Integer == message.key) {
                 String value = message.state ? 'closed' : 'open'
-                sendEvent([
-                    name: 'motion',
-                    value: value,
-                    descriptionText: "Contact is ${value}"
-                ])
+                if (device.currentValue('motion') != value) {
+                    sendEvent([
+                        name: 'motion',
+                        value: value,
+                        descriptionText: "Contact is ${value}"
+                    ])
+                }
             }
             break
     }

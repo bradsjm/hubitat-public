@@ -45,10 +45,10 @@ metadata {
 
         input name: 'cover',        // allows the user to select which cover entity to use
             type: 'enum',
-            title: 'ESPHome Cover Entity',
-            required: state.containsKey('entities'),
-            options: state.entities,
-            defaultValue: state.entities ? state.entities.keySet()[0] : '' // default to first cover
+            title: 'ESPHome Entity',
+            required: state.entities?.size() > 0,
+            options: state.entities?.collectEntries { k, v -> [ k, v.name ] }
+            defaultValue: state.entities ? state.entities.keySet()[0] : '' // default to first
 
         input name: 'logEnable',    // if enabled the library will log debug details
                 type: 'bool',
@@ -80,7 +80,7 @@ public void installed() {
 }
 
 public void logsOff() {
-    espSubscribeLogsRequest(LOG_LEVEL_INFO, false) // disable device logging
+    espHomeSubscribeLogsRequest(LOG_LEVEL_INFO, false) // disable device logging
     device.updateSetting('logEnable', false)
     log.info "${device} debug logging disabled"
 }
@@ -91,39 +91,31 @@ public void updated() {
 }
 
 public void uninstalled() {
-    closeSocket() // make sure the socket is closed when uninstalling
+    closeSocket('driver uninstalled') // make sure the socket is closed when uninstalling
     log.info "${device} driver uninstalled"
 }
 
 // driver commands
 public void open() {
-    if (device.currentValue('networkStatus') == 'online') {
-        String doorState = device.currentValue('door')
-        if (doorState != 'closed') {
-            log.info "${device} ignoring open request (door is ${doorState})"
-            return
-        }
-        // API library cover command, entity key for the cover is required
-        if (logTextEnable) { log.info "${device} open" }
-        espCoverCommand(key: settings.cover as int, position: 1.0)
-    } else {
-        log.error "${device} unable to open, device not online"
+    String doorState = device.currentValue('door')
+    if (doorState != 'closed') {
+        log.info "${device} ignoring open request (door is ${doorState})"
+        return
     }
+    // API library cover command, entity key for the cover is required
+    if (logTextEnable) { log.info "${device} open" }
+    espCoverCommand(key: settings.cover as int, position: 1.0)
 }
 
 public void close() {
-    if (device.currentValue('networkStatus') == 'online') {
-        String doorState = device.currentValue('door')
-        if (doorState != 'open') {
-            log.info "${device} ignoring close request (door is ${doorState})"
-            return
-        }
-        // API library cover command, entity key for the cover is required
-        if (logTextEnable) { log.info "${device} close" }
-        espCoverCommand(key: settings.cover as int, position: 0.0)
-    } else {
-        log.error "${device} unable to close, device not online"
+    String doorState = device.currentValue('door')
+    if (doorState != 'open') {
+        log.info "${device} ignoring close request (door is ${doorState})"
+        return
     }
+    // API library cover command, entity key for the cover is required
+    if (logTextEnable) { log.info "${device} close" }
+    espCoverCommand(key: settings.cover as int, position: 0.0)
 }
 
 // the parse method is invoked by the API library when messages are received
@@ -131,11 +123,15 @@ public void parse(Map message) {
     if (logEnable) { log.debug "ESPHome received: ${message}" }
 
     switch (message.type) {
+        case 'device':
+            // Device information
+            break
+
         case 'entity':
             // This will populate the cover dropdown with all the entities
             // discovered and the entity key which is required when sending commands
-            if (message.platform == 'binary') {
-                state.entities = (state.entities ?: [:]) + [ (message.key): message.name ]
+            if (message.platform == 'light') {
+                state.entities = (state.entities ?: [:]) + [ (message.key): message ]
             }
             break
 
@@ -143,11 +139,13 @@ public void parse(Map message) {
             // Check if the entity key matches the message entity key received to update device state
             if (settings.cover as Integer == message.key) {
                 String value = message.position > 0 ? 'closed' : 'open'
-                sendEvent([
-                    name: 'door',
-                    value: value,
-                    descriptionText: "Door is ${value}"
-                ])
+                if (device.currentValue('door') != value) {
+                    sendEvent([
+                        name: 'door',
+                        value: value,
+                        descriptionText: "Door is ${value}"
+                    ])
+                }
             }
             break
     }

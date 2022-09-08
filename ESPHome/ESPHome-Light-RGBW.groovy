@@ -21,12 +21,14 @@
  *  SOFTWARE.
  */
 metadata {
-    definition(name: 'ESPHome RGB Light', namespace: 'esphome', author: 'Jonathan Bradshaw') {
+    definition(name: 'ESPHome RGBW Light', namespace: 'esphome', author: 'Jonathan Bradshaw') {
         singleThreaded: true
 
         capability 'Actuator'
         capability 'Bulb'
         capability 'ColorControl'
+        capability 'ColorMode'
+        capability 'ColorTemperature'
         capability 'Flash'
         capability 'LevelPreset'
         capability 'Light'
@@ -156,6 +158,17 @@ public void setColor(Map colorMap) {
     )
 }
 
+public void setColorTemperature(BigDecimal colorTemperature, BigDecimal level = null, BigDecimal duration = null) {
+    if (logTextEnable) { log.info "${device} set color temperature ${colorTemperature}" }
+    float mireds = 1000000f / colorTemperature
+    espHomeLightCommand(
+        key: settings.light as int,
+        colorTemperature: mireds,
+        masterBrightness: level != null ? level / 100f : null,
+        transitionLength: duration != null ? duration * 1000 : null
+    )
+}
+
 public void setHue(BigDecimal hue) {
     BigDecimal saturation = device.currentValue('saturation')
     BigDecimal level = device.currentValue('level')
@@ -225,7 +238,7 @@ public void parse(Map message) {
                 state.entities = (state.entities ?: [:]) + [ (message.key): message ]
             }
             break
-            
+
         case 'state':
             // Check if the entity key matches the message entity key received to update device state
             if (settings.light as Integer == message.key) {
@@ -260,10 +273,25 @@ public void parse(Map message) {
                     sendEvent name: 'saturation', value: s, descriptionText: "saturation is ${s}"
                 }
 
+                int colorTemperature = Math.round(1000000f / message.colorTemperature)
+                if (device.currentValue('colorTemperature') != colorTemperature) {
+                    descriptionText = "${device} color temperature was set to ${colorTemperature}"
+                    sendEvent(name: 'colorTemperature', value: colorTemperature, unit: '°K', descriptionText: descriptionText)
+                    if (logTextEnable) { log.info descriptionText }
+                }
+
                 String effectName = message.effect
                 if (device.currentValue('effectName') != effectName) {
                     descriptionText = "${device} effect name is ${effectName}"
                     sendEvent(name: 'effectName', value: effectName, descriptionText: descriptionText)
+                    if (logTextEnable) { log.info descriptionText }
+                }
+
+                String colorMode = (message.colorMode & COLOR_CAP_RGB) == COLOR_CAP_RGB ? 'RGB' : 'CT'
+                if (message.effect && message.effect != 'None') { colorMode = 'EFFECTS' }
+                if (device.currentValue('colorMode') != colorMode) {
+                    descriptionText = "${device} color mode is ${colorMode}"
+                    sendEvent(name: 'colorMode', value: colorMode, descriptionText: descriptionText)
                     if (logTextEnable) { log.info descriptionText }
                 }
             }
@@ -290,6 +318,21 @@ private static String hsToColorName(BigDecimal hue, BigDecimal saturation) {
 
     return ''
 }
+
+@Field private static Map colorTempName = [
+    2001: "Sodium",
+    2101: "Starlight",
+    2400: "Sunrise",
+    2800: "Incandescent",
+    3300: "Soft White",
+    3500: "Warm White",
+    4150: "Moonlight",
+    5001: "Horizon",
+    5500: "Daylight",
+    6000: "Electronic",
+    6501: "Skylight",
+    20000: "Polar"
+]
 
 // Put this line at the end of the driver to include the ESPHome API library helper
 #include esphome.espHomeApiHelper

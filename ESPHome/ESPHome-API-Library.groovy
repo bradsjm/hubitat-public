@@ -878,8 +878,10 @@ private void sendMessage(int msgType, Map tags, int expectedMsgType, String onSu
         onSuccess: onSuccess,
         retries: SEND_RETRY_COUNT
     ])
-    sendMessage(msgType, tags)
-    runInMillis(SEND_RETRY_MILLIS, 'supervisedRetry')
+    if (device.currentValue('networkStatus') != 'offline') {
+        sendMessage(msgType, tags)
+        runInMillis(SEND_RETRY_MILLIS, 'supervisedRetry')
+    }
 }
 
 private void setNetworkStatus(String state, String reason = '') {
@@ -930,8 +932,8 @@ private boolean supervisionCheck(int msgType, Map tags = [:]) {
         result = sentQueue.removeIf { entry ->
             if (entry.expectedMsgType == msgType) {
                 if (entry.onSuccess) {
-                    if (logEnable) { log.debug "ESPHome executing ${entry.onSuccess}"}
-                    "$entry.onSuccess"(tags)
+                    if (logEnable) { log.debug "ESPHome executing ${entry.onSuccess}" }
+                    "${entry.onSuccess}"(tags)
                 }
                 return true
             } else {
@@ -1308,3 +1310,10 @@ private static long zigZagEncode(long v) {
 @Field static final int LOG_LEVEL_DEBUG = 5
 @Field static final int LOG_LEVEL_VERBOSE = 6
 @Field static final int LOG_LEVEL_VERY_VERBOSE = 7
+
+@Field static final int COLOR_CAP_ON_OFF = 1 << 0
+@Field static final int COLOR_CAP_BRIGHTNESS = 1 << 1
+@Field static final int COLOR_CAP_WHITE = 1 << 2
+@Field static final int COLOR_CAP_COLOR_TEMPERATURE = 1 << 3
+@Field static final int COLOR_CAP_COLD_WARM_WHITE = 1 << 4
+@Field static final int COLOR_CAP_RGB = 1 << 5

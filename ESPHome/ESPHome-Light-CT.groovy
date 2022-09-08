@@ -91,7 +91,7 @@ public void installed() {
 }
 
 public void logsOff() {
-    espSubscribeLogsRequest(LOG_LEVEL_INFO, false) // disable device logging
+    espHomeSubscribeLogsRequest(LOG_LEVEL_INFO, false) // disable device logging
     device.updateSetting('logEnable', false)
     log.info "${device} debug logging disabled"
 }
@@ -112,68 +112,47 @@ public void uninstalled() {
 }
 
 // driver commands
-public void flash(BigDecimal rate) {
-    if (device.currentValue('networkStatus') == 'online') {
-        if (logTextEnable) { log.info "${device} flash (${rate})" }
-        espHomeLightCommand(
-            key: settings.light as int,
-            brightness: 1f,
-            flashLength: rate * 1000,
-            red: 1f,
-            green: 0f,
-            blue: 0f
-        )
-    } else {
-        log.error "${device} unable to flash, device not online"
-    }
+public void flash(BigDecimal rate = 1) {
+    if (logTextEnable) { log.info "${device} flash (${rate})" }
+    espHomeLightCommand(
+        key: settings.light as int,
+        brightness: 1f,
+        flashLength: rate * 1000,
+        red: 1f,
+        green: 0f,
+        blue: 0f
+    )
 }
 
 public void on() {
-    if (device.currentValue('networkStatus') == 'online') {
-        if (logTextEnable) { log.info "${device} on" }
-        espHomeLightCommand(key: settings.light as int, state: true)
-    } else {
-        log.error "${device} unable to turn on, device not online"
-    }
+    if (logTextEnable) { log.info "${device} on" }
+    espHomeLightCommand(key: settings.light as int, state: true)
 }
 
 public void off() {
-    if (device.currentValue('networkStatus') == 'online') {
-        if (logTextEnable) { log.info "${device} off" }
-        // API library cover command, entity key is required
-        espHomeLightCommand(key: settings.light as int, state: false)
-    } else {
-        log.error "${device} unable to turn off, device not online"
-    }
+    if (logTextEnable) { log.info "${device} off" }
+    espHomeLightCommand(key: settings.light as int, state: false)
 }
 
 public void presetLevel(BigDecimal level) {
-    if (device.currentValue('networkStatus') == 'online') {
-        String descriptionText = "${device} preset level ${level}%"
-        if (logTextEnable) { log.info descriptionText }
-        sendEvent(name: 'levelPreset', value: level, unit: '%', descriptionText: descriptionText)
-        espHomeLightCommand(
-            key: settings.light as int,
-            masterBrightness: level / 100f
-        )
-    } else {
-        log.error "${device} unable to set level, device not online"
-    }
+    String descriptionText = "${device} preset level ${level}%"
+    if (logTextEnable) { log.info descriptionText }
+    sendEvent(name: 'levelPreset', value: level, unit: '%', descriptionText: descriptionText)
+    espHomeLightCommand(
+        key: settings.light as int,
+        masterBrightness: level / 100f
+    )
 }
 
 public void setColorTemperature(BigDecimal colorTemperature, BigDecimal level = null, BigDecimal duration = null) {
-    if (device.currentValue('networkStatus') == 'online') {
-        if (logTextEnable) { log.info "${device} set color temperature ${colorTemperature}" }
-        float mireds = 1000000f / colorTemperature
-        espHomeLightCommand(
-            key: settings.light as int,
-            colorTemperature: mireds,
-            masterBrightness: level != null ? level / 100f : null,
-            transitionLength: duration != null ? duration * 1000 : null
-        )
-    } else {
-        log.error "${device} unable to set color temperature, device not online"
-    }
+    if (logTextEnable) { log.info "${device} set color temperature ${colorTemperature}" }
+    float mireds = 1000000f / colorTemperature
+    espHomeLightCommand(
+        key: settings.light as int,
+        colorTemperature: mireds,
+        masterBrightness: level != null ? level / 100f : null,
+        transitionLength: duration != null ? duration * 1000 : null
+    )
 }
 
 public void setEffect(BigDecimal number) {
@@ -204,17 +183,13 @@ public void setPreviousEffect() {
 }
 
 public void setLevel(BigDecimal level, BigDecimal duration = null) {
-    if (device.currentValue('networkStatus') == 'online') {
-        if (logTextEnable) { log.info "${device} set level to ${level}%" }
-        espHomeLightCommand(
-            key: settings.light as int,
-            state: level > 0,
-            masterBrightness: level > 0 ? level / 100f : null,
-            transitionLength: duration != null ? duration * 1000 : null
-        )
-    } else {
-        log.error "${device} unable to set level, device not online"
-    }
+    if (logTextEnable) { log.info "${device} set level to ${level}%" }
+    espHomeLightCommand(
+        key: settings.light as int,
+        state: level > 0,
+        masterBrightness: level > 0 ? level / 100f : null,
+        transitionLength: duration != null ? duration * 1000 : null
+    )
 }
 
 // the parse method is invoked by the API library when messages are received
@@ -224,7 +199,6 @@ public void parse(Map message) {
     switch (message.type) {
         case 'device':
             // Device information
-            log.info message
             break
 
         case 'entity':
@@ -241,14 +215,14 @@ public void parse(Map message) {
                 String descriptionText
 
                 String state = message.state ? 'on' : 'off'
-                if (device.currentValue("switch") != state) {
+                if (device.currentValue('switch') != state) {
                     descriptionText = "${device} was turned ${state}"
                     sendEvent(name: 'switch', value: state, descriptionText: descriptionText)
                     if (logTextEnable) { log.info descriptionText }
                 }
 
                 int level = message.state ? Math.round(message.masterBrightness * 100f) : 0
-                if (device.currentValue("level") != level) {
+                if (device.currentValue('level') != level) {
                     descriptionText = "${device} level was set to ${level}"
                     sendEvent(name: 'level', value: level, unit: '%', descriptionText: descriptionText)
                     if (message.state) {
@@ -258,21 +232,21 @@ public void parse(Map message) {
                 }
 
                 int colorTemperature = Math.round(1000000f / message.colorTemperature)
-                if (device.currentValue("colorTemperature") != colorTemperature) {
+                if (device.currentValue('colorTemperature') != colorTemperature) {
                     descriptionText = "${device} color temperature was set to ${colorTemperature}"
                     sendEvent(name: 'colorTemperature', value: colorTemperature, unit: '°K', descriptionText: descriptionText)
                     if (logTextEnable) { log.info descriptionText }
                 }
 
                 String colorName = colorTempName.find { k, v -> colorTemperature < k }.value
-                if (device.currentValue("colorName") != colorName) {
+                if (device.currentValue('colorName') != colorName) {
                     descriptionText = "${device} color name is ${colorName}"
                     sendEvent(name: 'colorName', value: colorName, descriptionText: descriptionText)
                     if (logTextEnable) { log.info descriptionText }
                 }
 
                 String effectName = message.effect
-                if (device.currentValue("effectName") != effectName) {
+                if (device.currentValue('effectName') != effectName) {
                     descriptionText = "${device} effect name is ${effectName}"
                     sendEvent(name: 'effectName', value: effectName, descriptionText: descriptionText)
                     if (logTextEnable) { log.info descriptionText }
