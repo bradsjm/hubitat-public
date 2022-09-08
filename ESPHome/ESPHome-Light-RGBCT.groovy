@@ -21,7 +21,7 @@
  *  SOFTWARE.
  */
 metadata {
-    definition(name: 'ESPHome RGBW Light', namespace: 'esphome', author: 'Jonathan Bradshaw') {
+    definition(name: 'ESPHome RGBCT Light', namespace: 'esphome', author: 'Jonathan Bradshaw') {
         singleThreaded: true
 
         capability 'Actuator'
