@@ -84,7 +84,7 @@ public void installed() {
 }
 
 public void logsOff() {
-    espHomeSubscribeLogsRequest(LOG_LEVEL_INFO, false) // disable device logging
+    espHomeSubscribeLogs(LOG_LEVEL_INFO, false) // disable device logging
     device.updateSetting('logEnable', false)
     log.info "${device} debug logging disabled"
 }

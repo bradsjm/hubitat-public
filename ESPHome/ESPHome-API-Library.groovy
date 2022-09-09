@@ -44,7 +44,7 @@ import java.util.concurrent.ConcurrentLinkedQueue
 @Field static final int SEND_RETRY_MILLIS = 5000
 
 @Field static final ConcurrentHashMap<String, String> espReceiveBuffer = new ConcurrentHashMap<>()
-@Field static final ConcurrentHashMap<String, ConcurrentLinkedQueue> espHomeSupervised = new ConcurrentHashMap<>()
+@Field static final ConcurrentHashMap<String, ConcurrentLinkedQueue> espSentQueue = new ConcurrentHashMap<>()
 
 private void parseMessage(ByteArrayInputStream stream, long length) {
     int msgType = (int) readVarInt(stream, true)
@@ -53,11 +53,8 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
         return
     }
 
-    Map tags = length == 0 ? [:] : decodeProtobufMessage(stream, length)
-    if (logEnable) { log.debug "ESPHome received type #${msgType}: ${tags}" }
-    if (supervisionCheck(msgType, tags)) {
-        if (logEnable) { log.debug "ESPHome supervision check successful (type #${msgType})" }
-    }
+    Map tags = protobufDecode(stream, length)
+    supervisionCheck(msgType, tags)
 
     switch (msgType) {
         case MSG_DISCONNECT_REQUEST:
@@ -212,7 +209,7 @@ private void espHomeConnectResponse(Map tags) {
 
     setNetworkStatus('online')
     state.remove('reconnectDelay')
-    schedulePing()
+    espHomeSchedulePing()
 
     // Step 3: Send Device Info Request
     espHomeDeviceInfoRequest()
@@ -398,6 +395,7 @@ private Map espHomeLightState(Map tags) {
         state: getBooleanTag(tags, 2),
         masterBrightness: getFloatTag(tags, 3),
         colorMode: getIntTag(tags, 11),
+        colorModeCapabilities: toCapabilities(getIntTag(tags, 11)),
         colorBrightness: getFloatTag(tags, 10),
         red: getFloatTag(tags, 4),
         green: getFloatTag(tags, 5),
@@ -411,7 +409,7 @@ private Map espHomeLightState(Map tags) {
 }
 
 private void espHomeListEntitiesRequest() {
-    if (logEnable) { log.debug 'ESPHome requesting entities list' }
+    if (logEnable) { log.trace 'ESPHome requesting entities list' }
     sendMessage(MSG_LIST_ENTITIES_REQUEST)
 }
 
@@ -496,7 +494,7 @@ private Map espHomeListEntitiesLightResponse(Map tags) {
         minMireds: getFloatTag(tags, 9),
         maxMireds: getFloatTag(tags, 10),
         effects: getStringTagList(tags, 11),
-        supportedColorModes: getIntTagList(tags, 12),
+        supportedColorModes: getIntTagList(tags, 12).collectEntries { e -> [ e, toCapabilities(e) ] },
         disabledByDefault: getBooleanTag(tags, 13),
         icon: getStringTag(tags, 14),
         entityCategory: toEntityCategory(getIntTag(tags, 15))
@@ -550,7 +548,7 @@ private Map espHomeListEntitiesSirenResponse(Map tags) {
         platform: 'siren',
         icon: getStringTag(tags, 5),
         disabledByDefault: getBooleanTag(tags, 6),
-        // TODO repeated string: tones: getStringTag(tags, 7),
+        tones: getStringTagList(tags, 7),
         supportsDuration: getBooleanTag(tags, 8),
         supportsVolume: getBooleanTag(tags, 9),
         entityCategory: toEntityCategory(getIntTag(tags, 10))
@@ -582,7 +580,7 @@ private Map espHomeListEntitiesTextSensorResponse(Map tags) {
 private void espHomeListEntitiesDoneResponse() {
     espHomeSubscribeStatesRequest()
     espHomeSubscribeLogs(settings.logEnable ? LOG_LEVEL_DEBUG : LOG_LEVEL_INFO)
-    supervisedRetry()
+    sendMessageRetry()
 }
 
 private void espHomeLockCommand(Map tags) {
@@ -650,7 +648,7 @@ private Map espHomeNumberState(Map tags) {
 }
 
 private void espHomePingRequest() {
-    if (logEnable) { log.info 'ESPHome ping request sent to device' }
+    if (logEnable) { log.trace 'ESPHome ping request sent to device' }
     sendMessage(
         MSG_PING_REQUEST, [:],
         MSG_PING_RESPONSE, 'espHomePingResponse'
@@ -659,8 +657,14 @@ private void espHomePingRequest() {
 
 private void espHomePingResponse(Map tags) {
     device.updateDataValue 'Last Ping Response', new Date().toString()
-    if (logEnable) { log.info 'ESPHome ping response received from device' }
-    schedulePing()
+    if (logEnable) { log.trace 'ESPHome ping response received from device' }
+    espHomeSchedulePing()
+}
+
+private void espHomeSchedulePing() {
+    int jitter = (int) Math.ceil(PING_INTERVAL_SECONDS * 0.2)
+    int interval = PING_INTERVAL_SECONDS + new Random().nextInt(jitter)
+    runIn(interval, 'espHomePingRequest')
 }
 
 private Map espHomeSensorState(Map tags) {
@@ -775,31 +779,21 @@ private static String toEntityCategory(int value) {
     }
 }
 
+private static List<String> toCapabilities(int capability) {
+    List<String> capabilities = []
+    if (capability & COLOR_CAP_ON_OFF) { capabilities.add('ON/OFF') }
+    if (capability & COLOR_CAP_BRIGHTNESS) { capabilities.add('BRIGHTNESS') }
+    if (capability & COLOR_CAP_RGB) { capabilities.add('RGB') }
+    if (capability & COLOR_CAP_WHITE) { capabilities.add('WHITE') }
+    if (capability & COLOR_CAP_COLD_WARM_WHITE) { capabilities.add('COLD WARM WHITE') }
+    if (capability & COLOR_CAP_COLOR_TEMPERATURE) { capabilities.add('COLOR TEMPERATURE') }
+    return capabilities
+}
+
 
 /**
  * ESPHome Native API Plaintext Socket IO Implementation
  */
-private void closeSocket(String reason) {
-    unschedule('espHomePingRequest')
-    unschedule('supervisedRetry')
-    espReceiveBuffer.remove(device.id)
-    log.info "ESPHome closing socket to ${ipAddress}:${PORT_NUMBER} (${reason})"
-    interfaces.rawSocket.disconnect()
-    setNetworkStatus('offline', reason)
-}
-
-private String encodeMessage(int type, Map tags = [:]) {
-    // creates hex string payload from message type and tags
-    ByteArrayOutputStream payload = new ByteArrayOutputStream()
-    int length = tags ? encodeProtobufMessage(payload, tags) : 0
-    ByteArrayOutputStream stream = new ByteArrayOutputStream()
-    stream.write(0x00)
-    writeVarInt(stream, length)
-    writeVarInt(stream, type)
-    payload.writeTo(stream)
-    return HexUtils.byteArrayToHexString(stream.toByteArray())
-}
-
 private void openSocket() {
     log.info "ESPHome opening socket to ${ipAddress}:${PORT_NUMBER}"
     setNetworkStatus('connecting')
@@ -813,8 +807,16 @@ private void openSocket() {
     }
 }
 
-// parse received protobuf messages - do not change this function name or driver will break
-public void parse(String hexString) {
+private void closeSocket(String reason) {
+    unschedule('espHomePingRequest')
+    unschedule('sendMessageRetry')
+    espReceiveBuffer.remove(device.id)
+    log.info "ESPHome closing socket to ${ipAddress}:${PORT_NUMBER} (${reason})"
+    interfaces.rawSocket.disconnect()
+    setNetworkStatus('offline', reason)
+}
+
+private byte[] decodeMessage(String hexString) {
     byte[] bytes
     String buffer = espReceiveBuffer.get(device.id)
     if (buffer) {
@@ -823,9 +825,25 @@ public void parse(String hexString) {
     } else {
         bytes = HexUtils.hexStringToByteArray(hexString)
     }
+    return bytes
+}
 
+private String encodeMessage(int type, Map tags = [:]) {
+    // creates hex string payload from message type and tags
+    ByteArrayOutputStream payload = new ByteArrayOutputStream()
+    int length = tags ? protobufEncode(payload, tags) : 0
+    ByteArrayOutputStream stream = new ByteArrayOutputStream()
+    stream.write(0x00)
+    writeVarInt(stream, length)
+    writeVarInt(stream, type)
+    payload.writeTo(stream)
+    return HexUtils.byteArrayToHexString(stream.toByteArray())
+}
+
+// parse received protobuf messages - do not change this function name or driver will break
+public void parse(String hexString) {
+    ByteArrayInputStream stream = new ByteArrayInputStream(decodeMessage(hexString))
     int b
-    ByteArrayInputStream stream = new ByteArrayInputStream(bytes)
     while ((b = stream.read()) != -1) {
         if (b == 0x00) {
             stream.mark(0)
@@ -859,19 +877,12 @@ private void scheduleConnect() {
     runIn(interval, 'openSocket')
 }
 
-private void schedulePing() {
-    int jitter = (int) Math.ceil(PING_INTERVAL_SECONDS * 0.2)
-    int interval = PING_INTERVAL_SECONDS + new Random().nextInt(jitter)
-    runIn(interval, 'espHomePingRequest')
-}
-
 private void sendMessage(int msgType, Map tags = [:]) {
-    if (logEnable) { log.debug "ESPHome sending type# ${msgType} with tags ${tags}" }
     interfaces.rawSocket.sendMessage(encodeMessage(msgType, tags))
 }
 
 private void sendMessage(int msgType, Map tags, int expectedMsgType, String onSuccess = '') {
-    espHomeSupervised.computeIfAbsent(device.id) { k -> new ConcurrentLinkedQueue<Map>() }.add([
+    espSentQueue.computeIfAbsent(device.id) { k -> new ConcurrentLinkedQueue<Map>() }.add([
         msgType: msgType,
         tags: tags,
         expectedMsgType: expectedMsgType,
@@ -880,7 +891,7 @@ private void sendMessage(int msgType, Map tags, int expectedMsgType, String onSu
     ])
     if (device.currentValue('networkStatus') != 'offline') {
         sendMessage(msgType, tags)
-        runInMillis(SEND_RETRY_MILLIS, 'supervisedRetry')
+        runInMillis(SEND_RETRY_MILLIS, 'sendMessageRetry')
     }
 }
 
@@ -899,8 +910,8 @@ public void socketStatus(String message) {
     }
 }
 
-private void supervisedRetry() {
-    ConcurrentLinkedQueue<Map> sentQueue = espHomeSupervised.get(device.id)
+private void sendMessageRetry() {
+    ConcurrentLinkedQueue<Map> sentQueue = espSentQueue.get(device.id)
     if (sentQueue) {
         // retry outstanding messages and decrement retry counter
         sentQueue.removeIf { entry ->
@@ -919,20 +930,20 @@ private void supervisedRetry() {
 
         // reschedule check if there are outstanding messages
         if (!sentQueue.isEmpty()) {
-            runInMillis(SEND_RETRY_MILLIS, 'supervisedRetry')
+            runInMillis(SEND_RETRY_MILLIS, 'sendMessageRetry')
         }
     }
 }
 
 private boolean supervisionCheck(int msgType, Map tags = [:]) {
-    ConcurrentLinkedQueue<Map> sentQueue = espHomeSupervised.get(device.id)
+    ConcurrentLinkedQueue<Map> sentQueue = espSentQueue.get(device.id)
     // check for successful responses and remove from queue
     boolean result
     if (sentQueue) {
         result = sentQueue.removeIf { entry ->
             if (entry.expectedMsgType == msgType) {
                 if (entry.onSuccess) {
-                    if (logEnable) { log.debug "ESPHome executing ${entry.onSuccess}" }
+                    if (logEnable) { log.trace "ESPHome executing ${entry.onSuccess}" }
                     "${entry.onSuccess}"(tags)
                 }
                 return true
@@ -941,7 +952,7 @@ private boolean supervisionCheck(int msgType, Map tags = [:]) {
             }
         }
         if (sentQueue.isEmpty()) {
-            unschedule('supervisedRetry')
+            unschedule('sendMessageRetry')
         }
     }
     return result
@@ -956,7 +967,7 @@ private boolean supervisionCheck(int msgType, Map tags = [:]) {
 @Field static final int WIRETYPE_FIXED32 = 5
 @Field static final int VARINT_MAX_BYTES = 10
 
-private Map decodeProtobufMessage(ByteArrayInputStream stream, long available) {
+private Map protobufDecode(ByteArrayInputStream stream, long available) {
     Map tags = [:]
     while (available > 0) {
         long tagAndType = readVarInt(stream, true)
@@ -1010,7 +1021,7 @@ private Map decodeProtobufMessage(ByteArrayInputStream stream, long available) {
     return tags
 }
 
-private int encodeProtobufMessage(ByteArrayOutputStream stream, Map tags) {
+private int protobufEncode(ByteArrayOutputStream stream, Map tags) {
     int bytes = 0
     for (entry in new TreeMap(tags).findAll { k, v -> v instanceof List && v[0] }) {
         int fieldNumber = entry.key
@@ -1077,7 +1088,7 @@ private static int getIntTag(Map tags, int index, int defaultValue = 0) {
 }
 
 private static List<Integer> getIntTagList(Map tags, int index) {
-    return tags && tags[index] ? tags[index] : []
+    return tags && tags[index] ? tags[index] as Integer[] : []
 }
 
 private static long getLongTag(Map tags, int index, long defaultValue = 0) {
@@ -1311,9 +1322,9 @@ private static long zigZagEncode(long v) {
 @Field static final int LOG_LEVEL_VERBOSE = 6
 @Field static final int LOG_LEVEL_VERY_VERBOSE = 7
 
-@Field static final int COLOR_CAP_ON_OFF = 1 << 0
-@Field static final int COLOR_CAP_BRIGHTNESS = 1 << 1
-@Field static final int COLOR_CAP_WHITE = 1 << 2
-@Field static final int COLOR_CAP_COLOR_TEMPERATURE = 1 << 3
-@Field static final int COLOR_CAP_COLD_WARM_WHITE = 1 << 4
-@Field static final int COLOR_CAP_RGB = 1 << 5
+@Field static final int COLOR_CAP_ON_OFF = 1
+@Field static final int COLOR_CAP_BRIGHTNESS = 2
+@Field static final int COLOR_CAP_WHITE = 4
+@Field static final int COLOR_CAP_COLOR_TEMPERATURE = 8
+@Field static final int COLOR_CAP_COLD_WARM_WHITE = 16
+@Field static final int COLOR_CAP_RGB = 32
