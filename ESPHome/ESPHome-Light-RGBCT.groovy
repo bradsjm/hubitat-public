@@ -33,6 +33,7 @@ metadata {
         capability 'LevelPreset'
         capability 'Light'
         capability 'LightEffects'
+        capability 'SignalStrength'
         capability 'Switch'
         capability 'SwitchLevel'
         capability 'Initialize'
@@ -100,10 +101,6 @@ public void logsOff() {
 
 public void updated() {
     log.info "${device} driver configuration updated"
-    if (state.entities && settings.light) {
-        List<String> effects = state.entities[settings.light].effects
-        sendEvent(name: 'lightEffects', value: JsonOutput.toJson(effects))
-    }
     initialize()
 }
 
@@ -116,7 +113,7 @@ public void uninstalled() {
 public void flash(BigDecimal rate = 1) {
     if (logTextEnable) { log.info "${device} flash (${rate})" }
     espHomeLightCommand(
-        key: settings.light as int,
+        key: settings.light as Long,
         brightness: 1f,
         flashLength: rate * 1000,
         red: 1f,
@@ -127,12 +124,12 @@ public void flash(BigDecimal rate = 1) {
 
 public void on() {
     if (logTextEnable) { log.info "${device} on" }
-    espHomeLightCommand(key: settings.light as int, state: true)
+    espHomeLightCommand(key: settings.light as Long, state: true)
 }
 
 public void off() {
     if (logTextEnable) { log.info "${device} off" }
-    espHomeLightCommand(key: settings.light as int, state: false)
+    espHomeLightCommand(key: settings.light as Long, state: false)
 }
 
 public void presetLevel(BigDecimal level) {
@@ -140,7 +137,7 @@ public void presetLevel(BigDecimal level) {
     if (logTextEnable) { log.info descriptionText }
     sendEvent(name: 'levelPreset', value: level, unit: '%', descriptionText: descriptionText)
     espHomeLightCommand(
-        key: settings.light as int,
+        key: settings.light as Long,
         masterBrightness: level / 100f
     )
 }
@@ -149,7 +146,7 @@ public void setColor(Map colorMap) {
     if (logTextEnable) { log.info "${device} set color ${colorMap}" }
     def (int r, int g, int b) = ColorUtils.hsvToRGB([colorMap.hue, colorMap.saturation, colorMap.level])
     espHomeLightCommand(
-        key: settings.light as int,
+        key: settings.light as Long,
         red: r / 255f,
         green: g / 255f,
         blue: b / 255f,
@@ -162,7 +159,7 @@ public void setColorTemperature(BigDecimal colorTemperature, BigDecimal level = 
     if (logTextEnable) { log.info "${device} set color temperature ${colorTemperature}" }
     float mireds = 1000000f / colorTemperature
     espHomeLightCommand(
-        key: settings.light as int,
+        key: settings.light as Long,
         colorTemperature: mireds,
         masterBrightness: level != null ? level / 100f : null,
         transitionLength: duration != null ? duration * 1000 : null
@@ -180,7 +177,7 @@ public void setHue(BigDecimal hue) {
 public void setLevel(BigDecimal level, BigDecimal duration = null) {
     if (logTextEnable) { log.info "${device} set level to ${level}%" }
     espHomeLightCommand(
-        key: settings.light as int,
+        key: settings.light as Long,
         state: level > 0,
         masterBrightness: level > 0 ? level / 100f : null,
         transitionLength: duration != null ? duration * 1000 : null
@@ -202,7 +199,7 @@ public void setEffect(BigDecimal number) {
         if (number > effects.size()) { number = 1 }
         int index = number - 1
         if (logTextEnable) { log.info "${device} set effect ${effects[index]}" }
-        espHomeLightCommand(key: settings.light as int, effect: effects[index])
+        espHomeLightCommand(key: settings.light as Long, effect: effects[index])
     }
 }
 
@@ -237,11 +234,22 @@ public void parse(Map message) {
             if (message.platform == 'light') {
                 state.entities = (state.entities ?: [:]) + [ (message.key): message ]
             }
+
+            if (message.platform == 'sensor' && message.deviceClass == 'signal_strength') {
+                state['signalStrength'] = message.key
+            }
+
+            if (message.key == settings.light as Integer) {
+                String effects = JsonOutput.toJson(message.effects ?: [])
+                if (device.currentValue('lightEffects') != effects) {
+                    sendEvent(name: 'lightEffects', value: effects)
+                }
+            }
             break
 
         case 'state':
             // Check if the entity key matches the message entity key received to update device state
-            if (settings.light as Integer == message.key) {
+            if (settings.light as Long == message.key) {
                 String descriptionText
 
                 String state = message.state ? 'on' : 'off'
@@ -292,6 +300,16 @@ public void parse(Map message) {
                 if (device.currentValue('colorMode') != colorMode) {
                     descriptionText = "${device} color mode is ${colorMode}"
                     sendEvent(name: 'colorMode', value: colorMode, descriptionText: descriptionText)
+                    if (logTextEnable) { log.info descriptionText }
+                }
+            }
+
+            if (state.signalStrength as Long == message.key && message.hasState) {
+                Integer rssi = Math.round(message.state as Float)
+                String unit = 'dBm'
+                if (device.currentValue('rssi') != rssi) {
+                    descriptionText = "${device} rssi is ${rssi}"
+                    sendEvent(name: 'rssi', value: rssi, unit: unit, descriptionText: descriptionText)
                     if (logTextEnable) { log.info descriptionText }
                 }
             }

@@ -104,7 +104,7 @@ public void open() {
     }
     // API library cover command, entity key for the cover is required
     if (logTextEnable) { log.info "${device} open" }
-    espCoverCommand(key: settings.cover as int, position: 1.0)
+    espCoverCommand(key: settings.cover as long, position: 1.0)
 }
 
 public void close() {
@@ -115,7 +115,7 @@ public void close() {
     }
     // API library cover command, entity key for the cover is required
     if (logTextEnable) { log.info "${device} close" }
-    espCoverCommand(key: settings.cover as int, position: 0.0)
+    espCoverCommand(key: settings.cover as long, position: 0.0)
 }
 
 // the parse method is invoked by the API library when messages are received
@@ -137,7 +137,7 @@ public void parse(Map message) {
 
         case 'state':
             // Check if the entity key matches the message entity key received to update device state
-            if (settings.cover as Integer == message.key) {
+            if (settings.cover as Long == message.key) {
                 String value = message.position > 0 ? 'closed' : 'open'
                 if (device.currentValue('door') != value) {
                     sendEvent([

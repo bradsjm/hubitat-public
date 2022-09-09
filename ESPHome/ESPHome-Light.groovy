@@ -102,18 +102,18 @@ public void uninstalled() {
 // driver commands
 public void on() {
     if (logTextEnable) { log.info "${device} on" }
-    espHomeLightCommand(key: settings.light as int, state: true)
+    espHomeLightCommand(key: settings.light as Long, state: true)
 }
 
 public void off() {
     if (logTextEnable) { log.info "${device} off" }
-    espHomeLightCommand(key: settings.light as int, state: false)
+    espHomeLightCommand(key: settings.light as Long, state: false)
 }
 
 public void setLevel(BigDecimal level, BigDecimal duration = null) {
     if (logTextEnable) { log.info "${device} set level ${level}%" }
     espHomeLightCommand(
-        key: settings.light as int,
+        key: settings.light as Long,
         state: true,
         masterBrightness: level / 100f,
         transitionLength: duration != null ? duration * 1000 : null
@@ -123,7 +123,7 @@ public void setLevel(BigDecimal level, BigDecimal duration = null) {
 public void presetLevel(BigDecimal level) {
     if (logTextEnable) { log.info "${device} preset level ${level}%" }
     espHomeLightCommand(
-        key: settings.light as int,
+        key: settings.light as Long,
         masterBrightness: level / 100f
     )
 }
@@ -147,7 +147,7 @@ public void parse(Map message) {
 
         case 'state':
             // Check if the entity key matches the message entity key received to update device state
-            if (settings.light as Integer == message.key) {
+            if (settings.light as Long == message.key) {
                 String state = message.state ? 'on' : 'off'
                 sendEvent([
                     name: 'switch',

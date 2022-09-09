@@ -98,12 +98,12 @@ public void uninstalled() {
 // driver commands
 public void on() {
     if (logTextEnable) { log.info "${device} on" }
-    espHomeSwitchCommand(key: settings.switch as int, state: true)
+    espHomeSwitchCommand(key: settings.switch as Long, state: true)
 }
 
 public void off() {
     if (logTextEnable) { log.info "${device} off" }
-    espHomeSwitchCommand(key: settings.switch as int, state: false)
+    espHomeSwitchCommand(key: settings.switch as Long, state: false)
 }
 
 // the parse method is invoked by the API library when messages are received
@@ -125,7 +125,7 @@ public void parse(Map message) {
 
         case 'state':
             // Check if the entity key matches the message entity key received to update device state
-            if (settings.switch as Integer == message.key) {
+            if (settings.switch as Long == message.key) {
                 String value = message.state ? 'on' : 'off'
                 if (device.currentValue('switch') != value) {
                     sendEvent([
