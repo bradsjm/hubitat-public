@@ -65,6 +65,7 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
             break
         case MSG_PING_REQUEST:
             sendMessage(MSG_PING_RESPONSE)
+            espHomeSchedulePing()
             break
         case MSG_LIST_BINARYSENSOR_RESPONSE:
             parse espHomeListEntitiesBinarySensorResponse(tags)
@@ -257,18 +258,21 @@ private void espHomeDeviceInfoResponse(Map tags) {
             espHomeVersion: getStringTag(tags, 4),
             compileTime: getStringTag(tags, 5),
             boardModel:  getStringTag(tags, 6),
-            hasDeepSleep: getBooleanTag(tags, 6),
+            hasDeepSleep: getBooleanTag(tags, 7),
             projectName: getStringTag(tags, 8),
             projectVersion: getStringTag(tags, 9),
             portNumber: getIntTag(tags, 10)
     ]
 
     device.name = deviceInfo.name
-    device.updateDataValue 'MAC Address', deviceInfo.macAddress
-    device.updateDataValue 'ESPHome Version', deviceInfo.espHomeVersion
-    device.updateDataValue 'Compile Time', deviceInfo.compileTime
+    if (deviceInfo.macAddress) {
+        device.deviceNetworkId = deviceInfo.macAddress.replaceAll(':', '-').toLowerCase()
+    }
     device.updateDataValue 'Board Model', deviceInfo.boardModel
+    device.updateDataValue 'Compile Time', deviceInfo.compileTime
+    device.updateDataValue 'ESPHome Version', deviceInfo.espHomeVersion
     device.updateDataValue 'Has Deep Sleep', deviceInfo.hasDeepSleep ? 'yes' : 'no'
+    device.updateDataValue 'MAC Address', deviceInfo.macAddress
     device.updateDataValue 'Project Name', deviceInfo.projectName
     device.updateDataValue 'Project Version', deviceInfo.projectVersion
     device.updateDataValue 'Web Server', "http://${ipAddress}:${deviceInfo.portNumber}"

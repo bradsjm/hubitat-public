@@ -111,6 +111,7 @@ public void flash(BigDecimal rate = 1) {
     if (logTextEnable) { log.info "${device} flash (${rate})" }
     espHomeLightCommand(
         key: settings.light as Long,
+        state: true,
         brightness: 1f,
         flashLength: rate * 1000,
         red: 1f,

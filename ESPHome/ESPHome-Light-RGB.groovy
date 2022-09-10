@@ -111,6 +111,7 @@ public void flash(BigDecimal rate = 1) {
     if (logTextEnable) { log.info "${device} flash (${rate})" }
     espHomeLightCommand(
         key: settings.light as Long,
+        state: true,
         brightness: 1f,
         flashLength: rate * 1000,
         red: 1f,
@@ -252,15 +253,21 @@ public void parse(Map message) {
                 }
 
                 def (int h, int s, int b) = ColorUtils.rgbToHSV([message.red * 255f, message.green * 255f, message.blue * 255f])
-                String colorName = hsToColorName(h, s)
-                if (device.currentValue('colorName') != colorName) {
-                    sendEvent name: 'colorName', value: colorName, descriptionText: "color name is ${colorName}"
+                String colorName = colorNameMap.find { k, v -> h * 3.6 <= k }.value
+                if (message.colorModeCapabilities.contains('RGB') && device.currentValue('colorName') != colorName) {
+                    descriptionText = '${device} color name was set to ${colorName}'
+                    sendEvent name: 'colorName', value: colorName, descriptionText: descriptionText
+                    if (logTextEnable) { log.info descriptionText }
                 }
                 if (device.currentValue('hue') != h) {
-                    sendEvent name: 'hue', value: h, descriptionText: "hue is ${h}"
+                    descriptionText = '${device} hue was set to ${h}'
+                    sendEvent name: 'hue', value: h, descriptionText: descriptionText
+                    if (logTextEnable) { log.info descriptionText }
                 }
                 if (device.currentValue('saturation') != s) {
-                    sendEvent name: 'saturation', value: s, descriptionText: "saturation is ${s}"
+                    descriptionText = '${device} saturation was set to ${s}'
+                    sendEvent name: 'saturation', value: s, descriptionText: descriptionText
+                    if (logTextEnable) { log.info descriptionText }
                 }
 
                 String effectName = message.effect

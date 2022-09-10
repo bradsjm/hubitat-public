@@ -3,7 +3,7 @@
  *  Copyright 2022 Jonathan Bradshaw (jb@nrgup.net)
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy
- *  of this software and associated documentation files (the "Software"), to deal
+ *  of this software and associated documentation files (the 'Software'), to deal
  *  in the Software without restriction, including without limitation the rights
  *  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
  *  copies of the Software, and to permit persons to whom the Software is
@@ -12,7 +12,7 @@
  *  The above copyright notice and this permission notice shall be included in all
  *  copies or substantial portions of the Software.
  *
- *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ *  THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
  *  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
@@ -114,6 +114,7 @@ public void flash(BigDecimal rate = 1) {
     if (logTextEnable) { log.info "${device} flash (${rate})" }
     espHomeLightCommand(
         key: settings.light as Long,
+        state: true,
         brightness: 1f,
         flashLength: rate * 1000,
         red: 1f,
@@ -270,15 +271,21 @@ public void parse(Map message) {
                 }
 
                 def (int h, int s, int b) = ColorUtils.rgbToHSV([message.red * 255f, message.green * 255f, message.blue * 255f])
-                String colorName = hsToColorName(h, s)
-                if (device.currentValue('colorName') != colorName) {
-                    sendEvent name: 'colorName', value: colorName, descriptionText: "color name is ${colorName}"
+                String colorName = colorNameMap.find { k, v -> h * 3.6 <= k }.value
+                if (message.colorModeCapabilities.contains('RGB') && device.currentValue('colorName') != colorName) {
+                    descriptionText = "${device} color name was set to ${colorName}"
+                    sendEvent name: 'colorName', value: colorName, descriptionText: descriptionText
+                    if (logTextEnable) { log.info descriptionText }
                 }
                 if (device.currentValue('hue') != h) {
-                    sendEvent name: 'hue', value: h, descriptionText: "hue is ${h}"
+                    descriptionText = "${device} hue was set to ${h}"
+                    sendEvent name: 'hue', value: h, descriptionText: descriptionText
+                    if (logTextEnable) { log.info descriptionText }
                 }
                 if (device.currentValue('saturation') != s) {
-                    sendEvent name: 'saturation', value: s, descriptionText: "saturation is ${s}"
+                    descriptionText = "${device} saturation was set to ${s}"
+                    sendEvent name: 'saturation', value: s, descriptionText: descriptionText
+                    if (logTextEnable) { log.info descriptionText }
                 }
 
                 int colorTemperature = Math.round(1000000f / message.colorTemperature)
@@ -288,6 +295,13 @@ public void parse(Map message) {
                     if (logTextEnable) { log.info descriptionText }
                 }
 
+                colorName = colorTempNameMap.find { k, v -> colorTemperature < k }.value
+                if (message.colorModeCapabilities.contains('COLOR TEMPERATURE') && device.currentValue('colorName') != colorName) {
+                    descriptionText = "${device} color name is ${colorName}"
+                    sendEvent(name: 'colorName', value: colorName, descriptionText: descriptionText)
+                    if (logTextEnable) { log.info descriptionText }
+                }
+                
                 String effectName = message.effect
                 if (device.currentValue('effectName') != effectName) {
                     descriptionText = "${device} effect name is ${effectName}"
@@ -295,7 +309,7 @@ public void parse(Map message) {
                     if (logTextEnable) { log.info descriptionText }
                 }
 
-                String colorMode = (message.colorMode & COLOR_CAP_RGB) == COLOR_CAP_RGB ? 'RGB' : 'CT'
+                String colorMode = (message.colorMode & COLOR_CAP_RGB) ? 'RGB' : 'CT'
                 if (message.effect && message.effect != 'None') { colorMode = 'EFFECTS' }
                 if (device.currentValue('colorMode') != colorMode) {
                     descriptionText = "${device} color mode is ${colorMode}"
@@ -317,39 +331,35 @@ public void parse(Map message) {
     }
 }
 
-private static String hsToColorName(BigDecimal hue, BigDecimal saturation) {
-    switch (hue * 3.6 as Integer) {
-        case 0..15: return 'Red'
-        case 16..45: return 'Orange'
-        case 46..75: return 'Yellow'
-        case 76..105: return 'Chartreuse'
-        case 106..135: return 'Green'
-        case 136..165: return 'Spring'
-        case 166..195: return 'Cyan'
-        case 196..225: return 'Azure'
-        case 226..255: return 'Blue'
-        case 256..285: return 'Violet'
-        case 286..315: return 'Magenta'
-        case 316..345: return 'Rose'
-        case 346..360: return 'Red'
-    }
+@Field private static Map colorNameMap = [
+    15: 'Red',
+    45: 'Orange',
+    75: 'Yellow',
+    105: 'Chartreuse',
+    135: 'Green',
+    165: 'Spring',
+    195: 'Cyan',
+    225: 'Azure',
+    255: 'Blue',
+    285: 'Violet',
+    315: 'Magenta',
+    345: 'Rose',
+    360: 'Red'
+]
 
-    return ''
-}
-
-@Field private static Map colorTempName = [
-    2001: "Sodium",
-    2101: "Starlight",
-    2400: "Sunrise",
-    2800: "Incandescent",
-    3300: "Soft White",
-    3500: "Warm White",
-    4150: "Moonlight",
-    5001: "Horizon",
-    5500: "Daylight",
-    6000: "Electronic",
-    6501: "Skylight",
-    20000: "Polar"
+@Field private static Map colorTempNameMap = [
+    2001: 'Sodium',
+    2101: 'Starlight',
+    2400: 'Sunrise',
+    2800: 'Incandescent',
+    3300: 'Soft White',
+    3500: 'Warm White',
+    4150: 'Moonlight',
+    5001: 'Horizon',
+    5500: 'Daylight',
+    6000: 'Electronic',
+    6501: 'Skylight',
+    20000: 'Polar'
 ]
 
 // Put this line at the end of the driver to include the ESPHome API library helper
