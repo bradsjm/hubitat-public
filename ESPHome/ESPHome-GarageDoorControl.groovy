@@ -48,7 +48,6 @@ metadata {
             title: 'ESPHome Entity',
             required: state.entities?.size() > 0,
             options: state.entities?.collectEntries { k, v -> [ k, v.name ] }
-            defaultValue: state.entities ? state.entities.keySet()[0] : '' // default to first
 
         input name: 'logEnable',    // if enabled the library will log debug details
                 type: 'bool',
@@ -132,6 +131,9 @@ public void parse(Map message) {
             // discovered and the entity key which is required when sending commands
             if (message.platform == 'cover') {
                 state.entities = (state.entities ?: [:]) + [ (message.key): message ]
+                if (!settings.cover) {
+                    device.updateSetting('cover', message.key)
+                }
             }
             break
 

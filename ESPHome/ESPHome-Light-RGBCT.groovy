@@ -58,7 +58,6 @@ metadata {
             title: 'ESPHome Entity',
             required: state.entities?.size() > 0,
             options: state.entities?.collectEntries { k, v -> [ k, v.name ] }
-            defaultValue: state.entities ? state.entities.keySet()[0] : '' // default to first
 
         input name: 'logEnable',    // if enabled the library will log debug details
                 type: 'bool',
@@ -234,13 +233,16 @@ public void parse(Map message) {
             // discovered and the entity key which is required when sending commands
             if (message.platform == 'light') {
                 state.entities = (state.entities ?: [:]) + [ (message.key): message ]
+                if (!settings.light) {
+                    device.updateSetting('light', message.key)
+                }
             }
 
             if (message.platform == 'sensor' && message.deviceClass == 'signal_strength') {
                 state['signalStrength'] = message.key
             }
 
-            if (message.key == settings.light as Integer) {
+            if (settings.light as Long == message.key) {
                 String effects = JsonOutput.toJson(message.effects ?: [])
                 if (device.currentValue('lightEffects') != effects) {
                     sendEvent(name: 'lightEffects', value: effects)
