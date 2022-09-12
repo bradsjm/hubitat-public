@@ -389,13 +389,22 @@ private static Map parseDeltaPd(ByteArrayInputStream stream) {
 
 // Decoder helpers
 private static String formatDuration(Duration duration) {
+    StringBuilder sb = new StringBuilder()
     Duration period = duration
     long days = period.toDays()
     period = period.minusDays(days)
     long hours = period.toHours()
     period = period.minusHours(hours)
     long minutes = period.toMinutes()
-    return (days ? "${days}d " : '') + "${hours}:${minutes.toString().padLeft(2, '0')}"
+    if (days > 0) {
+        sb.append("${days}d ")
+    }
+    if (hours > 0) {
+        sb.append("${minutes < 30 ? hours : hours + 1}h")
+    } else {
+        sb.append("${minutes}m")
+    }
+    return sb
 }
 
 private static float readFloatLE(ByteArrayInputStream stream, int size) {
