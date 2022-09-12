@@ -38,7 +38,7 @@ import java.util.concurrent.ConcurrentLinkedQueue
  * https://github.com/esphome/aioesphomeapi/blob/main/aioesphomeapi/api.proto
  */
 
-@Field static final int PING_INTERVAL_SECONDS = 30
+@Field static final int PING_INTERVAL_SECONDS = 60
 @Field static final int PORT_NUMBER = 6053
 @Field static final int SEND_RETRY_COUNT = 3
 @Field static final int SEND_RETRY_MILLIS = 5000
@@ -666,6 +666,7 @@ private void espHomePingRequest() {
 }
 
 private void espHomePingResponse(Map tags) {
+    setNetworkStatus('online')
     device.updateDataValue 'Last Ping Response', new Date().toString()
     if (logEnable) { log.trace 'ESPHome ping response received from device' }
     espHomeSchedulePing()
@@ -887,7 +888,9 @@ private void sendMessage(int msgType, Map tags, int expectedMsgType, String onSu
 }
 
 private void setNetworkStatus(String state, String reason = '') {
-    sendEvent([ name: NETWORK_ATTRIBUTE, value: state, descriptionText: reason ?: "${device} is ${state}" ])
+    if (device.currentValue(NETWORK_ATTRIBUTE) != state) {
+        sendEvent([ name: NETWORK_ATTRIBUTE, value: state, descriptionText: reason ?: "${device} is ${state}" ])
+    }
 }
 
 // parse received socket status - do not change this function name or driver will break

@@ -151,7 +151,8 @@ public void setColor(Map colorMap) {
         green: g / 255f,
         blue: b / 255f,
         masterBrightness: colorMap.level / 100f,
-        colorBrightness: 1f // use the master brightness
+        colorBrightness: 1f, // use the master brightness
+        colorMode: getColorMode('RGB')
     )
 }
 
@@ -162,6 +163,7 @@ public void setColorTemperature(BigDecimal colorTemperature, BigDecimal level = 
         key: settings.light as Long,
         colorTemperature: mireds,
         masterBrightness: level != null ? level / 100f : null,
+        colorMode: getColorMode('CT'),
         transitionLength: duration != null ? duration * 1000 : null
     )
 }
@@ -242,7 +244,7 @@ public void parse(Map message) {
                 state['signalStrength'] = message.key
             }
 
-            if (settings.light as Long == message.key) {
+            if (!settings.light || (settings.light as Long == message.key)) {
                 String effects = JsonOutput.toJson(message.effects ?: [])
                 if (device.currentValue('lightEffects') != effects) {
                     sendEvent(name: 'lightEffects', value: effects)
@@ -331,6 +333,14 @@ public void parse(Map message) {
             }
             break
     }
+}
+
+private Integer getColorMode(String capability) {
+    if (settings.light) {
+        Map<Integer, List<String>> modes = state.entities[settings.light].supportedColorModes
+        return modes.find { k, v -> capability in v }?.key as Integer
+    }
+    return null
 }
 
 @Field private static Map colorNameMap = [
