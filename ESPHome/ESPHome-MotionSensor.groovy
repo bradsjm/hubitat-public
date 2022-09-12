@@ -44,9 +44,9 @@ metadata {
 
         input name: 'binarysensor', // allows the user to select which sensor entity to use
             type: 'enum',
-            title: 'ESPHome Entity',
-            required: state.entities?.size() > 0,
-            options: state.entities?.collectEntries { k, v -> [ k, v.name ] }
+            title: 'ESPHome Sensor Entity',
+            required: state.sensors?.size() > 0,
+            options: state.sensors?.collectEntries { k, v -> [ k, v.name ] }
 
         input name: 'logEnable',    // if enabled the library will log debug details
                 type: 'bool',
@@ -106,7 +106,7 @@ public void parse(Map message) {
             // This will populate the cover dropdown with all the entities
             // discovered and the entity key which is required when sending commands
             if (message.platform == 'binary') {
-                state.entities = (state.entities ?: [:]) + [ (message.key): message ]
+                state.sensors = (state.sensors ?: [:]) + [ (message.key): message ]
                 if (!settings.binarysensor) {
                     device.updateSetting('binarysensor', message.key)
                 }

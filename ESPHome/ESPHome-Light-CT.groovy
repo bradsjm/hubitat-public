@@ -52,9 +52,9 @@ metadata {
 
         input name: 'light',       // allows the user to select which entity to use
             type: 'enum',
-            title: 'ESPHome Entity',
-            required: state.entities?.size() > 0,
-            options: state.entities?.collectEntries { k, v -> [ k, v.name ] }
+            title: 'ESPHome Light Entity',
+            required: state.lights?.size() > 0,
+            options: state.lights?.collectEntries { k, v -> [ k, v.name ] }
 
         input name: 'logEnable',    // if enabled the library will log debug details
                 type: 'bool',
@@ -151,29 +151,13 @@ public void setColorTemperature(BigDecimal colorTemperature, BigDecimal level = 
 }
 
 public void setEffect(BigDecimal number) {
-    if (state.entities && settings.light) {
-        List<String> effects = state.entities[settings.light].effects
+    if (state.lights && settings.light) {
+        List<String> effects = state.lights[settings.light].effects
         if (number < 1) { number = effects.size() }
         if (number > effects.size()) { number = 1 }
         int index = number - 1
         if (logTextEnable) { log.info "${device} set effect ${effects[index]}" }
         espHomeLightCommand(key: settings.light as Long, effect: effects[index])
-    }
-}
-
-public void setNextEffect() {
-    if (state.entities && settings.light) {
-        String current = device.currentValue('effectName')
-        int index = state.entities[settings.light].effects.indexOf(current) + 1
-        setEffect(index + 1)
-    }
-}
-
-public void setPreviousEffect() {
-    if (state.entities && settings.light) {
-        String current = device.currentValue('effectName')
-        int index = state.entities[settings.light].effects.indexOf(current) + 1
-        setEffect(index - 1)
     }
 }
 
@@ -185,6 +169,22 @@ public void setLevel(BigDecimal level, BigDecimal duration = null) {
         masterBrightness: level > 0 ? level / 100f : null,
         transitionLength: duration != null ? duration * 1000 : null
     )
+}
+
+public void setNextEffect() {
+    if (state.lights && settings.light) {
+        String current = device.currentValue('effectName')
+        int index = state.lights[settings.light].effects.indexOf(current) + 1
+        setEffect(index + 1)
+    }
+}
+
+public void setPreviousEffect() {
+    if (state.lights && settings.light) {
+        String current = device.currentValue('effectName')
+        int index = state.lights[settings.light].effects.indexOf(current) + 1
+        setEffect(index - 1)
+    }
 }
 
 // the parse method is invoked by the API library when messages are received
@@ -200,7 +200,7 @@ public void parse(Map message) {
             // This will populate the cover dropdown with all the entities
             // discovered and the entity key which is required when sending commands
             if (message.platform == 'light') {
-                state.entities = (state.entities ?: [:]) + [ (message.key): message ]
+                state.lights = (state.lights ?: [:]) + [ (message.key): message ]
                 if (!settings.light) {
                     device.updateSetting('light', message.key)
                 }
@@ -217,12 +217,13 @@ public void parse(Map message) {
         case 'state':
             // Check if the entity key matches the message entity key received to update device state
             if (settings.light as Long == message.key) {
+                String type = message.isDigital ? "digital" : "physical"
                 String descriptionText
 
                 String state = message.state ? 'on' : 'off'
                 if (device.currentValue('switch') != state) {
                     descriptionText = "${device} was turned ${state}"
-                    sendEvent(name: 'switch', value: state, descriptionText: descriptionText)
+                    sendEvent(name: 'switch', value: state, type: type, descriptionText: descriptionText)
                     if (logTextEnable) { log.info descriptionText }
                 }
 
@@ -231,7 +232,7 @@ public void parse(Map message) {
                     descriptionText = "${device} level was set to ${level}"
                     sendEvent(name: 'level', value: level, unit: '%', descriptionText: descriptionText)
                     if (message.state) {
-                        sendEvent(name: 'levelPreset', value: level, unit: '%', descriptionText: descriptionText)
+                        sendEvent(name: 'levelPreset', value: level, unit: '%', type: type, descriptionText: descriptionText)
                     }
                     if (logTextEnable) { log.info descriptionText }
                 }
@@ -239,21 +240,21 @@ public void parse(Map message) {
                 int colorTemperature = Math.round(1000000f / message.colorTemperature)
                 if (device.currentValue('colorTemperature') != colorTemperature) {
                     descriptionText = "${device} color temperature was set to ${colorTemperature}"
-                    sendEvent(name: 'colorTemperature', value: colorTemperature, unit: '°K', descriptionText: descriptionText)
+                    sendEvent(name: 'colorTemperature', value: colorTemperature, unit: '°K', type: type, descriptionText: descriptionText)
                     if (logTextEnable) { log.info descriptionText }
                 }
 
                 String colorName = colorTempName.find { k, v -> colorTemperature < k }.value
                 if (device.currentValue('colorName') != colorName) {
                     descriptionText = "${device} color name is ${colorName}"
-                    sendEvent(name: 'colorName', value: colorName, descriptionText: descriptionText)
+                    sendEvent(name: 'colorName', value: colorName, type: type, descriptionText: descriptionText)
                     if (logTextEnable) { log.info descriptionText }
                 }
 
                 String effectName = message.effect
                 if (device.currentValue('effectName') != effectName) {
                     descriptionText = "${device} effect name is ${effectName}"
-                    sendEvent(name: 'effectName', value: effectName, descriptionText: descriptionText)
+                    sendEvent(name: 'effectName', value: effectName, type: type, descriptionText: descriptionText)
                     if (logTextEnable) { log.info descriptionText }
                 }
             }

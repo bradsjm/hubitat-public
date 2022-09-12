@@ -21,12 +21,13 @@
  *  SOFTWARE.
  */
 metadata {
-    definition(name: 'ESPHome Switch', namespace: 'esphome', author: 'Jonathan Bradshaw') {
+    definition(name: 'ESPHome Outlet', namespace: 'esphome', author: 'Jonathan Bradshaw') {
         singleThreaded: true
 
         capability 'Actuator'
         capability 'Switch'
         capability 'Initialize'
+        capability 'Outlet'
 
         // attribute populated by ESPHome API Library automatically
         attribute 'networkStatus', 'enum', [ 'connecting', 'online', 'offline' ]
@@ -45,9 +46,9 @@ metadata {
 
         input name: 'switch',       // allows the user to select which entity to use
             type: 'enum',
-            title: 'ESPHome Entity',
-            required: state.entities?.size() > 0,
-            options: state.entities?.collectEntries { k, v -> [ k, v.name ] }
+            title: 'ESPHome Switch Entity',
+            required: state.switches?.size() > 0,
+            options: state.switches?.collectEntries { k, v -> [ k, v.name ] }
 
         input name: 'logEnable',    // if enabled the library will log debug details
                 type: 'bool',
@@ -96,13 +97,17 @@ public void uninstalled() {
 
 // driver commands
 public void on() {
-    if (logTextEnable) { log.info "${device} on" }
-    espHomeSwitchCommand(key: settings.switch as Long, state: true)
+    if (device.currentValue('switch') != 'on') {
+        if (logTextEnable) { log.info "${device} on" }
+        espHomeSwitchCommand(key: settings.switch as Long, state: true)
+    }
 }
 
 public void off() {
-    if (logTextEnable) { log.info "${device} off" }
-    espHomeSwitchCommand(key: settings.switch as Long, state: false)
+    if (device.currentValue('switch') != 'off') {
+        if (logTextEnable) { log.info "${device} off" }
+        espHomeSwitchCommand(key: settings.switch as Long, state: false)
+    }
 }
 
 // the parse method is invoked by the API library when messages are received
@@ -118,7 +123,7 @@ public void parse(Map message) {
             // This will populate the cover dropdown with all the entities
             // discovered and the entity key which is required when sending commands
             if (message.platform == 'switch') {
-                state.entities = (state.entities ?: [:]) + [ (message.key): message ]
+                state.switches = (state.switches ?: [:]) + [ (message.key): message ]
                 if (!settings.switch) {
                     device.updateSetting('switch', message.key)
                 }
@@ -128,11 +133,13 @@ public void parse(Map message) {
         case 'state':
             // Check if the entity key matches the message entity key received to update device state
             if (settings.switch as Long == message.key) {
+                String type = message.isDigital ? 'digital' : 'physical'
                 String value = message.state ? 'on' : 'off'
                 if (device.currentValue('switch') != value) {
                     sendEvent([
                         name: 'switch',
                         value: value,
+                        type: type,
                         descriptionText: "Switch is ${value}"
                     ])
                 }

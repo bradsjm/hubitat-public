@@ -49,9 +49,9 @@ metadata {
 
         input name: 'light',       // allows the user to select which entity to use
             type: 'enum',
-            title: 'ESPHome Entity',
-            required: state.entities?.size() > 0,
-            options: state.entities?.collectEntries { k, v -> [ k, v.name ] }
+            title: 'ESPHome Light Entity',
+            required: state.lights?.size() > 0,
+            options: state.lights?.collectEntries { k, v -> [ k, v.name ] }
 
         input name: 'logEnable',    // if enabled the library will log debug details
                 type: 'bool',
@@ -100,31 +100,39 @@ public void uninstalled() {
 
 // driver commands
 public void on() {
-    if (logTextEnable) { log.info "${device} on" }
-    espHomeLightCommand(key: settings.light as Long, state: true)
+    if (device.currentValue('switch') != 'on') {
+        if (logTextEnable) { log.info "${device} on" }
+        espHomeLightCommand(key: settings.light as Long, state: true)
+    }
 }
 
 public void off() {
-    if (logTextEnable) { log.info "${device} off" }
-    espHomeLightCommand(key: settings.light as Long, state: false)
+    if (device.currentValue('switch') != 'off') {
+        if (logTextEnable) { log.info "${device} off" }
+        espHomeLightCommand(key: settings.light as Long, state: false)
+    }
 }
 
 public void setLevel(BigDecimal level, BigDecimal duration = null) {
-    if (logTextEnable) { log.info "${device} set level ${level}%" }
-    espHomeLightCommand(
-        key: settings.light as Long,
-        state: true,
-        masterBrightness: level / 100f,
-        transitionLength: duration != null ? duration * 1000 : null
-    )
+    if (device.currentValue('level') != level) {
+        if (logTextEnable) { log.info "${device} set level ${level}%" }
+        espHomeLightCommand(
+            key: settings.light as Long,
+            state: true,
+            masterBrightness: level / 100f,
+            transitionLength: duration != null ? duration * 1000 : null
+        )
+    }
 }
 
 public void presetLevel(BigDecimal level) {
-    if (logTextEnable) { log.info "${device} preset level ${level}%" }
-    espHomeLightCommand(
-        key: settings.light as Long,
-        masterBrightness: level / 100f
-    )
+    if (device.currentValue('level') != level) {
+        if (logTextEnable) { log.info "${device} preset level ${level}%" }
+        espHomeLightCommand(
+            key: settings.light as Long,
+            masterBrightness: level / 100f
+        )
+    }
 }
 
 // the parse method is invoked by the API library when messages are received
@@ -140,7 +148,7 @@ public void parse(Map message) {
             // This will populate the cover dropdown with all the entities
             // discovered and the entity key which is required when sending commands
             if (message.platform == 'light') {
-                state.entities = (state.entities ?: [:]) + [ (message.key): message ]
+                state.lights = (state.lights ?: [:]) + [ (message.key): message ]
                 if (!settings.light) {
                     device.updateSetting('light', message.key)
                 }
@@ -150,20 +158,23 @@ public void parse(Map message) {
         case 'state':
             // Check if the entity key matches the message entity key received to update device state
             if (settings.light as Long == message.key) {
+                String type = message.isDigital ? 'digital' : 'physical'
                 String state = message.state ? 'on' : 'off'
-                sendEvent([
-                    name: 'switch',
-                    value: state,
-                    descriptionText: "Light is ${state}"
-                ])
+                if (device.currentValue('switch') != state) {
+                    descriptionText = "${device} was turned ${state}"
+                    sendEvent(name: 'switch', value: state, type: type, descriptionText: descriptionText)
+                    if (logTextEnable) { log.info descriptionText }
+                }
 
-                int level = message.masterBrightness * 100f
-                sendEvent([
-                    name: 'level',
-                    value: level,
-                    unit: '%',
-                    descriptionText: "Level is ${level}"
-                ])
+                int level = message.state ? Math.round(message.masterBrightness * 100f) : 0
+                if (device.currentValue('level') != level) {
+                    descriptionText = "${device} level was set to ${level}"
+                    sendEvent(name: 'level', value: level, unit: '%', descriptionText: descriptionText)
+                    if (message.state) {
+                        sendEvent(name: 'levelPreset', value: level, unit: '%', type: type, descriptionText: descriptionText)
+                    }
+                    if (logTextEnable) { log.info descriptionText }
+                }
             }
             break
     }

@@ -34,6 +34,7 @@ metadata {
         capability 'PowerMeter'
         capability 'Sensor'
         capability 'Initialize'
+        capability 'VoltageMeasurement'
 
         attribute 'powerIn', 'number'
 

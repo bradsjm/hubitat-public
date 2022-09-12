@@ -161,7 +161,7 @@ private void espHomeSirenCommand(Map tags) {
 private void espHomeSwitchCommand(Map tags) {
     sendMessage(MSG_SWITCH_COMMAND_REQUEST, [
         1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
-        2: [ tags.state != null ? 1 : 0, WIRETYPE_VARINT ],
+        2: [ tags.state ? 1 : 0, WIRETYPE_VARINT ],
     ], MSG_SWITCH_STATE_RESPONSE)
 }
 
@@ -181,7 +181,7 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
     switch (msgType) {
         case MSG_DISCONNECT_REQUEST:
             closeSocket('requested by device')
-            state.reconnectDelay = 10
+            state.reconnectDelay = 60
             scheduleConnect()
             break
         case MSG_PING_REQUEST:
@@ -213,22 +213,22 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
             espHomeListEntitiesDoneResponse()
             break
         case MSG_BINARY_SENSOR_STATE_RESPONSE:
-            parse espHomeBinarySensorState(tags)
+            parse espHomeBinarySensorState(tags, handled)
             break
         case MSG_COVER_STATE_RESPONSE:
-            parse espHomeCoverState(tags)
+            parse espHomeCoverState(tags, handled)
             break
         case MSG_FAN_STATE_RESPONSE:
-            parse espHomeFanState(tags)
+            parse espHomeFanState(tags, handled)
             break
         case MSG_LIGHT_STATE_RESPONSE:
-            parse espHomeLightState(tags)
+            parse espHomeLightState(tags, handled)
             break
         case MSG_SENSOR_STATE_RESPONSE:
             parse espHomeSensorState(tags)
             break
         case MSG_SWITCH_STATE_RESPONSE:
-            parse espHomeSwitchState(tags)
+            parse espHomeSwitchState(tags, handled)
             break
         case MSG_TEXT_SENSOR_STATE_RESPONSE:
             parse espHomeTextSensorState(tags)
@@ -279,10 +279,11 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
     }
 }
 
-private static Map espHomeBinarySensorState(Map tags) {
+private static Map espHomeBinarySensorState(Map tags, boolean isDigital) {
     return [
         type: 'state',
         platform: 'binary',
+        isDigital: isDigital,
         key: getLongTag(tags, 1),
         state: getBooleanTag(tags, 2),
         hasState: getBooleanTag(tags, 3, true)
@@ -323,10 +324,11 @@ private void espHomeConnectResponse(Map tags) {
     espHomeDeviceInfoRequest()
 }
 
-private static Map espHomeCoverState(Map tags) {
+private static Map espHomeCoverState(Map tags, boolean isDigital) {
     return [
         type: 'state',
         platform: 'cover',
+        isDigital: isDigital,
         key: getLongTag(tags, 1),
         legacyState: getIntTag(tags, 2), // legacy: state has been removed in 1.13
         position: getFloatTag(tags, 3),
@@ -375,10 +377,11 @@ private void espHomeDeviceInfoResponse(Map tags) {
     espHomeListEntitiesRequest()
 }
 
-private static Map espHomeFanState(Map tags) {
+private static Map espHomeFanState(Map tags, boolean isDigital) {
     return [
         type: 'state',
         platform: 'fan',
+        isDigital: isDigital,
         key: getLongTag(tags, 1),
         state: getBooleanTag(tags, 2),
         oscillating: getBooleanTag(tags, 3),
@@ -390,6 +393,7 @@ private static Map espHomeFanState(Map tags) {
 
 private void espHomeGetTimeRequest() {
     long value = new Date().getTime() / 1000
+    log.info 'ESPHome sending device current time'
     sendMessage(MSG_GET_TIME_RESPONSE, [
         1: [ value as Long, WIRETYPE_VARINT ]
     ])
@@ -398,6 +402,7 @@ private void espHomeGetTimeRequest() {
 private void espHomeHelloRequest() {
     // Can only be sent by the client and only at the beginning of the connection
     String client = "Hubitat ${location.hub.name}"
+    log.info 'ESPHome initiating connection handshake'
     sendMessage(MSG_HELLO_REQUEST, [
         1: [ client as String, WIRETYPE_LENGTH_DELIMITED ]
     ], MSG_HELLO_RESPONSE, 'espHomeHelloResponse')
@@ -431,10 +436,11 @@ private void espHomeHelloResponse(Map tags) {
     espHomeConnectRequest(settings.password as String)
 }
 
-private static Map espHomeLightState(Map tags) {
+private static Map espHomeLightState(Map tags, boolean isDigital) {
     return [
         type: 'state',
         platform: 'light',
+        isDigital: isDigital,
         key: getLongTag(tags, 1),
         state: getBooleanTag(tags, 2),
         masterBrightness: getFloatTag(tags, 3),
@@ -697,10 +703,11 @@ private static Map espHomeSirenState(Map tags) {
     ]
 }
 
-private static Map espHomeSwitchState(Map tags) {
+private static Map espHomeSwitchState(Map tags, boolean isDigital) {
     return [
         type: 'state',
         platform: 'switch',
+        isDigital: isDigital,
         key: getLongTag(tags, 1),
         state: getBooleanTag(tags, 2)
     ]
@@ -874,6 +881,7 @@ private void sendMessage(int msgType, Map tags = [:]) {
 }
 
 private void sendMessage(int msgType, Map tags, int expectedMsgType, String onSuccess = '') {
+    if (logEnable) { log.debug "ESPHome send msg type #${msgType} with ${tags}" }
     espSentQueue.computeIfAbsent(device.id) { k -> new ConcurrentLinkedQueue<Map>() }.add([
         msgType: msgType,
         tags: tags,

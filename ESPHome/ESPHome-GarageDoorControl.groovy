@@ -45,9 +45,9 @@ metadata {
 
         input name: 'cover',        // allows the user to select which cover entity to use
             type: 'enum',
-            title: 'ESPHome Entity',
-            required: state.entities?.size() > 0,
-            options: state.entities?.collectEntries { k, v -> [ k, v.name ] }
+            title: 'ESPHome Cover Entity',
+            required: state.covers?.size() > 0,
+            options: state.covers?.collectEntries { k, v -> [ k, v.name ] }
 
         input name: 'logEnable',    // if enabled the library will log debug details
                 type: 'bool',
@@ -130,7 +130,7 @@ public void parse(Map message) {
             // This will populate the cover dropdown with all the entities
             // discovered and the entity key which is required when sending commands
             if (message.platform == 'cover') {
-                state.entities = (state.entities ?: [:]) + [ (message.key): message ]
+                state.covers = (state.covers ?: [:]) + [ (message.key): message ]
                 if (!settings.cover) {
                     device.updateSetting('cover', message.key)
                 }
