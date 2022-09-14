@@ -25,6 +25,7 @@ metadata {
 
         capability 'Sensor'
         capability 'ContactSensor'
+        capability 'Refresh'
         capability 'Initialize'
 
         // attribute populated by ESPHome API Library automatically
@@ -81,6 +82,11 @@ public void logsOff() {
     espHomeSubscribeLogs(LOG_LEVEL_INFO, false) // disable device logging
     device.updateSetting('logEnable', false)
     log.info "${device} debug logging disabled"
+}
+
+public void refresh() {
+    log.info "${device} refresh"
+    espHomeDeviceInfoRequest()
 }
 
 public void updated() {

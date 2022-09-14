@@ -26,6 +26,7 @@ metadata {
 
         capability 'Actuator'
         capability 'GarageDoorControl'
+        capability 'Refresh'
         capability 'Initialize'
 
         // attribute populated by ESPHome API Library automatically
@@ -115,6 +116,11 @@ public void close() {
     // API library cover command, entity key for the cover is required
     if (logTextEnable) { log.info "${device} close" }
     espCoverCommand(key: settings.cover as long, position: 0.0)
+}
+
+public void refresh() {
+    log.info "${device} refresh"
+    espHomeDeviceInfoRequest()
 }
 
 // the parse method is invoked by the API library when messages are received
