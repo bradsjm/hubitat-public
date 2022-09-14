@@ -27,6 +27,7 @@ metadata {
         capability 'Actuator'
         capability 'EnergyMeter'
         capability 'PowerMeter'
+        capability 'Refresh'
         capability 'Switch'
         capability 'Initialize'
         capability 'Outlet'
@@ -70,8 +71,6 @@ metadata {
 }
 
 public void initialize() {
-    state.clear()
-
     // API library command to open socket to device, it will automatically reconnect if needed 
     openSocket()
 
@@ -113,6 +112,12 @@ public void off() {
         if (logTextEnable) { log.info "${device} off" }
         espHomeSwitchCommand(key: settings.switch as Long, state: false)
     }
+}
+
+public void refresh() {
+    log.info "${device} refresh"
+    state.clear()
+    espHomeDeviceInfoRequest()
 }
 
 // the parse method is invoked by the API library when messages are received

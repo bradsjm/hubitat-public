@@ -65,8 +65,6 @@ metadata {
 }
 
 public void initialize() {
-    state.clear()
-
     // API library command to open socket to device, it will automatically reconnect if needed 
     openSocket()
 
@@ -104,7 +102,7 @@ public void open() {
     }
     // API library cover command, entity key for the cover is required
     if (logTextEnable) { log.info "${device} open" }
-    espCoverCommand(key: settings.cover as long, position: 1.0)
+    espHomeCoverCommand(key: settings.cover as long, position: 1.0)
 }
 
 public void close() {
@@ -115,11 +113,12 @@ public void close() {
     }
     // API library cover command, entity key for the cover is required
     if (logTextEnable) { log.info "${device} close" }
-    espCoverCommand(key: settings.cover as long, position: 0.0)
+    espHomeCoverCommand(key: settings.cover as long, position: 0.0)
 }
 
 public void refresh() {
     log.info "${device} refresh"
+    state.clear()
     espHomeDeviceInfoRequest()
 }
 
@@ -146,7 +145,7 @@ public void parse(Map message) {
         case 'state':
             // Check if the entity key matches the message entity key received to update device state
             if (settings.cover as Long == message.key) {
-                String value = message.position > 0 ? 'closed' : 'open'
+                String value = message.position > 0 ? 'open' : 'closed'
                 if (device.currentValue('door') != value) {
                     sendEvent([
                         name: 'door',

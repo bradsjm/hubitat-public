@@ -79,8 +79,6 @@ import groovy.transform.Field
 import hubitat.helper.ColorUtils
 
 public void initialize() {
-    state.clear()
-
     // API library command to open socket to device, it will automatically reconnect if needed 
     openSocket()
 
@@ -149,6 +147,7 @@ public void presetLevel(BigDecimal level) {
 
 public void refresh() {
     log.info "${device} refresh"
+    state.clear()
     espHomeDeviceInfoRequest()
 }
 

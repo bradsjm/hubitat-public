@@ -38,14 +38,15 @@ import java.util.concurrent.ConcurrentLinkedQueue
  * https://github.com/esphome/aioesphomeapi/blob/main/aioesphomeapi/api.proto
  */
 
-@Field static final int PING_INTERVAL_SECONDS = 60
+@Field static final int PING_INTERVAL_SECONDS = 60 // Maximum 160 seconds
 @Field static final int PORT_NUMBER = 6053
 @Field static final int SEND_RETRY_COUNT = 3
-@Field static final int SEND_RETRY_MILLIS = 5000
+@Field static final int SEND_RETRY_SECONDS = 5
+@Field static final int MAX_RECONNECT_SECONDS = 60
 @Field static final String NETWORK_ATTRIBUTE = 'networkStatus'
 
 @Field static final ConcurrentHashMap<String, String> espReceiveBuffer = new ConcurrentHashMap<>()
-@Field static final ConcurrentHashMap<String, ConcurrentLinkedQueue> espSentQueue = new ConcurrentHashMap<>()
+@Field static final ConcurrentHashMap<String, ConcurrentLinkedQueue> espSendQueue = new ConcurrentHashMap<>()
 
 /*
  * ESPHome Commands
@@ -181,12 +182,11 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
     switch (msgType) {
         case MSG_DISCONNECT_REQUEST:
             closeSocket('requested by device')
-            state.reconnectDelay = 60
+            state.reconnectDelay = MAX_RECONNECT_SEC
             scheduleConnect()
             break
         case MSG_PING_REQUEST:
             sendMessage(MSG_PING_RESPONSE)
-            espHomeSchedulePing()
             break
         case MSG_LIST_BINARYSENSOR_RESPONSE:
             parse espHomeListEntitiesBinarySensorResponse(tags)
@@ -277,6 +277,7 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
                 log.warn "ESPHome received unhandled message type ${msgType} with ${tags}"
             }
     }
+    espHomeSchedulePing()
 }
 
 private static Map espHomeBinarySensorState(Map tags, boolean isDigital) {
@@ -632,7 +633,7 @@ private static Map espHomeListEntitiesTextSensorResponse(Map tags) {
 private void espHomeListEntitiesDoneResponse() {
     espHomeSubscribeStatesRequest()
     espHomeSubscribeLogs(settings.logEnable ? LOG_LEVEL_DEBUG : LOG_LEVEL_INFO)
-    sendMessageRetry()
+    sendMessageQueue()
 }
 
 private static Map espHomeLockState(Map tags) {
@@ -666,7 +667,7 @@ private static Map espHomeNumberState(Map tags) {
 }
 
 private void espHomePingRequest() {
-    if (logEnable) { log.trace 'ESPHome ping request sent to device' }
+    if (logEnable) { log.trace 'ESPHome sending ping to device' }
     sendMessage(
         MSG_PING_REQUEST, [:],
         MSG_PING_RESPONSE, 'espHomePingResponse'
@@ -681,9 +682,11 @@ private void espHomePingResponse(Map tags) {
 }
 
 private void espHomeSchedulePing() {
-    int jitter = (int) Math.ceil(PING_INTERVAL_SECONDS * 0.5)
-    int interval = PING_INTERVAL_SECONDS + new Random().nextInt(jitter)
-    runIn(interval, 'espHomePingRequest')
+    if (PING_INTERVAL_SECONDS > 0) {
+        int jitter = (int) Math.ceil(PING_INTERVAL_SECONDS * 0.5)
+        int interval = PING_INTERVAL_SECONDS + new Random().nextInt(jitter)
+        runIn(interval, 'healthcheck')
+    }
 }
 
 private static Map espHomeSensorState(Map tags) {
@@ -802,8 +805,8 @@ private void openSocket() {
 }
 
 private void closeSocket(String reason) {
-    unschedule('espHomePingRequest')
-    unschedule('sendMessageRetry')
+    unschedule('healthcheck')
+    unschedule('sendMessageQueue')
     espReceiveBuffer.remove(device.id)
     log.info "ESPHome closing socket to ${ipAddress}:${PORT_NUMBER} (${reason})"
     if (!isOffline()) {
@@ -811,6 +814,15 @@ private void closeSocket(String reason) {
     }
     interfaces.rawSocket.disconnect()
     setNetworkStatus('offline', reason)
+}
+
+private void healthcheck() {
+    ConcurrentLinkedQueue<Map> queue = espSendQueue.get(device.id)
+    boolean isEmpty = queue == null || queue.isEmpty()
+    // only send ping request when online and send queue is empty
+    if (!isOffline() && isEmpty) {
+        espHomePingRequest()
+    }
 }
 
 private byte[] decodeMessage(String hexString) {
@@ -871,7 +883,7 @@ public void parse(String hexString) {
 
 private void scheduleConnect() {
     state.reconnectDelay = (state.reconnectDelay ?: 1) * 2
-    if (state.reconnectDelay > 60) { state.reconnectDelay = 60 }
+    if (state.reconnectDelay > MAX_RECONNECT_SECONDS) { state.reconnectDelay = MAX_RECONNECT_SECONDS }
     int jitter = (int) Math.ceil(state.reconnectDelay * 0.5)
     int interval = state.reconnectDelay + new Random().nextInt(jitter)
     log.info "ESPHome reconnecting in ${interval} seconds"
@@ -884,7 +896,8 @@ private void sendMessage(int msgType, Map tags = [:]) {
 
 private void sendMessage(int msgType, Map tags, int expectedMsgType, String onSuccess = '') {
     if (logEnable) { log.debug "ESPHome send msg type #${msgType} with ${tags}" }
-    espSentQueue.computeIfAbsent(device.id) { k -> new ConcurrentLinkedQueue<Map>() }.add([
+    ConcurrentLinkedQueue<Map> queue = espSendQueue.computeIfAbsent(device.id) { k -> new ConcurrentLinkedQueue<Map>() }
+    queue.add([
         msgType: msgType,
         tags: tags,
         expectedMsgType: expectedMsgType,
@@ -893,7 +906,7 @@ private void sendMessage(int msgType, Map tags, int expectedMsgType, String onSu
     ])
     if (!isOffline()) {
         sendMessage(msgType, tags)
-        runInMillis(SEND_RETRY_MILLIS, 'sendMessageRetry')
+        runIn(SEND_RETRY_SECONDS, 'sendMessageQueue')
     }
 }
 
@@ -914,38 +927,39 @@ public void socketStatus(String message) {
     }
 }
 
-private void sendMessageRetry() {
-    ConcurrentLinkedQueue<Map> sentQueue = espSentQueue.get(device.id)
-    if (sentQueue) {
-        // retry outstanding messages and decrement retry counter
-        sentQueue.removeIf { entry ->
+private void sendMessageQueue() {
+    ConcurrentLinkedQueue<Map> queue = espSendQueue.get(device.id)
+    if (queue) {
+        // send outstanding messages and decrement retry counter
+        queue.removeIf { entry ->
             if (entry.retries > 0) {
                 entry.retries--
-                log.info "ESPHome retrying message type #${entry.msgType} (retries left ${entry.retries})"
+                log.info "ESPHome sending message type #${entry.msgType} (retries left ${entry.retries})"
                 sendMessage(entry.msgType, entry.tags)
                 return false
             } else {
                 log.info "ESPHome message type #${entry.msgType} retries exceeded"
+                // maybe a broken connection
                 closeSocket('message retries exceeded')
                 scheduleConnect()
                 return true
             }
         }
 
-        // reschedule check if there are outstanding messages
-        if (!sentQueue.isEmpty()) {
-            runInMillis(SEND_RETRY_MILLIS, 'sendMessageRetry')
+        // reschedule if there are outstanding messages
+        if (!queue.isEmpty()) {
+            runIn(SEND_RETRY_SECONDS, 'sendMessageQueue')
         }
     }
 }
 
 private boolean supervisionCheck(int msgType, Map tags = [:]) {
     List<String> onSuccess = []
-    ConcurrentLinkedQueue<Map> sentQueue = espSentQueue.get(device.id)
-    if (!sentQueue) { return false }
+    ConcurrentLinkedQueue<Map> queue = espSendQueue.get(device.id)
+    if (!queue) { return false }
 
     // check for successful responses and remove from queue
-    boolean result = sentQueue.removeIf { entry ->
+    boolean result = queue.removeIf { entry ->
         if (entry.expectedMsgType == msgType) {
             if (entry.onSuccess) {
                 onSuccess.add(entry.onSuccess)
@@ -957,8 +971,8 @@ private boolean supervisionCheck(int msgType, Map tags = [:]) {
     }
 
     // execute all onsuccess after queue has been processed
-    if (sentQueue.isEmpty()) {
-        unschedule('sendMessageRetry')
+    if (queue.isEmpty()) {
+        unschedule('sendMessageQueue')
     }
 
     onSuccess.each { e ->

@@ -64,8 +64,6 @@ metadata {
 }
 
 public void initialize() {
-    state.clear()
-
     // API library command to open socket to device, it will automatically reconnect if needed 
     openSocket()
 
@@ -86,6 +84,7 @@ public void logsOff() {
 
 public void refresh() {
     log.info "${device} refresh"
+    state.clear()
     espHomeDeviceInfoRequest()
 }
 
