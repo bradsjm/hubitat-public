@@ -33,6 +33,7 @@ metadata {
         capability 'LevelPreset'
         capability 'Light'
         capability 'LightEffects'
+        capability 'Refresh'
         capability 'SignalStrength'
         capability 'Switch'
         capability 'SwitchLevel'
@@ -144,6 +145,11 @@ public void presetLevel(BigDecimal level) {
             masterBrightness: level / 100f
         )
     }
+}
+
+public void refresh() {
+    log.info "${device} refresh"
+    espHomeDeviceInfoRequest()
 }
 
 public void setColor(Map colorMap) {

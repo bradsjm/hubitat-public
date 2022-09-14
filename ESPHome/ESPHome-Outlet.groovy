@@ -25,6 +25,7 @@ metadata {
         singleThreaded: true
 
         capability 'Actuator'
+        capability 'Refresh'
         capability 'Switch'
         capability 'Initialize'
         capability 'Outlet'
@@ -108,6 +109,11 @@ public void off() {
         if (logTextEnable) { log.info "${device} off" }
         espHomeSwitchCommand(key: settings.switch as Long, state: false)
     }
+}
+
+public void refresh() {
+    log.info "${device} refresh"
+    espHomeDeviceInfoRequest()
 }
 
 // the parse method is invoked by the API library when messages are received

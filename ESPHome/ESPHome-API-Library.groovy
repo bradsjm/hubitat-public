@@ -320,8 +320,11 @@ private void espHomeConnectResponse(Map tags) {
     state.remove('reconnectDelay')
     espHomeSchedulePing()
 
-    // Step 3: Send Device Info Request
-    espHomeDeviceInfoRequest()
+    if (device.getDataValue('MAC Address')) {
+        espHomeListEntitiesDoneResponse()
+    } else {
+        espHomeDeviceInfoRequest()
+    }
 }
 
 private static Map espHomeCoverState(Map tags, boolean isDigital) {
@@ -358,7 +361,6 @@ private void espHomeDeviceInfoResponse(Map tags) {
         portNumber: getIntTag(tags, 10)
     ]
 
-    device.name = deviceInfo.name
     if (deviceInfo.macAddress) {
         device.deviceNetworkId = deviceInfo.macAddress.replaceAll(':', '-').toLowerCase()
     }
@@ -679,7 +681,7 @@ private void espHomePingResponse(Map tags) {
 }
 
 private void espHomeSchedulePing() {
-    int jitter = (int) Math.ceil(PING_INTERVAL_SECONDS * 0.2)
+    int jitter = (int) Math.ceil(PING_INTERVAL_SECONDS * 0.5)
     int interval = PING_INTERVAL_SECONDS + new Random().nextInt(jitter)
     runIn(interval, 'espHomePingRequest')
 }
@@ -870,7 +872,7 @@ public void parse(String hexString) {
 private void scheduleConnect() {
     state.reconnectDelay = (state.reconnectDelay ?: 1) * 2
     if (state.reconnectDelay > 60) { state.reconnectDelay = 60 }
-    int jitter = (int) Math.ceil(state.reconnectDelay * 0.2)
+    int jitter = (int) Math.ceil(state.reconnectDelay * 0.5)
     int interval = state.reconnectDelay + new Random().nextInt(jitter)
     log.info "ESPHome reconnecting in ${interval} seconds"
     runIn(interval, 'openSocket')
@@ -938,24 +940,30 @@ private void sendMessageRetry() {
 }
 
 private boolean supervisionCheck(int msgType, Map tags = [:]) {
+    List<String> onSuccess = []
     ConcurrentLinkedQueue<Map> sentQueue = espSentQueue.get(device.id)
+    if (!sentQueue) { return false }
+
     // check for successful responses and remove from queue
-    boolean result
-    if (sentQueue) {
-        result = sentQueue.removeIf { entry ->
-            if (entry.expectedMsgType == msgType) {
-                if (entry.onSuccess) {
-                    if (logEnable) { log.trace "ESPHome executing ${entry.onSuccess}" }
-                    "${entry.onSuccess}"(tags)
-                }
-                return true
-            } else {
-                return false
+    boolean result = sentQueue.removeIf { entry ->
+        if (entry.expectedMsgType == msgType) {
+            if (entry.onSuccess) {
+                onSuccess.add(entry.onSuccess)
             }
+            return true
+        } else {
+            return false
         }
-        if (sentQueue.isEmpty()) {
-            unschedule('sendMessageRetry')
-        }
+    }
+
+    // execute all onsuccess after queue has been processed
+    if (sentQueue.isEmpty()) {
+        unschedule('sendMessageRetry')
+    }
+
+    onSuccess.each { e ->
+        if (logEnable) { log.trace "ESPHome executing ${e}" }
+        "${e}"(tags)
     }
     return result
 }
