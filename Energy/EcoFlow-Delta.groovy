@@ -105,27 +105,27 @@ public void updateState() {
     runIn(30, 'updateState')
     Map v = currentState.get(device.id)
     if (v) {
-        Integer battery_level = v.pd?.battery_level
+        Integer battery_level = v.pd?.soc
         if (battery_level != null && device.currentValue('battery') != battery_level) {
             sendEvent(name: 'battery', value: battery_level, unit: '%')
         }
 
-        Integer out_power = v.pd?.out_power
+        Integer out_power = v.pd?.outputWatts
         if (out_power != null && device.currentValue('power') != out_power) {
             sendEvent(name: 'power', value: out_power, unit: 'W')
         }
 
-        Integer in_power = v.pd?.in_power
+        Integer in_power = v.pd?.inputWatts
         if (in_power != null && device.currentValue('in_power') != in_power) {
             sendEvent(name: 'powerIn', value: in_power, unit: 'W')
         }
 
-        Integer ac_out_energy = v.pd?.ac_out_energy
+        Integer ac_out_energy = v.pd?.wattsOutTotal
         if (ac_out_energy != null && device.currentValue('ac_out_energy') != ac_out_energy) {
             sendEvent(name: 'energy', value: ac_out_energy, unit: 'kWh')
         }
 
-        Duration remain_display = v.pd?.remain_display
+        Duration remain_display = v.pd?.remainTime
         if (remain_display != null) {
             String eta = formatDuration(remain_display)
             if (device.currentValue('eta') != eta) {
@@ -187,6 +187,8 @@ private void parsePacket(byte[] header, ByteArrayInputStream stream) {
         m['ems'] = parseDeltaEms(stream)
     } else if (isMppt(header)) {
         m['mppt'] = parseDeltaMppt(stream)
+    } else if (isGenerator(header)) {
+        m['generator'] = parseGenerator(stream)
     }
 }
 
@@ -217,174 +219,203 @@ private boolean isSerialMain(byte[] header) {
     return header[8] in [2, 11] && header[10] == 1 && header[11] == 65
 }
 
+private boolean isGenerator(byte[] header) {
+    return header[8] == 8 && header[10] == 32 && header[11] == 2
+}
+
 // Packet decoders
 private static Map parseDeltaBms(ByteArrayInputStream stream) {
     return [
         num: stream.read(),
-        battery_type: stream.read(),
-        battery_cell_id: stream.read(),
-        battery_error: readIntLE(stream, 4),
-        battery_version: readVersion(stream),
-        battery_level: stream.read(),
-        battery_voltage: readIntLE(stream, 4) / 1000,
-        battery_current: readIntLE(stream, 4),
-        battery_temp: stream.read(),
-        _open_bms_idx: stream.read(),
-        battery_capacity_design: readIntLE(stream, 4),
-        battery_capacity_remain: readIntLE(stream, 4),
-        battery_capacity_full: readIntLE(stream, 4),
-        battery_cycles: readIntLE(stream, 4),
-        _soh: stream.read(),
-        battery_voltage_max: readIntLE(stream, 2) / 1000,
-        battery_voltage_min: readIntLE(stream, 2) / 1000,
-        battery_temp_max: stream.read(),
-        battery_temp_min: stream.read(),
-        battery_mos_temp_max: stream.read(),
-        battery_mos_temp_min: stream.read(),
-        battery_fault: stream.read(),
-        _sys_stat_reg: stream.read(),
-        _tag_chg_current: readIntLE(stream, 4),
-        battery_level_f32: readFloatLE(stream, 4),
-        battery_in_power: readIntLE(stream, 4),
-        battery_out_power: readIntLE(stream, 4),
-        battery_remain: Duration.ofMinutes(readIntLE(stream, 4))
+        type: stream.read(),
+        cellId: stream.read(),
+        errorCode: readIntLE(stream, 4),
+        sysVersion: readVersion(stream),
+        soc: stream.read(),
+        voltage: readIntLE(stream, 4) / 1000,
+        amp: readIntLE(stream, 4),
+        temp: stream.read(),
+        openBmsIdx: stream.read(),
+        batteryCapacityDesign: readIntLE(stream, 4),
+        batteryCapacityRemain: readIntLE(stream, 4),
+        batteryCapacityFull: readIntLE(stream, 4),
+        batteryCycles: readIntLE(stream, 4),
+        soh: stream.read(),
+        cellVoltageMax: readIntLE(stream, 2) / 1000,
+        cellVoltageMin: readIntLE(stream, 2) / 1000,
+        cellTempMax: stream.read(),
+        cellTempMin: stream.read(),
+        mosTempMax: stream.read(),
+        mosTempMin: stream.read(),
+        bmsFault: stream.read(),
+        bqSysStatReg: stream.read(),
+        tagChargeAmp: readIntLE(stream, 4),
+        socF32: readFloatLE(stream, 4),
+        inputWatts: readIntLE(stream, 4),
+        outputWatts: readIntLE(stream, 4),
+        remainTime: Duration.ofMinutes(readIntLE(stream, 4))
     ]
 }
 
 private static Map parseDeltaEms(ByteArrayInputStream stream) {
     return [
-        _state_charge: stream.read(),
-        _chg_cmd: stream.read(),
-        _dsg_cmd: stream.read(),
-        battery_main_voltage: readIntLE(stream, 4) / 1000,
-        battery_main_current: readIntLE(stream, 4) / 1000,
-        _fan_level: stream.read(),
-        battery_level_max: stream.read(),
-        model: stream.read(),
-        battery_main_level: stream.read(),
-        _flag_open_ups: stream.read(),
-        battery_main_warning: stream.read(),
-        battery_remain_charge: Duration.ofMinutes(readIntLE(stream, 4)),
-        battery_remain_discharge: Duration.ofMinutes(readIntLE(stream, 4)),
-        battery_main_normal: stream.read(),
-        battery_main_level_f32: readFloatLE(stream, 4),
-        _is_connect: readIntLE(stream, 3),
-        _max_available_num: stream.read(),
-        _open_bms_idx: stream.read(),
-        battery_main_voltage_min: readIntLE(stream, 4) / 1000,
-        battery_main_voltage_max: readIntLE(stream, 4) / 1000,
-        battery_level_min: stream.read(),
-        generator_level_start: stream.read(),
-        generator_level_stop: stream.read()
+        chargeState: stream.read(),
+        chargeCommand: stream.read(),
+        dischargeCommand: stream.read(),
+        chargeVoltage: readIntLE(stream, 4) / 1000,
+        chargeAmp: readIntLE(stream, 4) / 1000,
+        fanLevel: stream.read(),
+        maxChargeSoc: stream.read(),
+        bmsModel: stream.read(),
+        lcdShowSoc: stream.read(),
+        openUpsFlag: stream.read(),
+        bmsWarningState: stream.read(),
+        chargeRemainTime: Duration.ofMinutes(readIntLE(stream, 4)),
+        dischargeRemainTime: Duration.ofMinutes(readIntLE(stream, 4)),
+        emsIsNormalFlag: stream.read(),
+        lcdShowSocF32: readFloatLE(stream, 4),
+        bmsIsConnected: readIntLE(stream, 3),
+        maxAvailableNum: stream.read(),
+        openBmsIdx: stream.read(),
+        batteryMainVoltageMin: readIntLE(stream, 4) / 1000,
+        batteryMainVoltageMax: readIntLE(stream, 4) / 1000,
+        minDischargeSoc: stream.read(),
+        generatorLevelStart: stream.read(),
+        generatorLevelStop: stream.read()
     ]
 }
 
 private static Map parseDeltaInverter(ByteArrayInputStream stream) {
     return [
-        ac_error: readIntLE(stream, 4),
-        ac_version: readVersion(stream),
-        ac_in_type: stream.read(),
-        ac_in_power: readIntLE(stream, 2),
-        ac_out_power: readIntLE(stream, 2),
-        ac_type: stream.read(),
-        ac_out_voltage: readIntLE(stream, 4) / 1000,
-        ac_out_current: readIntLE(stream, 4) / 1000,
-        ac_out_freq: stream.read(),
-        ac_in_voltage: readIntLE(stream, 4) / 1000,
-        ac_in_current: readIntLE(stream, 4) / 1000,
-        ac_in_freq: stream.read(),
-        ac_out_temp: readIntLE(stream, 2),
-        dc_in_voltage: readIntLE(stream, 4),
-        dc_in_current: readIntLE(stream, 4),
-        ac_in_temp: readIntLE(stream, 2),
-        fan_state: stream.read(),
-        ac_out_state: stream.read(),
-        ac_out_xboost: stream.read(),
-        ac_out_voltage_config: readIntLE(stream, 4) / 1000,
-        ac_out_freq_config: stream.read(),
-        fan_config: stream.read(),
-        ac_in_pause: stream.read(),
-        ac_in_limit_switch: stream.read(),
-        ac_in_limit_max: readIntLE(stream, 2),
-        ac_in_limit_custom: readIntLE(stream, 2),
-        ac_out_timeout: readIntLE(stream, 2)
+        errorCode: readIntLE(stream, 4),
+        sysVersion: readVersion(stream),
+        chargerType: stream.read(),
+        inputWatts: readIntLE(stream, 2),
+        outputWatts: readIntLE(stream, 2),
+        inverterType: stream.read(),
+        inverterOutVoltage: readIntLE(stream, 4) / 1000,
+        inverterOutAmp: readIntLE(stream, 4) / 1000,
+        inverterOutFreq: stream.read(),
+        acInVoltage: readIntLE(stream, 4) / 1000,
+        acInAmp: readIntLE(stream, 4) / 1000,
+        acInFreq: stream.read(),
+        inverterOutTemp: readIntLE(stream, 2),
+        dcInVoltage: readIntLE(stream, 4),
+        dcInAmp: readIntLE(stream, 4),
+        dcInTemp: readIntLE(stream, 2),
+        fanState: stream.read(),
+        cfgAcEnabled: stream.read(),
+        cfgAcXboost: stream.read(),
+        cfgAcOutVoltage: readIntLE(stream, 4) / 1000,
+        cfgAcOutFreq: stream.read(),
+        cfgAcWorkMode: stream.read(),
+        cfgPauseFlag: stream.read(),
+        acDipSwitch: stream.read(),
+        cfgFastChargeWatts: readIntLE(stream, 2),
+        cfgSlowChargrWatts: readIntLE(stream, 2),
+        standbyMins: readIntLE(stream, 2),
+        dischargeType: stream.read(),
+        acPassByAutoEnable: stream.read()
     ]
 }
 
 private static Map parseDeltaMppt(ByteArrayInputStream stream) {
     return [
-        dc_in_error: readIntLE(stream, 4),
-        dc_in_version: readVersion(stream),
-        dc_in_voltage: readIntLE(stream, 4) / 10,
-        dc_in_current: readIntLE(stream, 4) / 100,
-        dc_in_power: readIntLE(stream, 2) / 10,
-        _volt_out: readIntLE(stream, 4),
-        _curr_out: readIntLE(stream, 4),
-        _watts_out: readIntLE(stream, 2),
-        dc_in_temp: readIntLE(stream, 2),
-        dc_in_type: stream.read(),
-        dc_in_type_config: stream.read(),
-        _dc_in_type: stream.read(),
-        dc_in_state: stream.read(),
-        anderson_out_voltage: readIntLE(stream, 4),
-        anderson_out_current: readIntLE(stream, 4),
-        anderson_out_power: readIntLE(stream, 2),
-        car_out_voltage: readIntLE(stream, 4) / 10,
-        car_out_current: readIntLE(stream, 4) / 100,
-        car_out_power: readIntLE(stream, 2) / 10,
-        car_out_temp: readIntLE(stream, 2),
-        car_out_state: stream.read(),
-        dc24_temp: readIntLE(stream, 2),
-        dc24_state: stream.read(),
-        dc_in_pause: stream.read(),
-        _dc_in_switch: stream.read(),
-        _dc_in_limit_max: readIntLE(stream, 2),
-        _dc_in_limit_custom: readIntLE(stream, 2),
+        faultCode: readIntLE(stream, 4),
+        softwareVersion: readVersion(stream),
+        inVoltage: readIntLE(stream, 4) / 10,
+        inAmp: readIntLE(stream, 4) / 100,
+        inWatts: readIntLE(stream, 2) / 10,
+        outVoltage: readIntLE(stream, 4),
+        outAmps: readIntLE(stream, 4),
+        outWatts: readIntLE(stream, 2),
+        mpptTemp: readIntLE(stream, 2),
+        xt60ChargeType: stream.read(),
+        configChargeType: stream.read(),
+        chargeType: stream.read(),
+        chargeState: stream.read(),
+        andersonVoltage: readIntLE(stream, 4),
+        andersonAmp: readIntLE(stream, 4),
+        andersonWatts: readIntLE(stream, 2),
+        carVoltage: readIntLE(stream, 4) / 10,
+        carAmps: readIntLE(stream, 4) / 100,
+        carWatts: readIntLE(stream, 2) / 10,
+        carTemp: readIntLE(stream, 2),
+        carState: stream.read(),
+        dc24Temp: readIntLE(stream, 2),
+        dc24State: stream.read(),
+        chargePauseFlag: stream.read(),
+        dcDipSwitch: stream.read(),
+        fastChargeWatts: readIntLE(stream, 2),
+        slowChargeWatts: readIntLE(stream, 2),
     ]
 }
 
 private static Map parseDeltaPd(ByteArrayInputStream stream) {
     return [
         model: stream.read(),
-        pd_error: readIntLE(stream, 4),
-        pd_version: readVersion(stream),
-        wifi_version: readVersion(stream),
-        wifi_autorecovery: stream.read(),
-        battery_level: stream.read(),
-        out_power: readIntLE(stream, 2),
-        in_power: readIntLE(stream, 2),
-        remain_display: Duration.ofMinutes(readIntLE(stream, 4)),
-        beep: stream.read(),
-        watts_anderson_out: stream.read(),
-        usb_out1_power: stream.read(),
-        usb_out2_power: stream.read(),
-        usbqc_out1_power: stream.read(),
-        usbqc_out2_power: stream.read(),
-        typec_out1_power: stream.read(),
-        typec_out2_power: stream.read(),
-        typec_out1_temp: stream.read(),
-        typec_out2_temp: stream.read(),
-        car_out_state: stream.read(),
-        car_out_power: stream.read(),
-        car_out_temp: stream.read(),
-        standby_timeout: readIntLE(stream, 2),
-        lcd_timeout: readIntLE(stream, 2),
-        lcd_brightness: stream.read(),
-        car_in_energy: readIntLE(stream, 4),
-        mppt_in_energy: readIntLE(stream, 4),
-        ac_in_energy: readIntLE(stream, 4),
-        car_out_energy: readIntLE(stream, 4),
-        ac_out_energy: readIntLE(stream, 4),
-        usb_time: Duration.ofSeconds(readIntLE(stream, 4)),
-        typec_time: Duration.ofSeconds(readIntLE(stream, 4)),
-        car_out_time: Duration.ofSeconds(readIntLE(stream, 4)),
-        ac_out_time: Duration.ofSeconds(readIntLE(stream, 4)),
-        ac_in_time: Duration.ofSeconds(readIntLE(stream, 4)),
-        car_in_time: Duration.ofSeconds(readIntLE(stream, 4)),
-        mppt_time: Duration.ofSeconds(readIntLE(stream, 4)),
-        _none: readIntLE(stream, 2),
-        _ext_rj45: stream.read(),
-        _ext_infinity: stream.read()
+        errCode: readIntLE(stream, 4),
+        sysVersion: readVersion(stream),
+        wifiVersion: readVersion(stream),
+        wifiAutoRecovery: stream.read(),
+        soc: stream.read(),
+        wattsOutTotal: readIntLE(stream, 2),
+        wattsInTotal: readIntLE(stream, 2),
+        remainTime: Duration.ofMinutes(readIntLE(stream, 4)),
+        beepMode: stream.read(),
+        dcOutState: stream.read(),
+        usb1Watts: stream.read(),
+        usb2Watts: stream.read(),
+        qcUsb1Watts: stream.read(),
+        qcUsb2Watts: stream.read(),
+        typec1Watts: stream.read(),
+        typec2Watts: stream.read(),
+        typec1Temp: stream.read(),
+        typec2Temp: stream.read(),
+        carState: stream.read(),
+        carWatts: stream.read(),
+        carTemp: stream.read(),
+        standbyMinutes: readIntLE(stream, 2),
+        lcdOffSec: readIntLE(stream, 2),
+        lcdBrightness: stream.read(),
+        chargePowerDc: readIntLE(stream, 4),
+        chargeSunPower: readIntLE(stream, 4),
+        chargePowerAc: readIntLE(stream, 4),
+        dischargePowerDc: readIntLE(stream, 4),
+        dischargePowerAc: readIntLE(stream, 4),
+        usbUsedTime: Duration.ofSeconds(readIntLE(stream, 4)),
+        typecUsedTime: Duration.ofSeconds(readIntLE(stream, 4)),
+        carUsedTime: Duration.ofSeconds(readIntLE(stream, 4)),
+        inverterUsedTime: Duration.ofSeconds(readIntLE(stream, 4)),
+        dcInUsedTime: Duration.ofSeconds(readIntLE(stream, 4)),
+        mpptUsedTime: Duration.ofSeconds(readIntLE(stream, 4)),
+        _reserved_: readIntLE(stream, 2),
+        extRj45Port: stream.read(),
+        extInfinityPort: stream.read()
+    ]
+}
+
+private static Map parseGenerator(ByteArrayInputStream stream) {
+    return [
+        num: stream.read(),
+        type: stream.read(),
+        cellId: stream.read(),
+        errorCode: readIntLE(stream, 4),
+        sysVersion: readVersion(stream),
+        oilValue: stream.read(),
+        totalPower: readIntLE(stream, 4) / 1000,
+        acPower: readIntLE(stream, 4) / 1000,
+        dcPower: readIntLE(stream, 4) / 1000,
+        remainTime: Duration.ofMinutes(readIntLE(stream, 4)),
+        motorUseTime: Duration.ofMinutes(readIntLE(stream, 4)),
+        acState: stream.read(),
+        dcState: stream.read(),
+        oilMaxOutPower: readIntLE(stream, 2),
+        dcVoltage: readIntLE(stream, 2),
+        dcCurrent: readIntLE(stream, 2),
+        acVoltage: readIntLE(stream, 2),
+        acCurrent: readIntLE(stream, 2),
+        temp: stream.read()
     ]
 }
 
