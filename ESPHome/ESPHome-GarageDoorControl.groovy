@@ -102,7 +102,7 @@ public void open() {
     }
     // API library cover command, entity key for the cover is required
     if (logTextEnable) { log.info "${device} open" }
-    espHomeCoverCommand(key: settings.cover as long, position: 1.0)
+    espHomeCoverCommand(key: settings.cover as Long, position: 1.0)
 }
 
 public void close() {
@@ -113,7 +113,7 @@ public void close() {
     }
     // API library cover command, entity key for the cover is required
     if (logTextEnable) { log.info "${device} close" }
-    espHomeCoverCommand(key: settings.cover as long, position: 0.0)
+    espHomeCoverCommand(key: settings.cover as Long, position: 0.0)
 }
 
 public void refresh() {
@@ -135,9 +135,9 @@ public void parse(Map message) {
             // This will populate the cover dropdown with all the entities
             // discovered and the entity key which is required when sending commands
             if (message.platform == 'cover') {
-                state.covers = (state.covers ?: [:]) + [ (message.key): message ]
+                state.covers = (state.covers ?: [:]) + [ (message.key as String): message ]
                 if (!settings.cover) {
-                    device.updateSetting('cover', message.key)
+                    device.updateSetting('cover', message.key as String)
                 }
             }
             break

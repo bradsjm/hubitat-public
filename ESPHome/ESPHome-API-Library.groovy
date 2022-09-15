@@ -685,7 +685,7 @@ private void espHomeSchedulePing() {
     if (PING_INTERVAL_SECONDS > 0) {
         int jitter = (int) Math.ceil(PING_INTERVAL_SECONDS * 0.5)
         int interval = PING_INTERVAL_SECONDS + new Random().nextInt(jitter)
-        runIn(interval, 'healthcheck')
+        runIn(interval, 'healthCheck')
     }
 }
 
@@ -805,7 +805,7 @@ private void openSocket() {
 }
 
 private void closeSocket(String reason) {
-    unschedule('healthcheck')
+    unschedule('healthCheck')
     unschedule('sendMessageQueue')
     espReceiveBuffer.remove(device.id)
     log.info "ESPHome closing socket to ${ipAddress}:${PORT_NUMBER} (${reason})"
@@ -816,7 +816,7 @@ private void closeSocket(String reason) {
     setNetworkStatus('offline', reason)
 }
 
-private void healthcheck() {
+private void healthCheck() {
     ConcurrentLinkedQueue<Map> queue = espSendQueue.get(device.id)
     boolean isEmpty = queue == null || queue.isEmpty()
     // only send ping request when online and send queue is empty

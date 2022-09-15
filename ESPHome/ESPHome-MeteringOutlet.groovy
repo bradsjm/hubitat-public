@@ -133,9 +133,9 @@ public void parse(Map message) {
             // This will populate the cover dropdown with all the entities
             // discovered and the entity key which is required when sending commands
             if (message.platform == 'switch') {
-                state.switches = (state.switches ?: [:]) + [ (message.key): message ]
+                state.switches = (state.switches ?: [:]) + [ (message.key as String): message ]
                 if (!settings.switch) {
-                    device.updateSetting('switch', message.key)
+                    device.updateSetting('switch', message.key as String)
                 }
             }
 

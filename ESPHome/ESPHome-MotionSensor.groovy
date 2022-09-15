@@ -111,9 +111,9 @@ public void parse(Map message) {
             // This will populate the cover dropdown with all the entities
             // discovered and the entity key which is required when sending commands
             if (message.platform == 'binary') {
-                state.sensors = (state.sensors ?: [:]) + [ (message.key): message ]
+                state.sensors = (state.sensors ?: [:]) + [ (message.key as String): message ]
                 if (!settings.binarysensor) {
-                    device.updateSetting('binarysensor', message.key)
+                    device.updateSetting('binarysensor', message.key as String)
                 }
             }
             break

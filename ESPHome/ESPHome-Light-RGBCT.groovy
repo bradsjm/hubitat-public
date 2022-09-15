@@ -211,14 +211,16 @@ public void setSaturation(BigDecimal saturation) {
 
 public void setEffect(BigDecimal number) {
     if (state.lights && settings.light) {
-        List<String> effects = state.lights[settings.light].effects
-        if (number < 1) { number = effects.size() }
-        if (number > effects.size()) { number = 1 }
-        int index = number - 1
-        String effectName = effects[index]
-        if (device.currentValue('effectName') != effectName) {
-            if (logTextEnable) { log.info "${device} set effect ${effectName}" }
-            espHomeLightCommand(key: settings.light as Long, effect: effectName)
+        List<String> effects = state.lights[settings.light as String]?.effects
+        if (effects) {
+            if (number < 1) { number = effects.size() }
+            if (number > effects.size()) { number = 1 }
+            int index = number - 1
+            String effectName = effects[index]
+            if (device.currentValue('effectName') != effectName) {
+                if (logTextEnable) { log.info "${device} set effect ${effectName}" }
+                espHomeLightCommand(key: settings.light as Long, effect: effectName)
+            }
         }
     }
 }
@@ -226,7 +228,7 @@ public void setEffect(BigDecimal number) {
 public void setNextEffect() {
     if (state.lights && settings.light) {
         String current = device.currentValue('effectName')
-        int index = state.lights[settings.light].effects.indexOf(current) + 1
+        int index = state.lights[settings.light as String].effects.indexOf(current) + 1
         setEffect(index + 1)
     }
 }
@@ -234,7 +236,7 @@ public void setNextEffect() {
 public void setPreviousEffect() {
     if (state.lights && settings.light) {
         String current = device.currentValue('effectName')
-        int index = state.lights[settings.light].effects.indexOf(current) + 1
+        int index = state.lights[settings.light as String].effects.indexOf(current) + 1
         setEffect(index - 1)
     }
 }
@@ -252,9 +254,9 @@ public void parse(Map message) {
             // This will populate the cover dropdown with all the entities
             // discovered and the entity key which is required when sending commands
             if (message.platform == 'light') {
-                state.lights = (state.lights ?: [:]) + [ (message.key): message ]
+                state.lights = (state.lights ?: [:]) + [ (message.key as String): message ]
                 if (!settings.light) {
-                    device.updateSetting('light', message.key)
+                    device.updateSetting('light', message.key as String)
                 }
             }
 
@@ -356,7 +358,7 @@ public void parse(Map message) {
 
 private Integer getColorMode(String capability) {
     if (settings.light) {
-        Map<Integer, List<String>> modes = state.lights[settings.light].supportedColorModes
+        Map<Integer, List<String>> modes = state.lights[settings.light as String].supportedColorModes
         return modes.find { k, v -> capability in v }?.key as Integer
     }
     return null
