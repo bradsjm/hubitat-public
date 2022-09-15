@@ -21,7 +21,7 @@
  *  SOFTWARE.
  */
 metadata {
-    definition(name: 'ESPHome Garage Door Control', namespace: 'esphome', author: 'Jonathan Bradshaw') {
+    definition(name: 'ESPHome Garage Door', namespace: 'esphome', author: 'Jonathan Bradshaw') {
         singleThreaded: true
 
         capability 'Actuator'
@@ -145,13 +145,23 @@ public void parse(Map message) {
         case 'state':
             // Check if the entity key matches the message entity key received to update device state
             if (settings.cover as Long == message.key) {
-                String value = message.position > 0 ? 'open' : 'closed'
+                String type = message.isDigital ? 'digital' : 'physical'
+                String value
+                switch (message.currentOperation) {
+                    case COVER_OPERATION_IDLE:
+                        value = message.position > 0 ? 'open' : 'closed'
+                        break
+                    case COVER_OPERATION_IS_OPENING:
+                        value = 'opening'
+                        break
+                    case COVER_OPERATION_IS_CLOSING:
+                        value = 'closing'
+                        break
+                }
                 if (device.currentValue('door') != value) {
-                    sendEvent([
-                        name: 'door',
-                        value: value,
-                        descriptionText: "Door is ${value}"
-                    ])
+                    descriptionText = "${device} door is ${value}"
+                    sendEvent(name: 'door', value: value, type: type, descriptionText: descriptionText)
+                    if (logTextEnable) { log.info descriptionText }
                 }
             }
             break
