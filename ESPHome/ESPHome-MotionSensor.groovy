@@ -26,6 +26,7 @@ metadata {
         capability 'Sensor'
         capability 'MotionSensor'
         capability 'Refresh'
+        capability 'SignalStrength'
         capability 'Initialize'
 
         // attribute populated by ESPHome API Library automatically
@@ -116,6 +117,14 @@ public void parse(Map message) {
                     device.updateSetting('binarysensor', message.key as String)
                 }
             }
+
+            if (message.platform == 'sensor') {
+                switch (message.deviceClass) {
+                    case 'signal_strength':
+                        state['signalStrength'] = message.key
+                        break
+                }
+            }
             break
 
         case 'state':
@@ -128,6 +137,16 @@ public void parse(Map message) {
                         value: value,
                         descriptionText: "Motion is ${value}"
                     ])
+                }
+            }
+
+            if (state.signalStrength as Long == message.key && message.hasState) {
+                Integer rssi = Math.round(message.state as Float)
+                String unit = 'dBm'
+                if (device.currentValue('rssi') != rssi) {
+                    descriptionText = "${device} rssi is ${rssi}"
+                    sendEvent(name: 'rssi', value: rssi, unit: unit, descriptionText: descriptionText)
+                    if (logTextEnable) { log.info descriptionText }
                 }
             }
             break
