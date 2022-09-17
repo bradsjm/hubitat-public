@@ -33,6 +33,7 @@ metadata {
         capability 'EnergyMeter'
         capability 'PowerMeter'
         capability 'Sensor'
+        capability 'TemperatureMeasurement'
         capability 'Initialize'
         capability 'VoltageMeasurement'
 
@@ -105,24 +106,51 @@ public void updateState() {
     runIn(30, 'updateState')
     Map v = currentState.get(device.id)
     if (v) {
+        state.pd = v.pd
+        state.bms = v.bms
+        state.inverter = v.inverter
+        state.ems = v.ems
+        state.mppt = v.mppt
+        state.generator = v.generator
+
         Integer battery_level = v.pd?.soc
         if (battery_level != null && device.currentValue('battery') != battery_level) {
             sendEvent(name: 'battery', value: battery_level, unit: '%')
         }
 
-        Integer out_power = v.pd?.outputWatts
-        if (out_power != null && device.currentValue('power') != out_power) {
-            sendEvent(name: 'power', value: out_power, unit: 'W')
+        Integer outputWatts = v.inverter?.outputWatts
+        if (outputWatts != null && device.currentValue('power') != outputWatts) {
+            sendEvent(name: 'power', value: outputWatts, unit: 'W')
         }
 
-        Integer in_power = v.pd?.inputWatts
-        if (in_power != null && device.currentValue('in_power') != in_power) {
-            sendEvent(name: 'powerIn', value: in_power, unit: 'W')
+        Integer inverterOutAmp = v.inverter?.inverterOutAmp
+        if (inverterOutAmp != null && device.currentValue('amperage') != inverterOutAmp) {
+            sendEvent(name: 'amperage', value: inverterOutAmp, unit: 'A')
         }
 
-        Integer ac_out_energy = v.pd?.wattsOutTotal
-        if (ac_out_energy != null && device.currentValue('ac_out_energy') != ac_out_energy) {
-            sendEvent(name: 'energy', value: ac_out_energy, unit: 'kWh')
+        Integer inputWatts = v.inverter?.inputWatts
+        if (inputWatts != null && device.currentValue('powerIn') != inputWatts) {
+            sendEvent(name: 'powerIn', value: inputWatts, unit: 'W')
+        }
+
+        Integer wattsOutTotal = v.pd?.wattsOutTotal
+        if (wattsOutTotal != null && device.currentValue('energy') != wattsOutTotal) {
+            sendEvent(name: 'energy', value: wattsOutTotal, unit: 'kWh')
+        }
+
+        Integer voltage = v.bms?.voltage
+        if (voltage != null && device.currentValue('voltage') != voltage) {
+            sendEvent(name: 'voltage', value: voltage, unit: 'V')
+        }
+
+        Integer inverterOutFreq = v.inverter?.inverterOutFreq
+        if (inverterOutFreq != null && device.currentValue('frequency') != inverterOutFreq) {
+            sendEvent(name: 'frequency', value: inverterOutFreq, unit: 'Hz')
+        }
+
+        Integer inverterOutTemp = v.inverter?.inverterOutTemp
+        if (inverterOutTemp != null && device.currentValue('temperature') != inverterOutTemp) {
+            sendEvent(name: 'temperature', value: inverterOutTemp, unit: 'C')
         }
 
         Duration remain_display = v.pd?.remainTime
@@ -134,6 +162,8 @@ public void updateState() {
         }
     }
 }
+
+// chargeState 3 - charging? 1 - idle? 2 - ? discharge?
 
 /**
  * ECOFlow Direct Socket Protocol

@@ -47,6 +47,7 @@ import java.util.concurrent.ConcurrentLinkedQueue
 
 @Field static final ConcurrentHashMap<String, String> espReceiveBuffer = new ConcurrentHashMap<>()
 @Field static final ConcurrentHashMap<String, ConcurrentLinkedQueue> espSendQueue = new ConcurrentHashMap<>()
+@Field static final Random random = new Random()
 
 /*
  * ESPHome Commands
@@ -188,7 +189,7 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
         case MSG_PING_REQUEST:
             sendMessage(MSG_PING_RESPONSE)
             break
-        case MSG_LIST_BINARY_SENSOR_RESPONSE:
+        case MSG_LIST_BINARYSENSOR_RESPONSE:
             parse espHomeListEntitiesBinarySensorResponse(tags)
             break
         case MSG_LIST_COVER_RESPONSE:
@@ -343,8 +344,8 @@ private static Map espHomeCoverState(Map<Integer, List> tags, boolean isDigital)
 
 private void espHomeDeviceInfoRequest() {
     sendMessage(
-            MSG_DEVICE_INFO_REQUEST, [:],
-            MSG_DEVICE_INFO_RESPONSE, 'espHomeDeviceInfoResponse'
+            MSG_DEVICEINFO_REQUEST, [:],
+            MSG_DEVICEINFO_RESPONSE, 'espHomeDeviceInfoResponse'
     )
 }
 
@@ -631,7 +632,9 @@ private static Map espHomeListEntitiesTextSensorResponse(Map<Integer, List> tags
 }
 
 private void espHomeListEntitiesDoneResponse() {
+    log.info 'Subscribing to device states'
     espHomeSubscribeStatesRequest()
+    log.info "Subscribing to device ${settings.logEnable ? 'DEBUG' : 'INFO'} logging"
     espHomeSubscribeLogs(settings.logEnable ? LOG_LEVEL_DEBUG : LOG_LEVEL_INFO)
     sendMessageQueue()
 }
@@ -684,7 +687,7 @@ private void espHomePingResponse(Map<Integer, List> tags) {
 private void espHomeSchedulePing() {
     if (PING_INTERVAL_SECONDS > 0) {
         int jitter = (int) Math.ceil(PING_INTERVAL_SECONDS * 0.5)
-        int interval = PING_INTERVAL_SECONDS + new Random().nextInt(jitter)
+        int interval = PING_INTERVAL_SECONDS + random.nextInt(jitter)
         runIn(interval, 'healthCheck')
     }
 }
@@ -885,17 +888,17 @@ private void scheduleConnect() {
     state.reconnectDelay = (state.reconnectDelay ?: 1) * 2
     if (state.reconnectDelay > MAX_RECONNECT_SECONDS) { state.reconnectDelay = MAX_RECONNECT_SECONDS }
     int jitter = (int) Math.ceil(state.reconnectDelay * 0.5)
-    int interval = state.reconnectDelay + new Random().nextInt(jitter)
+    int interval = state.reconnectDelay + random.nextInt(jitter)
     log.info "ESPHome reconnecting in ${interval} seconds"
     runIn(interval, 'openSocket')
 }
 
 private void sendMessage(int msgType, Map<Integer, List> tags = [:]) {
+    if (logEnable) { log.debug "ESPHome send msg type #${msgType} with ${tags}" }
     interfaces.rawSocket.sendMessage(encodeMessage(msgType, tags))
 }
 
 private void sendMessage(int msgType, Map<Integer, List> tags, int expectedMsgType, String onSuccess = '') {
-    if (logEnable) { log.debug "ESPHome send msg type #${msgType} with ${tags}" }
     ConcurrentLinkedQueue<Map> queue = espSendQueue.computeIfAbsent(device.id) { k -> new ConcurrentLinkedQueue<Map>() }
     queue.add([
             msgType: msgType,
@@ -1197,10 +1200,10 @@ private static long zigZagEncode(long v) {
 @Field static final int MSG_DISCONNECT_RESPONSE = 6
 @Field static final int MSG_PING_REQUEST = 7
 @Field static final int MSG_PING_RESPONSE = 8
-@Field static final int MSG_DEVICE_INFO_REQUEST = 9
-@Field static final int MSG_DEVICE_INFO_RESPONSE = 10
+@Field static final int MSG_DEVICEINFO_REQUEST = 9
+@Field static final int MSG_DEVICEINFO_RESPONSE = 10
 @Field static final int MSG_LIST_ENTITIES_REQUEST = 11
-@Field static final int MSG_LIST_BINARY_SENSOR_RESPONSE = 12
+@Field static final int MSG_LIST_BINARYSENSOR_RESPONSE = 12
 @Field static final int MSG_LIST_COVER_RESPONSE = 13
 @Field static final int MSG_LIST_FAN_RESPONSE = 14
 @Field static final int MSG_LIST_LIGHT_RESPONSE = 15
@@ -1224,20 +1227,20 @@ private static long zigZagEncode(long v) {
 @Field static final int MSG_SWITCH_COMMAND_REQUEST = 33
 @Field static final int MSG_GET_TIME_REQUEST = 36
 @Field static final int MSG_GET_TIME_RESPONSE = 37
-@Field static final int MSG_LIST_SERVICES_RESPONSE = 41  // TODO
-@Field static final int MSG_EXECUTE_SERVICE_REQUEST = 42 // TODO
+@Field static final int MSG_LIST_SERVICES_RESPONSE = 41
+@Field static final int MSG_EXECUTE_SERVICE_REQUEST = 42
 @Field static final int MSG_LIST_CAMERA_RESPONSE = 43
 @Field static final int MSG_CAMERA_IMAGE_RESPONSE = 44
 @Field static final int MSG_CAMERA_IMAGE_REQUEST = 45
-@Field static final int MSG_LIST_CLIMATE_RESPONSE = 46   // TODO
-@Field static final int MSG_CLIMATE_STATE_RESPONSE = 47  // TODO
-@Field static final int MSG_CLIMATE_COMMAND_REQUEST = 48 // TODO
+@Field static final int MSG_LIST_CLIMATE_RESPONSE = 46
+@Field static final int MSG_CLIMATE_STATE_RESPONSE = 47
+@Field static final int MSG_CLIMATE_COMMAND_REQUEST = 48
 @Field static final int MSG_LIST_NUMBER_RESPONSE = 49
 @Field static final int MSG_NUMBER_STATE_RESPONSE = 50
 @Field static final int MSG_NUMBER_COMMAND_REQUEST = 51
-@Field static final int MSG_LIST_SELECT_RESPONSE = 52    // TODO
-@Field static final int MSG_SELECT_STATE_RESPONSE = 53   // TODO
-@Field static final int MSG_SELECT_COMMAND_REQUEST = 54  // TODO
+@Field static final int MSG_LIST_SELECT_RESPONSE = 52
+@Field static final int MSG_SELECT_STATE_RESPONSE = 53
+@Field static final int MSG_SELECT_COMMAND_REQUEST = 54
 @Field static final int MSG_LIST_SIREN_RESPONSE = 55
 @Field static final int MSG_SIREN_STATE_RESPONSE = 56
 @Field static final int MSG_SIREN_COMMAND_REQUEST = 57
@@ -1249,8 +1252,8 @@ private static long zigZagEncode(long v) {
 @Field static final int MSG_LIST_MEDIA_RESPONSE = 63
 @Field static final int MSG_MEDIA_STATE_RESPONSE = 64
 @Field static final int MSG_MEDIA_COMMAND_REQUEST = 65
-@Field static final int MSG_SUBSCRIBE_BTLE_REQUEST = 66  // TODO
-@Field static final int MSG_BTLE_RESPONSE = 67           // TODO
+@Field static final int MSG_SUBSCRIBE_BTLE_REQUEST = 66
+@Field static final int MSG_BTLE_RESPONSE = 67
 
 @Field static final int ENTITY_CATEGORY_NONE = 0
 @Field static final int ENTITY_CATEGORY_CONFIG = 1

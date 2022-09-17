@@ -211,7 +211,7 @@ public void setSaturation(BigDecimal saturation) {
 
 public void setEffect(BigDecimal number) {
     if (state.lights && settings.light) {
-        List<String> effects = state.lights[settings.light as String]?.effects
+        List<String> effects = getEntity().effects
         if (effects) {
             if (number < 1) { number = effects.size() }
             if (number > effects.size()) { number = 1 }
@@ -228,7 +228,7 @@ public void setEffect(BigDecimal number) {
 public void setNextEffect() {
     if (state.lights && settings.light) {
         String current = device.currentValue('effectName')
-        int index = state.lights[settings.light as String].effects.indexOf(current) + 1
+        int index = getEntity().effects.indexOf(current) + 1
         setEffect(index + 1)
     }
 }
@@ -236,7 +236,7 @@ public void setNextEffect() {
 public void setPreviousEffect() {
     if (state.lights && settings.light) {
         String current = device.currentValue('effectName')
-        int index = state.lights[settings.light as String].effects.indexOf(current) + 1
+        int index = getEntity().effects.indexOf(current) + 1
         setEffect(index - 1)
     }
 }
@@ -264,7 +264,7 @@ public void parse(Map message) {
                 state['signalStrength'] = message.key
             }
 
-            if (!settings.light || (settings.light as Long == message.key)) {
+            if (message.platform == 'light' && (!settings.light || settings.light as Long == message.key)) {
                 String effects = JsonOutput.toJson(message.effects ?: [])
                 if (device.currentValue('lightEffects') != effects) {
                     sendEvent(name: 'lightEffects', value: effects)
@@ -301,15 +301,22 @@ public void parse(Map message) {
                     descriptionText = "${device} color name was set to ${colorName}"
                     sendEvent name: 'colorName', value: colorName, type: type, descriptionText: descriptionText
                     if (logTextEnable) { log.info descriptionText }
+
+                    String color = "{hue=${h}, saturation=${s}, level=${b}}"
+                    descriptionText = "${device} color set to ${color}"
+                    sendEvent name: 'color', value: color, type: type, descriptionText: descriptionText
+                    if (logTextEnable) { log.info descriptionText }
                 }
+
                 if (device.currentValue('hue') != h) {
                     descriptionText = "${device} hue was set to ${h}"
                     sendEvent name: 'hue', value: h, type: type, descriptionText: descriptionText
                     if (logTextEnable) { log.info descriptionText }
                 }
+
                 if (device.currentValue('saturation') != s) {
                     descriptionText = "${device} saturation was set to ${s}"
-                    sendEvent name: 'saturation', value: s, type: type, descriptionText: descriptionText
+                    sendEvent name: 'saturation', value: s, type: type, descriptionText: descriptionText, unit: '%'
                     if (logTextEnable) { log.info descriptionText }
                 }
 
@@ -358,10 +365,14 @@ public void parse(Map message) {
 
 private Integer getColorMode(String capability) {
     if (settings.light) {
-        Map<Integer, List<String>> modes = state.lights[settings.light as String].supportedColorModes
+        Map<Integer, List<String>> modes = getEntity().supportedColorModes
         return modes.find { k, v -> capability in v }?.key as Integer
     }
     return null
+}
+
+private Map getEntity() {
+    return state.lights.get(settings.light as String) ?: [:]
 }
 
 @Field private static Map colorNameMap = [
