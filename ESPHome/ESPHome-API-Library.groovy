@@ -45,7 +45,8 @@ import java.util.concurrent.ConcurrentLinkedQueue
 @Field static final int MAX_RECONNECT_SECONDS = 60
 @Field static final String NETWORK_ATTRIBUTE = 'networkStatus'
 
-@Field static final ConcurrentHashMap<String, String> espReceiveBuffer = new ConcurrentHashMap<>()
+// Static objects shared between all devices using this driver library 
+@Field static final ConcurrentHashMap<String, ByteArrayOutputStream> espReceiveBuffer = new ConcurrentHashMap<>()
 @Field static final ConcurrentHashMap<String, ConcurrentLinkedQueue> espSendQueue = new ConcurrentHashMap<>()
 @Field static final Random random = new Random()
 
@@ -273,6 +274,9 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
         case MSG_MEDIA_STATE_RESPONSE:
             parse espHomeMediaPlayerState(tags)
             break
+        case MSG_BLUETOOTH_LE_RESPONSE:
+            parse espHomeBluetoothLeResponse(tags)
+            break
         default:
             if (!handled) {
                 log.warn "ESPHome received unhandled message type ${msgType} with ${tags}"
@@ -290,6 +294,25 @@ private static Map espHomeBinarySensorState(Map<Integer, List> tags, boolean isD
             state: getBooleanTag(tags, 2),
             hasState: getBooleanTag(tags, 3, true)
     ]
+}
+
+private static Map espHomeBluetoothLeResponse(Map<Integer, List> tags) {
+    return [
+            type: 'state',
+            platform: 'bluetoothle',
+            isDigital: true,
+            address: getLongTag(tags, 1),
+            name: getStringTag(tags, 2),
+            rssi: getIntTag(tags, 3),
+            service_uuids: getStringTagList(tags, 4),
+            service_data: tags[5],
+            manufacturer_data: tags[6]
+    ]
+    //TODO: parse data tags
+    // message BluetoothServiceData {
+    //   string uuid = 1;
+    //   repeated uint32 data = 2 [packed=false];
+    // }
 }
 
 private static Map espHomeCameraImageResponse(Map<Integer, List> tags) {
@@ -433,7 +456,10 @@ private void espHomeHelloResponse(Map<Integer, List> tags) {
     String name = getStringTag(tags, 4)
     if (name) {
         log.info "ESPHome device name: ${name}"
-        device.name = name
+        device.updateDataValue 'Device Name', name
+        if (device.label) {
+            device.name = name
+        }
     }
 
     // Step 2: Send the ConnectRequest message
@@ -711,14 +737,8 @@ private static Map espHomeSirenState(Map<Integer, List> tags) {
     ]
 }
 
-private static Map espHomeSwitchState(Map<Integer, List> tags, boolean isDigital) {
-    return [
-            type: 'state',
-            platform: 'switch',
-            isDigital: isDigital,
-            key: getLongTag(tags, 1),
-            state: getBooleanTag(tags, 2)
-    ]
+private void espHomeSubscribeBtleRequest() {
+    sendMessage(MSG_SUBSCRIBE_BTLE_REQUEST)
 }
 
 private void espHomeSubscribeLogs(Integer logLevel, Boolean dumpConfig = true) {
@@ -750,6 +770,16 @@ private void espHomeSubscribeLogsResponse(Map<Integer, List> tags) {
 
 private void espHomeSubscribeStatesRequest() {
     sendMessage(MSG_SUBSCRIBE_STATES_REQUEST)
+}
+
+private static Map espHomeSwitchState(Map<Integer, List> tags, boolean isDigital) {
+    return [
+            type: 'state',
+            platform: 'switch',
+            isDigital: isDigital,
+            key: getLongTag(tags, 1),
+            state: getBooleanTag(tags, 2)
+    ]
 }
 
 private static Map espHomeTextSensorState(Map<Integer, List> tags) {
@@ -819,27 +849,6 @@ private void closeSocket(String reason) {
     setNetworkStatus('offline', reason)
 }
 
-private void healthCheck() {
-    ConcurrentLinkedQueue<Map> queue = espSendQueue.get(device.id)
-    boolean isEmpty = queue == null || queue.isEmpty()
-    // only send ping request when online and send queue is empty
-    if (!isOffline() && isEmpty) {
-        espHomePingRequest()
-    }
-}
-
-private byte[] decodeMessage(String hexString) {
-    byte[] bytes
-    String buffer = espReceiveBuffer.get(device.id)
-    if (buffer) {
-        bytes = HexUtils.hexStringToByteArray(buffer + hexString)
-        espReceiveBuffer.remove(device.id)
-    } else {
-        bytes = HexUtils.hexStringToByteArray(hexString)
-    }
-    return bytes
-}
-
 private String encodeMessage(int type, Map<Integer, List> tags = [:]) {
     // creates hex string payload from message type and tags
     ByteArrayOutputStream payload = new ByteArrayOutputStream()
@@ -852,13 +861,33 @@ private String encodeMessage(int type, Map<Integer, List> tags = [:]) {
     return HexUtils.byteArrayToHexString(stream.toByteArray())
 }
 
+private void healthCheck() {
+    ConcurrentLinkedQueue<Map> queue = espSendQueue.get(device.id)
+    boolean isEmpty = queue == null || queue.isEmpty()
+    // only send ping request when online and send queue is empty
+    if (!isOffline() && isEmpty) {
+        espHomePingRequest()
+    }
+}
+
+private ByteArrayInputStream hexDecode(String hexString) {
+    // We need to be able to retrieve partial packets previously stashed
+    // This would be faster if we had access to System.Arraycopy but we don't
+    ByteArrayOutputStream buffer = espReceiveBuffer.computeIfAbsent(device.id) { k -> new ByteArrayOutputStream() }
+    byte[] payload = HexUtils.hexStringToByteArray(hexString)
+    buffer.write(payload, 0, payload.size())
+    ByteArrayInputStream result = new ByteArrayInputStream(buffer.toByteArray())
+    buffer.reset()
+    return result
+}
+
 private boolean isOffline() {
     return device.currentValue(NETWORK_ATTRIBUTE) == 'offline'
 }
 
 // parse received protobuf messages - do not change this function name or driver will break
 public void parse(String hexString) {
-    ByteArrayInputStream stream = new ByteArrayInputStream(decodeMessage(hexString))
+    ByteArrayInputStream stream = hexDecode(hexString)
     int b
     while ((b = stream.read()) != -1) {
         if (b == 0x00) {
@@ -867,10 +896,11 @@ public void parse(String hexString) {
             int available = stream.available()
             if (length > available) {
                 stream.reset()
-                available = stream.available()
-                byte[] bufferArray = new byte[available + 1]
-                stream.read(bufferArray, 1, available)
-                espReceiveBuffer.put(device.id, HexUtils.byteArrayToHexString(bufferArray))
+                stashBuffer(stream)
+                // available = stream.available()
+                // byte[] bufferArray = new byte[available + 1]
+                // stream.read(bufferArray, 1, available)
+                // espReceiveBuffer.put(device.id, HexUtils.byteArrayToHexString(bufferArray))
                 return
             }
             parseMessage(stream, length)
@@ -913,23 +943,6 @@ private void sendMessage(int msgType, Map<Integer, List> tags, int expectedMsgTy
     }
 }
 
-private void setNetworkStatus(String state, String reason = '') {
-    if (device.currentValue(NETWORK_ATTRIBUTE) != state) {
-        sendEvent([ name: NETWORK_ATTRIBUTE, value: state, descriptionText: reason ?: "${device} is ${state}" ])
-    }
-}
-
-// parse received socket status - do not change this function name or driver will break
-public void socketStatus(String message) {
-    if (message.contains('error')) {
-        log.error "ESPHome socket error: ${message}"
-        closeSocket(message)
-        scheduleConnect()
-    } else {
-        log.info "ESPHome socket status: ${message}"
-    }
-}
-
 private void sendMessageQueue() {
     ConcurrentLinkedQueue<Map> queue = espSendQueue.get(device.id)
     if (queue) {
@@ -954,6 +967,33 @@ private void sendMessageQueue() {
             runIn(SEND_RETRY_SECONDS, 'sendMessageQueue')
         }
     }
+}
+
+private void setNetworkStatus(String state, String reason = '') {
+    if (device.currentValue(NETWORK_ATTRIBUTE) != state) {
+        sendEvent([ name: NETWORK_ATTRIBUTE, value: state, descriptionText: reason ?: "${device} is ${state}" ])
+    }
+}
+
+// parse received socket status - do not change this function name or driver will break
+public void socketStatus(String message) {
+    if (message.contains('error')) {
+        log.error "ESPHome socket error: ${message}"
+        closeSocket(message)
+        scheduleConnect()
+    } else {
+        log.info "ESPHome socket status: ${message}"
+    }
+}
+
+
+private void stashBuffer(ByteArrayInputStream stream) {
+    // We need to be able to stash partial packets to process later
+    ByteArrayOutputStream buffer = espReceiveBuffer.computeIfAbsent(device.id) { k -> new ByteArrayOutputStream() }
+    byte[] bufferArray = new byte[stream.available()]
+    stream.read(bufferArray, 0, bufferArray.size())
+    buffer.write(0x00) // start delimiter
+    buffer.write(bufferArray, 0, bufferArray.size())
 }
 
 private boolean supervisionCheck(int msgType, Map tags = [:]) {
@@ -1227,20 +1267,20 @@ private static long zigZagEncode(long v) {
 @Field static final int MSG_SWITCH_COMMAND_REQUEST = 33
 @Field static final int MSG_GET_TIME_REQUEST = 36
 @Field static final int MSG_GET_TIME_RESPONSE = 37
-@Field static final int MSG_LIST_SERVICES_RESPONSE = 41
-@Field static final int MSG_EXECUTE_SERVICE_REQUEST = 42
+@Field static final int MSG_LIST_SERVICES_RESPONSE = 41 // TODO
+@Field static final int MSG_EXECUTE_SERVICE_REQUEST = 42 // TODO
 @Field static final int MSG_LIST_CAMERA_RESPONSE = 43
 @Field static final int MSG_CAMERA_IMAGE_RESPONSE = 44
 @Field static final int MSG_CAMERA_IMAGE_REQUEST = 45
-@Field static final int MSG_LIST_CLIMATE_RESPONSE = 46
-@Field static final int MSG_CLIMATE_STATE_RESPONSE = 47
-@Field static final int MSG_CLIMATE_COMMAND_REQUEST = 48
+@Field static final int MSG_LIST_CLIMATE_RESPONSE = 46 // TODO
+@Field static final int MSG_CLIMATE_STATE_RESPONSE = 47 // TODO
+@Field static final int MSG_CLIMATE_COMMAND_REQUEST = 48 // TODO
 @Field static final int MSG_LIST_NUMBER_RESPONSE = 49
 @Field static final int MSG_NUMBER_STATE_RESPONSE = 50
 @Field static final int MSG_NUMBER_COMMAND_REQUEST = 51
 @Field static final int MSG_LIST_SELECT_RESPONSE = 52
-@Field static final int MSG_SELECT_STATE_RESPONSE = 53
-@Field static final int MSG_SELECT_COMMAND_REQUEST = 54
+@Field static final int MSG_SELECT_STATE_RESPONSE = 53 // TODO
+@Field static final int MSG_SELECT_COMMAND_REQUEST = 54 // TODO
 @Field static final int MSG_LIST_SIREN_RESPONSE = 55
 @Field static final int MSG_SIREN_STATE_RESPONSE = 56
 @Field static final int MSG_SIREN_COMMAND_REQUEST = 57
@@ -1253,7 +1293,7 @@ private static long zigZagEncode(long v) {
 @Field static final int MSG_MEDIA_STATE_RESPONSE = 64
 @Field static final int MSG_MEDIA_COMMAND_REQUEST = 65
 @Field static final int MSG_SUBSCRIBE_BTLE_REQUEST = 66
-@Field static final int MSG_BTLE_RESPONSE = 67
+@Field static final int MSG_BLUETOOTH_LE_RESPONSE = 67
 
 @Field static final int ENTITY_CATEGORY_NONE = 0
 @Field static final int ENTITY_CATEGORY_CONFIG = 1

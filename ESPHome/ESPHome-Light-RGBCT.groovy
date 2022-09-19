@@ -27,10 +27,11 @@ metadata {
         capability 'Actuator'
         capability 'Bulb'
         capability 'ColorControl'
+        //capability 'ColorControlPreset'
         capability 'ColorMode'
         capability 'ColorTemperature'
-        capability 'Flash'
         capability 'LevelPreset'
+        //capability 'ColorTemperaturePreset'
         capability 'Light'
         capability 'LightEffects'
         capability 'Refresh'
@@ -107,20 +108,7 @@ public void uninstalled() {
     log.info "${device} driver uninstalled"
 }
 
-// driver commands
-public void flash(BigDecimal rate = 1) {
-    if (logTextEnable) { log.info "${device} flash (${rate})" }
-    espHomeLightCommand(
-        key: settings.light as Long,
-        state: true,
-        brightness: 1f,
-        flashLength: rate * 1000,
-        red: 1f,
-        green: 0f,
-        blue: 0f
-    )
-}
-
+// Driver Commands
 public void on() {
     if (device.currentValue('switch') != 'on') {
         if (logTextEnable) { log.info "${device} on" }
@@ -135,14 +123,16 @@ public void off() {
     }
 }
 
+public void presetColor(Map colorMap) {
+    setColorInternal(colorMap)
+}
+
+public void presetColorTemperature(BigDecimal colorTemperature, BigDecimal level = null, BigDecimal duration = null) {
+    setColorTemperatureInternal(colorTemperature, level, duration, null)
+}
+
 public void presetLevel(BigDecimal level) {
-    if (device.currentValue('level') != level) {
-        if (logTextEnable) { log.info "${device} preset level ${level}%" }
-        espHomeLightCommand(
-            key: settings.light as Long,
-            masterBrightness: level / 100f
-        )
-    }
+    setLevelInternal(level)
 }
 
 public void refresh() {
@@ -152,33 +142,11 @@ public void refresh() {
 }
 
 public void setColor(Map colorMap) {
-    if (device.currentValue('hue') != colorMap.hue || device.currentValue('saturation') != colorMap.saturation || device.currentValue('level') != colorMap.level) {
-        if (logTextEnable) { log.info "${device} set color ${colorMap}" }
-        def (int r, int g, int b) = ColorUtils.hsvToRGB([colorMap.hue, colorMap.saturation, colorMap.level])
-        espHomeLightCommand(
-            key: settings.light as Long,
-            red: r / 255f,
-            green: g / 255f,
-            blue: b / 255f,
-            masterBrightness: colorMap.level / 100f,
-            colorBrightness: 1f, // use the master brightness
-            colorMode: getColorMode('RGB')
-        )
-    }
+    setColorInternal(colorMap, true)
 }
 
 public void setColorTemperature(BigDecimal colorTemperature, BigDecimal level = null, BigDecimal duration = null) {
-    if (device.currentValue('colorTemperature') != colorTemperature) {
-        if (logTextEnable) { log.info "${device} set color temperature ${colorTemperature}" }
-        float mireds = 1000000f / colorTemperature
-        espHomeLightCommand(
-            key: settings.light as Long,
-            colorTemperature: mireds,
-            masterBrightness: level != null ? level / 100f : null,
-            colorMode: getColorMode('CT'),
-            transitionLength: duration != null ? duration * 1000 : null
-        )
-    }
+    setColorTemperatureInternal(colorTemperature, level, duration)
 }
 
 public void setHue(BigDecimal hue) {
@@ -190,15 +158,7 @@ public void setHue(BigDecimal hue) {
 }
 
 public void setLevel(BigDecimal level, BigDecimal duration = null) {
-    if (device.currentValue('level') != level) {
-        if (logTextEnable) { log.info "${device} set level to ${level}%" }
-        espHomeLightCommand(
-            key: settings.light as Long,
-            state: level > 0,
-            masterBrightness: level > 0 ? level / 100f : null,
-            transitionLength: duration != null ? duration * 1000 : null
-        )
-    }
+    setLevelInternal(level, duration, true)
 }
 
 public void setSaturation(BigDecimal saturation) {
@@ -219,7 +179,7 @@ public void setEffect(BigDecimal number) {
             String effectName = effects[index]
             if (device.currentValue('effectName') != effectName) {
                 if (logTextEnable) { log.info "${device} set effect ${effectName}" }
-                espHomeLightCommand(key: settings.light as Long, effect: effectName)
+                espHomeLightCommand(key: settings.light as Long, state: true, effect: effectName)
             }
         }
     }
@@ -241,7 +201,7 @@ public void setPreviousEffect() {
     }
 }
 
-// the parse method is invoked by the API library when messages are received
+// the parse method is invoked by the ESPHome API library when messages are received
 public void parse(Map message) {
     if (logEnable) { log.debug "ESPHome received: ${message}" }
 
@@ -363,6 +323,7 @@ public void parse(Map message) {
     }
 }
 
+// Private helper methods
 private Integer getColorMode(String capability) {
     if (settings.light) {
         Map<Integer, List<String>> modes = getEntity().supportedColorModes
@@ -373,6 +334,58 @@ private Integer getColorMode(String capability) {
 
 private Map getEntity() {
     return state.lights.get(settings.light as String) ?: [:]
+}
+
+private void setColorInternal(Map colorMap, Boolean state = null) {
+    if (device.currentValue('hue') != colorMap.hue || device.currentValue('saturation') != colorMap.saturation || device.currentValue('level') != colorMap.level) {
+        if (logTextEnable) { log.info "${device} ${state ? 'set' : 'preset'} color ${colorMap}" }
+        def (int r, int g, int b) = ColorUtils.hsvToRGB([colorMap.hue, colorMap.saturation, colorMap.level])
+        espHomeLightCommand(
+            key: settings.light as Long,
+            red: r / 255f,
+            green: g / 255f,
+            blue: b / 255f,
+            state: state == null ? null : colorMap.level > 0,
+            masterBrightness: colorMap.level / 100f,
+            colorBrightness: 1f, // use the master brightness
+            colorMode: getColorMode('RGB')
+        )
+    }
+}
+
+private void setColorTemperatureInternal(BigDecimal colorTemperature, BigDecimal level = null, BigDecimal duration = null, Boolean state = true) {
+    float mireds = 1000000f / colorTemperature
+    Map entity = getEntity()
+    int maxMireds = entity.maxMireds ?: 370
+    int minMireds = entity.minMireds ?: 153
+    if (mireds > maxMireds) { mireds = maxMireds }
+    if (mireds < minMireds) { mireds = minMireds }
+    int kelvin = 1000000f / mireds
+    if (device.currentValue('colorTemperature') != kelvin) {
+        if (logTextEnable) { log.info "${device} ${state ? 'set' : 'preset'} color temperature ${kelvin}" }
+        espHomeLightCommand(
+            key: settings.light as Long,
+            colorTemperature: mireds,
+            masterBrightness: level != null ? level / 100f : null,
+            colorMode: getColorMode('CT'),
+            state: state == null ? null : level != null ? level > 0 : state,
+            transitionLength: duration != null ? duration * 1000 : null
+        )
+    } else if (level != null) {
+        setLevelInternal(level, duration, state)
+    }
+}
+
+private void setLevelInternal(BigDecimal level, BigDecimal duration = null, Boolean state = null) {
+    if (device.currentValue('level') != level) {
+        if (logTextEnable) { log.info "${device} ${state ? 'set' : 'preset'} level to ${level}%" }
+        espHomeLightCommand(
+            key: settings.light as Long,
+            state: state == null ? level > 0 : null,
+            masterBrightness: level > 0 ? level / 100f : null,
+            transitionLength: duration != null ? duration * 1000 : null
+        )
+    }
 }
 
 @Field private static Map colorNameMap = [
