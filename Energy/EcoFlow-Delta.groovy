@@ -138,7 +138,7 @@ public void updateState() {
             sendEvent(name: 'energy', value: wattsOutTotal, unit: 'kWh')
         }
 
-        Integer voltage = v.bms?.voltage
+        Float voltage = v.bms?.voltage
         if (voltage != null && device.currentValue('voltage') != voltage) {
             sendEvent(name: 'voltage', value: voltage, unit: 'V')
         }
