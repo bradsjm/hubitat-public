@@ -406,9 +406,9 @@ private void getColorSchemeHandler(AsyncResponse response, Map data) {
         if (colorMap.level < settings.minBright) { colorMap.level = settings.minBright }
         if (colorMap.level > settings.maxBright) { colorMap.level = settings.maxBright }
         List lamps = settings["group${data.group}"] ?: []
-        if (lamps[index]) {
+        if (lamps[index] && lamps[index].currentValue('switch') == 'on') {
             log.info "Set ${lamps[index]} (Group ${data.group + 1}) to ${colorMap}"
-            lamps[index]?.setColor(colorMap)
+            lamps[index].setColor(colorMap)
         }
     }
 }
