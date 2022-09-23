@@ -233,9 +233,9 @@ public void parse(Map message) {
             break
 
         case 'state':
+            String type = message.isDigital ? 'digital' : 'physical'
             // Check if the entity key matches the message entity key received to update device state
             if (settings.light as Long == message.key) {
-                String type = message.isDigital ? 'digital' : 'physical'
                 String descriptionText
 
                 String state = message.state ? 'on' : 'off'
@@ -245,13 +245,16 @@ public void parse(Map message) {
                     if (logTextEnable) { log.info descriptionText }
                 }
 
-                int level = message.state ? Math.round(message.masterBrightness * 100f) : 0
-                if (device.currentValue('level') != level) {
-                    descriptionText = "${device} level was set to ${level}"
+                int level = Math.round(message.masterBrightness * 100f)
+                if (message.state && device.currentValue('level') != level) {
+                    descriptionText = "${device} level was set to ${level}%"
                     sendEvent(name: 'level', value: level, unit: '%', type: type, descriptionText: descriptionText)
-                    if (message.state) {
-                        sendEvent(name: 'levelPreset', value: level, unit: '%', type: type, descriptionText: descriptionText)
-                    }
+                    if (logTextEnable) { log.info descriptionText }
+                }
+
+                if (device.currentValue('levelPreset') != level) {
+                    descriptionText = "${device} level preset was set to ${level}%"
+                    sendEvent(name: 'levelPreset', value: level, unit: '%', type: type, descriptionText: descriptionText)
                     if (logTextEnable) { log.info descriptionText }
                 }
 
@@ -315,7 +318,7 @@ public void parse(Map message) {
                 String unit = 'dBm'
                 if (device.currentValue('rssi') != rssi) {
                     descriptionText = "${device} rssi is ${rssi}"
-                    sendEvent(name: 'rssi', value: rssi, unit: unit, descriptionText: descriptionText)
+                    sendEvent(name: 'rssi', value: rssi, unit: unit, type: type, descriptionText: descriptionText)
                     if (logTextEnable) { log.info descriptionText }
                 }
             }
@@ -324,10 +327,14 @@ public void parse(Map message) {
 }
 
 // Private helper methods
-private Integer getColorMode(String capability) {
-    if (settings.light) {
-        Map<Integer, List<String>> modes = getEntity().supportedColorModes
-        return modes.find { k, v -> capability in v }?.key as Integer
+private Integer getColorMode(int capability) {
+    Map entity = getEntity()
+    if (entity?.supportedColorModes) {
+        Integer result = entity.supportedColorModes.keySet().find {
+            colorMode -> (colorMode as int) & capability
+        } as Integer
+        if (logEnable) { log.debug "Using color mode ${result}" }
+        return result
     }
     return null
 }
@@ -348,7 +355,8 @@ private void setColorInternal(Map colorMap, Boolean state = null) {
             state: state == null ? null : colorMap.level > 0,
             masterBrightness: colorMap.level / 100f,
             colorBrightness: 1f, // use the master brightness
-            colorMode: getColorMode('RGB')
+            colorMode: getColorMode(COLOR_CAP_RGB),
+            transitionLength: device.currentValue('colorMode') == 'RGB' ? null : 0
         )
     }
 }
@@ -361,13 +369,16 @@ private void setColorTemperatureInternal(BigDecimal colorTemperature, BigDecimal
     if (mireds > maxMireds) { mireds = maxMireds }
     if (mireds < minMireds) { mireds = minMireds }
     int kelvin = 1000000f / mireds
+    if (device.currentValue('colorMode') != 'CT') {
+        duration = 0 // when switching from RGB to CT make it fast
+    }
     if (device.currentValue('colorTemperature') != kelvin) {
         if (logTextEnable) { log.info "${device} ${state ? 'set' : 'preset'} color temperature ${kelvin}" }
         espHomeLightCommand(
             key: settings.light as Long,
             colorTemperature: mireds,
             masterBrightness: level != null ? level / 100f : null,
-            colorMode: getColorMode('CT'),
+            colorMode: getColorMode(COLOR_CAP_COLOR_TEMPERATURE | COLOR_CAP_COLD_WARM_WHITE),
             state: state == null ? null : level != null ? level > 0 : state,
             transitionLength: duration != null ? duration * 1000 : null
         )
@@ -381,8 +392,8 @@ private void setLevelInternal(BigDecimal level, BigDecimal duration = null, Bool
         if (logTextEnable) { log.info "${device} ${state ? 'set' : 'preset'} level to ${level}%" }
         espHomeLightCommand(
             key: settings.light as Long,
-            state: state == null ? level > 0 : null,
-            masterBrightness: level > 0 ? level / 100f : null,
+            state: state != null ? level > 0 : null,
+            masterBrightness: level / 100f,
             transitionLength: duration != null ? duration * 1000 : null
         )
     }

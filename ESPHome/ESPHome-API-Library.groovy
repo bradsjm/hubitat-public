@@ -830,7 +830,7 @@ private void openSocket() {
     setNetworkStatus('connecting')
     try {
         interfaces.rawSocket.connect(settings.ipAddress, PORT_NUMBER, byteInterface: true)
-        runInMillis(200, 'espHomeHelloRequest')
+        runInMillis(250, 'espHomeHelloRequest')
     } catch (e) {
         log.error "ESPHome error opening socket: " + e
         scheduleConnect()
@@ -847,6 +847,7 @@ private void closeSocket(String reason) {
     }
     interfaces.rawSocket.disconnect()
     setNetworkStatus('offline', reason)
+    pauseExecution(1000)
 }
 
 private String encodeMessage(int type, Map<Integer, List> tags = [:]) {
@@ -986,14 +987,13 @@ public void socketStatus(String message) {
     }
 }
 
-
 private void stashBuffer(ByteArrayInputStream stream) {
     // We need to be able to stash partial packets to process later
     ByteArrayOutputStream buffer = espReceiveBuffer.computeIfAbsent(device.id) { k -> new ByteArrayOutputStream() }
-    byte[] bufferArray = new byte[stream.available()]
-    stream.read(bufferArray, 0, bufferArray.size())
+    byte[] payload = new byte[stream.available()]
+    stream.read(payload, 0, payload.size())
     buffer.write(0x00) // start delimiter
-    buffer.write(bufferArray, 0, bufferArray.size())
+    buffer.write(payload, 0, payload.size())
 }
 
 private boolean supervisionCheck(int msgType, Map tags = [:]) {

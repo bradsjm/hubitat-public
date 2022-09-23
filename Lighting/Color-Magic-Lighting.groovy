@@ -25,6 +25,7 @@ import com.hubitat.hub.domain.Event
 import hubitat.helper.ColorUtils
 import hubitat.scheduling.AsyncResponse
 import java.math.RoundingMode
+import com.hubitat.app.DeviceWrapper
 
 definition (
     name: 'Color Magic Lighting',
@@ -242,6 +243,11 @@ void initialize() {
     subscribe(settings.seed, 'seedChangeHandler')
     subscribe(settings.disabledSwitchWhenOn, 'switch', 'eventHandler')
     subscribe(settings.disabledSwitchWhenOff, 'switch', 'eventHandler')
+    subscribe(settings.group0, 'switch', 'lampSwitchHandler')
+    subscribe(settings.group1, 'switch', 'lampSwitchHandler')
+    subscribe(settings.group2, 'switch', 'lampSwitchHandler')
+    subscribe(settings.group3, 'switch', 'lampSwitchHandler')
+    subscribe(settings.group4, 'switch', 'lampSwitchHandler')
     subscribe(location, 'mode', 'eventHandler')
     schedule('0 0 3 ? * * *', 'getModelList')
 
@@ -254,6 +260,16 @@ void initialize() {
 
 void eventHandler(Event evt) {
     getModelColors()
+}
+
+void lampSwitchHandler(Event evt) {
+    if (evt.value == 'on' && checkEnabled()) {
+        Map colorMap = state.lamps[evt.device.id]
+        if (colorMap) {
+            log.info "Set ${evt.device} to ${colorMap}"
+            evt.device.setColor(colorMap)
+        }
+    }
 }
 
 // called when there is a change to the seed devices
@@ -397,18 +413,23 @@ private void getColorSchemeHandler(AsyncResponse response, Map data) {
 
     if (logEnable) { log.debug "API returned: ${response.data}" }
 
+    List lamps = settings["group${data.group}"] ?: []
     response.json.colors.eachWithIndex { color, index ->
-        Map colorMap = [
-            hue: (color.hsv.h / 3.6 as BigDecimal).setScale(1, RoundingMode.HALF_UP),
-            saturation: color.hsv.s,
-            level: color.hsv.v
-        ]
-        if (colorMap.level < settings.minBright) { colorMap.level = settings.minBright }
-        if (colorMap.level > settings.maxBright) { colorMap.level = settings.maxBright }
-        List lamps = settings["group${data.group}"] ?: []
-        if (lamps[index] && lamps[index].currentValue('switch') == 'on') {
-            log.info "Set ${lamps[index]} (Group ${data.group + 1}) to ${colorMap}"
-            lamps[index].setColor(colorMap)
+        DeviceWrapper lamp = lamps[index]
+        if (lamp) {
+            Map colorMap = [
+                hue: (color.hsv.h / 3.6 as BigDecimal).setScale(1, RoundingMode.HALF_UP),
+                saturation: color.hsv.s,
+                level: color.hsv.v
+            ]
+            if (colorMap.level < settings.minBright) { colorMap.level = settings.minBright }
+            if (colorMap.level > settings.maxBright) { colorMap.level = settings.maxBright }
+            if (state.lamps == null) { state.lamps = [:] }
+            state.lamps[lamp.id] = colorMap
+            if (lamp && lamp.currentValue('switch') == 'on') {
+                log.info "Set ${lamp} (Group ${data.group + 1}) to ${colorMap}"
+                lamp.setColor(colorMap)
+            }
         }
     }
 }

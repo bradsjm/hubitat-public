@@ -338,6 +338,11 @@ private void deviceEvent(Event evt) {
                 if (checkEnabled()) { updateLamp(device) }
                 return
             }
+            if (evt.value == 'on' && !(device.id in state.disabledDevices)) {
+                log.info "Updating ${device} for circadian management (light turned on)"
+                if (checkEnabled()) { updateLamp(device) }
+                return
+            }
             break
         case 'colorTemperature':
             int value = evt.value as int

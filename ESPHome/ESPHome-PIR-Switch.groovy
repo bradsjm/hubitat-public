@@ -157,29 +157,19 @@ public void parse(Map message) {
             break
 
         case 'state':
+            String type = message.isDigital ? 'digital' : 'physical'
             // Check if the entity key matches the message entity key received to update device state
             if (settings.binarysensor as Long == message.key) {
                 String value = message.state ? 'active' : 'inactive'
                 if (device.currentValue('motion') != value) {
-                    sendEvent([
-                        name: 'motion',
-                        value: value,
-                        type: 'digital',
-                        descriptionText: "Motion is ${value}"
-                    ])
+                    sendEvent(name: 'motion', value: value, type: type, descriptionText: "Motion is ${value}")
                 }
             }
 
             if (settings.switch as Long == message.key) {
-                String type = message.isDigital ? 'digital' : 'physical'
                 String value = message.state ? 'on' : 'off'
                 if (device.currentValue('switch') != value) {
-                    sendEvent([
-                        name: 'switch',
-                        value: value,
-                        type: type,
-                        descriptionText: "Switch is ${value} (${type})"
-                    ])
+                    sendEvent(name: 'switch', value: value, type: type, descriptionText: "Switch is ${value} (${type})")
                 }
             }
 
@@ -188,7 +178,7 @@ public void parse(Map message) {
                 String unit = 'dBm'
                 if (device.currentValue('rssi') != rssi) {
                     descriptionText = "${device} rssi is ${rssi}"
-                    sendEvent(name: 'rssi', value: rssi, unit: unit, descriptionText: descriptionText)
+                    sendEvent(name: 'rssi', value: rssi, unit: unit, type: type, descriptionText: descriptionText)
                     if (logTextEnable) { log.info descriptionText }
                 }
             }

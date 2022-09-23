@@ -27,6 +27,7 @@ metadata {
         capability 'Actuator'
         capability 'GarageDoorControl'
         capability 'Refresh'
+        capability 'SignalStrength'
         capability 'Initialize'
 
         // attribute populated by ESPHome API Library automatically
@@ -140,12 +141,16 @@ public void parse(Map message) {
                     device.updateSetting('cover', message.key as String)
                 }
             }
+
+            if (message.platform == 'sensor' && message.deviceClass == 'signal_strength') {
+                state['signalStrength'] = message.key
+            }
             break
 
         case 'state':
+            String type = message.isDigital ? 'digital' : 'physical'
             // Check if the entity key matches the message entity key received to update device state
             if (settings.cover as Long == message.key) {
-                String type = message.isDigital ? 'digital' : 'physical'
                 String value
                 switch (message.currentOperation) {
                     case COVER_OPERATION_IDLE:
@@ -161,6 +166,16 @@ public void parse(Map message) {
                 if (device.currentValue('door') != value) {
                     descriptionText = "${device} door is ${value}"
                     sendEvent(name: 'door', value: value, type: type, descriptionText: descriptionText)
+                    if (logTextEnable) { log.info descriptionText }
+                }
+            }
+
+            if (state.signalStrength as Long == message.key && message.hasState) {
+                Integer rssi = Math.round(message.state as Float)
+                String unit = 'dBm'
+                if (device.currentValue('rssi') != rssi) {
+                    descriptionText = "${device} rssi is ${rssi}"
+                    sendEvent(name: 'rssi', value: rssi, unit: unit, type: type, descriptionText: descriptionText)
                     if (logTextEnable) { log.info descriptionText }
                 }
             }
