@@ -61,7 +61,7 @@ import hubitat.scheduling.AsyncResponse
  *  08/03/22 - 0.3.3 - Add support for fskg fan speed switch
  *  08/04/22 - 0.3.4 - Fix for set color when level is not set
  *                     Remove ciphercache so encryption key is not cached
- *
+ *  09/28/22 - 0.3.5 - Make setColor and setColorTemperature turn on light
  *  Custom component drivers located at https://github.com/bradsjm/hubitat-drivers/tree/master/Component
  */
 
@@ -493,9 +493,11 @@ void componentSetColor(DeviceWrapper dw, Map colorMap) {
             v: remap(level, 0, 100, (int)bright.min, (int)bright.max)
         ]
         if (txtEnable) { LOG.info "Setting ${dw} color to ${colorMap}" }
+        String power = getFunctionCode(functions, tuyaFunctions.light)
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'),
             [ 'code': code, 'value': value ],
-            [ 'code': 'work_mode', 'value': 'colour']
+            [ 'code': power, 'value': true ],
+            [ 'code': 'work_mode', 'value': 'colour' ]
         )
     } else {
         LOG.error "Unable to determine set color function code in ${functions}"
@@ -511,9 +513,11 @@ void componentSetColorTemperature(DeviceWrapper dw, BigDecimal kelvin,
         Map temp = functions[code] ?: defaults[code]
         Integer value = (int)temp.max - Math.ceil(remap(1000000 / kelvin, minMireds, maxMireds, (int)temp.min, (int)temp.max))
         if (txtEnable) { LOG.info "Setting ${dw} color temperature to ${kelvin}K" }
+        String power = getFunctionCode(functions, tuyaFunctions.light)
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'),
             [ 'code': code, 'value': value ],
-            [ 'code': 'work_mode', 'value': 'white']
+            [ 'code': power, 'value': true ],
+            [ 'code': 'work_mode', 'value': 'white' ]
         )
     } else {
         LOG.error "Unable to determine color temperature function code in ${functions}"
