@@ -52,12 +52,6 @@ preferences {
         }
 
         section('Color Temperature Managed Lights', hideable: true, hidden: true) {
-            input name: 'colorTemperatureDevices',
-                  type: 'capability.colorTemperature',
-                  title: 'Select lights to adjust color temperature',
-                  multiple: true,
-                  required: false
-
             input name: 'colorTemperatureOnDevices',
                   type: 'capability.colorTemperature',
                   title: 'Select lights to adjust color temperature when on',
@@ -66,12 +60,6 @@ preferences {
         }
 
         section('RGB Color Managed Lights', hideable: true, hidden: true) {
-            input name: 'colorDevices',
-                  type: 'capability.colorControl',
-                  title: 'Select lights to adjust RGB color',
-                  multiple: true,
-                  required: false
-
             input name: 'colorOnDevices',
                   type: 'capability.colorControl',
                   title: 'Select lights to adjust RGB color when on',
@@ -189,9 +177,7 @@ void initialize() {
 
     if (settings.masterEnable) {
         log.info 'Subscribing to device events'
-        if (colorTemperatureDevices) { subscribe(colorTemperatureDevices, 'deviceEvent', [ filtered: true ]) }
         if (colorTemperatureOnDevices) { subscribe(colorTemperatureOnDevices, 'deviceEvent', [ filtered: true ]) }
-        if (colorDevices) { subscribe(colorDevices, 'deviceEvent', [ filtered: true ]) }
         if (colorOnDevices) { subscribe(colorOnDevices, 'deviceEvent', [ filtered: true ]) }
 
         // Update circadian calculation and update lamps on defined schedule
@@ -397,24 +383,8 @@ private void updateLamp(DeviceWrapper device) {
         device.setColor(current.hsv)
     }
 
-    if (device.id in settings.colorDevices*.id && (
-        device.currentValue('hue') != current.hsv[0] ||
-        device.currentValue('saturation') != current.hsv[1] ||
-        device.currentValue('level') != current.hsv[2]) ) {
-        log.info "Setting ${device} color to to ${current.hsv}"
-        device.setColor(current.hsv)
-    }
-
     if (device.id in settings.colorTemperatureOnDevices*.id &&
         device.currentValue('switch') == 'on' &&
-        device.currentValue('colorTemperature') != null &&
-        Math.abs(device.currentValue('colorTemperature') - current.colorTemperature) > 100) {
-        log.info "Setting ${device} color temperature from ${device.currentValue('colorTemperature')}K " +
-                 "to ${current.colorTemperature}K"
-        device.setColorTemperature(current.colorTemperature)
-    }
-
-    if (device.id in settings.colorTemperatureDevices*.id &&
         device.currentValue('colorTemperature') != null &&
         Math.abs(device.currentValue('colorTemperature') - current.colorTemperature) > 100) {
         log.info "Setting ${device} color temperature from ${device.currentValue('colorTemperature')}K " +
@@ -437,6 +407,4 @@ private void updateLamps() {
 
     settings.colorOnDevices?.each { device -> updateLamp(device) }
     settings.colorTemperatureOnDevices?.each { device -> updateLamp(device) }
-    settings.colorDevices?.each { device -> updateLamp(device) }
-    settings.colorTemperatureDevices?.each { device -> updateLamp(device) }
 }

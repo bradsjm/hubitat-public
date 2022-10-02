@@ -39,11 +39,11 @@ import java.util.concurrent.ConcurrentLinkedQueue
  */
 
 @Field static final int PING_INTERVAL_SECONDS = 60 // Maximum 160 seconds
-@Field static final int PORT_NUMBER = 6053
-@Field static final int SEND_RETRY_COUNT = 3
+@Field static final int API_PORT_NUMBER = 6053
+@Field static final int SEND_RETRY_COUNT = 10
 @Field static final int SEND_RETRY_SECONDS = 5
 @Field static final int MAX_RECONNECT_SECONDS = 60
-@Field static final String NETWORK_ATTRIBUTE = 'networkStatus'
+@Field static final String NETWORK_ATTRIBUTE = 'networkStatus' // Device attribute
 
 // Static objects shared between all devices using this driver library 
 @Field static final ConcurrentHashMap<String, ByteArrayOutputStream> espReceiveBuffer = new ConcurrentHashMap<>()
@@ -161,6 +161,19 @@ private void espHomeSirenCommand(Map tags) {
     ], MSG_SIREN_STATE_RESPONSE)
 }
 
+private void espHomeSubscribe() {
+    log.info 'Subscribing to ESPHome device states'
+    espHomeSubscribeStatesRequest()
+
+    log.info 'Subscribing to ESPHome HA services'
+    espHomeSubscribeHaServicesRequest()
+
+    log.info "Subscribing to ESPHome ${settings.logEnable ? 'DEBUG' : 'INFO'} logging"
+    espHomeSubscribeLogs(settings.logEnable ? LOG_LEVEL_DEBUG : LOG_LEVEL_INFO)
+
+    sendMessageQueue()
+}
+
 private void espHomeSwitchCommand(Map tags) {
     sendMessage(MSG_SWITCH_COMMAND_REQUEST, [
             1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
@@ -222,6 +235,9 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
             break
         case MSG_FAN_STATE_RESPONSE:
             parse espHomeFanState(tags, handled)
+            break
+        case MSG_HA_SERVICE_RESPONSE:
+            parse espHomeHaServiceResponse(tags)
             break
         case MSG_LIGHT_STATE_RESPONSE:
             parse espHomeLightState(tags, handled)
@@ -342,13 +358,15 @@ private void espHomeConnectResponse(Map<Integer, List> tags) {
     }
 
     setNetworkStatus('online')
+    device.updateDataValue 'Last Connected Time', new Date().toString()
     state.remove('reconnectDelay')
     espHomeSchedulePing()
 
-    if (device.getDataValue('MAC Address')) {
-        espHomeListEntitiesDoneResponse()
-    } else {
+    if (state.requireRefresh) {
+        state.remove('requireRefresh')
         espHomeDeviceInfoRequest()
+    } else {
+        espHomeSubscribe()
     }
 }
 
@@ -386,9 +404,6 @@ private void espHomeDeviceInfoResponse(Map<Integer, List> tags) {
             portNumber: getIntTag(tags, 10)
     ]
 
-    if (deviceInfo.macAddress) {
-        device.deviceNetworkId = deviceInfo.macAddress.replaceAll(':', '-').toLowerCase()
-    }
     device.updateDataValue 'Board Model', deviceInfo.boardModel
     device.updateDataValue 'Compile Time', deviceInfo.compileTime
     device.updateDataValue 'ESPHome Version', deviceInfo.espHomeVersion
@@ -397,6 +412,10 @@ private void espHomeDeviceInfoResponse(Map<Integer, List> tags) {
     device.updateDataValue 'Project Name', deviceInfo.projectName
     device.updateDataValue 'Project Version', deviceInfo.projectVersion
     device.updateDataValue 'Web Server', "http://${ipAddress}:${deviceInfo.portNumber}"
+
+    if (deviceInfo.macAddress) {
+        device.deviceNetworkId = deviceInfo.macAddress.replaceAll(':', '').toUpperCase()
+    }
 
     parse(deviceInfo)
 
@@ -426,6 +445,17 @@ private void espHomeGetTimeRequest() {
     ])
 }
 
+private static Map espHomeHaServiceResponse(Map<Integer, List> tags) {
+    return parseEntity(tags) + [
+            type: 'service',
+            service: getStringTag(tags, 1),
+            data: getStringTagList(tags, 2), // FIXME
+            data_template: getStringTagList(tags, 3), // FIXME
+            variables: getStringTagList(tags, 4), // FIXME
+            isEvent: getBooleanTag(tags, 5)
+    ]
+}
+
 private void espHomeHelloRequest() {
     // Can only be sent by the client and only at the beginning of the connection
     String client = "Hubitat ${location.hub.name}"
@@ -450,7 +480,11 @@ private void espHomeHelloResponse(Map<Integer, List> tags) {
     String info = getStringTag(tags, 3)
     if (info) {
         log.info "ESPHome server info: ${info}"
-        device.updateDataValue 'Server Info', info
+        if (device.getDataValue('Server Info') != info) {
+            device.updateDataValue 'Server Info', info
+            log.info 'ESPHome detected device update, flagging for refresh'
+            state.requireRefresh = true
+        }
     }
 
     String name = getStringTag(tags, 4)
@@ -658,11 +692,7 @@ private static Map espHomeListEntitiesTextSensorResponse(Map<Integer, List> tags
 }
 
 private void espHomeListEntitiesDoneResponse() {
-    log.info 'Subscribing to device states'
-    espHomeSubscribeStatesRequest()
-    log.info "Subscribing to device ${settings.logEnable ? 'DEBUG' : 'INFO'} logging"
-    espHomeSubscribeLogs(settings.logEnable ? LOG_LEVEL_DEBUG : LOG_LEVEL_INFO)
-    sendMessageQueue()
+    espHomeSubscribe()
 }
 
 private static Map espHomeLockState(Map<Integer, List> tags) {
@@ -705,7 +735,6 @@ private void espHomePingRequest() {
 
 private void espHomePingResponse(Map<Integer, List> tags) {
     setNetworkStatus('online')
-    device.updateDataValue 'Last Ping Response', new Date().toString()
     if (logEnable) { log.trace 'ESPHome ping response received from device' }
     espHomeSchedulePing()
 }
@@ -772,6 +801,10 @@ private void espHomeSubscribeStatesRequest() {
     sendMessage(MSG_SUBSCRIBE_STATES_REQUEST)
 }
 
+private void espHomeSubscribeHaServicesRequest() {
+    sendMessage(MSG_SUBSCRIBE_HA_SERVICES_REQUEST)
+}
+
 private static Map espHomeSwitchState(Map<Integer, List> tags, boolean isDigital) {
     return [
             type: 'state',
@@ -826,10 +859,10 @@ private static List<String> toCapabilities(int capability) {
  * ESPHome Native API Plaintext Socket IO Implementation
  */
 private void openSocket() {
-    log.info "ESPHome opening socket to ${ipAddress}:${PORT_NUMBER}"
+    log.info "ESPHome opening socket to ${ipAddress}:${API_PORT_NUMBER}"
     setNetworkStatus('connecting')
     try {
-        interfaces.rawSocket.connect(settings.ipAddress, PORT_NUMBER, byteInterface: true)
+        interfaces.rawSocket.connect(settings.ipAddress, API_PORT_NUMBER, byteInterface: true)
         runInMillis(250, 'espHomeHelloRequest')
     } catch (e) {
         log.error "ESPHome error opening socket: " + e
@@ -841,7 +874,7 @@ private void closeSocket(String reason) {
     unschedule('healthCheck')
     unschedule('sendMessageQueue')
     espReceiveBuffer.remove(device.id)
-    log.info "ESPHome closing socket to ${ipAddress}:${PORT_NUMBER} (${reason})"
+    log.info "ESPHome closing socket to ${ipAddress}:${API_PORT_NUMBER} (${reason})"
     if (!isOffline()) {
         sendMessage(MSG_DISCONNECT_REQUEST)
     }
@@ -1265,8 +1298,13 @@ private static long zigZagEncode(long v) {
 @Field static final int MSG_FAN_COMMAND_REQUEST = 31
 @Field static final int MSG_LIGHT_COMMAND_REQUEST = 32
 @Field static final int MSG_SWITCH_COMMAND_REQUEST = 33
+@Field static final int MSG_SUBSCRIBE_HA_SERVICES_REQUEST = 34
+@Field static final int MSG_HA_SERVICE_RESPONSE = 35
 @Field static final int MSG_GET_TIME_REQUEST = 36
 @Field static final int MSG_GET_TIME_RESPONSE = 37
+@Field static final int MSG_SUBSCRIBE_HA_STATES_REQUEST = 38 // TODO
+@Field static final int MSG_SUBSCRIBE_HA_STATE_RESPONSE = 39 // TODO
+@Field static final int MSG_HA_STATE_RESPONSE = 40 // TODO
 @Field static final int MSG_LIST_SERVICES_RESPONSE = 41 // TODO
 @Field static final int MSG_EXECUTE_SERVICE_REQUEST = 42 // TODO
 @Field static final int MSG_LIST_CAMERA_RESPONSE = 43

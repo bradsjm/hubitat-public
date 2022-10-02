@@ -27,11 +27,8 @@ metadata {
         capability 'Actuator'
         capability 'Bulb'
         capability 'ColorControl'
-        //capability 'ColorControlPreset'
         capability 'ColorMode'
         capability 'ColorTemperature'
-        capability 'LevelPreset'
-        //capability 'ColorTemperaturePreset'
         capability 'Light'
         capability 'LightEffects'
         capability 'Refresh'
@@ -123,18 +120,6 @@ public void off() {
     }
 }
 
-public void presetColor(Map colorMap) {
-    setColorInternal(colorMap)
-}
-
-public void presetColorTemperature(BigDecimal colorTemperature, BigDecimal level = null, BigDecimal duration = null) {
-    setColorTemperatureInternal(colorTemperature, level, duration, null)
-}
-
-public void presetLevel(BigDecimal level) {
-    setLevelInternal(level)
-}
-
 public void refresh() {
     log.info "${device} refresh"
     state.clear()
@@ -142,7 +127,7 @@ public void refresh() {
 }
 
 public void setColor(Map colorMap) {
-    setColorInternal(colorMap, true)
+    setColorInternal(colorMap)
 }
 
 public void setColorTemperature(BigDecimal colorTemperature, BigDecimal level = null, BigDecimal duration = null) {
@@ -158,7 +143,7 @@ public void setHue(BigDecimal hue) {
 }
 
 public void setLevel(BigDecimal level, BigDecimal duration = null) {
-    setLevelInternal(level, duration, true)
+    setLevelInternal(level, duration)
 }
 
 public void setSaturation(BigDecimal saturation) {
@@ -246,15 +231,9 @@ public void parse(Map message) {
                 }
 
                 int level = Math.round(message.masterBrightness * 100f)
-                if (message.state && device.currentValue('level') != level) {
+                if (device.currentValue('level') != level) {
                     descriptionText = "${device} level was set to ${level}%"
                     sendEvent(name: 'level', value: level, unit: '%', type: type, descriptionText: descriptionText)
-                    if (logTextEnable) { log.info descriptionText }
-                }
-
-                if (device.currentValue('levelPreset') != level) {
-                    descriptionText = "${device} level preset was set to ${level}%"
-                    sendEvent(name: 'levelPreset', value: level, unit: '%', type: type, descriptionText: descriptionText)
                     if (logTextEnable) { log.info descriptionText }
                 }
 
@@ -343,7 +322,13 @@ private Map getEntity() {
     return state.lights.get(settings.light as String) ?: [:]
 }
 
-private void setColorInternal(Map colorMap, Boolean state = null) {
+private void setColorInternal(Map colorMap) {
+    if (colorMap.hue < 0) { colorMap.hue = 0 }
+    if (colorMap.hue > 100) { colorMap.hue = 100 }
+    if (colorMap.saturation < 0) { colorMap.saturation = 0 }
+    if (colorMap.saturation > 100) { colorMap.saturation = 100 }
+    if (colorMap.level < 1) { colorMap.level = 1 }
+    if (colorMap.level > 100) { colorMap.level = 100 }
     if (device.currentValue('hue') != colorMap.hue || device.currentValue('saturation') != colorMap.saturation || device.currentValue('level') != colorMap.level) {
         if (logTextEnable) { log.info "${device} ${state ? 'set' : 'preset'} color ${colorMap}" }
         def (int r, int g, int b) = ColorUtils.hsvToRGB([colorMap.hue, colorMap.saturation, colorMap.level])
@@ -352,7 +337,7 @@ private void setColorInternal(Map colorMap, Boolean state = null) {
             red: r / 255f,
             green: g / 255f,
             blue: b / 255f,
-            state: state == null ? null : colorMap.level > 0,
+            state: true,
             masterBrightness: colorMap.level / 100f,
             colorBrightness: 1f, // use the master brightness
             colorMode: getColorMode(COLOR_CAP_RGB),
@@ -361,13 +346,16 @@ private void setColorInternal(Map colorMap, Boolean state = null) {
     }
 }
 
-private void setColorTemperatureInternal(BigDecimal colorTemperature, BigDecimal level = null, BigDecimal duration = null, Boolean state = true) {
+private void setColorTemperatureInternal(BigDecimal colorTemperature, BigDecimal level = null, BigDecimal duration = null) {
     float mireds = 1000000f / colorTemperature
     Map entity = getEntity()
     int maxMireds = entity.maxMireds ?: 370
     int minMireds = entity.minMireds ?: 153
     if (mireds > maxMireds) { mireds = maxMireds }
     if (mireds < minMireds) { mireds = minMireds }
+    if (duration != null && duration < 0) { duration = 0 }
+    if (level != null && level < 1) { level = 1 }
+    if (level != null && level > 100) { level = 100 }
     int kelvin = 1000000f / mireds
     if (device.currentValue('colorMode') != 'CT') {
         duration = 0 // when switching from RGB to CT make it fast
@@ -379,7 +367,7 @@ private void setColorTemperatureInternal(BigDecimal colorTemperature, BigDecimal
             colorTemperature: mireds,
             masterBrightness: level != null ? level / 100f : null,
             colorMode: getColorMode(COLOR_CAP_COLOR_TEMPERATURE | COLOR_CAP_COLD_WARM_WHITE),
-            state: state == null ? null : level != null ? level > 0 : state,
+            state: true,
             transitionLength: duration != null ? duration * 1000 : null
         )
     } else if (level != null) {
@@ -387,12 +375,15 @@ private void setColorTemperatureInternal(BigDecimal colorTemperature, BigDecimal
     }
 }
 
-private void setLevelInternal(BigDecimal level, BigDecimal duration = null, Boolean state = null) {
+private void setLevelInternal(BigDecimal level, BigDecimal duration = null) {
+    if (level < 1) { level = 1 }
+    if (level > 100) { level = 100 }
+    if (duration != null && duration < 0) { duration = 0 }
     if (device.currentValue('level') != level) {
         if (logTextEnable) { log.info "${device} ${state ? 'set' : 'preset'} level to ${level}%" }
         espHomeLightCommand(
             key: settings.light as Long,
-            state: state != null ? level > 0 : null,
+            state: true,
             masterBrightness: level / 100f,
             transitionLength: duration != null ? duration * 1000 : null
         )
