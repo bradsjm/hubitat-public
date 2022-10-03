@@ -55,14 +55,14 @@ import java.util.concurrent.ConcurrentLinkedQueue
  * ESPHome Commands
  */
 @CompileStatic
-private void espHomeButtonCommand(Map tags) {
+private void espHomeButtonCommand(Map<String, Object> tags) {
     sendMessage(MSG_BUTTON_COMMAND_REQUEST, [
             1: [ tags.key as Integer, WIRETYPE_FIXED32 ]
     ])
 }
 
 @CompileStatic
-private void espHomeCameraImageRequest(Map tags) {
+private void espHomeCameraImageRequest(Map<String, Object> tags) {
     sendMessage(MSG_CAMERA_IMAGE_REQUEST, [
             1: [ tags.single ? 1 : 0, WIRETYPE_VARINT ],
             2: [ tags.stream ? 1 : 0, WIRETYPE_VARINT ]
@@ -70,7 +70,7 @@ private void espHomeCameraImageRequest(Map tags) {
 }
 
 @CompileStatic
-public void espHomeCoverCommand(Map tags) {
+public void espHomeCoverCommand(Map<String, Object> tags) {
     sendMessage(MSG_COVER_COMMAND_REQUEST, [
             1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
             4: [ tags.position != null ? 1 : 0, WIRETYPE_VARINT ],
@@ -82,7 +82,7 @@ public void espHomeCoverCommand(Map tags) {
 }
 
 @CompileStatic
-private void espHomeFanCommand(Map tags) {
+private void espHomeFanCommand(Map<String, Object> tags) {
     sendMessage(MSG_FAN_COMMAND_REQUEST, [
             1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
             2: [ tags.state != null ? 1 : 0, WIRETYPE_VARINT ],
@@ -97,7 +97,7 @@ private void espHomeFanCommand(Map tags) {
 }
 
 @CompileStatic
-private void espHomeLightCommand(Map tags) {
+private void espHomeLightCommand(Map<String, Object> tags) {
     sendMessage(MSG_LIGHT_COMMAND_REQUEST, [
             1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
             2: [ tags.state != null ? 1 : 0, WIRETYPE_VARINT ],
@@ -126,7 +126,7 @@ private void espHomeLightCommand(Map tags) {
 }
 
 @CompileStatic
-private void espHomeLockCommand(Map tags) {
+private void espHomeLockCommand(Map<String, Object> tags) {
     sendMessage(MSG_LOCK_COMMAND_REQUEST, [
             1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
             2: [ tags.lockCommand as Integer, WIRETYPE_VARINT ],
@@ -136,7 +136,7 @@ private void espHomeLockCommand(Map tags) {
 }
 
 @CompileStatic
-private void espHomeMediaPlayerCommand(Map tags) {
+private void espHomeMediaPlayerCommand(Map<String, Object> tags) {
     sendMessage(MSG_MEDIA_COMMAND_REQUEST, [
             1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
             2: [ tags.mediaPlayerCommand != null ? 1 : 0, WIRETYPE_VARINT ],
@@ -149,7 +149,7 @@ private void espHomeMediaPlayerCommand(Map tags) {
 }
 
 @CompileStatic
-private void espHomeNumberCommand(Map tags) {
+private void espHomeNumberCommand(Map<String, Object> tags) {
     sendMessage(MSG_NUMBER_COMMAND_REQUEST, [
             1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
             2: [ tags.state as Float, WIRETYPE_FIXED32 ]
@@ -157,7 +157,7 @@ private void espHomeNumberCommand(Map tags) {
 }
 
 @CompileStatic
-private void espHomeSirenCommand(Map tags) {
+private void espHomeSirenCommand(Map<String, Object> tags) {
     sendMessage(MSG_SIREN_COMMAND_REQUEST, [
             1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
             2: [ tags.state != null ? 1 : 0, WIRETYPE_VARINT ],
@@ -185,7 +185,7 @@ private void espHomeSubscribe() {
 }
 
 @CompileStatic
-private void espHomeSwitchCommand(Map tags) {
+private void espHomeSwitchCommand(Map<String, Object> tags) {
     sendMessage(MSG_SWITCH_COMMAND_REQUEST, [
             1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
             2: [ tags.state ? 1 : 0, WIRETYPE_VARINT ],
@@ -811,7 +811,7 @@ private void espHomeSubscribeBtleRequest() {
 }
 
 @CompileStatic
-private void espHomeSubscribeLogs(Integer logLevel, Boolean dumpConfig = true) {
+private void espHomeSubscribeLogs(Integer logLevel, boolean dumpConfig = true) {
     sendMessage(MSG_SUBSCRIBE_LOGS_REQUEST, [
             1: [ logLevel as Integer, WIRETYPE_VARINT ],
             2: [ dumpConfig ? 1 : 0, WIRETYPE_VARINT ]
@@ -1081,8 +1081,8 @@ private void stashBuffer(ByteArrayInputStream stream) {
     buffer.write(payload, 0, payload.size())
 }
 
-private boolean supervisionCheck(int msgType, Map tags = [:]) {
-    List<String> onSuccess = []
+private boolean supervisionCheck(int msgType, Map<Integer, List> tags) {
+    List<String> onSuccess = new ArrayList<String>()
     ConcurrentLinkedQueue<Map> queue = getSendQueue()
 
     // check for successful responses and remove from queue
