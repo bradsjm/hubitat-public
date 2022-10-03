@@ -28,6 +28,7 @@ library(
         description: 'ESPHome Native Protobuf API'
 )
 
+import groovy.transform.CompileStatic
 import groovy.transform.Field
 import hubitat.helper.HexUtils
 import java.util.concurrent.ConcurrentHashMap
@@ -53,12 +54,14 @@ import java.util.concurrent.ConcurrentLinkedQueue
 /*
  * ESPHome Commands
  */
+@CompileStatic
 private void espHomeButtonCommand(Map tags) {
     sendMessage(MSG_BUTTON_COMMAND_REQUEST, [
             1: [ tags.key as Integer, WIRETYPE_FIXED32 ]
     ])
 }
 
+@CompileStatic
 private void espHomeCameraImageRequest(Map tags) {
     sendMessage(MSG_CAMERA_IMAGE_REQUEST, [
             1: [ tags.single ? 1 : 0, WIRETYPE_VARINT ],
@@ -66,6 +69,7 @@ private void espHomeCameraImageRequest(Map tags) {
     ])
 }
 
+@CompileStatic
 public void espHomeCoverCommand(Map tags) {
     sendMessage(MSG_COVER_COMMAND_REQUEST, [
             1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
@@ -77,6 +81,7 @@ public void espHomeCoverCommand(Map tags) {
     ], MSG_COVER_STATE_RESPONSE)
 }
 
+@CompileStatic
 private void espHomeFanCommand(Map tags) {
     sendMessage(MSG_FAN_COMMAND_REQUEST, [
             1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
@@ -91,6 +96,7 @@ private void espHomeFanCommand(Map tags) {
     ], MSG_FAN_STATE_RESPONSE)
 }
 
+@CompileStatic
 private void espHomeLightCommand(Map tags) {
     sendMessage(MSG_LIGHT_COMMAND_REQUEST, [
             1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
@@ -119,6 +125,7 @@ private void espHomeLightCommand(Map tags) {
     ], MSG_LIGHT_STATE_RESPONSE)
 }
 
+@CompileStatic
 private void espHomeLockCommand(Map tags) {
     sendMessage(MSG_LOCK_COMMAND_REQUEST, [
             1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
@@ -128,6 +135,7 @@ private void espHomeLockCommand(Map tags) {
     ], MSG_LOCK_STATE_RESPONSE)
 }
 
+@CompileStatic
 private void espHomeMediaPlayerCommand(Map tags) {
     sendMessage(MSG_MEDIA_COMMAND_REQUEST, [
             1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
@@ -140,6 +148,7 @@ private void espHomeMediaPlayerCommand(Map tags) {
     ], MSG_MEDIA_STATE_RESPONSE)
 }
 
+@CompileStatic
 private void espHomeNumberCommand(Map tags) {
     sendMessage(MSG_NUMBER_COMMAND_REQUEST, [
             1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
@@ -147,6 +156,7 @@ private void espHomeNumberCommand(Map tags) {
     ])
 }
 
+@CompileStatic
 private void espHomeSirenCommand(Map tags) {
     sendMessage(MSG_SIREN_COMMAND_REQUEST, [
             1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
@@ -174,6 +184,7 @@ private void espHomeSubscribe() {
     sendMessageQueue()
 }
 
+@CompileStatic
 private void espHomeSwitchCommand(Map tags) {
     sendMessage(MSG_SWITCH_COMMAND_REQUEST, [
             1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
@@ -301,6 +312,7 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
     espHomeSchedulePing()
 }
 
+@CompileStatic
 private static Map espHomeBinarySensorState(Map<Integer, List> tags, boolean isDigital) {
     return [
             type: 'state',
@@ -312,6 +324,7 @@ private static Map espHomeBinarySensorState(Map<Integer, List> tags, boolean isD
     ]
 }
 
+@CompileStatic
 private static Map espHomeBluetoothLeResponse(Map<Integer, List> tags) {
     return [
             type: 'state',
@@ -331,6 +344,7 @@ private static Map espHomeBluetoothLeResponse(Map<Integer, List> tags) {
     // }
 }
 
+@CompileStatic
 private static Map espHomeCameraImageResponse(Map<Integer, List> tags) {
     return [
             type: 'state',
@@ -341,6 +355,7 @@ private static Map espHomeCameraImageResponse(Map<Integer, List> tags) {
     ]
 }
 
+@CompileStatic
 private void espHomeConnectRequest(String password = null) {
     // Message sent after the hello response to authenticate the client
     // Can only be sent by the client and only at the beginning of the connection
@@ -370,6 +385,7 @@ private void espHomeConnectResponse(Map<Integer, List> tags) {
     }
 }
 
+@CompileStatic
 private static Map espHomeCoverState(Map<Integer, List> tags, boolean isDigital) {
     return [
             type: 'state',
@@ -383,6 +399,7 @@ private static Map espHomeCoverState(Map<Integer, List> tags, boolean isDigital)
     ]
 }
 
+@CompileStatic
 private void espHomeDeviceInfoRequest() {
     sendMessage(
             MSG_DEVICEINFO_REQUEST, [:],
@@ -423,6 +440,7 @@ private void espHomeDeviceInfoResponse(Map<Integer, List> tags) {
     espHomeListEntitiesRequest()
 }
 
+@CompileStatic
 private static Map espHomeFanState(Map<Integer, List> tags, boolean isDigital) {
     return [
             type: 'state',
@@ -445,6 +463,7 @@ private void espHomeGetTimeRequest() {
     ])
 }
 
+@CompileStatic
 private static Map espHomeHaServiceResponse(Map<Integer, List> tags) {
     return parseEntity(tags) + [
             type: 'service',
@@ -500,6 +519,7 @@ private void espHomeHelloResponse(Map<Integer, List> tags) {
     espHomeConnectRequest(settings.password as String)
 }
 
+@CompileStatic
 private static Map espHomeLightState(Map<Integer, List> tags, boolean isDigital) {
     return [
             type: 'state',
@@ -527,6 +547,7 @@ private void espHomeListEntitiesRequest() {
     sendMessage(MSG_LIST_ENTITIES_REQUEST)
 }
 
+@CompileStatic
 private static Map espHomeListEntitiesBinarySensorResponse(Map<Integer, List> tags) {
     return parseEntity(tags) + [
             type: 'entity',
@@ -538,6 +559,7 @@ private static Map espHomeListEntitiesBinarySensorResponse(Map<Integer, List> ta
     ]
 }
 
+@CompileStatic
 private static Map espHomeListEntitiesButtonResponse(Map<Integer, List> tags) {
     return parseEntity(tags) + [
             type: 'entity',
@@ -549,6 +571,7 @@ private static Map espHomeListEntitiesButtonResponse(Map<Integer, List> tags) {
     ]
 }
 
+@CompileStatic
 private static Map espHomeListEntitiesCameraResponse(Map<Integer, List> tags) {
     return parseEntity(tags) + [
             type: 'entity',
@@ -559,6 +582,7 @@ private static Map espHomeListEntitiesCameraResponse(Map<Integer, List> tags) {
     ]
 }
 
+@CompileStatic
 private static Map espHomeListEntitiesCoverResponse(Map<Integer, List> tags) {
     return parseEntity(tags) + [
             type: 'entity',
@@ -573,6 +597,7 @@ private static Map espHomeListEntitiesCoverResponse(Map<Integer, List> tags) {
     ]
 }
 
+@CompileStatic
 private static Map espHomeListEntitiesLockResponse(Map<Integer, List> tags) {
     return parseEntity(tags) + [
             type: 'entity',
@@ -587,6 +612,7 @@ private static Map espHomeListEntitiesLockResponse(Map<Integer, List> tags) {
     ]
 }
 
+@CompileStatic
 private static Map espHomeListEntitiesFanResponse(Map<Integer, List> tags) {
     return parseEntity(tags) + [
             type: 'entity',
@@ -601,6 +627,7 @@ private static Map espHomeListEntitiesFanResponse(Map<Integer, List> tags) {
     ]
 }
 
+@CompileStatic
 private static Map espHomeListEntitiesLightResponse(Map<Integer, List> tags) {
     return parseEntity(tags) + [
             type: 'entity',
@@ -615,6 +642,7 @@ private static Map espHomeListEntitiesLightResponse(Map<Integer, List> tags) {
     ]
 }
 
+@CompileStatic
 private static Map espHomeListEntitiesMediaPlayerResponse(Map<Integer, List> tags) {
     return parseEntity(tags) + [
             type: 'entity',
@@ -625,6 +653,7 @@ private static Map espHomeListEntitiesMediaPlayerResponse(Map<Integer, List> tag
     ]
 }
 
+@CompileStatic
 private static Map espHomeListEntitiesNumberResponse(Map<Integer, List> tags) {
     return parseEntity(tags) + [
             type: 'entity',
@@ -640,6 +669,7 @@ private static Map espHomeListEntitiesNumberResponse(Map<Integer, List> tags) {
     ]
 }
 
+@CompileStatic
 private static Map espHomeListEntitiesSensorResponse(Map<Integer, List> tags) {
     return parseEntity(tags) + [
             type: 'entity',
@@ -656,6 +686,7 @@ private static Map espHomeListEntitiesSensorResponse(Map<Integer, List> tags) {
     ]
 }
 
+@CompileStatic
 private static Map espHomeListEntitiesSirenResponse(Map<Integer, List> tags) {
     return parseEntity(tags) + [
             type: 'entity',
@@ -669,6 +700,7 @@ private static Map espHomeListEntitiesSirenResponse(Map<Integer, List> tags) {
     ]
 }
 
+@CompileStatic
 private static Map espHomeListEntitiesSwitchResponse(Map<Integer, List> tags) {
     return parseEntity(tags) + [
             type: 'entity',
@@ -681,6 +713,7 @@ private static Map espHomeListEntitiesSwitchResponse(Map<Integer, List> tags) {
     ]
 }
 
+@CompileStatic
 private static Map espHomeListEntitiesTextSensorResponse(Map<Integer, List> tags) {
     return parseEntity(tags) + [
             type: 'entity',
@@ -691,10 +724,12 @@ private static Map espHomeListEntitiesTextSensorResponse(Map<Integer, List> tags
     ]
 }
 
+@CompileStatic
 private void espHomeListEntitiesDoneResponse() {
     espHomeSubscribe()
 }
 
+@CompileStatic
 private static Map espHomeLockState(Map<Integer, List> tags) {
     return [
             type: 'state',
@@ -704,6 +739,7 @@ private static Map espHomeLockState(Map<Integer, List> tags) {
     ]
 }
 
+@CompileStatic
 private static Map espHomeMediaPlayerState(Map<Integer, List> tags) {
     return [
             type: 'state',
@@ -715,6 +751,7 @@ private static Map espHomeMediaPlayerState(Map<Integer, List> tags) {
     ]
 }
 
+@CompileStatic
 private static Map espHomeNumberState(Map<Integer, List> tags) {
     return [
             type: 'state',
@@ -725,8 +762,8 @@ private static Map espHomeNumberState(Map<Integer, List> tags) {
     ]
 }
 
+@CompileStatic
 private void espHomePingRequest() {
-    if (logEnable) { log.trace 'ESPHome sending ping to device' }
     sendMessage(
             MSG_PING_REQUEST, [:],
             MSG_PING_RESPONSE, 'espHomePingResponse'
@@ -747,6 +784,7 @@ private void espHomeSchedulePing() {
     }
 }
 
+@CompileStatic
 private static Map espHomeSensorState(Map<Integer, List> tags) {
     return [
             type: 'state',
@@ -757,6 +795,7 @@ private static Map espHomeSensorState(Map<Integer, List> tags) {
     ]
 }
 
+@CompileStatic
 private static Map espHomeSirenState(Map<Integer, List> tags) {
     return [
             type: 'state',
@@ -766,10 +805,12 @@ private static Map espHomeSirenState(Map<Integer, List> tags) {
     ]
 }
 
+@CompileStatic
 private void espHomeSubscribeBtleRequest() {
     sendMessage(MSG_SUBSCRIBE_BTLE_REQUEST)
 }
 
+@CompileStatic
 private void espHomeSubscribeLogs(Integer logLevel, Boolean dumpConfig = true) {
     sendMessage(MSG_SUBSCRIBE_LOGS_REQUEST, [
             1: [ logLevel as Integer, WIRETYPE_VARINT ],
@@ -797,14 +838,17 @@ private void espHomeSubscribeLogsResponse(Map<Integer, List> tags) {
     }
 }
 
+@CompileStatic
 private void espHomeSubscribeStatesRequest() {
     sendMessage(MSG_SUBSCRIBE_STATES_REQUEST)
 }
 
+@CompileStatic
 private void espHomeSubscribeHaServicesRequest() {
     sendMessage(MSG_SUBSCRIBE_HA_SERVICES_REQUEST)
 }
 
+@CompileStatic
 private static Map espHomeSwitchState(Map<Integer, List> tags, boolean isDigital) {
     return [
             type: 'state',
@@ -815,6 +859,7 @@ private static Map espHomeSwitchState(Map<Integer, List> tags, boolean isDigital
     ]
 }
 
+@CompileStatic
 private static Map espHomeTextSensorState(Map<Integer, List> tags) {
     return [
             type: 'state',
@@ -825,6 +870,7 @@ private static Map espHomeTextSensorState(Map<Integer, List> tags) {
     ]
 }
 
+@CompileStatic
 private static Map parseEntity(Map<Integer, List> tags) {
     return [
             objectId: getStringTag(tags, 1),
@@ -834,6 +880,7 @@ private static Map parseEntity(Map<Integer, List> tags) {
     ]
 }
 
+@CompileStatic
 private static String toEntityCategory(int value) {
     switch (value) {
         case ENTITY_CATEGORY_NONE: return 'none'
@@ -843,6 +890,7 @@ private static String toEntityCategory(int value) {
     }
 }
 
+@CompileStatic
 private static List<String> toCapabilities(int capability) {
     List<String> capabilities = []
     if (capability & COLOR_CAP_ON_OFF) { capabilities.add('ON/OFF') }
@@ -883,6 +931,7 @@ private void closeSocket(String reason) {
     pauseExecution(1000)
 }
 
+@CompileStatic
 private String encodeMessage(int type, Map<Integer, List> tags = [:]) {
     // creates hex string payload from message type and tags
     ByteArrayOutputStream payload = new ByteArrayOutputStream()
@@ -895,19 +944,28 @@ private String encodeMessage(int type, Map<Integer, List> tags = [:]) {
     return HexUtils.byteArrayToHexString(stream.toByteArray())
 }
 
+private ConcurrentLinkedQueue<Map> getSendQueue() {
+    return espSendQueue.computeIfAbsent(device.id) { k -> new ConcurrentLinkedQueue<Map>() }
+}
+
+private ByteArrayOutputStream getReceiveBuffer() {
+    return espReceiveBuffer.computeIfAbsent(device.id) { k -> new ByteArrayOutputStream() }
+}
+
 private void healthCheck() {
-    ConcurrentLinkedQueue<Map> queue = espSendQueue.get(device.id)
-    boolean isEmpty = queue == null || queue.isEmpty()
+    ConcurrentLinkedQueue<Map> queue = getSendQueue()
     // only send ping request when online and send queue is empty
-    if (!isOffline() && isEmpty) {
+    if (!isOffline() && queue.isEmpty()) {
+        if (logEnable) { log.trace 'ESPHome sending ping to device' }
         espHomePingRequest()
     }
 }
 
+@CompileStatic
 private ByteArrayInputStream hexDecode(String hexString) {
     // We need to be able to retrieve partial packets previously stashed
     // This would be faster if we had access to System.Arraycopy but we don't
-    ByteArrayOutputStream buffer = espReceiveBuffer.computeIfAbsent(device.id) { k -> new ByteArrayOutputStream() }
+    ByteArrayOutputStream buffer = getReceiveBuffer()
     byte[] payload = HexUtils.hexStringToByteArray(hexString)
     buffer.write(payload, 0, payload.size())
     ByteArrayInputStream result = new ByteArrayInputStream(buffer.toByteArray())
@@ -931,10 +989,6 @@ public void parse(String hexString) {
             if (length > available) {
                 stream.reset()
                 stashBuffer(stream)
-                // available = stream.available()
-                // byte[] bufferArray = new byte[available + 1]
-                // stream.read(bufferArray, 1, available)
-                // espReceiveBuffer.put(device.id, HexUtils.byteArrayToHexString(bufferArray))
                 return
             }
             parseMessage(stream, length)
@@ -963,8 +1017,7 @@ private void sendMessage(int msgType, Map<Integer, List> tags = [:]) {
 }
 
 private void sendMessage(int msgType, Map<Integer, List> tags, int expectedMsgType, String onSuccess = '') {
-    ConcurrentLinkedQueue<Map> queue = espSendQueue.computeIfAbsent(device.id) { k -> new ConcurrentLinkedQueue<Map>() }
-    queue.add([
+    getSendQueue().add([
             msgType: msgType,
             tags: tags,
             expectedMsgType: expectedMsgType,
@@ -978,28 +1031,26 @@ private void sendMessage(int msgType, Map<Integer, List> tags, int expectedMsgTy
 }
 
 private void sendMessageQueue() {
-    ConcurrentLinkedQueue<Map> queue = espSendQueue.get(device.id)
-    if (queue) {
-        // send outstanding messages and decrement retry counter
-        queue.removeIf { entry ->
-            if (entry.retries > 0) {
-                entry.retries--
-                log.info "ESPHome sending message type #${entry.msgType} (retries left ${entry.retries})"
-                sendMessage(entry.msgType, entry.tags)
-                return false
-            } else {
-                log.info "ESPHome message type #${entry.msgType} retries exceeded"
-                // maybe a broken connection
-                closeSocket('message retries exceeded')
-                scheduleConnect()
-                return true
-            }
+    ConcurrentLinkedQueue<Map> queue = getSendQueue()
+    // send outstanding messages and decrement retry counter
+    queue.removeIf { entry ->
+        if (entry.retries > 0) {
+            entry.retries--
+            log.info "ESPHome sending message type #${entry.msgType} (retries left ${entry.retries})"
+            sendMessage(entry.msgType, entry.tags)
+            return false
+        } else {
+            log.info "ESPHome message type #${entry.msgType} retries exceeded"
+            // maybe a broken connection
+            closeSocket('message retries exceeded')
+            scheduleConnect()
+            return true
         }
+    }
 
-        // reschedule if there are outstanding messages
-        if (!queue.isEmpty()) {
-            runIn(SEND_RETRY_SECONDS, 'sendMessageQueue')
-        }
+    // reschedule if there are outstanding messages
+    if (!queue.isEmpty()) {
+        runIn(SEND_RETRY_SECONDS, 'sendMessageQueue')
     }
 }
 
@@ -1020,9 +1071,10 @@ public void socketStatus(String message) {
     }
 }
 
+@CompileStatic
 private void stashBuffer(ByteArrayInputStream stream) {
     // We need to be able to stash partial packets to process later
-    ByteArrayOutputStream buffer = espReceiveBuffer.computeIfAbsent(device.id) { k -> new ByteArrayOutputStream() }
+    ByteArrayOutputStream buffer = getReceiveBuffer()
     byte[] payload = new byte[stream.available()]
     stream.read(payload, 0, payload.size())
     buffer.write(0x00) // start delimiter
@@ -1031,8 +1083,7 @@ private void stashBuffer(ByteArrayInputStream stream) {
 
 private boolean supervisionCheck(int msgType, Map tags = [:]) {
     List<String> onSuccess = []
-    ConcurrentLinkedQueue<Map> queue = espSendQueue.get(device.id)
-    if (!queue) { return false }
+    ConcurrentLinkedQueue<Map> queue = getSendQueue()
 
     // check for successful responses and remove from queue
     boolean result = queue.removeIf { entry ->
@@ -1067,13 +1118,13 @@ private boolean supervisionCheck(int msgType, Map tags = [:]) {
 @Field static final int WIRETYPE_FIXED32 = 5
 @Field static final int VARINT_MAX_BYTES = 10
 
+@CompileStatic
 private Map<Integer, List> protobufDecode(ByteArrayInputStream stream, long available) {
     Map<Integer, List> tags = [:]
     while (available > 0) {
         long tagAndType = readVarInt(stream, true)
         if (tagAndType == -1) {
-            log.warn 'ESPHome unexpected EOF decoding protobuf message'
-            break
+            throw new Exception('ESPHome unexpected EOF decoding protobuf message')
         }
         available -= getVarIntSize(tagAndType)
         int wireType = ((int) tagAndType) & 0x07
@@ -1106,32 +1157,29 @@ private Map<Integer, List> protobufDecode(ByteArrayInputStream stream, long avai
                 while (pos < total) {
                     int count = stream.read(val, pos, total - pos)
                     if (count < (total - pos)) {
-                        log.warn 'ESPHome unexpected EOF decoding protobuf message'
-                        break
+                        throw new Exception('ESPHome unexpected EOF decoding protobuf message')
                     }
                     pos += count
                 }
                 tags.computeIfAbsent(tag) { k -> [] }.add(val)
-                break
-            default:
-                log.warn("Protobuf unknown wire type ${wireType}")
                 break
         }
     }
     return tags
 }
 
+@CompileStatic
 private int protobufEncode(ByteArrayOutputStream stream, Map<Integer, List> tags) {
     int bytes = 0
-    for (entry in new TreeMap(tags).findAll { k, v -> v instanceof List && v[0] }) {
+    for (entry in new TreeMap<Integer, List>(tags).findAll { k, v -> v instanceof List && v[0] }) {
         int fieldNumber = entry.key as int
         int wireType = entry.value[1] as int ?: WIRETYPE_VARINT
         switch (entry.value[0]) {
             case Float:
-                entry.value[0] = Float.floatToRawIntBits(entry.value[0])
+                entry.value[0] = Float.floatToRawIntBits(entry.value[0] as Float)
                 break
             case Double:
-                entry.value[0] = Double.doubleToRawLongBits(entry.value[0])
+                entry.value[0] = Double.doubleToRawLongBits(entry.value[0] as Double)
                 break
         }
         int tag = (fieldNumber << 3) | wireType
@@ -1163,46 +1211,52 @@ private int protobufEncode(ByteArrayOutputStream stream, Map<Integer, List> tags
                     v >>= 8
                 }
                 break
-            default:
-                log.warn "ESPHome invalid wiretype for field ${fieldNumber} (${wireType})"
-                break
         }
     }
     return bytes
 }
 
+@CompileStatic
 private static boolean getBooleanTag(Map<Integer, List> tags, int index, boolean invert = false) {
     return tags && tags[index] && tags[index][0] ? !invert : invert
 }
 
+@CompileStatic
 private static double getDoubleTag(Map<Integer, List> tags, int index, double defaultValue = 0f) {
     return tags && tags[index] ? Double.longBitsToDouble(tags[index][0] as long) : defaultValue
 }
 
+@CompileStatic
 private static float getFloatTag(Map<Integer, List> tags, int index, float defaultValue = 0f) {
     return tags && tags[index] ? Float.intBitsToFloat(tags[index][0] as int) : defaultValue
 }
 
+@CompileStatic
 private static int getIntTag(Map<Integer, List> tags, int index, int defaultValue = 0) {
     return tags && tags[index] ? tags[index][0] as int : defaultValue
 }
 
+@CompileStatic
 private static List<Integer> getIntTagList(Map<Integer, List> tags, int index) {
-    return tags && tags[index] ? tags[index] as Integer[] : []
+    return tags && tags[index] ? tags[index] as List<Integer> : new ArrayList<Integer>()
 }
 
+@CompileStatic
 private static long getLongTag(Map<Integer, List> tags, int index, long defaultValue = 0) {
     return tags && tags[index] ? tags[index][0] as long : defaultValue
 }
 
+@CompileStatic
 private static String getStringTag(Map<Integer, List> tags, int index, String defaultValue = '') {
     return tags && tags[index] ? new String(tags[index][0] as byte[], 'UTF-8') : defaultValue
 }
 
+@CompileStatic
 private static List<String> getStringTagList(Map<Integer, List> tags, int index) {
-    return tags && tags[index] ? tags[index].collect { s -> new String(s as byte[], 'UTF-8') } : []
+    return tags && tags[index] ? tags[index].collect { s -> new String(s as byte[], 'UTF-8') } : new ArrayList<String>()
 }
 
+@CompileStatic
 private static int getVarIntSize(long i) {
     if (i < 0) {
         return VARINT_MAX_BYTES
@@ -1215,6 +1269,7 @@ private static int getVarIntSize(long i) {
     return size
 }
 
+@CompileStatic
 private static long readVarInt(ByteArrayInputStream stream, boolean permitEOF) {
     long result = 0
     int shift = 0
@@ -1237,6 +1292,7 @@ private static long readVarInt(ByteArrayInputStream stream, boolean permitEOF) {
     return result
 }
 
+@CompileStatic
 private static int writeVarInt(ByteArrayOutputStream stream, long value) {
     int count = 0
     for (int i = 0; i < VARINT_MAX_BYTES; i++) {
@@ -1253,10 +1309,12 @@ private static int writeVarInt(ByteArrayOutputStream stream, long value) {
     return count
 }
 
+@CompileStatic
 private static long zigZagDecode(long v) {
     return (v >>> 1) ^ -(v & 1)
 }
 
+@CompileStatic
 private static long zigZagEncode(long v) {
     return ((v << 1) ^ -(v >>> 63))
 }
