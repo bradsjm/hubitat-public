@@ -81,6 +81,12 @@ public void espHomeCoverCommand(Map<String, Object> tags) {
     ], MSG_COVER_STATE_RESPONSE)
 }
 
+private void espHomeDisconnectRequest() {
+    closeSocket('requested by device')
+    state.reconnectDelay = MAX_RECONNECT_SECONDS
+    scheduleConnect()
+}
+
 @CompileStatic
 private void espHomeFanCommand(Map<String, Object> tags) {
     sendMessage(MSG_FAN_COMMAND_REQUEST, [
@@ -195,10 +201,11 @@ private void espHomeSwitchCommand(Map<String, Object> tags) {
 /*
  * ESPHome Message Parsing
  */
+@CompileStatic
 private void parseMessage(ByteArrayInputStream stream, long length) {
     int msgType = (int) readVarInt(stream, true)
     if (msgType < 1) {
-        log.warn "ESPHome message type ${msgType} out of range, skipping"
+        logWarning "ESPHome message type ${msgType} out of range, skipping"
         return
     }
 
@@ -207,9 +214,7 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
 
     switch (msgType) {
         case MSG_DISCONNECT_REQUEST:
-            closeSocket('requested by device')
-            state.reconnectDelay = MAX_RECONNECT_SECONDS
-            scheduleConnect()
+            espHomeDisconnectRequest()
             break
         case MSG_PING_REQUEST:
             sendMessage(MSG_PING_RESPONSE)
@@ -306,7 +311,7 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
             break
         default:
             if (!handled) {
-                log.warn "ESPHome received unhandled message type ${msgType} with ${tags}"
+                logWarning "ESPHome received unhandled message type ${msgType} with ${tags}"
             }
     }
     espHomeSchedulePing()
@@ -978,6 +983,7 @@ private boolean isOffline() {
 }
 
 // parse received protobuf messages - do not change this function name or driver will break
+@CompileStatic
 public void parse(String hexString) {
     ByteArrayInputStream stream = hexDecode(hexString)
     int b
@@ -993,10 +999,10 @@ public void parse(String hexString) {
             }
             parseMessage(stream, length)
         } else if (b == 0x01) {
-            log.error 'Driver does not support ESPHome native API encryption'
+            logWarning 'Driver does not support ESPHome native API encryption'
             return
         } else {
-            log.warn "ESPHome expecting delimiter 0x00 but got 0x${Integer.toHexString(b)} instead"
+            logWarning "ESPHome expecting delimiter 0x00 but got 0x${Integer.toHexString(b)} instead"
             return
         }
     }
@@ -1061,13 +1067,14 @@ private void setNetworkStatus(String state, String reason = '') {
 }
 
 // parse received socket status - do not change this function name or driver will break
+@CompileStatic
 public void socketStatus(String message) {
     if (message.contains('error')) {
-        log.error "ESPHome socket error: ${message}"
+        logWarning "ESPHome socket error: ${message}"
         closeSocket(message)
         scheduleConnect()
     } else {
-        log.info "ESPHome socket status: ${message}"
+        logWarning "ESPHome socket status: ${message}"
     }
 }
 
@@ -1317,6 +1324,10 @@ private static long zigZagDecode(long v) {
 @CompileStatic
 private static long zigZagEncode(long v) {
     return ((v << 1) ^ -(v >>> 63))
+}
+
+private void logWarning(String s) {
+    log.warn s
 }
 
 /**
