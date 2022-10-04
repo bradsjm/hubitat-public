@@ -329,7 +329,10 @@ private void setColorInternal(Map colorMap) {
     if (colorMap.saturation > 100) { colorMap.saturation = 100 }
     if (colorMap.level < 1) { colorMap.level = 1 }
     if (colorMap.level > 100) { colorMap.level = 100 }
-    if (device.currentValue('hue') != colorMap.hue || device.currentValue('saturation') != colorMap.saturation || device.currentValue('level') != colorMap.level) {
+    if (device.currentValue('hue') != colorMap.hue || 
+        device.currentValue('saturation') != colorMap.saturation ||
+        device.currentValue('level') != colorMap.level ||
+        device.currentValue('switch') == 'off') {
         if (logTextEnable) { log.info "${device} ${state ? 'set' : 'preset'} color ${colorMap}" }
         def (int r, int g, int b) = ColorUtils.hsvToRGB([colorMap.hue, colorMap.saturation, colorMap.level])
         espHomeLightCommand(
@@ -360,7 +363,7 @@ private void setColorTemperatureInternal(BigDecimal colorTemperature, BigDecimal
     if (device.currentValue('colorMode') != 'CT') {
         duration = 0 // when switching from RGB to CT make it fast
     }
-    if (device.currentValue('colorTemperature') != kelvin) {
+    if (device.currentValue('colorTemperature') != kelvin || device.currentValue('switch') == 'off') {
         if (logTextEnable) { log.info "${device} ${state ? 'set' : 'preset'} color temperature ${kelvin}" }
         espHomeLightCommand(
             key: settings.light as Long,
@@ -379,7 +382,7 @@ private void setLevelInternal(BigDecimal level, BigDecimal duration = null) {
     if (level < 1) { level = 1 }
     if (level > 100) { level = 100 }
     if (duration != null && duration < 0) { duration = 0 }
-    if (device.currentValue('level') != level) {
+    if (device.currentValue('level') != level || device.currentValue('switch') == 'off') {
         if (logTextEnable) { log.info "${device} ${state ? 'set' : 'preset'} level to ${level}%" }
         espHomeLightCommand(
             key: settings.light as Long,
