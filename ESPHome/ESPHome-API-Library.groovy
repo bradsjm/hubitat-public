@@ -39,9 +39,9 @@ import java.util.concurrent.ConcurrentLinkedQueue
  * https://github.com/esphome/aioesphomeapi/blob/main/aioesphomeapi/api.proto
  */
 
-@Field static final int PING_INTERVAL_SECONDS = 60 // Maximum 160 seconds
+@Field static final int PING_INTERVAL_SECONDS = 120 // Maximum 160 seconds
 @Field static final int API_PORT_NUMBER = 6053
-@Field static final int SEND_RETRY_COUNT = 10
+@Field static final int SEND_RETRY_COUNT = 5
 @Field static final int SEND_RETRY_SECONDS = 5
 @Field static final int MAX_RECONNECT_SECONDS = 60
 @Field static final String NETWORK_ATTRIBUTE = 'networkStatus' // Device attribute
@@ -425,6 +425,8 @@ private void espHomeDeviceInfoResponse(Map<Integer, List> tags) {
             projectVersion: getStringTag(tags, 9),
             portNumber: getIntTag(tags, 10)
     ]
+
+    device.removeDataValue 'Last Ping Response'
 
     device.updateDataValue 'Board Model', deviceInfo.boardModel
     device.updateDataValue 'Compile Time', deviceInfo.compileTime
@@ -959,7 +961,7 @@ private ByteArrayOutputStream getReceiveBuffer() {
 
 private void healthCheck() {
     ConcurrentLinkedQueue<Map> queue = getSendQueue()
-    // only send ping request when online and send queue is empty
+    // send ping request when online and send queue is empty
     if (!isOffline() && queue.isEmpty()) {
         if (logEnable) { log.trace 'ESPHome sending ping to device' }
         espHomePingRequest()
@@ -1009,12 +1011,13 @@ public void parse(String hexString) {
 }
 
 private void scheduleConnect() {
-    state.reconnectDelay = (state.reconnectDelay ?: 1) * 2
-    if (state.reconnectDelay > MAX_RECONNECT_SECONDS) { state.reconnectDelay = MAX_RECONNECT_SECONDS }
-    int jitter = (int) Math.ceil(state.reconnectDelay * 0.5)
-    int interval = state.reconnectDelay + random.nextInt(jitter)
-    log.info "ESPHome reconnecting in ${interval} seconds"
-    runIn(interval, 'openSocket')
+    int reconnectDelay = (state.reconnectDelay ?: 1)
+    if (reconnectDelay > MAX_RECONNECT_SECONDS) { reconnectDelay = MAX_RECONNECT_SECONDS }
+    int jitter = (int) Math.ceil(reconnectDelay * 0.25)
+    reconnectDelay += random.nextInt(jitter)
+    log.info "ESPHome reconnecting in ${reconnectDelay} seconds"
+    state.reconnectDelay = reconnectDelay * 2
+    runIn(reconnectDelay, 'openSocket')
 }
 
 private void sendMessage(int msgType, Map<Integer, List> tags = [:]) {
@@ -1042,13 +1045,13 @@ private void sendMessageQueue() {
     queue.removeIf { entry ->
         if (entry.retries > 0) {
             entry.retries--
-            log.info "ESPHome sending message type #${entry.msgType} (retries left ${entry.retries})"
+            log.info "ESPHome sending message type #${entry.msgType} (${entry.retries} retries left)"
             sendMessage(entry.msgType, entry.tags)
             return false
         } else {
-            log.info "ESPHome message type #${entry.msgType} retries exceeded"
+            log.info "ESPHome message type #${entry.msgType} retry count exceeded"
             // maybe a broken connection
-            closeSocket('message retries exceeded')
+            closeSocket('message retry count exceeded')
             scheduleConnect()
             return true
         }

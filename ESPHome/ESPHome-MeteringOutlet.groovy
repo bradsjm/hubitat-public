@@ -25,6 +25,7 @@ metadata {
         singleThreaded: true
 
         capability 'Actuator'
+        capability 'CurrentMeter'
         capability 'EnergyMeter'
         capability 'PowerMeter'
         capability 'Refresh'
@@ -164,7 +165,7 @@ public void parse(Map message) {
             String type = message.isDigital ? 'digital' : 'physical'
             // Check if the entity key matches the message entity key received to update device state
             if (state.amperage as Long == message.key && message.hasState) {
-                Float amperage = Math.round(message.state * 10f) / 10f
+                Float amperage = round(message.state as Float, 1)
                 String unit = 'A'
                 if (device.currentValue('amperage') != amperage) {
                     descriptionText = "${device} amperage is ${amperage}"
@@ -174,7 +175,7 @@ public void parse(Map message) {
             }
 
             if (state.energy as Long == message.key && message.hasState) {
-                Float energy = Math.round(message.state * 10f) / 10f
+                Float energy = round(message.state as Float, 1)
                 String unit = 'kWh'
                 if (device.currentValue('energy') != energy) {
                     descriptionText = "${device} energy is ${energy}"
@@ -184,7 +185,7 @@ public void parse(Map message) {
             }
 
             if (state.power as Long == message.key && message.hasState) {
-                Float power = Math.round(message.state * 10f) / 10f
+                Float power = round(message.state as Float, 1)
                 String unit = 'W'
                 if (device.currentValue('power') != power) {
                     descriptionText = "${device} power is ${power}"
@@ -194,7 +195,7 @@ public void parse(Map message) {
             }
 
             if (state.signalStrength as Long == message.key && message.hasState) {
-                Integer rssi = Math.round(message.state as Float)
+                Integer rssi = round(message.state as Float)
                 String unit = 'dBm'
                 if (device.currentValue('rssi') != rssi) {
                     descriptionText = "${device} rssi is ${rssi}"
@@ -211,7 +212,7 @@ public void parse(Map message) {
             }
 
             if (state.voltage as Long == message.key && message.hasState) {
-                Integer voltage = Math.round(message.state)
+                Integer voltage = round(message.state as Float)
                 String unit = 'V'
                 if (device.currentValue('voltage') != voltage) {
                     descriptionText = "${device} voltage is ${voltage}"
@@ -221,6 +222,10 @@ public void parse(Map message) {
             }
             break
     }
+}
+
+private static float round(float f, int decimals = 0) {
+    return new BigDecimal(f).setScale(decimals, java.math.RoundingMode.HALF_UP).floatValue();
 }
 
 // Put this line at the end of the driver to include the ESPHome API library helper
