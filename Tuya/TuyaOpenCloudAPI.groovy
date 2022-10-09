@@ -193,7 +193,7 @@ metadata {
 ].asImmutable()
 
 // Constants
-@Field static final Integer maxMireds = 500 // 2000K
+@Field static final Integer maxMireds = 370 // 2700K
 @Field static final Integer minMireds = 153 // 6536K
 
 // Json Parsing Cache
@@ -852,7 +852,7 @@ void removeDevices() {
 }
 
 private static Map<String, Map> getFunctions(DeviceWrapper dw) {
-    return jsonCache.computeIfAbsent(dw.getDataValue('functions') ?: '{}') {
+    return jsonCache.computeIfAbsent(dw?.getDataValue('functions') ?: '{}') {
         k -> jsonParser.parseText(k)
     }
 }
@@ -866,7 +866,7 @@ private static String getFunctionCode(Map functions, List codes) {
 }
 
 private static Map<String, Map> getStatusSet(DeviceWrapper dw) {
-    return jsonCache.computeIfAbsent(dw.getDataValue('statusSet') ?: '{}') {
+    return jsonCache.computeIfAbsent(dw?.getDataValue('statusSet') ?: '{}') {
         k -> jsonParser.parseText(k)
     }
 }
@@ -1274,14 +1274,16 @@ private void updateMultiDeviceStatus(Map d) {
     Map groups = d.status.groupBy { s -> children["${base}-${s.code}"] ?: children[base] }
     LOG.debug "Groups: ${groups}"
     groups.each { dw, states ->
-        // send events to child for parsing
-        dw.parse(
-            // create events for the child
-            createEvents(dw, states).findAll { e ->
-                // filter to values that have changed
-                dw.currentValue(e.name) != e.value
-            }
-        )
+        if (dw != null) {
+            // send events to child for parsing
+            dw.parse(
+                // create events for the child
+                createEvents(dw, states).findAll { e ->
+                    // filter to values that have changed
+                    dw.currentValue(e.name) != e.value
+                }
+            )
+        }
     }
 }
 
@@ -1962,7 +1964,6 @@ private void tuyaPostAsync(String path, Map body, String callback, Map data = [:
     tuyaRequestAsync('post', path, callback, null, body ?: [:], data)
 }
 
-/* groovylint-disable-next-line ParameterCount */
 private void tuyaRequestAsync(String method, String path, String callback, Map query, Map body, Map data) {
     String accessToken = state?.tokenInfo?.access_token ?: ''
     String stringToSign = tuyaGetStringToSign(method, path, query, body)
