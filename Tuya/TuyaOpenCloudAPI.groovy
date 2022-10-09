@@ -858,11 +858,11 @@ private static Map<String, Map> getFunctions(DeviceWrapper dw) {
 }
 
 private static Map getFunction(Map functions, List codes) {
-    return functions.find { f -> f.key in codes }?.value
+    return functions?.find { f -> f.key in codes }?.value
 }
 
 private static String getFunctionCode(Map functions, List codes) {
-    return codes.find { c -> functions.containsKey(c) }
+    return codes?.find { c -> functions?.containsKey(c) }
 }
 
 private static Map<String, Map> getStatusSet(DeviceWrapper dw) {
