@@ -19,7 +19,7 @@
  *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  *  SOFTWARE.
-*/
+ */
 
 import com.hubitat.app.ChildDeviceWrapper
 import com.hubitat.app.DeviceWrapper
@@ -32,48 +32,48 @@ import java.util.concurrent.TimeUnit
 
 metadata {
     definition(name: 'QolSys IQ Panel 2+', namespace: 'nrgup', author: 'Jonathan Bradshaw',
-               importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/master/Security/QolSysIQPanel.groovy') {
+            importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/master/Security/QolSysIQPanel.groovy') {
         capability 'Initialize'
         capability 'Refresh'
 
         command 'removeDevices'
 
-        attribute 'state', 'enum', [
-            'initializing',
-            'connecting',
-            'error',
-            'online'
+        attribute 'networkStatus', 'enum', [
+                'initializing',
+                'connecting',
+                'error',
+                'online'
         ]
     }
 
     preferences {
         section {
             input name: 'ipAddress',
-                type: 'text',
-                title: 'Panel IP Address',
-                required: true
+                    type: 'text',
+                    title: 'Panel IP Address',
+                    required: true
 
             input name: 'accessToken',
-                type: 'text',
-                title: 'Panel Access Token',
-                required: true
+                    type: 'text',
+                    title: 'Panel Access Token',
+                    required: true
 
             input name: 'logEnable',
-                type: 'bool',
-                title: 'Enable debug logging',
-                required: false,
-                defaultValue: true
+                    type: 'bool',
+                    title: 'Enable debug logging',
+                    required: false,
+                    defaultValue: true
 
             input name: 'txtEnable',
-                type: 'bool',
-                title: 'Enable descriptionText logging',
-                required: false,
-                defaultValue: true
+                    type: 'bool',
+                    title: 'Enable descriptionText logging',
+                    required: false,
+                    defaultValue: true
         }
     }
 }
 
-// Buffer for recieved messages
+// Buffer for received messages
 @Field static ConcurrentHashMap<String, StringBuffer> buffers = new ConcurrentHashMap<>()
 
 // Queue used for ACK tracking
@@ -94,7 +94,7 @@ void installed() {
 // Called when the device is started
 void initialize() {
     LOG.info "${device} driver initializing"
-    sendEvent([ name: 'state', value: 'initializing', descriptionText: 'Initializing QolSys IQ Panel 2+ driver' ])
+    sendEvent([ name: 'networkStatus', value: 'initializing', descriptionText: 'Initializing QolSys IQ Panel 2+ driver' ])
     state.clear()
     buffers.remove(device.id)
     queues.remove(device.id)
@@ -118,8 +118,8 @@ void parse(String message) {
         LOG.debug "partial packet: ${message}"
         return
     }
-    if (device.currentValue('state') != 'online') {
-        sendEvent([ name: 'state', value: 'online', descriptionText: "Connected to panel at ${settings.ipAddress}" ])
+    if (device.currentValue('networkStatus') != 'online') {
+        sendEvent([ name: 'networkStatus', value: 'online', descriptionText: "Connected to panel at ${settings.ipAddress}" ])
     }
     try {
         if (sb.length() >= 3 && sb.substring(0, 3) == 'ACK') {
@@ -159,8 +159,8 @@ void refresh() {
     unschedule('refresh')
     LOG.info 'requesting panel summary'
     sendCommand([
-        action: 'INFO',
-        info_type: 'SUMMARY'
+            action: 'INFO',
+            info_type: 'SUMMARY'
     ])
 }
 
@@ -202,14 +202,14 @@ void updated() {
 private void connect() {
     unschedule('connect')
     try {
-        sendEvent([ name: 'state', value: 'connecting', descriptionText: "Connecting to panel at ${settings.ipAddress}" ])
+        sendEvent([ name: 'networkStatus', value: 'connecting', descriptionText: "Connecting to panel at ${settings.ipAddress}" ])
         interfaces.rawSocket.connect(
-            settings.ipAddress,
-            12345,
-            byteInterface: false,
-            secureSocket: true,
-            ignoreSSLIssues: true,
-            convertReceivedDataToString: true
+                settings.ipAddress,
+                12345,
+                byteInterface: false,
+                secureSocket: true,
+                ignoreSSLIssues: true,
+                convertReceivedDataToString: true
         )
         refresh()
     } catch (e) {
@@ -256,7 +256,7 @@ private ChildDeviceWrapper createZone(String namespace, String driver, Map zone)
             updateDataValue 'zone_alarm_type', zone.zone_alarm_type as String
             updateDataValue 'zone_type', zone.zone_type as String
             updateDataValue 'partition_id', zone.partition_id as String
-            
+
         }
         return dw
     } catch (e) {
@@ -269,7 +269,7 @@ private ChildDeviceWrapper createZone(String namespace, String driver, Map zone)
 private List getOpenZones(int partition_id, boolean includeSafety = false) {
     return zoneCache.values().findAll { z ->
         z.partition_id == partition_id && z.status == 'Open' &&
-        (includeSafety ? true : z.group.startsWith('safety') == false)
+                (includeSafety ? true : z.group.startsWith('safety') == false)
     }
 }
 
@@ -287,8 +287,8 @@ private void processAlarm(Map json) {
     String dni = "${device.deviceNetworkId}-p${json.partition_id}"
     String value = json.alarm_type ?: 'INTRUSION'
     getChildDevice(dni)?.parse([
-        [ name: 'state', value: 'alarm', descriptionText: 'state is alarm' ],
-        [ name: 'alarm', value: value, descriptionText: "alarm is ${value}" ]
+            [ name: 'networkStatus', value: 'alarm', descriptionText: 'state is alarm' ],
+            [ name: 'alarm', value: value, descriptionText: "alarm is ${value}" ]
     ])
 }
 
@@ -309,11 +309,11 @@ private void processArming(Map json) {
     int delay = json.delay ?: 0
     String dni = "${device.deviceNetworkId}-p${json.partition_id}"
     getChildDevice(dni)?.parse([
-        [ name: 'state', value: value, descriptionText: "state is ${value}" ],
-        [ name: 'bypass', value: bypass, descriptionText: "bypass is ${bypass}" ],
-        [ name: 'alarm', value: 'none', descriptionText: 'alarm cleared' ],
-        [ name: 'error', value: 'none', descriptionText: 'error cleared' ],
-        [ name: 'delay', value: delay, descriptionText: "delay is ${delay} seconds"]
+            [ name: 'networkStatus', value: value, descriptionText: "state is ${value}" ],
+            [ name: 'bypass', value: bypass, descriptionText: "bypass is ${bypass}" ],
+            [ name: 'alarm', value: 'none', descriptionText: 'alarm cleared' ],
+            [ name: 'error', value: 'none', descriptionText: 'error cleared' ],
+            [ name: 'delay', value: delay, descriptionText: "delay is ${delay} seconds"]
     ])
 }
 
@@ -321,8 +321,8 @@ private void processError(Map json) {
     String dni = "${device.deviceNetworkId}-p${json.partition_id}"
     String value = "${json.error_type}: ${json.description}"
     getChildDevice(dni)?.parse([
-        [ name: 'state', value: 'error', descriptionText: 'state is error' ],
-        [ name: 'error', value: value, descriptionText: "error ${value}" ]
+            [ name: 'networkStatus', value: 'error', descriptionText: 'state is error' ],
+            [ name: 'error', value: value, descriptionText: "error ${value}" ]
     ])
 }
 
@@ -432,8 +432,8 @@ private void processPartitionState(int partition_id) {
     }
 
     getChildDevice(dni)?.parse([
-        [ name: 'isSecure', value: isSecure as String, descriptionText: "partition is ${isSecure ? '' : 'not '}secure" ],
-        [ name: 'openZones', value: openZoneText, descriptionText: "zone(s) open: ${openZoneText}" ]
+            [ name: 'isSecure', value: isSecure as String, descriptionText: "partition is ${isSecure ? '' : 'not '}secure" ],
+            [ name: 'openZones', value: openZoneText, descriptionText: "zone(s) open: ${openZoneText}" ]
     ])
 }
 
@@ -443,7 +443,7 @@ private void scheduleSocketKeepAlive() {
 }
 
 private void sendCommand(Map json) {
-    if (device.currentValue('state') == 'error') { return }
+    if (device.currentValue('networkStatus') == 'error') { return }
 
     unschedule('socketKeepAlive')
     try {
@@ -476,20 +476,20 @@ private void socketKeepAlive() {
 }
 
 @Field private final Map LOG = [
-    debug: { s -> if (settings.logEnable == true) { log.debug(s) } },
-    info: { s -> log.info(s) },
-    warn: { s -> log.warn(s) },
-    error: { s -> log.error(s); sendEvent([ name: 'state', value: 'error', descriptionText: s ]) },
-    exception: { message, exception ->
-        List<StackTraceElement> relevantEntries = exception.stackTrace.findAll { entry -> entry.className.startsWith('user_app') }
-        Integer line = relevantEntries[0]?.lineNumber ?: 0
-        String method = relevantEntries[0]?.methodName ?: ''
-        log.error("${message}: ${exception}" + (line ? " at line ${line} (${method})" : ''))
-        sendEvent([ name: 'state', value: 'error', descriptionText: "${message}: ${exception}" ])
-        if (settings.logEnable && relevantEntries) {
-            log.debug("App exception stack trace:\n${relevantEntries.join('\n')}")
+        debug: { s -> if (settings.logEnable == true) { log.debug(s) } },
+        info: { s -> log.info(s) },
+        warn: { s -> log.warn(s) },
+        error: { s -> log.error(s); sendEvent([ name: 'networkStatus', value: 'error', descriptionText: s ]) },
+        exception: { message, exception ->
+            List<StackTraceElement> relevantEntries = exception.stackTrace.findAll { entry -> entry.className.startsWith('user_app') }
+            Integer line = relevantEntries[0]?.lineNumber ?: 0
+            String method = relevantEntries[0]?.methodName ?: ''
+            log.error("${message}: ${exception}" + (line ? " at line ${line} (${method})" : ''))
+            sendEvent([ name: 'networkStatus', value: 'error', descriptionText: "${message}: ${exception}" ])
+            if (settings.logEnable && relevantEntries) {
+                log.debug("App exception stack trace:\n${relevantEntries.join('\n')}")
+            }
         }
-    }
 ]
 
 /* Reference:
