@@ -1026,7 +1026,9 @@ private void sendMessage(int msgType, Map<Integer, List> tags = [:]) {
 }
 
 private void sendMessage(int msgType, Map<Integer, List> tags, int expectedMsgType, String onSuccess = '') {
-    getSendQueue().add([
+    ConcurrentLinkedQueue<Map> queue = getSendQueue()
+    queue.removeIf { e -> e.msgType == msgType } // remove any duplicate commands
+    queue.add([
             msgType: msgType,
             tags: tags,
             expectedMsgType: expectedMsgType,
