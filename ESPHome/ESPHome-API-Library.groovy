@@ -46,23 +46,69 @@ import java.util.concurrent.ConcurrentLinkedQueue
 @Field static final int MAX_RECONNECT_SECONDS = 60
 @Field static final String NETWORK_ATTRIBUTE = 'networkStatus' // Device attribute
 
-// Static objects shared between all devices using this driver library 
-@Field static final ConcurrentHashMap<String, ByteArrayOutputStream> espReceiveBuffer = new ConcurrentHashMap<>()
-@Field static final ConcurrentHashMap<String, ConcurrentLinkedQueue> espSendQueue = new ConcurrentHashMap<>()
+// Static objects shared between all devices using this driver library
+@Field static final Map<String, ByteArrayOutputStream> espReceiveBuffer = new ConcurrentHashMap<>()
+@Field static final Map<String, ConcurrentLinkedQueue> espSendQueue = new ConcurrentHashMap<>()
 @Field static final Random random = new Random()
+
+/**
+ * ESPHome Native API Plaintext Socket IO Implementation
+ */
+void openSocket() {
+    log.info "ESPHome opening socket to ${ipAddress}:${API_PORT_NUMBER}"
+    setNetworkStatus('connecting')
+    try {
+        interfaces.rawSocket.connect(settings.ipAddress, API_PORT_NUMBER, byteInterface: true)
+        runInMillis(250, 'espHomeHelloRequest')
+    } catch (e) {
+        log.error 'ESPHome error opening socket: ' + e
+        scheduleConnect()
+    }
+}
+
+void closeSocket(String reason) {
+    unschedule('healthCheck')
+    unschedule('sendMessageQueue')
+    espReceiveBuffer.remove(device.id)
+    log.info "ESPHome closing socket to ${ipAddress}:${API_PORT_NUMBER} (${reason})"
+    if (!isOffline()) {
+        sendMessage(MSG_DISCONNECT_REQUEST)
+    }
+    interfaces.rawSocket.disconnect()
+    setNetworkStatus('offline', reason)
+    pauseExecution(1000)
+}
+
+// parse received socket status - do not change this function name or driver will break
+@CompileStatic
+void socketStatus(String message) {
+    if (message.contains('error')) {
+        logWarning "ESPHome socket error: ${message}"
+        closeSocket(message)
+        scheduleConnect()
+    } else {
+        logWarning "ESPHome socket status: ${message}"
+    }
+}
 
 /*
  * ESPHome Commands
  */
+@Field static final int WIRETYPE_VARINT = 0
+@Field static final int WIRETYPE_FIXED64 = 1
+@Field static final int WIRETYPE_LENGTH_DELIMITED = 2
+@Field static final int WIRETYPE_FIXED32 = 5
+@Field static final int VARINT_MAX_BYTES = 10
+
 @CompileStatic
-private void espHomeButtonCommand(Map<String, Object> tags) {
+void espHomeButtonCommand(Map<String, Object> tags) {
     sendMessage(MSG_BUTTON_COMMAND_REQUEST, [
             1: [ tags.key as Integer, WIRETYPE_FIXED32 ]
     ])
 }
 
 @CompileStatic
-private void espHomeCameraImageRequest(Map<String, Object> tags) {
+void espHomeCameraImageRequest(Map<String, Object> tags) {
     sendMessage(MSG_CAMERA_IMAGE_REQUEST, [
             1: [ tags.single ? 1 : 0, WIRETYPE_VARINT ],
             2: [ tags.stream ? 1 : 0, WIRETYPE_VARINT ]
@@ -70,7 +116,7 @@ private void espHomeCameraImageRequest(Map<String, Object> tags) {
 }
 
 @CompileStatic
-public void espHomeCoverCommand(Map<String, Object> tags) {
+void espHomeCoverCommand(Map<String, Object> tags) {
     sendMessage(MSG_COVER_COMMAND_REQUEST, [
             1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
             4: [ tags.position != null ? 1 : 0, WIRETYPE_VARINT ],
@@ -81,14 +127,14 @@ public void espHomeCoverCommand(Map<String, Object> tags) {
     ], MSG_COVER_STATE_RESPONSE)
 }
 
-private void espHomeDisconnectRequest() {
+void espHomeDisconnectRequest() {
     closeSocket('requested by device')
     state.reconnectDelay = MAX_RECONNECT_SECONDS
     scheduleConnect()
 }
 
 @CompileStatic
-private void espHomeFanCommand(Map<String, Object> tags) {
+void espHomeFanCommand(Map<String, Object> tags) {
     sendMessage(MSG_FAN_COMMAND_REQUEST, [
             1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
             2: [ tags.state != null ? 1 : 0, WIRETYPE_VARINT ],
@@ -103,7 +149,7 @@ private void espHomeFanCommand(Map<String, Object> tags) {
 }
 
 @CompileStatic
-private void espHomeLightCommand(Map<String, Object> tags) {
+void espHomeLightCommand(Map<String, Object> tags) {
     sendMessage(MSG_LIGHT_COMMAND_REQUEST, [
             1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
             2: [ tags.state != null ? 1 : 0, WIRETYPE_VARINT ],
@@ -132,7 +178,7 @@ private void espHomeLightCommand(Map<String, Object> tags) {
 }
 
 @CompileStatic
-private void espHomeLockCommand(Map<String, Object> tags) {
+void espHomeLockCommand(Map<String, Object> tags) {
     sendMessage(MSG_LOCK_COMMAND_REQUEST, [
             1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
             2: [ tags.lockCommand as Integer, WIRETYPE_VARINT ],
@@ -142,7 +188,7 @@ private void espHomeLockCommand(Map<String, Object> tags) {
 }
 
 @CompileStatic
-private void espHomeMediaPlayerCommand(Map<String, Object> tags) {
+void espHomeMediaPlayerCommand(Map<String, Object> tags) {
     sendMessage(MSG_MEDIA_COMMAND_REQUEST, [
             1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
             2: [ tags.mediaPlayerCommand != null ? 1 : 0, WIRETYPE_VARINT ],
@@ -155,7 +201,7 @@ private void espHomeMediaPlayerCommand(Map<String, Object> tags) {
 }
 
 @CompileStatic
-private void espHomeNumberCommand(Map<String, Object> tags) {
+void espHomeNumberCommand(Map<String, Object> tags) {
     sendMessage(MSG_NUMBER_COMMAND_REQUEST, [
             1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
             2: [ tags.state as Float, WIRETYPE_FIXED32 ]
@@ -163,7 +209,7 @@ private void espHomeNumberCommand(Map<String, Object> tags) {
 }
 
 @CompileStatic
-private void espHomeSirenCommand(Map<String, Object> tags) {
+void espHomeSirenCommand(Map<String, Object> tags) {
     sendMessage(MSG_SIREN_COMMAND_REQUEST, [
             1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
             2: [ tags.state != null ? 1 : 0, WIRETYPE_VARINT ],
@@ -177,21 +223,26 @@ private void espHomeSirenCommand(Map<String, Object> tags) {
     ], MSG_SIREN_STATE_RESPONSE)
 }
 
-private void espHomeSubscribe() {
-    log.info 'Subscribing to ESPHome device states'
-    espHomeSubscribeStatesRequest()
-
+void espHomeSubscribe() {
     log.info 'Subscribing to ESPHome HA services'
     espHomeSubscribeHaServicesRequest()
 
     log.info "Subscribing to ESPHome ${settings.logEnable ? 'DEBUG' : 'INFO'} logging"
     espHomeSubscribeLogs(settings.logEnable ? LOG_LEVEL_DEBUG : LOG_LEVEL_INFO)
 
+    log.info 'Subscribing to ESPHome device states'
+    espHomeSubscribeStatesRequest()
+
     sendMessageQueue()
 }
 
 @CompileStatic
-private void espHomeSwitchCommand(Map<String, Object> tags) {
+void espHomeSubscribeBtleRequest() {
+    sendMessage(MSG_SUBSCRIBE_BTLE_REQUEST)
+}
+
+@CompileStatic
+void espHomeSwitchCommand(Map<String, Object> tags) {
     sendMessage(MSG_SWITCH_COMMAND_REQUEST, [
             1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
             2: [ tags.state ? 1 : 0, WIRETYPE_VARINT ],
@@ -201,121 +252,128 @@ private void espHomeSwitchCommand(Map<String, Object> tags) {
 /*
  * ESPHome Message Parsing
  */
+// parse received protobuf messages - do not change this function name or driver will break
 @CompileStatic
-private void parseMessage(ByteArrayInputStream stream, long length) {
-    int msgType = (int) readVarInt(stream, true)
-    if (msgType < 1) {
-        logWarning "ESPHome message type ${msgType} out of range, skipping"
-        return
-    }
-
-    Map<Integer, List> tags = protobufDecode(stream, length)
-    boolean handled = supervisionCheck(msgType, tags)
-
-    switch (msgType) {
-        case MSG_DISCONNECT_REQUEST:
-            espHomeDisconnectRequest()
-            break
-        case MSG_PING_REQUEST:
-            sendMessage(MSG_PING_RESPONSE)
-            break
-        case MSG_LIST_BINARYSENSOR_RESPONSE:
-            parse espHomeListEntitiesBinarySensorResponse(tags)
-            break
-        case MSG_LIST_COVER_RESPONSE:
-            parse espHomeListEntitiesCoverResponse(tags)
-            break
-        case MSG_LIST_FAN_RESPONSE:
-            parse espHomeListEntitiesFanResponse(tags)
-            break
-        case MSG_LIST_LIGHT_RESPONSE:
-            parse espHomeListEntitiesLightResponse(tags)
-            break
-        case MSG_LIST_SENSOR_RESPONSE:
-            parse espHomeListEntitiesSensorResponse(tags)
-            break
-        case MSG_LIST_SWITCH_RESPONSE:
-            parse espHomeListEntitiesSwitchResponse(tags)
-            break
-        case MSG_LIST_TEXT_SENSOR_RESPONSE:
-            parse espHomeListEntitiesTextSensorResponse(tags)
-            break
-        case MSG_LIST_ENTITIES_RESPONSE:
-            espHomeListEntitiesDoneResponse()
-            break
-        case MSG_BINARY_SENSOR_STATE_RESPONSE:
-            parse espHomeBinarySensorState(tags, handled)
-            break
-        case MSG_COVER_STATE_RESPONSE:
-            parse espHomeCoverState(tags, handled)
-            break
-        case MSG_FAN_STATE_RESPONSE:
-            parse espHomeFanState(tags, handled)
-            break
-        case MSG_HA_SERVICE_RESPONSE:
-            parse espHomeHaServiceResponse(tags)
-            break
-        case MSG_LIGHT_STATE_RESPONSE:
-            parse espHomeLightState(tags, handled)
-            break
-        case MSG_SENSOR_STATE_RESPONSE:
-            parse espHomeSensorState(tags)
-            break
-        case MSG_SWITCH_STATE_RESPONSE:
-            parse espHomeSwitchState(tags, handled)
-            break
-        case MSG_TEXT_SENSOR_STATE_RESPONSE:
-            parse espHomeTextSensorState(tags)
-            break
-        case MSG_SUBSCRIBE_LOGS_RESPONSE:
-            espHomeSubscribeLogsResponse(tags)
-            break
-        case MSG_GET_TIME_REQUEST:
-            espHomeGetTimeRequest()
-            break
-        case MSG_LIST_NUMBER_RESPONSE:
-            espHomeListEntitiesNumberResponse(tags)
-            break
-        case MSG_LIST_CAMERA_RESPONSE:
-            espHomeListEntitiesCameraResponse(tags)
-            break
-        case MSG_CAMERA_IMAGE_RESPONSE:
-            espHomeCameraImageResponse(tags)
-            break
-        case MSG_NUMBER_STATE_RESPONSE:
-            parse espHomeNumberState(tags)
-            break
-        case MSG_LIST_SIREN_RESPONSE:
-            espHomeListEntitiesSirenResponse(tags)
-            break
-        case MSG_SIREN_STATE_RESPONSE:
-            parse espHomeSirenState(tags)
-            break
-        case MSG_LIST_LOCK_RESPONSE:
-            parse espHomeListEntitiesLockResponse(tags)
-            break
-        case MSG_LOCK_STATE_RESPONSE:
-            parse espHomeLockState(tags)
-            break
-        case MSG_LIST_BUTTON_RESPONSE:
-            parse espHomeListEntitiesButtonResponse(tags)
-            break
-        case MSG_LIST_MEDIA_RESPONSE:
-            parse espHomeListEntitiesMediaPlayerResponse(tags)
-            break
-        case MSG_MEDIA_STATE_RESPONSE:
-            parse espHomeMediaPlayerState(tags)
-            break
-        case MSG_BLUETOOTH_LE_RESPONSE:
-            parse espHomeBluetoothLeResponse(tags)
-            break
-        default:
-            if (!handled) {
-                logWarning "ESPHome received unhandled message type ${msgType} with ${tags}"
+void parse(String hexString) {
+    ByteArrayInputStream stream = hexDecode(hexString)
+    int b
+    while ((b = stream.read()) != -1) {
+        if (b == 0x00) {
+            stream.mark(0)
+            long length = readVarInt(stream, true)
+            int available = stream.available()
+            if (length > available) {
+                stream.reset()
+                stashBuffer(stream)
+                return
             }
+            parseMessage(stream, length)
+        } else if (b == 0x01) {
+            logWarning 'Driver does not support ESPHome native API encryption'
+            return
+        } else {
+            logWarning "ESPHome expecting delimiter 0x00 but got 0x${Integer.toHexString(b)} instead"
+            return
+        }
     }
-    espHomeSchedulePing()
 }
+
+@CompileStatic
+private static boolean getBooleanTag(Map<Integer, List> tags, int index, boolean invert = false) {
+    return tags && tags[index] && tags[index][0] ? !invert : invert
+}
+
+@CompileStatic
+private static BigDecimal getFloatTag(Map<Integer, List> tags, int index, BigDecimal defaultValue = BigDecimal.ZERO) {
+    return tags && tags[index] ? Float.intBitsToFloat(tags[index][0] as int) : defaultValue
+}
+
+@CompileStatic
+private static int getIntTag(Map<Integer, List> tags, int index, int defaultValue = 0) {
+    return tags && tags[index] ? tags[index][0] as int : defaultValue
+}
+
+@CompileStatic
+private static List<Integer> getIntTagList(Map<Integer, List> tags, int index) {
+    /* groovylint-disable-next-line ExplicitArrayListInstantiation */
+    return tags && tags[index] ? tags[index] as List<Integer> : new ArrayList<Integer>()
+}
+
+@CompileStatic
+private static long getLongTag(Map<Integer, List> tags, int index, long defaultValue = 0) {
+    return tags && tags[index] ? tags[index][0] as long : defaultValue
+}
+
+@CompileStatic
+private static String getStringTag(Map<Integer, List> tags, int index, String defaultValue = '') {
+    return tags && tags[index] ? new String(tags[index][0] as byte[], 'UTF-8') : defaultValue
+}
+
+@CompileStatic
+private static List<String> getStringTagList(Map<Integer, List> tags, int index) {
+    /* groovylint-disable-next-line ExplicitArrayListInstantiation */
+    return tags && tags[index] ? tags[index].collect { s -> new String(s as byte[], 'UTF-8') } : new ArrayList<String>()
+}
+
+@CompileStatic
+private static int getVarIntSize(long i) {
+    if (i < 0) {
+        return VARINT_MAX_BYTES
+    }
+    int size = 1
+    while (i >= 128) {
+        size++
+        i >>= 7
+    }
+    return size
+}
+
+@CompileStatic
+private static long readVarInt(ByteArrayInputStream stream, boolean permitEOF) {
+    long result = 0
+    int shift = 0
+    // max 10 byte wire format for 64 bit integer (7 bit data per byte)
+    for (int i = 0; i < VARINT_MAX_BYTES; i++) {
+        int b = stream.read()
+        if (b == -1) {
+            return (i == 0 && permitEOF) ? -1 : 0
+        }
+        result |= ((long) (b & 0x07f)) << shift
+        boolean flag = (b & 0x80) == 0
+        if (flag) {
+            break // get out early
+        }
+        shift += 7
+    }
+    return result
+}
+
+@CompileStatic
+private static int writeVarInt(ByteArrayOutputStream stream, long value) {
+    int count = 0
+    for (int i = 0; i < VARINT_MAX_BYTES; i++) {
+        int toWrite = (int) (value & 0x7f)
+        value >>>= 7
+        count++
+        if (value == 0) {
+            stream.write(toWrite)
+            break
+        } else {
+            stream.write(toWrite | 0x080)
+        }
+    }
+    return count
+}
+
+// @CompileStatic
+// private static long zigZagDecode(long v) {
+//     return (v >>> 1) ^ -(v & 1)
+// }
+
+// @CompileStatic
+// private static long zigZagEncode(long v) {
+//     return ((v << 1) ^ -(v >>> 63))
+// }
 
 @CompileStatic
 private static Map espHomeBinarySensorState(Map<Integer, List> tags, boolean isDigital) {
@@ -361,36 +419,6 @@ private static Map espHomeCameraImageResponse(Map<Integer, List> tags) {
 }
 
 @CompileStatic
-private void espHomeConnectRequest(String password = null) {
-    // Message sent after the hello response to authenticate the client
-    // Can only be sent by the client and only at the beginning of the connection
-    sendMessage(MSG_CONNECT_REQUEST, [
-            1: [ password as String, WIRETYPE_LENGTH_DELIMITED ]
-    ], MSG_CONNECT_RESPONSE, 'espHomeConnectResponse')
-}
-
-private void espHomeConnectResponse(Map<Integer, List> tags) {
-    Boolean invalidPassword = getBooleanTag(tags, 1)
-    if (invalidPassword) {
-        log.error "ESPHome invalid password (update configuration setting)"
-        closeSocket('invalid password')
-        return
-    }
-
-    setNetworkStatus('online')
-    device.updateDataValue 'Last Connected Time', new Date().toString()
-    state.remove('reconnectDelay')
-    espHomeSchedulePing()
-
-    if (state.requireRefresh) {
-        state.remove('requireRefresh')
-        espHomeDeviceInfoRequest()
-    } else {
-        espHomeSubscribe()
-    }
-}
-
-@CompileStatic
 private static Map espHomeCoverState(Map<Integer, List> tags, boolean isDigital) {
     return [
             type: 'state',
@@ -402,49 +430,6 @@ private static Map espHomeCoverState(Map<Integer, List> tags, boolean isDigital)
             tilt: getFloatTag(tags, 4),
             currentOperation: getIntTag(tags, 5)
     ]
-}
-
-@CompileStatic
-private void espHomeDeviceInfoRequest() {
-    sendMessage(
-            MSG_DEVICEINFO_REQUEST, [:],
-            MSG_DEVICEINFO_RESPONSE, 'espHomeDeviceInfoResponse'
-    )
-}
-
-private void espHomeDeviceInfoResponse(Map<Integer, List> tags) {
-    Map deviceInfo = [
-            type: 'device',
-            name: getStringTag(tags, 2),
-            macAddress: getStringTag(tags, 3),
-            espHomeVersion: getStringTag(tags, 4),
-            compileTime: getStringTag(tags, 5),
-            boardModel:  getStringTag(tags, 6),
-            hasDeepSleep: getBooleanTag(tags, 7),
-            projectName: getStringTag(tags, 8),
-            projectVersion: getStringTag(tags, 9),
-            portNumber: getIntTag(tags, 10)
-    ]
-
-    device.removeDataValue 'Last Ping Response'
-
-    device.updateDataValue 'Board Model', deviceInfo.boardModel
-    device.updateDataValue 'Compile Time', deviceInfo.compileTime
-    device.updateDataValue 'ESPHome Version', deviceInfo.espHomeVersion
-    device.updateDataValue 'Has Deep Sleep', deviceInfo.hasDeepSleep ? 'yes' : 'no'
-    device.updateDataValue 'MAC Address', deviceInfo.macAddress
-    device.updateDataValue 'Project Name', deviceInfo.projectName
-    device.updateDataValue 'Project Version', deviceInfo.projectVersion
-    device.updateDataValue 'Web Server', "http://${ipAddress}:${deviceInfo.portNumber}"
-
-    if (deviceInfo.macAddress) {
-        device.deviceNetworkId = deviceInfo.macAddress.replaceAll(':', '').toUpperCase()
-    }
-
-    parse(deviceInfo)
-
-    // Step 4: Get device entities
-    espHomeListEntitiesRequest()
 }
 
 @CompileStatic
@@ -462,14 +447,6 @@ private static Map espHomeFanState(Map<Integer, List> tags, boolean isDigital) {
     ]
 }
 
-private void espHomeGetTimeRequest() {
-    long value = new Date().getTime().intdiv(1000)
-    log.info 'ESPHome sending device current time'
-    sendMessage(MSG_GET_TIME_RESPONSE, [
-            1: [ value as Long, WIRETYPE_VARINT ]
-    ])
-}
-
 @CompileStatic
 private static Map espHomeHaServiceResponse(Map<Integer, List> tags) {
     return parseEntity(tags) + [
@@ -480,50 +457,6 @@ private static Map espHomeHaServiceResponse(Map<Integer, List> tags) {
             variables: getStringTagList(tags, 4), // FIXME
             isEvent: getBooleanTag(tags, 5)
     ]
-}
-
-private void espHomeHelloRequest() {
-    // Can only be sent by the client and only at the beginning of the connection
-    String client = "Hubitat ${location.hub.name}"
-    log.info 'ESPHome initiating connection handshake'
-    sendMessage(MSG_HELLO_REQUEST, [
-            1: [ client as String, WIRETYPE_LENGTH_DELIMITED ]
-    ], MSG_HELLO_RESPONSE, 'espHomeHelloResponse')
-}
-
-private void espHomeHelloResponse(Map<Integer, List> tags) {
-    // Confirmation of successful connection request.
-    // Can only be sent by the server and only at the beginning of the connection
-    String version = getIntTag(tags, 1) + '.' + getIntTag(tags, 2)
-    log.info "ESPHome API version: ${version}"
-    device.updateDataValue 'API Version', version
-    if (getIntTag(tags, 1) > 1) {
-        log.error 'ESPHome API version > 1 not supported - disconnecting'
-        closeSocket('API version not supported')
-        return
-    }
-
-    String info = getStringTag(tags, 3)
-    if (info) {
-        log.info "ESPHome server info: ${info}"
-        if (device.getDataValue('Server Info') != info) {
-            device.updateDataValue 'Server Info', info
-            log.info 'ESPHome detected device update, flagging for refresh'
-            state.requireRefresh = true
-        }
-    }
-
-    String name = getStringTag(tags, 4)
-    if (name) {
-        log.info "ESPHome device name: ${name}"
-        device.updateDataValue 'Device Name', name
-        if (device.label) {
-            device.name = name
-        }
-    }
-
-    // Step 2: Send the ConnectRequest message
-    espHomeConnectRequest(settings.password as String)
 }
 
 @CompileStatic
@@ -547,11 +480,6 @@ private static Map espHomeLightState(Map<Integer, List> tags, boolean isDigital)
             warmWhite: getFloatTag(tags, 13),
             effect: getStringTag(tags, 9)
     ]
-}
-
-private void espHomeListEntitiesRequest() {
-    if (logEnable) { log.trace 'ESPHome requesting entities list' }
-    sendMessage(MSG_LIST_ENTITIES_REQUEST)
 }
 
 @CompileStatic
@@ -732,11 +660,6 @@ private static Map espHomeListEntitiesTextSensorResponse(Map<Integer, List> tags
 }
 
 @CompileStatic
-private void espHomeListEntitiesDoneResponse() {
-    espHomeSubscribe()
-}
-
-@CompileStatic
 private static Map espHomeLockState(Map<Integer, List> tags) {
     return [
             type: 'state',
@@ -770,28 +693,6 @@ private static Map espHomeNumberState(Map<Integer, List> tags) {
 }
 
 @CompileStatic
-private void espHomePingRequest() {
-    sendMessage(
-            MSG_PING_REQUEST, [:],
-            MSG_PING_RESPONSE, 'espHomePingResponse'
-    )
-}
-
-private void espHomePingResponse(Map<Integer, List> tags) {
-    setNetworkStatus('online')
-    if (logEnable) { log.trace 'ESPHome ping response received from device' }
-    espHomeSchedulePing()
-}
-
-private void espHomeSchedulePing() {
-    if (PING_INTERVAL_SECONDS > 0) {
-        int jitter = (int) Math.ceil(PING_INTERVAL_SECONDS * 0.5)
-        int interval = PING_INTERVAL_SECONDS + random.nextInt(jitter)
-        runIn(interval, 'healthCheck')
-    }
-}
-
-@CompileStatic
 private static Map espHomeSensorState(Map<Integer, List> tags) {
     return [
             type: 'state',
@@ -813,8 +714,448 @@ private static Map espHomeSirenState(Map<Integer, List> tags) {
 }
 
 @CompileStatic
-private void espHomeSubscribeBtleRequest() {
-    sendMessage(MSG_SUBSCRIBE_BTLE_REQUEST)
+private static Map espHomeSwitchState(Map<Integer, List> tags, boolean isDigital) {
+    return [
+            type: 'state',
+            platform: 'switch',
+            isDigital: isDigital,
+            key: getLongTag(tags, 1),
+            state: getBooleanTag(tags, 2)
+    ]
+}
+
+@CompileStatic
+private static Map espHomeTextSensorState(Map<Integer, List> tags) {
+    return [
+            type: 'state',
+            platform: 'text',
+            key: getLongTag(tags, 1),
+            state: getStringTag(tags, 2),
+            hasState: getBooleanTag(tags, 3, true)
+    ]
+}
+
+@CompileStatic
+private static boolean hasCapability(int capabilities, int capability) {
+    return capabilities & capability
+}
+
+@CompileStatic
+private static Map parseEntity(Map<Integer, List> tags) {
+    return [
+            objectId: getStringTag(tags, 1),
+            key: getLongTag(tags, 2),
+            name: getStringTag(tags, 3),
+            uniqueId: getStringTag(tags, 4)
+    ]
+}
+
+/**
+ * Minimal Protobuf Implementation for use with ESPHome
+ */
+@CompileStatic
+private static Map<Integer, List> protobufDecode(ByteArrayInputStream stream, long available) {
+    Map<Integer, List> tags = [:]
+    while (available > 0) {
+        long tagAndType = readVarInt(stream, true)
+        if (tagAndType == -1) {
+            throw new IOException('ESPHome unexpected EOF decoding protobuf message')
+        }
+        available -= getVarIntSize(tagAndType)
+        int wireType = ((int) tagAndType) & 0x07
+        Integer tag = (int) (tagAndType >>> 3)
+        switch (wireType) {
+            case WIRETYPE_VARINT:
+                Long val = readVarInt(stream, false)
+                available -= getVarIntSize(val)
+                tags.computeIfAbsent(tag) { k -> [] }.add(val)
+                break
+            case WIRETYPE_FIXED32:
+            case WIRETYPE_FIXED64:
+                Long val = 0
+                int shift = 0
+                int count = (wireType == WIRETYPE_FIXED32) ? 4 : 8
+                available -= count
+                while (count-- > 0) {
+                    long l = stream.read()
+                    val |= l << shift
+                    shift += 8
+                }
+                tags.computeIfAbsent(tag) { k -> [] }.add(val)
+                break
+            case WIRETYPE_LENGTH_DELIMITED:
+                int total = (int) readVarInt(stream, false)
+                available -= getVarIntSize(total)
+                available -= total
+                byte[] val = new byte[total]
+                int pos = 0
+                while (pos < total) {
+                    int count = stream.read(val, pos, total - pos)
+                    if (count < (total - pos)) {
+                        throw new IOException('ESPHome unexpected EOF decoding protobuf message')
+                    }
+                    pos += count
+                }
+                tags.computeIfAbsent(tag) { k -> [] }.add(val)
+                break
+        }
+    }
+    return tags
+}
+
+@CompileStatic
+private static int protobufEncode(ByteArrayOutputStream stream, Map<Integer, List> tags) {
+    int bytes = 0
+    for (entry in tags.findAll { k, v -> v && v[0] }.sort()) {
+        int fieldNumber = entry.key as int
+        int wireType = entry.value[1] as int
+        switch (entry.value[0]) {
+            case Float:
+                entry.value[0] = Float.floatToRawIntBits(entry.value[0] as Float)
+                break
+            case Double:
+                entry.value[0] = Double.doubleToRawLongBits(entry.value[0] as Double)
+                break
+        }
+        int tag = (fieldNumber << 3) | wireType
+        bytes += writeVarInt(stream, tag)
+        switch (wireType) {
+            case WIRETYPE_VARINT:
+                long v = entry.value[0] as long
+                bytes += writeVarInt(stream, v)
+                break
+            case WIRETYPE_LENGTH_DELIMITED:
+                byte[] v = entry.value[0] as byte[]
+                bytes += writeVarInt(stream, v.size())
+                stream.write(v)
+                bytes += v.size()
+                break
+            case WIRETYPE_FIXED32:
+                int v = entry.value[0] as int
+                /* groovylint-disable-next-line NestedForLoop */
+                for (int b = 0; b < 4; b++) {
+                    stream.write((int) (v & 0x0ff))
+                    bytes++
+                    v >>= 8
+                }
+                break
+            case WIRETYPE_FIXED64:
+                long v = entry.value[0] as long
+                /* groovylint-disable-next-line NestedForLoop */
+                for (int b = 0; b < 8; b++) {
+                    stream.write((int) (v & 0x0ff))
+                    bytes++
+                    v >>= 8
+                }
+                break
+        }
+    }
+    return bytes
+}
+
+@CompileStatic
+private static String toEntityCategory(int value) {
+    switch (value) {
+        case ENTITY_CATEGORY_NONE: return 'none'
+        case ENTITY_CATEGORY_CONFIG: return 'config'
+        case ENTITY_CATEGORY_DIAGNOSTIC: return 'diagnostic'
+        default: return value
+    }
+}
+
+@CompileStatic
+private static List<String> toCapabilities(int capability) {
+    List<String> capabilities = []
+    if (hasCapability(capability, COLOR_CAP_ON_OFF)) { capabilities.add('ON/OFF') }
+    if (hasCapability(capability, COLOR_CAP_BRIGHTNESS)) { capabilities.add('BRIGHTNESS') }
+    if (hasCapability(capability, COLOR_CAP_RGB)) { capabilities.add('RGB') }
+    if (hasCapability(capability, COLOR_CAP_WHITE)) { capabilities.add('WHITE') }
+    if (hasCapability(capability, COLOR_CAP_COLD_WARM_WHITE)) { capabilities.add('COLD WARM WHITE') }
+    if (hasCapability(capability, COLOR_CAP_COLOR_TEMPERATURE)) { capabilities.add('COLOR TEMPERATURE') }
+    return capabilities
+}
+
+/* groovylint-disable-next-line MethodSize */
+@CompileStatic
+private void parseMessage(ByteArrayInputStream stream, long length) {
+    int msgType = (int) readVarInt(stream, true)
+    if (msgType < 1) {
+        logWarning "ESPHome message type ${msgType} out of range, skipping"
+        return
+    }
+
+    Map<Integer, List> tags = protobufDecode(stream, length)
+    boolean handled = supervisionCheck(msgType, tags)
+
+    switch (msgType) {
+        case MSG_DISCONNECT_REQUEST:
+            espHomeDisconnectRequest()
+            break
+        case MSG_PING_REQUEST:
+            sendMessage(MSG_PING_RESPONSE)
+            break
+        case MSG_LIST_BINARYSENSOR_RESPONSE:
+            parse espHomeListEntitiesBinarySensorResponse(tags)
+            break
+        case MSG_LIST_COVER_RESPONSE:
+            parse espHomeListEntitiesCoverResponse(tags)
+            break
+        case MSG_LIST_FAN_RESPONSE:
+            parse espHomeListEntitiesFanResponse(tags)
+            break
+        case MSG_LIST_LIGHT_RESPONSE:
+            parse espHomeListEntitiesLightResponse(tags)
+            break
+        case MSG_LIST_SENSOR_RESPONSE:
+            parse espHomeListEntitiesSensorResponse(tags)
+            break
+        case MSG_LIST_SWITCH_RESPONSE:
+            parse espHomeListEntitiesSwitchResponse(tags)
+            break
+        case MSG_LIST_TEXT_SENSOR_RESPONSE:
+            parse espHomeListEntitiesTextSensorResponse(tags)
+            break
+        case MSG_LIST_ENTITIES_RESPONSE:
+            parse espHomeListEntitiesDoneResponse()
+            break
+        case MSG_BINARY_SENSOR_STATE_RESPONSE:
+            parse espHomeBinarySensorState(tags, handled)
+            break
+        case MSG_COVER_STATE_RESPONSE:
+            parse espHomeCoverState(tags, handled)
+            break
+        case MSG_FAN_STATE_RESPONSE:
+            parse espHomeFanState(tags, handled)
+            break
+        case MSG_HA_SERVICE_RESPONSE:
+            parse espHomeHaServiceResponse(tags)
+            break
+        case MSG_LIGHT_STATE_RESPONSE:
+            parse espHomeLightState(tags, handled)
+            break
+        case MSG_SENSOR_STATE_RESPONSE:
+            parse espHomeSensorState(tags)
+            break
+        case MSG_SWITCH_STATE_RESPONSE:
+            parse espHomeSwitchState(tags, handled)
+            break
+        case MSG_TEXT_SENSOR_STATE_RESPONSE:
+            parse espHomeTextSensorState(tags)
+            break
+        case MSG_SUBSCRIBE_LOGS_RESPONSE:
+            espHomeSubscribeLogsResponse(tags)
+            break
+        case MSG_GET_TIME_REQUEST:
+            espHomeGetTimeRequest()
+            break
+        case MSG_LIST_NUMBER_RESPONSE:
+            espHomeListEntitiesNumberResponse(tags)
+            break
+        case MSG_LIST_CAMERA_RESPONSE:
+            espHomeListEntitiesCameraResponse(tags)
+            break
+        case MSG_CAMERA_IMAGE_RESPONSE:
+            espHomeCameraImageResponse(tags)
+            break
+        case MSG_NUMBER_STATE_RESPONSE:
+            parse espHomeNumberState(tags)
+            break
+        case MSG_LIST_SIREN_RESPONSE:
+            espHomeListEntitiesSirenResponse(tags)
+            break
+        case MSG_SIREN_STATE_RESPONSE:
+            parse espHomeSirenState(tags)
+            break
+        case MSG_LIST_LOCK_RESPONSE:
+            parse espHomeListEntitiesLockResponse(tags)
+            break
+        case MSG_LOCK_STATE_RESPONSE:
+            parse espHomeLockState(tags)
+            break
+        case MSG_LIST_BUTTON_RESPONSE:
+            parse espHomeListEntitiesButtonResponse(tags)
+            break
+        case MSG_LIST_MEDIA_RESPONSE:
+            parse espHomeListEntitiesMediaPlayerResponse(tags)
+            break
+        case MSG_MEDIA_STATE_RESPONSE:
+            parse espHomeMediaPlayerState(tags)
+            break
+        case MSG_BLUETOOTH_LE_RESPONSE:
+            parse espHomeBluetoothLeResponse(tags)
+            break
+        default:
+            if (!handled) {
+                logWarning "ESPHome received unhandled message type ${msgType} with ${tags}"
+            }
+    }
+    espHomeSchedulePing()
+}
+
+@CompileStatic
+private void espHomeConnectRequest(String password = null) {
+    // Message sent after the hello response to authenticate the client
+    // Can only be sent by the client and only at the beginning of the connection
+    sendMessage(MSG_CONNECT_REQUEST, [
+            1: [ password as String, WIRETYPE_LENGTH_DELIMITED ]
+    ], MSG_CONNECT_RESPONSE, 'espHomeConnectResponse')
+}
+
+/* groovylint-disable-next-line UnusedPrivateMethod */
+private void espHomeConnectResponse(Map<Integer, List> tags) {
+    Boolean invalidPassword = getBooleanTag(tags, 1)
+    if (invalidPassword) {
+        log.error 'ESPHome invalid password (update configuration setting)'
+        closeSocket('invalid password')
+        return
+    }
+
+    setNetworkStatus('online')
+    device.updateDataValue 'Last Connected Time', new Date().toString()
+    state.remove('reconnectDelay')
+    espHomeSchedulePing()
+
+    if (state.requireRefresh) {
+        state.remove('requireRefresh')
+        espHomeDeviceInfoRequest()
+    } else {
+        espHomeSubscribe()
+    }
+}
+
+@CompileStatic
+private void espHomeDeviceInfoRequest() {
+    sendMessage(
+            MSG_DEVICEINFO_REQUEST, [:],
+            MSG_DEVICEINFO_RESPONSE, 'espHomeDeviceInfoResponse'
+    )
+}
+
+/* groovylint-disable-next-line UnusedPrivateMethod */
+private void espHomeDeviceInfoResponse(Map<Integer, List> tags) {
+    Map deviceInfo = [
+            type: 'device',
+            name: getStringTag(tags, 2),
+            macAddress: getStringTag(tags, 3),
+            espHomeVersion: getStringTag(tags, 4),
+            compileTime: getStringTag(tags, 5),
+            boardModel:  getStringTag(tags, 6),
+            hasDeepSleep: getBooleanTag(tags, 7),
+            projectName: getStringTag(tags, 8),
+            projectVersion: getStringTag(tags, 9),
+            portNumber: getIntTag(tags, 10)
+    ]
+
+    device.with {
+        updateDataValue 'Board Model', deviceInfo.boardModel
+        updateDataValue 'Board Model', deviceInfo.boardModel
+        updateDataValue 'Compile Time', deviceInfo.compileTime
+        updateDataValue 'ESPHome Version', deviceInfo.espHomeVersion
+        updateDataValue 'Has Deep Sleep', deviceInfo.hasDeepSleep ? 'yes' : 'no'
+        updateDataValue 'MAC Address', deviceInfo.macAddress
+        updateDataValue 'Project Name', deviceInfo.projectName
+        updateDataValue 'Project Version', deviceInfo.projectVersion
+        updateDataValue 'Web Server', "http://${ipAddress}:${deviceInfo.portNumber}"
+    }
+
+    if (deviceInfo.macAddress) {
+        device.deviceNetworkId = deviceInfo.macAddress.replaceAll(':', '').toUpperCase()
+    }
+
+    parse(deviceInfo)
+
+    // Step 4: Get device entities
+    espHomeListEntitiesRequest()
+}
+
+private void espHomeGetTimeRequest() {
+    long value = new Date().getTime().intdiv(1000)
+    log.info 'ESPHome sending device current time'
+    sendMessage(MSG_GET_TIME_RESPONSE, [
+            1: [ value as Long, WIRETYPE_VARINT ]
+    ])
+}
+
+/* groovylint-disable-next-line UnusedPrivateMethod */
+private void espHomeHelloRequest() {
+    // Can only be sent by the client and only at the beginning of the connection
+    String client = "Hubitat ${location.hub.name}"
+    log.info 'ESPHome initiating connection handshake'
+    sendMessage(MSG_HELLO_REQUEST, [
+            1: [ client as String, WIRETYPE_LENGTH_DELIMITED ]
+    ], MSG_HELLO_RESPONSE, 'espHomeHelloResponse')
+}
+
+/* groovylint-disable-next-line UnusedPrivateMethod */
+private void espHomeHelloResponse(Map<Integer, List> tags) {
+    // Confirmation of successful connection request.
+    // Can only be sent by the server and only at the beginning of the connection
+    String version = getIntTag(tags, 1) + '.' + getIntTag(tags, 2)
+    log.info "ESPHome API version: ${version}"
+    device.updateDataValue 'API Version', version
+    if (getIntTag(tags, 1) > 1) {
+        log.error 'ESPHome API version > 1 not supported - disconnecting'
+        closeSocket('API version not supported')
+        return
+    }
+
+    String info = getStringTag(tags, 3)
+    if (info) {
+        log.info "ESPHome server info: ${info}"
+        if (device.getDataValue('Server Info') != info) {
+            device.updateDataValue 'Server Info', info
+            log.info 'ESPHome detected device update, flagging for refresh'
+            state.requireRefresh = true
+        }
+    }
+
+    String name = getStringTag(tags, 4)
+    if (name) {
+        log.info "ESPHome device name: ${name}"
+        device.updateDataValue 'Device Name', name
+        if (device.label) {
+            device.name = name
+        }
+    }
+
+    // Step 2: Send the ConnectRequest message
+    espHomeConnectRequest(settings.password as String)
+}
+
+private void espHomeListEntitiesRequest() {
+    if (logEnable) { log.trace 'ESPHome requesting entities list' }
+    sendMessage(MSG_LIST_ENTITIES_REQUEST)
+}
+
+@CompileStatic
+private Map espHomeListEntitiesDoneResponse() {
+    espHomeSubscribe()
+    return [
+        type: 'complete'
+    ]
+}
+
+@CompileStatic
+private void espHomePingRequest() {
+    sendMessage(
+            MSG_PING_REQUEST, [:],
+            MSG_PING_RESPONSE, 'espHomePingResponse'
+    )
+}
+
+/* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
+private void espHomePingResponse(Map<Integer, List> tags) {
+    setNetworkStatus('online')
+    if (logEnable) { log.trace 'ESPHome ping response received from device' }
+    espHomeSchedulePing()
+}
+
+private void espHomeSchedulePing() {
+    if (PING_INTERVAL_SECONDS > 0) {
+        int jitter = (int) Math.ceil(PING_INTERVAL_SECONDS * 0.5)
+        int interval = PING_INTERVAL_SECONDS + random.nextInt(jitter)
+        runIn(interval, 'healthCheck')
+    }
 }
 
 @CompileStatic
@@ -856,89 +1197,6 @@ private void espHomeSubscribeHaServicesRequest() {
 }
 
 @CompileStatic
-private static Map espHomeSwitchState(Map<Integer, List> tags, boolean isDigital) {
-    return [
-            type: 'state',
-            platform: 'switch',
-            isDigital: isDigital,
-            key: getLongTag(tags, 1),
-            state: getBooleanTag(tags, 2)
-    ]
-}
-
-@CompileStatic
-private static Map espHomeTextSensorState(Map<Integer, List> tags) {
-    return [
-            type: 'state',
-            platform: 'text',
-            key: getLongTag(tags, 1),
-            state: getStringTag(tags, 2),
-            hasState: getBooleanTag(tags, 3, true)
-    ]
-}
-
-@CompileStatic
-private static Map parseEntity(Map<Integer, List> tags) {
-    return [
-            objectId: getStringTag(tags, 1),
-            key: getLongTag(tags, 2),
-            name: getStringTag(tags, 3),
-            uniqueId: getStringTag(tags, 4)
-    ]
-}
-
-@CompileStatic
-private static String toEntityCategory(int value) {
-    switch (value) {
-        case ENTITY_CATEGORY_NONE: return 'none'
-        case ENTITY_CATEGORY_CONFIG: return 'config'
-        case ENTITY_CATEGORY_DIAGNOSTIC: return 'diagnostic'
-        default: return value
-    }
-}
-
-@CompileStatic
-private static List<String> toCapabilities(int capability) {
-    List<String> capabilities = []
-    if (capability & COLOR_CAP_ON_OFF) { capabilities.add('ON/OFF') }
-    if (capability & COLOR_CAP_BRIGHTNESS) { capabilities.add('BRIGHTNESS') }
-    if (capability & COLOR_CAP_RGB) { capabilities.add('RGB') }
-    if (capability & COLOR_CAP_WHITE) { capabilities.add('WHITE') }
-    if (capability & COLOR_CAP_COLD_WARM_WHITE) { capabilities.add('COLD WARM WHITE') }
-    if (capability & COLOR_CAP_COLOR_TEMPERATURE) { capabilities.add('COLOR TEMPERATURE') }
-    return capabilities
-}
-
-
-/**
- * ESPHome Native API Plaintext Socket IO Implementation
- */
-private void openSocket() {
-    log.info "ESPHome opening socket to ${ipAddress}:${API_PORT_NUMBER}"
-    setNetworkStatus('connecting')
-    try {
-        interfaces.rawSocket.connect(settings.ipAddress, API_PORT_NUMBER, byteInterface: true)
-        runInMillis(250, 'espHomeHelloRequest')
-    } catch (e) {
-        log.error "ESPHome error opening socket: " + e
-        scheduleConnect()
-    }
-}
-
-private void closeSocket(String reason) {
-    unschedule('healthCheck')
-    unschedule('sendMessageQueue')
-    espReceiveBuffer.remove(device.id)
-    log.info "ESPHome closing socket to ${ipAddress}:${API_PORT_NUMBER} (${reason})"
-    if (!isOffline()) {
-        sendMessage(MSG_DISCONNECT_REQUEST)
-    }
-    interfaces.rawSocket.disconnect()
-    setNetworkStatus('offline', reason)
-    pauseExecution(1000)
-}
-
-@CompileStatic
 private String encodeMessage(int type, Map<Integer, List> tags = [:]) {
     // creates hex string payload from message type and tags
     ByteArrayOutputStream payload = new ByteArrayOutputStream()
@@ -951,7 +1209,7 @@ private String encodeMessage(int type, Map<Integer, List> tags = [:]) {
     return HexUtils.byteArrayToHexString(stream.toByteArray())
 }
 
-private ConcurrentLinkedQueue<Map> getSendQueue() {
+private Collection<Map> getSendQueue() {
     return espSendQueue.computeIfAbsent(device.id) { k -> new ConcurrentLinkedQueue<Map>() }
 }
 
@@ -959,10 +1217,10 @@ private ByteArrayOutputStream getReceiveBuffer() {
     return espReceiveBuffer.computeIfAbsent(device.id) { k -> new ByteArrayOutputStream() }
 }
 
+/* groovylint-disable-next-line UnusedPrivateMethod */
 private void healthCheck() {
-    ConcurrentLinkedQueue<Map> queue = getSendQueue()
     // send ping request when online and send queue is empty
-    if (!isOffline() && queue.isEmpty()) {
+    if (!isOffline() && getSendQueue().isEmpty()) {
         if (logEnable) { log.trace 'ESPHome sending ping to device' }
         espHomePingRequest()
     }
@@ -984,32 +1242,6 @@ private boolean isOffline() {
     return device.currentValue(NETWORK_ATTRIBUTE) == 'offline'
 }
 
-// parse received protobuf messages - do not change this function name or driver will break
-@CompileStatic
-public void parse(String hexString) {
-    ByteArrayInputStream stream = hexDecode(hexString)
-    int b
-    while ((b = stream.read()) != -1) {
-        if (b == 0x00) {
-            stream.mark(0)
-            long length = readVarInt(stream, true)
-            int available = stream.available()
-            if (length > available) {
-                stream.reset()
-                stashBuffer(stream)
-                return
-            }
-            parseMessage(stream, length)
-        } else if (b == 0x01) {
-            logWarning 'Driver does not support ESPHome native API encryption'
-            return
-        } else {
-            logWarning "ESPHome expecting delimiter 0x00 but got 0x${Integer.toHexString(b)} instead"
-            return
-        }
-    }
-}
-
 private void scheduleConnect() {
     int reconnectDelay = (state.reconnectDelay ?: 1)
     if (reconnectDelay > MAX_RECONNECT_SECONDS) { reconnectDelay = MAX_RECONNECT_SECONDS }
@@ -1022,11 +1254,15 @@ private void scheduleConnect() {
 
 private void sendMessage(int msgType, Map<Integer, List> tags = [:]) {
     if (logEnable) { log.debug "ESPHome send msg type #${msgType} with ${tags}" }
-    interfaces.rawSocket.sendMessage(encodeMessage(msgType, tags))
+    try {
+        interfaces.rawSocket.sendMessage(encodeMessage(msgType, tags))
+    } catch (IOException e) {
+        log.error "sendMessage: ${e}"
+    }
 }
 
 private void sendMessage(int msgType, Map<Integer, List> tags, int expectedMsgType, String onSuccess = '') {
-    ConcurrentLinkedQueue<Map> queue = getSendQueue()
+    Collection<Map> queue = getSendQueue()
     queue.removeIf { e -> e.msgType == msgType } // remove any duplicate commands
     queue.add([
             msgType: msgType,
@@ -1036,13 +1272,13 @@ private void sendMessage(int msgType, Map<Integer, List> tags, int expectedMsgTy
             retries: SEND_RETRY_COUNT
     ])
     if (!isOffline()) {
-        sendMessage(msgType, tags)
         runIn(SEND_RETRY_SECONDS, 'sendMessageQueue')
+        sendMessage(msgType, tags)
     }
 }
 
 private void sendMessageQueue() {
-    ConcurrentLinkedQueue<Map> queue = getSendQueue()
+    Collection<Map> queue = getSendQueue()
     // send outstanding messages and decrement retry counter
     queue.removeIf { entry ->
         if (entry.retries > 0) {
@@ -1050,13 +1286,12 @@ private void sendMessageQueue() {
             log.info "ESPHome sending message type #${entry.msgType} (${entry.retries} retries left)"
             sendMessage(entry.msgType, entry.tags)
             return false
-        } else {
-            log.info "ESPHome message type #${entry.msgType} retry count exceeded"
-            // maybe a broken connection
-            closeSocket('message retry count exceeded')
-            scheduleConnect()
-            return true
         }
+        log.info "ESPHome message type #${entry.msgType} retry count exceeded"
+        // maybe a broken connection
+        closeSocket('message retry count exceeded')
+        scheduleConnect()
+        return true
     }
 
     // reschedule if there are outstanding messages
@@ -1071,18 +1306,6 @@ private void setNetworkStatus(String state, String reason = '') {
     }
 }
 
-// parse received socket status - do not change this function name or driver will break
-@CompileStatic
-public void socketStatus(String message) {
-    if (message.contains('error')) {
-        logWarning "ESPHome socket error: ${message}"
-        closeSocket(message)
-        scheduleConnect()
-    } else {
-        logWarning "ESPHome socket status: ${message}"
-    }
-}
-
 @CompileStatic
 private void stashBuffer(ByteArrayInputStream stream) {
     // We need to be able to stash partial packets to process later
@@ -1094,8 +1317,8 @@ private void stashBuffer(ByteArrayInputStream stream) {
 }
 
 private boolean supervisionCheck(int msgType, Map<Integer, List> tags) {
-    List<String> onSuccess = new ArrayList<String>()
-    ConcurrentLinkedQueue<Map> queue = getSendQueue()
+    List<String> onSuccess = []
+    Collection<Map> queue = getSendQueue()
 
     // check for successful responses and remove from queue
     boolean result = queue.removeIf { entry ->
@@ -1104,9 +1327,8 @@ private boolean supervisionCheck(int msgType, Map<Integer, List> tags) {
                 onSuccess.add(entry.onSuccess)
             }
             return true
-        } else {
-            return false
         }
+        return false
     }
 
     // execute all onsuccess after queue has been processed
@@ -1119,216 +1341,6 @@ private boolean supervisionCheck(int msgType, Map<Integer, List> tags) {
         "${e}"(tags)
     }
     return result
-}
-
-/**
- * Minimal Protobuf Implementation for use with ESPHome
- */
-@Field static final int WIRETYPE_VARINT = 0
-@Field static final int WIRETYPE_FIXED64 = 1
-@Field static final int WIRETYPE_LENGTH_DELIMITED = 2
-@Field static final int WIRETYPE_FIXED32 = 5
-@Field static final int VARINT_MAX_BYTES = 10
-
-@CompileStatic
-private Map<Integer, List> protobufDecode(ByteArrayInputStream stream, long available) {
-    Map<Integer, List> tags = [:]
-    while (available > 0) {
-        long tagAndType = readVarInt(stream, true)
-        if (tagAndType == -1) {
-            throw new Exception('ESPHome unexpected EOF decoding protobuf message')
-        }
-        available -= getVarIntSize(tagAndType)
-        int wireType = ((int) tagAndType) & 0x07
-        Integer tag = (int) (tagAndType >>> 3)
-        switch (wireType) {
-            case WIRETYPE_VARINT:
-                Long val = readVarInt(stream, false)
-                available -= getVarIntSize(val)
-                tags.computeIfAbsent(tag) { k -> [] }.add(val)
-                break
-            case WIRETYPE_FIXED32:
-            case WIRETYPE_FIXED64:
-                Long val = 0
-                int shift = 0
-                int count = (wireType == WIRETYPE_FIXED32) ? 4 : 8
-                available -= count
-                while (count-- > 0) {
-                    long l = stream.read()
-                    val |= l << shift
-                    shift += 8
-                }
-                tags.computeIfAbsent(tag) { k -> [] }.add(val)
-                break
-            case WIRETYPE_LENGTH_DELIMITED:
-                int total = (int) readVarInt(stream, false)
-                available -= getVarIntSize(total)
-                available -= total
-                byte[] val = new byte[total]
-                int pos = 0
-                while (pos < total) {
-                    int count = stream.read(val, pos, total - pos)
-                    if (count < (total - pos)) {
-                        throw new Exception('ESPHome unexpected EOF decoding protobuf message')
-                    }
-                    pos += count
-                }
-                tags.computeIfAbsent(tag) { k -> [] }.add(val)
-                break
-        }
-    }
-    return tags
-}
-
-@CompileStatic
-private int protobufEncode(ByteArrayOutputStream stream, Map<Integer, List> tags) {
-    int bytes = 0
-    for (entry in new TreeMap<Integer, List>(tags).findAll { k, v -> v instanceof List && v[0] }) {
-        int fieldNumber = entry.key as int
-        int wireType = entry.value[1] as int ?: WIRETYPE_VARINT
-        switch (entry.value[0]) {
-            case Float:
-                entry.value[0] = Float.floatToRawIntBits(entry.value[0] as Float)
-                break
-            case Double:
-                entry.value[0] = Double.doubleToRawLongBits(entry.value[0] as Double)
-                break
-        }
-        int tag = (fieldNumber << 3) | wireType
-        bytes += writeVarInt(stream, tag)
-        switch (wireType) {
-            case WIRETYPE_VARINT:
-                long v = entry.value[0] as long
-                bytes += writeVarInt(stream, v)
-                break
-            case WIRETYPE_LENGTH_DELIMITED:
-                byte[] v = entry.value[0] as byte[]
-                bytes += writeVarInt(stream, v.size())
-                stream.write(v)
-                bytes += v.size()
-                break
-            case WIRETYPE_FIXED32:
-                int v = entry.value[0] as int
-                for (int b = 0; b < 4; b++) {
-                    stream.write((int) (v & 0x0ff))
-                    bytes++
-                    v >>= 8
-                }
-                break
-            case WIRETYPE_FIXED64:
-                long v = entry.value[0] as long
-                for (int b = 0; b < 8; b++) {
-                    stream.write((int) (v & 0x0ff))
-                    bytes++
-                    v >>= 8
-                }
-                break
-        }
-    }
-    return bytes
-}
-
-@CompileStatic
-private static boolean getBooleanTag(Map<Integer, List> tags, int index, boolean invert = false) {
-    return tags && tags[index] && tags[index][0] ? !invert : invert
-}
-
-@CompileStatic
-private static double getDoubleTag(Map<Integer, List> tags, int index, double defaultValue = 0f) {
-    return tags && tags[index] ? Double.longBitsToDouble(tags[index][0] as long) : defaultValue
-}
-
-@CompileStatic
-private static float getFloatTag(Map<Integer, List> tags, int index, float defaultValue = 0f) {
-    return tags && tags[index] ? Float.intBitsToFloat(tags[index][0] as int) : defaultValue
-}
-
-@CompileStatic
-private static int getIntTag(Map<Integer, List> tags, int index, int defaultValue = 0) {
-    return tags && tags[index] ? tags[index][0] as int : defaultValue
-}
-
-@CompileStatic
-private static List<Integer> getIntTagList(Map<Integer, List> tags, int index) {
-    return tags && tags[index] ? tags[index] as List<Integer> : new ArrayList<Integer>()
-}
-
-@CompileStatic
-private static long getLongTag(Map<Integer, List> tags, int index, long defaultValue = 0) {
-    return tags && tags[index] ? tags[index][0] as long : defaultValue
-}
-
-@CompileStatic
-private static String getStringTag(Map<Integer, List> tags, int index, String defaultValue = '') {
-    return tags && tags[index] ? new String(tags[index][0] as byte[], 'UTF-8') : defaultValue
-}
-
-@CompileStatic
-private static List<String> getStringTagList(Map<Integer, List> tags, int index) {
-    return tags && tags[index] ? tags[index].collect { s -> new String(s as byte[], 'UTF-8') } : new ArrayList<String>()
-}
-
-@CompileStatic
-private static int getVarIntSize(long i) {
-    if (i < 0) {
-        return VARINT_MAX_BYTES
-    }
-    int size = 1
-    while (i >= 128) {
-        size++
-        i >>= 7
-    }
-    return size
-}
-
-@CompileStatic
-private static long readVarInt(ByteArrayInputStream stream, boolean permitEOF) {
-    long result = 0
-    int shift = 0
-    // max 10 byte wire format for 64 bit integer (7 bit data per byte)
-    for (int i = 0; i < VARINT_MAX_BYTES; i++) {
-        int b = stream.read()
-        if (b == -1) {
-            if (i == 0 && permitEOF) {
-                return -1
-            } else {
-                return 0
-            }
-        }
-        result |= ((long) (b & 0x07f)) << shift
-        if ((b & 0x80) == 0) {
-            break // get out early
-        }
-        shift += 7
-    }
-    return result
-}
-
-@CompileStatic
-private static int writeVarInt(ByteArrayOutputStream stream, long value) {
-    int count = 0
-    for (int i = 0; i < VARINT_MAX_BYTES; i++) {
-        int toWrite = (int) (value & 0x7f)
-        value >>>= 7
-        count++
-        if (value == 0) {
-            stream.write(toWrite)
-            break;
-        } else {
-            stream.write(toWrite | 0x080)
-        }
-    }
-    return count
-}
-
-@CompileStatic
-private static long zigZagDecode(long v) {
-    return (v >>> 1) ^ -(v & 1)
-}
-
-@CompileStatic
-private static long zigZagEncode(long v) {
-    return ((v << 1) ^ -(v >>> 63))
 }
 
 private void logWarning(String s) {

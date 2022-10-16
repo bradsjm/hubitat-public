@@ -64,7 +64,7 @@ metadata {
 }
 
 public void initialize() {
-    // API library command to open socket to device, it will automatically reconnect if needed 
+    // API library command to open socket to device, it will automatically reconnect if needed
     openSocket()
 
     if (logEnable) {

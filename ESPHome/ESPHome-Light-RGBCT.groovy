@@ -77,7 +77,7 @@ import groovy.transform.Field
 import hubitat.helper.ColorUtils
 
 public void initialize() {
-    // API library command to open socket to device, it will automatically reconnect if needed 
+    // API library command to open socket to device, it will automatically reconnect if needed
     openSocket()
 
     if (logEnable) {
@@ -205,16 +205,22 @@ public void parse(Map message) {
                 }
             }
 
+            // Find a signal strength sensor and put the key in our state
             if (message.platform == 'sensor' && message.deviceClass == 'signal_strength') {
                 state['signalStrength'] = message.key
             }
 
+            // Populate the light effects json
             if (message.platform == 'light' && (!settings.light || settings.light as Long == message.key)) {
                 String effects = JsonOutput.toJson(message.effects ?: [])
                 if (device.currentValue('lightEffects') != effects) {
                     sendEvent(name: 'lightEffects', value: effects)
                 }
             }
+            break
+
+        case 'complete':
+            // Called upon completion of all entities loaded, state updates will follow
             break
 
         case 'state':
@@ -275,7 +281,7 @@ public void parse(Map message) {
                     sendEvent(name: 'colorName', value: colorName, type: type, descriptionText: descriptionText)
                     if (logTextEnable) { log.info descriptionText }
                 }
-                
+
                 String effectName = message.effect
                 if (device.currentValue('effectName') != effectName) {
                     descriptionText = "${device} effect name is ${effectName}"
@@ -329,7 +335,7 @@ private void setColorInternal(Map colorMap) {
     if (colorMap.saturation > 100) { colorMap.saturation = 100 }
     if (colorMap.level < 1) { colorMap.level = 1 }
     if (colorMap.level > 100) { colorMap.level = 100 }
-    if (device.currentValue('hue') != colorMap.hue || 
+    if (device.currentValue('hue') != colorMap.hue ||
         device.currentValue('saturation') != colorMap.saturation ||
         device.currentValue('level') != colorMap.level ||
         device.currentValue('switch') == 'off') {
