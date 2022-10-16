@@ -13,6 +13,8 @@ metadata {
         attribute 'speed', 'enum'
         attribute 'humidity', 'number'
         attribute 'switch', 'string'
+        attribute 'mode', 'string'
+        attribute 'anion', 'string'
     }
 
     command 'setHumidity', [[name:'humidityNeeded', type: 'ENUM', constraints: ['35', '40', '45', '50', '55', '60', '65', '70', '75', '80'], description: 'Set Humidity']]
