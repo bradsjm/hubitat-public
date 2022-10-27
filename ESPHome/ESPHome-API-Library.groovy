@@ -55,14 +55,13 @@ import java.util.concurrent.ConcurrentLinkedQueue
  * ESPHome Native API Plaintext Socket IO Implementation
  */
 void openSocket() {
-    log.info "ESPHome opening socket to ${ipAddress}:${API_PORT_NUMBER}"
-    setNetworkStatus('connecting')
     try {
+        setNetworkStatus('connecting', "host ${settings.ipAddress}:${API_PORT_NUMBER}")
         interfaces.rawSocket.connect(settings.ipAddress, API_PORT_NUMBER, byteInterface: true)
         runInMillis(250, 'espHomeHelloRequest')
     } catch (e) {
-        log.error 'ESPHome error opening socket: ' + e
         scheduleConnect()
+        setNetworkStatus('offline', e.getMessage())
     }
 }
 
@@ -70,12 +69,13 @@ void closeSocket(String reason) {
     unschedule('healthCheck')
     unschedule('sendMessageQueue')
     espReceiveBuffer.remove(device.id)
-    log.info "ESPHome closing socket to ${ipAddress}:${API_PORT_NUMBER} (${reason})"
+    log.info "ESPHome closing socket to ${settings.ipAddress}:${API_PORT_NUMBER}"
     if (!isOffline()) {
         sendMessage(MSG_DISCONNECT_REQUEST)
     }
     interfaces.rawSocket.disconnect()
     setNetworkStatus('offline', reason)
+    device.updateDataValue 'Last Disconnected Time', "${new Date()} (${reason})"
     pauseExecution(1000)
 }
 
@@ -992,10 +992,10 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
     espHomeSchedulePing()
 }
 
-@CompileStatic
 private void espHomeConnectRequest(String password = null) {
     // Message sent after the hello response to authenticate the client
     // Can only be sent by the client and only at the beginning of the connection
+    log.info "ESPHome sending connect request (${password ? 'using' : 'no'} password)"
     sendMessage(MSG_CONNECT_REQUEST, [
             1: [ password as String, WIRETYPE_LENGTH_DELIMITED ]
     ], MSG_CONNECT_RESPONSE, 'espHomeConnectResponse')
@@ -1010,7 +1010,7 @@ private void espHomeConnectResponse(Map<Integer, List> tags) {
         return
     }
 
-    setNetworkStatus('online')
+    setNetworkStatus('online', 'connection completed')
     device.updateDataValue 'Last Connected Time', new Date().toString()
     state.remove('reconnectDelay')
     espHomeSchedulePing()
@@ -1043,7 +1043,8 @@ private void espHomeDeviceInfoResponse(Map<Integer, List> tags) {
             hasDeepSleep: getBooleanTag(tags, 7),
             projectName: getStringTag(tags, 8),
             projectVersion: getStringTag(tags, 9),
-            portNumber: getIntTag(tags, 10)
+            portNumber: getIntTag(tags, 10),
+            webServer: "http://${settings.ipAddress}:${getIntTag(tags, 10)}"
     ]
 
     device.with {
@@ -1055,7 +1056,7 @@ private void espHomeDeviceInfoResponse(Map<Integer, List> tags) {
         updateDataValue 'MAC Address', deviceInfo.macAddress
         updateDataValue 'Project Name', deviceInfo.projectName
         updateDataValue 'Project Version', deviceInfo.projectVersion
-        updateDataValue 'Web Server', "http://${ipAddress}:${deviceInfo.portNumber}"
+        updateDataValue 'Web Server', deviceInfo.webServer
     }
 
     if (deviceInfo.macAddress) {
@@ -1080,7 +1081,7 @@ private void espHomeGetTimeRequest() {
 private void espHomeHelloRequest() {
     // Can only be sent by the client and only at the beginning of the connection
     String client = "Hubitat ${location.hub.name}"
-    log.info 'ESPHome initiating connection handshake'
+    log.info 'ESPHome requesting API version'
     sendMessage(MSG_HELLO_REQUEST, [
             1: [ client as String, WIRETYPE_LENGTH_DELIMITED ]
     ], MSG_HELLO_RESPONSE, 'espHomeHelloResponse')
@@ -1112,9 +1113,10 @@ private void espHomeHelloResponse(Map<Integer, List> tags) {
     String name = getStringTag(tags, 4)
     if (name) {
         log.info "ESPHome device name: ${name}"
-        device.updateDataValue 'Device Name', name
-        if (device.label) {
+        if (device.getDataValue('Device Name') != name) {
+            device.updateDataValue 'Device Name', name
             device.name = name
+            state.requireRefresh = true
         }
     }
 
@@ -1145,7 +1147,7 @@ private void espHomePingRequest() {
 
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
 private void espHomePingResponse(Map<Integer, List> tags) {
-    setNetworkStatus('online')
+    setNetworkStatus('online', 'ping response')
     if (logEnable) { log.trace 'ESPHome ping response received from device' }
     espHomeSchedulePing()
 }
@@ -1278,32 +1280,35 @@ private void sendMessage(int msgType, Map<Integer, List> tags, int expectedMsgTy
 }
 
 private void sendMessageQueue() {
-    Collection<Map> queue = getSendQueue()
-    // send outstanding messages and decrement retry counter
-    queue.removeIf { entry ->
-        if (entry.retries > 0) {
-            entry.retries--
-            log.info "ESPHome sending message type #${entry.msgType} (${entry.retries} retries left)"
-            sendMessage(entry.msgType, entry.tags)
-            return false
+    if (!isOffline()) {
+        Collection<Map> queue = getSendQueue()
+        // send outstanding messages and decrement retry counter
+        queue.removeIf { entry ->
+            if (entry.retries > 0) {
+                entry.retries--
+                log.info "ESPHome sending message type #${entry.msgType} (${entry.retries} retries left)"
+                sendMessage(entry.msgType, entry.tags)
+                return false
+            }
+            log.info "ESPHome message type #${entry.msgType} retry count exceeded"
+            // maybe a broken connection
+            closeSocket('message retry count exceeded')
+            scheduleConnect()
+            return true
         }
-        log.info "ESPHome message type #${entry.msgType} retry count exceeded"
-        // maybe a broken connection
-        closeSocket('message retry count exceeded')
-        scheduleConnect()
-        return true
-    }
 
-    // reschedule if there are outstanding messages
-    if (!queue.isEmpty()) {
-        runIn(SEND_RETRY_SECONDS, 'sendMessageQueue')
+        // reschedule if there are outstanding messages
+        if (!queue.isEmpty()) {
+            runIn(SEND_RETRY_SECONDS, 'sendMessageQueue')
+        }
     }
 }
 
 private void setNetworkStatus(String state, String reason = '') {
-    if (device.currentValue(NETWORK_ATTRIBUTE) != state) {
-        sendEvent([ name: NETWORK_ATTRIBUTE, value: state, descriptionText: reason ?: "${device} is ${state}" ])
-    }
+    String descriptionText = "${device} is ${state}"
+    if (reason) { descriptionText += ": ${reason}" }
+    sendEvent([ name: NETWORK_ATTRIBUTE, value: state, descriptionText: descriptionText ])
+    log.info descriptionText
 }
 
 @CompileStatic
