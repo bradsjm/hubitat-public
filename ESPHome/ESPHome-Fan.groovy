@@ -27,6 +27,7 @@ metadata {
         capability 'Actuator'
         capability 'FanControl'
         capability 'Refresh'
+        capability 'SignalStrength'
         capability 'Switch'
         capability 'Initialize'
 
@@ -180,6 +181,16 @@ public void parse(Map message) {
                 if (!settings.fan) {
                     device.updateSetting('fan', message.key as String)
                 }
+                return
+            }
+
+            if (message.platform == 'sensor') {
+                switch (message.deviceClass) {
+                    case 'signal_strength':
+                        state['signalStrength'] = message.key
+                        break
+                }
+                return
             }
             break
 
@@ -221,6 +232,19 @@ public void parse(Map message) {
                         if (logTextEnable) { log.info descriptionText }
                     }
                 }
+                return
+            }
+
+            // Signal Strength
+            if (state.signalStrength as Long == message.key && message.hasState) {
+                Integer rssi = Math.round(message.state as Float)
+                String unit = 'dBm'
+                if (device.currentValue('rssi') != rssi) {
+                    descriptionText = "${device} rssi is ${rssi}"
+                    sendEvent(name: 'rssi', value: rssi, unit: unit, descriptionText: descriptionText)
+                    if (logTextEnable) { log.info descriptionText }
+                }
+                return
             }
             break
     }

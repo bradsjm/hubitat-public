@@ -21,10 +21,9 @@
  *  SOFTWARE.
  */
 metadata {
-    definition(name: 'ESPHome PIR Switch', namespace: 'esphome', author: 'Jonathan Bradshaw') {
+    definition(name: 'ESPHome Switch', namespace: 'esphome', author: 'Jonathan Bradshaw') {
 
         capability 'Sensor'
-        capability 'MotionSensor'
         capability 'Refresh'
         capability 'SignalStrength'
         capability 'Switch'
@@ -50,12 +49,6 @@ metadata {
             title: 'ESPHome Switch Entity',
             required: state.switches?.size() > 0,
             options: state.switches?.collectEntries { k, v -> [ k, v.name ] }
-
-        input name: 'binarysensor', // allows the user to select which sensor entity to use
-            type: 'enum',
-            title: 'ESPHome Sensor Entity',
-            required: state.sensors?.size() > 0,
-            options: state.sensors?.collectEntries { k, v -> [ k, v.name ] }
 
         input name: 'logEnable',    // if enabled the library will log debug details
                 type: 'bool',
@@ -131,16 +124,6 @@ public void parse(Map message) {
             break
 
         case 'entity':
-            // This will populate the cover dropdown with all the entities
-            // discovered and the entity key which is required when sending commands
-            if (message.platform == 'binary') {
-                state.sensors = (state.sensors ?: [:]) + [ (message.key as String): message ]
-                if (!settings.binarysensor) {
-                    device.updateSetting('binarysensor', message.key as String)
-                }
-                return
-            }
-
             if (message.platform == 'switch') {
                 state.switches = (state.switches ?: [:]) + [ (message.key as String): message ]
                 if (!settings.switch) {
@@ -160,18 +143,10 @@ public void parse(Map message) {
             break
 
         case 'state':
-            String type = message.isDigital ? 'digital' : 'physical'
             // Check if the entity key matches the message entity key received to update device state
-            if (settings.binarysensor as Long == message.key) {
-                String value = message.state ? 'active' : 'inactive'
-                if (device.currentValue('motion') != value) {
-                    sendEvent(name: 'motion', value: value, type: type, descriptionText: "Motion is ${value}")
-                }
-                return
-            }
-
             if (settings.switch as Long == message.key) {
                 String value = message.state ? 'on' : 'off'
+                String type = message.isDigital ? 'digital' : 'physical'
                 if (device.currentValue('switch') != value) {
                     sendEvent(name: 'switch', value: value, type: type, descriptionText: "Switch is ${value} (${type})")
                 }

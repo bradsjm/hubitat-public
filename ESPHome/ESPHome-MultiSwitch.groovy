@@ -21,14 +21,11 @@
  *  SOFTWARE.
  */
 metadata {
-    definition(name: 'ESPHome PIR Switch', namespace: 'esphome', author: 'Jonathan Bradshaw') {
+    definition(name: 'ESPHome Multi Switch', namespace: 'esphome', author: 'Jonathan Bradshaw') {
 
-        capability 'Sensor'
-        capability 'MotionSensor'
         capability 'Refresh'
-        capability 'SignalStrength'
-        capability 'Switch'
         capability 'Initialize'
+        capability 'SignalStrength'
 
         // attribute populated by ESPHome API Library automatically
         attribute 'networkStatus', 'enum', [ 'connecting', 'online', 'offline' ]
@@ -45,18 +42,6 @@ metadata {
                 title: 'Device Password <i>(if required)</i>',
                 required: false
 
-        input name: 'switch', // allows the user to select which switch entity to use
-            type: 'enum',
-            title: 'ESPHome Switch Entity',
-            required: state.switches?.size() > 0,
-            options: state.switches?.collectEntries { k, v -> [ k, v.name ] }
-
-        input name: 'binarysensor', // allows the user to select which sensor entity to use
-            type: 'enum',
-            title: 'ESPHome Sensor Entity',
-            required: state.sensors?.size() > 0,
-            options: state.sensors?.collectEntries { k, v -> [ k, v.name ] }
-
         input name: 'logEnable',    // if enabled the library will log debug details
                 type: 'bool',
                 title: 'Enable Debug Logging',
@@ -70,6 +55,9 @@ metadata {
               defaultValue: true
     }
 }
+
+import com.hubitat.app.DeviceWrapper
+import com.hubitat.app.ChildDeviceWrapper
 
 public void initialize() {
     // API library command to open socket to device, it will automatically reconnect if needed
@@ -90,6 +78,29 @@ public void logsOff() {
     log.info "${device} debug logging disabled"
 }
 
+// driver commands
+public void componentOn(DeviceWrapper dw) {
+    String key = dw.getDeviceNetworkId().minus("${device.id}-")
+    if (dw.currentValue('switch') != 'on') {
+        if (logTextEnable) { log.info "${device} on" }
+        espHomeSwitchCommand(key: key as Long, state: true)
+    }
+}
+
+public void componentOff(DeviceWrapper dw) {
+    String key = dw.getDeviceNetworkId().minus("${device.id}-")
+    if (dw.currentValue('switch') != 'off') {
+        if (logTextEnable) { log.info "${device} off" }
+        espHomeSwitchCommand(key: key as Long, state: false)
+    }
+}
+
+public void refresh() {
+    log.info "${device} refresh"
+    state.clear()
+    espHomeDeviceInfoRequest()
+}
+
 public void updated() {
     log.info "${device} driver configuration updated"
     initialize()
@@ -98,27 +109,6 @@ public void updated() {
 public void uninstalled() {
     closeSocket('driver uninstalled') // make sure the socket is closed when uninstalling
     log.info "${device} driver uninstalled"
-}
-
-// driver commands
-public void on() {
-    if (device.currentValue('switch') != 'on') {
-        if (logTextEnable) { log.info "${device} on" }
-        espHomeSwitchCommand(key: settings.switch as Long, state: true)
-    }
-}
-
-public void off() {
-    if (device.currentValue('switch') != 'off') {
-        if (logTextEnable) { log.info "${device} off" }
-        espHomeSwitchCommand(key: settings.switch as Long, state: false)
-    }
-}
-
-public void refresh() {
-    log.info "${device} refresh"
-    state.clear()
-    espHomeDeviceInfoRequest()
 }
 
 // the parse method is invoked by the API library when messages are received
@@ -131,22 +121,17 @@ public void parse(Map message) {
             break
 
         case 'entity':
-            // This will populate the cover dropdown with all the entities
-            // discovered and the entity key which is required when sending commands
-            if (message.platform == 'binary') {
-                state.sensors = (state.sensors ?: [:]) + [ (message.key as String): message ]
-                if (!settings.binarysensor) {
-                    device.updateSetting('binarysensor', message.key as String)
-                }
-                return
-            }
-
-            if (message.platform == 'switch') {
-                state.switches = (state.switches ?: [:]) + [ (message.key as String): message ]
-                if (!settings.switch) {
-                    device.updateSetting('switch', message.key as String)
-                }
-                return
+            // Discover all binary switches and create child devices for each
+            if (message.platform == 'switch' && !message.disabledByDefault && message.entityCategory == 'none') {
+                String dni = "${device.id}-${message.key}"
+                ChildDeviceWrapper dw = getChildDevice(dni) ?:
+                    addChildDevice(
+                        'hubitat',
+                        'Generic Component Switch',
+                        dni
+                    )
+                dw.name = message.objectId
+                dw.label = message.name
             }
 
             if (message.platform == 'sensor') {
@@ -155,37 +140,30 @@ public void parse(Map message) {
                         state['signalStrength'] = message.key
                         break
                 }
-                return
             }
             break
 
         case 'state':
-            String type = message.isDigital ? 'digital' : 'physical'
-            // Check if the entity key matches the message entity key received to update device state
-            if (settings.binarysensor as Long == message.key) {
-                String value = message.state ? 'active' : 'inactive'
-                if (device.currentValue('motion') != value) {
-                    sendEvent(name: 'motion', value: value, type: type, descriptionText: "Motion is ${value}")
-                }
-                return
-            }
-
-            if (settings.switch as Long == message.key) {
-                String value = message.state ? 'on' : 'off'
-                if (device.currentValue('switch') != value) {
-                    sendEvent(name: 'switch', value: value, type: type, descriptionText: "Switch is ${value} (${type})")
-                }
-                return
-            }
-
+            // Signal Strength
             if (state.signalStrength as Long == message.key && message.hasState) {
                 Integer rssi = Math.round(message.state as Float)
                 String unit = 'dBm'
                 if (device.currentValue('rssi') != rssi) {
                     descriptionText = "${device} rssi is ${rssi}"
-                    sendEvent(name: 'rssi', value: rssi, unit: unit, type: type, descriptionText: descriptionText)
+                    sendEvent(name: 'rssi', value: rssi, unit: unit, descriptionText: descriptionText)
                     if (logTextEnable) { log.info descriptionText }
                 }
+                return
+            }
+
+            // Receives entity state updates to send to child device
+            if (message.platform == 'switch' && message.hasState) {
+                String dni = "${device.id}-${message.key}"
+                String type = message.isDigital ? 'digital' : 'physical'
+                String value = message.state ? 'on' : 'off'
+                getChildDevice(dni)?.parse([
+                    [ name: 'switch', value: value, type: type, descriptionText: "switch is ${value}" ]
+                ])
                 return
             }
             break

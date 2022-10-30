@@ -138,6 +138,7 @@ public void parse(Map message) {
                 if (!settings.switch) {
                     device.updateSetting('switch', message.key as String)
                 }
+                return
             }
 
             if (message.platform == 'sensor') {
@@ -158,6 +159,7 @@ public void parse(Map message) {
                         state['voltage'] = message.key
                         break
                 }
+                return
             }
             break
 

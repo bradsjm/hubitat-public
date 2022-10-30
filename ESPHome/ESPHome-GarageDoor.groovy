@@ -140,10 +140,12 @@ public void parse(Map message) {
                 if (!settings.cover) {
                     device.updateSetting('cover', message.key as String)
                 }
+                return
             }
 
             if (message.platform == 'sensor' && message.deviceClass == 'signal_strength') {
                 state['signalStrength'] = message.key
+                return
             }
             break
 

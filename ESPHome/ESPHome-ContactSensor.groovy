@@ -116,6 +116,7 @@ public void parse(Map message) {
                 if (!settings.binarysensor) {
                     device.updateSetting('binarysensor', message.key)
                 }
+                return
             }
 
             if (message.platform == 'sensor') {
@@ -124,6 +125,7 @@ public void parse(Map message) {
                         state['signalStrength'] = message.key
                         break
                 }
+                return
             }
             break
 
