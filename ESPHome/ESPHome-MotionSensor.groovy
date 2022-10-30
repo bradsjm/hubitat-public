@@ -138,6 +138,7 @@ public void parse(Map message) {
                         descriptionText: "Motion is ${value}"
                     ])
                 }
+                return
             }
 
             if (state.signalStrength as Long == message.key && message.hasState) {
@@ -148,6 +149,7 @@ public void parse(Map message) {
                     sendEvent(name: 'rssi', value: rssi, unit: unit, descriptionText: descriptionText)
                     if (logTextEnable) { log.info descriptionText }
                 }
+                return
             }
             break
     }

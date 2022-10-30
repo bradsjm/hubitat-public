@@ -168,6 +168,7 @@ public void parse(Map message) {
                     sendEvent(name: 'door', value: value, type: type, descriptionText: descriptionText)
                     if (logTextEnable) { log.info descriptionText }
                 }
+                return
             }
 
             if (state.signalStrength as Long == message.key && message.hasState) {
@@ -178,6 +179,7 @@ public void parse(Map message) {
                     sendEvent(name: 'rssi', value: rssi, unit: unit, type: type, descriptionText: descriptionText)
                     if (logTextEnable) { log.info descriptionText }
                 }
+                return
             }
             break
     }

@@ -26,6 +26,7 @@ metadata {
         capability 'Sensor'
         capability 'ContactSensor'
         capability 'Refresh'
+        capability 'SignalStrength'
         capability 'Initialize'
 
         // attribute populated by ESPHome API Library automatically
@@ -116,6 +117,14 @@ public void parse(Map message) {
                     device.updateSetting('binarysensor', message.key)
                 }
             }
+
+            if (message.platform == 'sensor') {
+                switch (message.deviceClass) {
+                    case 'signal_strength':
+                        state['signalStrength'] = message.key
+                        break
+                }
+            }
             break
 
         case 'state':
@@ -129,6 +138,19 @@ public void parse(Map message) {
                         descriptionText: "Contact is ${value}"
                     ])
                 }
+                return
+            }
+
+            // Signal Strength
+            if (state.signalStrength as Long == message.key && message.hasState) {
+                Integer rssi = Math.round(message.state as Float)
+                String unit = 'dBm'
+                if (device.currentValue('rssi') != rssi) {
+                    descriptionText = "${device} rssi is ${rssi}"
+                    sendEvent(name: 'rssi', value: rssi, unit: unit, descriptionText: descriptionText)
+                    if (logTextEnable) { log.info descriptionText }
+                }
+                return
             }
             break
     }

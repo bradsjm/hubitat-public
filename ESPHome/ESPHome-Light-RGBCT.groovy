@@ -52,11 +52,13 @@ metadata {
                 title: 'Device Password <i>(if required)</i>',
                 required: false
 
-        input name: 'light',       // allows the user to select which entity to use
-            type: 'enum',
-            title: 'ESPHome Light Entity',
-            required: state.lights?.size() > 0,
-            options: state.lights?.collectEntries { k, v -> [ k, v.name ] }
+        if (state.lights?.size()) {
+            input name: 'light',       // allows the user to select which entity to use
+                type: 'enum',
+                title: 'ESPHome Light Entity',
+                required: true,
+                options: state.lights?.collectEntries { k, v -> [ k, v.name ] }
+        }
 
         input name: 'logEnable',    // if enabled the library will log debug details
                 type: 'bool',
@@ -296,6 +298,7 @@ public void parse(Map message) {
                     sendEvent(name: 'colorMode', value: colorMode, type: type, descriptionText: descriptionText)
                     if (logTextEnable) { log.info descriptionText }
                 }
+                return
             }
 
             if (state.signalStrength as Long == message.key && message.hasState) {
@@ -306,6 +309,7 @@ public void parse(Map message) {
                     sendEvent(name: 'rssi', value: rssi, unit: unit, type: type, descriptionText: descriptionText)
                     if (logTextEnable) { log.info descriptionText }
                 }
+                return
             }
             break
     }

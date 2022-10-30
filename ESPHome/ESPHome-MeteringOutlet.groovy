@@ -172,6 +172,7 @@ public void parse(Map message) {
                     sendEvent(name: 'amperage', value: amperage, unit: unit, type: type, descriptionText: descriptionText)
                     if (logTextEnable) { log.info descriptionText }
                 }
+                return
             }
 
             if (state.energy as Long == message.key && message.hasState) {
@@ -182,6 +183,7 @@ public void parse(Map message) {
                     sendEvent(name: 'energy', value: energy, unit: unit, type: type, descriptionText: descriptionText)
                     if (logTextEnable) { log.info descriptionText }
                 }
+                return
             }
 
             if (state.power as Long == message.key && message.hasState) {
@@ -192,6 +194,7 @@ public void parse(Map message) {
                     sendEvent(name: 'power', value: power, unit: unit, type: type, descriptionText: descriptionText)
                     if (logTextEnable) { log.info descriptionText }
                 }
+                return
             }
 
             if (state.signalStrength as Long == message.key && message.hasState) {
@@ -202,6 +205,7 @@ public void parse(Map message) {
                     sendEvent(name: 'rssi', value: rssi, unit: unit, type: type, descriptionText: descriptionText)
                     if (logTextEnable) { log.info descriptionText }
                 }
+                return
             }
 
             if (settings.switch as Long == message.key) {
@@ -209,6 +213,7 @@ public void parse(Map message) {
                 if (device.currentValue('switch') != value) {
                     sendEvent(name: 'switch', value: value, type: type, descriptionText: "Switch is ${value} (${type})")
                 }
+                return
             }
 
             if (state.voltage as Long == message.key && message.hasState) {
@@ -219,6 +224,7 @@ public void parse(Map message) {
                     sendEvent(name: 'voltage', value: voltage, unit: unit, type: type, descriptionText: descriptionText)
                     if (logTextEnable) { log.info descriptionText }
                 }
+                return
             }
             break
     }
