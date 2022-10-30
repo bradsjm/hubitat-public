@@ -21,7 +21,7 @@
  *  SOFTWARE.
  */
 metadata {
-    definition(name: 'ESPHome PIR Switch', namespace: 'esphome', author: 'Jonathan Bradshaw') {
+    definition(name: 'ESPHome Motion Switch', namespace: 'esphome', author: 'Jonathan Bradshaw') {
 
         capability 'Sensor'
         capability 'MotionSensor'
