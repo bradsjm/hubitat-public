@@ -21,13 +21,13 @@
  *  SOFTWARE.
  */
 metadata {
-    definition(name: 'ESPHome Garage Door', namespace: 'esphome', author: 'Jonathan Bradshaw') {
+    definition(name: 'ESPHome BLE Scanner', namespace: 'esphome', author: 'Jonathan Bradshaw') {
 
-        capability 'Actuator'
-        capability 'GarageDoorControl'
         capability 'Refresh'
         capability 'SignalStrength'
         capability 'Initialize'
+
+        command 'subscribe'
 
         // attribute populated by ESPHome API Library automatically
         attribute 'networkStatus', 'enum', [ 'connecting', 'online', 'offline' ]
@@ -43,12 +43,6 @@ metadata {
                 type: 'text',
                 title: 'Device Password <i>(if required)</i>',
                 required: false
-
-        input name: 'cover',        // allows the user to select which cover entity to use
-            type: 'enum',
-            title: 'ESPHome Cover Entity',
-            required: state.covers?.size() > 0,
-            options: state.covers?.collectEntries { k, v -> [ k, v.name ] }
 
         input name: 'logEnable',    // if enabled the library will log debug details
                 type: 'bool',
@@ -83,6 +77,16 @@ public void logsOff() {
     log.info "${device} debug logging disabled"
 }
 
+public void refresh() {
+    log.info "${device} refresh"
+    state.clear()
+    espHomeDeviceInfoRequest()
+}
+
+public void subscribe() {
+    espHomeSubscribeBtleRequest()
+}
+
 public void updated() {
     log.info "${device} driver configuration updated"
     initialize()
@@ -91,35 +95,6 @@ public void updated() {
 public void uninstalled() {
     closeSocket('driver uninstalled') // make sure the socket is closed when uninstalling
     log.info "${device} driver uninstalled"
-}
-
-// driver commands
-public void open() {
-    String doorState = device.currentValue('door')
-    if (doorState != 'closed') {
-        log.info "${device} ignoring open request (door is ${doorState})"
-        return
-    }
-    // API library cover command, entity key for the cover is required
-    if (logTextEnable) { log.info "${device} open" }
-    espHomeCoverCommand(key: settings.cover as Long, position: 1.0)
-}
-
-public void close() {
-    String doorState = device.currentValue('door')
-    if (doorState != 'open') {
-        log.info "${device} ignoring close request (door is ${doorState})"
-        return
-    }
-    // API library cover command, entity key for the cover is required
-    if (logTextEnable) { log.info "${device} close" }
-    espHomeCoverCommand(key: settings.cover as Long, position: 0.0)
-}
-
-public void refresh() {
-    log.info "${device} refresh"
-    state.clear()
-    espHomeDeviceInfoRequest()
 }
 
 // the parse method is invoked by the API library when messages are received
@@ -132,52 +107,26 @@ public void parse(Map message) {
             break
 
         case 'entity':
-            // This will populate the cover dropdown with all the entities
-            // discovered and the entity key which is required when sending commands
-            if (message.platform == 'cover') {
-                state.covers = (state.covers ?: [:]) + [ (message.key as String): message ]
-                if (!settings.cover) {
-                    device.updateSetting('cover', message.key as String)
+            log.info message
+            if (message.platform == 'sensor') {
+                switch (message.deviceClass) {
+                    case 'signal_strength':
+                        state['signalStrength'] = message.key
+                        break
                 }
-                return
-            }
-
-            if (message.platform == 'sensor' && message.deviceClass == 'signal_strength') {
-                state['signalStrength'] = message.key
                 return
             }
             break
 
         case 'state':
-            String type = message.isDigital ? 'digital' : 'physical'
-            // Check if the entity key matches the message entity key received to update device state
-            if (settings.cover as Long == message.key) {
-                String value
-                switch (message.currentOperation) {
-                    case COVER_OPERATION_IDLE:
-                        value = message.position > 0 ? 'open' : 'closed'
-                        break
-                    case COVER_OPERATION_IS_OPENING:
-                        value = 'opening'
-                        break
-                    case COVER_OPERATION_IS_CLOSING:
-                        value = 'closing'
-                        break
-                }
-                if (device.currentValue('door') != value) {
-                    descriptionText = "${device} door is ${value}"
-                    sendEvent(name: 'door', value: value, type: type, descriptionText: descriptionText)
-                    if (logTextEnable) { log.info descriptionText }
-                }
-                return
-            }
-
+            log.info message
+            // Signal Strength
             if (state.signalStrength as Long == message.key && message.hasState) {
                 Integer rssi = Math.round(message.state as Float)
                 String unit = 'dBm'
                 if (device.currentValue('rssi') != rssi) {
                     descriptionText = "${device} rssi is ${rssi}"
-                    sendEvent(name: 'rssi', value: rssi, unit: unit, type: type, descriptionText: descriptionText)
+                    sendEvent(name: 'rssi', value: rssi, unit: unit, descriptionText: descriptionText)
                     if (logTextEnable) { log.info descriptionText }
                 }
                 return

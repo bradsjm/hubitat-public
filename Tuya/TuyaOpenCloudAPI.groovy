@@ -68,7 +68,7 @@ import hubitat.scheduling.AsyncResponse
 metadata {
     definition(name: 'Tuya IoT Platform (Cloud)', namespace: 'tuya', author: 'Jonathan Bradshaw',
                 importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/Tuya/TuyaOpenCloudAPI.groovy') {
-        singleThreaded: true
+
         capability 'Initialize'
         capability 'Refresh'
 

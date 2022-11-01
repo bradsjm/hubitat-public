@@ -22,7 +22,6 @@
  */
 metadata {
     definition(name: 'ESPHome Metering Outlet', namespace: 'esphome', author: 'Jonathan Bradshaw') {
-        singleThreaded: true
 
         capability 'Actuator'
         capability 'CurrentMeter'

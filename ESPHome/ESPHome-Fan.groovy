@@ -22,7 +22,6 @@
  */
 metadata {
     definition(name: 'ESPHome Fan Control', namespace: 'esphome', author: 'Jonathan Bradshaw') {
-        singleThreaded: true
 
         capability 'Actuator'
         capability 'FanControl'

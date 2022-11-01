@@ -24,7 +24,6 @@
 import com.hubitat.app.exception.UnknownDeviceTypeException
 import com.hubitat.app.DeviceWrapper
 import groovy.json.JsonOutput
-import groovy.json.JsonSlurper
 import groovy.transform.Field
 import hubitat.scheduling.AsyncResponse
 

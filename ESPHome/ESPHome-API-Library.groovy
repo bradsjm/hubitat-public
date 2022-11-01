@@ -1044,7 +1044,9 @@ private void espHomeDeviceInfoResponse(Map<Integer, List> tags) {
             projectName: getStringTag(tags, 8),
             projectVersion: getStringTag(tags, 9),
             portNumber: getIntTag(tags, 10),
-            webServer: "http://${settings.ipAddress}:${getIntTag(tags, 10)}"
+            webServer: "http://${settings.ipAddress}:${getIntTag(tags, 10)}",
+            btProxyVersion: getIntTag(tags, 11),
+            manufacturer: getStringTag(tags, 12)
     ]
 
     device.with {
@@ -1057,6 +1059,8 @@ private void espHomeDeviceInfoResponse(Map<Integer, List> tags) {
         updateDataValue 'Project Name', deviceInfo.projectName
         updateDataValue 'Project Version', deviceInfo.projectVersion
         updateDataValue 'Web Server', deviceInfo.webServer
+        updateDataValue 'Bluetooth Proxy Version', deviceInfo.btProxyVersion
+        updateDataValue 'Manufacturer', deviceInfo.manufacturer
     }
 
     if (deviceInfo.macAddress) {
