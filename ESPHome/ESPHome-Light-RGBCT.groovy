@@ -22,10 +22,9 @@
  */
 metadata {
     definition(name: 'ESPHome RGBCT Light', namespace: 'esphome', author: 'Jonathan Bradshaw') {
-        singleThreaded: true
-
         capability 'Actuator'
         capability 'Bulb'
+        capability 'ChangeLevel'
         capability 'ColorControl'
         capability 'ColorMode'
         capability 'ColorTemperature'
@@ -60,17 +59,31 @@ metadata {
                 options: state.lights?.collectEntries { k, v -> [ k, v.name ] }
         }
 
+        input name: 'changeLevelStep',
+            type: 'decimal',
+            title: 'Change level step size',
+            required: false,
+            range: 1..50,
+            defaultValue: 5
+
+        input name: 'changeLevelEvery',
+            type: 'number',
+            title: 'Change Level every x milliseconds',
+            required: false,
+            range: 100..60000,
+            defaultValue: 100
+
         input name: 'logEnable',    // if enabled the library will log debug details
-                type: 'bool',
-                title: 'Enable Debug Logging',
-                required: false,
-                defaultValue: false
+            type: 'bool',
+            title: 'Enable Debug Logging',
+            required: false,
+            defaultValue: false
 
         input name: 'logTextEnable',
-              type: 'bool',
-              title: 'Enable descriptionText logging',
-              required: false,
-              defaultValue: true
+            type: 'bool',
+            title: 'Enable descriptionText logging',
+            required: false,
+            defaultValue: true
     }
 }
 
@@ -78,7 +91,7 @@ import groovy.json.JsonOutput
 import groovy.transform.Field
 import hubitat.helper.ColorUtils
 
-public void initialize() {
+void initialize() {
     // API library command to open socket to device, it will automatically reconnect if needed
     openSocket()
 
@@ -87,56 +100,56 @@ public void initialize() {
     }
 }
 
-public void installed() {
+void installed() {
     log.info "${device} driver installed"
 }
 
-public void logsOff() {
+void logsOff() {
     espHomeSubscribeLogs(LOG_LEVEL_INFO, false) // disable device logging
     device.updateSetting('logEnable', false)
     log.info "${device} debug logging disabled"
 }
 
-public void updated() {
+void updated() {
     log.info "${device} driver configuration updated"
     initialize()
 }
 
-public void uninstalled() {
+void uninstalled() {
     closeSocket('driver uninstalled') // make sure the socket is closed when uninstalling
     log.info "${device} driver uninstalled"
 }
 
 // Driver Commands
-public void on() {
+void on() {
     if (device.currentValue('switch') != 'on') {
         if (logTextEnable) { log.info "${device} on" }
         espHomeLightCommand(key: settings.light as Long, state: true)
     }
 }
 
-public void off() {
+void off() {
     if (device.currentValue('switch') != 'off') {
         if (logTextEnable) { log.info "${device} off" }
         espHomeLightCommand(key: settings.light as Long, state: false)
     }
 }
 
-public void refresh() {
+void refresh() {
     log.info "${device} refresh"
     state.clear()
     espHomeDeviceInfoRequest()
 }
 
-public void setColor(Map colorMap) {
+void setColor(Map colorMap) {
     setColorInternal(colorMap)
 }
 
-public void setColorTemperature(BigDecimal colorTemperature, BigDecimal level = null, BigDecimal duration = null) {
+void setColorTemperature(BigDecimal colorTemperature, BigDecimal level = null, BigDecimal duration = null) {
     setColorTemperatureInternal(colorTemperature, level, duration)
 }
 
-public void setHue(BigDecimal hue) {
+void setHue(BigDecimal hue) {
     BigDecimal saturation = device.currentValue('saturation')
     BigDecimal level = device.currentValue('level')
     if (hue != null && saturation != null && level != null) {
@@ -144,11 +157,11 @@ public void setHue(BigDecimal hue) {
     }
 }
 
-public void setLevel(BigDecimal level, BigDecimal duration = null) {
+void setLevel(BigDecimal level, BigDecimal duration = null) {
     setLevelInternal(level, duration)
 }
 
-public void setSaturation(BigDecimal saturation) {
+void setSaturation(BigDecimal saturation) {
     BigDecimal hue = device.currentValue('hue')
     BigDecimal level = device.currentValue('level')
     if (hue != null && saturation != null && level != null) {
@@ -156,14 +169,14 @@ public void setSaturation(BigDecimal saturation) {
     }
 }
 
-public void setEffect(BigDecimal number) {
+void setEffect(BigDecimal number) {
     if (state.lights && settings.light) {
         List<String> effects = getEntity().effects
         if (effects) {
-            if (number < 1) { number = effects.size() }
-            if (number > effects.size()) { number = 1 }
-            int index = number - 1
-            String effectName = effects[index]
+            int index = number
+            if (index < 1) { index = effects.size() }
+            if (index > effects.size()) { index = 1 }
+            String effectName = effects[index - 1]
             if (device.currentValue('effectName') != effectName) {
                 if (logTextEnable) { log.info "${device} set effect ${effectName}" }
                 espHomeLightCommand(key: settings.light as Long, state: true, effect: effectName)
@@ -172,7 +185,7 @@ public void setEffect(BigDecimal number) {
     }
 }
 
-public void setNextEffect() {
+void setNextEffect() {
     if (state.lights && settings.light) {
         String current = device.currentValue('effectName')
         int index = getEntity().effects.indexOf(current) + 1
@@ -180,7 +193,7 @@ public void setNextEffect() {
     }
 }
 
-public void setPreviousEffect() {
+void setPreviousEffect() {
     if (state.lights && settings.light) {
         String current = device.currentValue('effectName')
         int index = getEntity().effects.indexOf(current) + 1
@@ -188,8 +201,19 @@ public void setPreviousEffect() {
     }
 }
 
+void startLevelChange(String direction) {
+    if (settings.changeLevelStep && settings.changeLevelEvery) {
+        state.levelChange = true
+        doLevelChange(direction == 'up' ? 1 : -1)
+    }
+}
+
+void stopLevelChange() {
+    state.remove('levelChange')
+}
+
 // the parse method is invoked by the ESPHome API library when messages are received
-public void parse(Map message) {
+void parse(Map message) {
     if (logEnable) { log.debug "ESPHome received: ${message}" }
 
     switch (message.type) {
@@ -291,7 +315,8 @@ public void parse(Map message) {
                     if (logTextEnable) { log.info descriptionText }
                 }
 
-                String colorMode = (message.colorMode & COLOR_CAP_RGB) ? 'RGB' : 'CT'
+                boolean isRgb = message.colorMode & COLOR_CAP_RGB
+                String colorMode = isRgb ? 'RGB' : 'CT'
                 if (message.effect && message.effect != 'None') { colorMode = 'EFFECTS' }
                 if (device.currentValue('colorMode') != colorMode) {
                     descriptionText = "${device} color mode is ${colorMode}"
@@ -316,6 +341,29 @@ public void parse(Map message) {
 }
 
 // Private helper methods
+private void doLevelChange(int direction) {
+    int level = device.currentValue('level') ?: 1
+    int step = settings.changeLevelStep ?: 100
+    int newLevel = level + (direction * step)
+    if (newLevel <= 1) {
+        setLevel(1)
+        stopLevelChange()
+        return
+    } else if (newLevel >= 100) {
+        setLevel(100)
+        stopLevelChange()
+        return
+    }
+
+    if (state.levelChange && newLevel != level) {
+        setLevel(newLevel)
+        runInMillis(settings.changeLevelEvery as int, 'doLevelChange', [data: direction])
+    } else {
+        log.info "${device} level change cancelled"
+        stopLevelChange()
+    }
+}
+
 private Integer getColorMode(int capability) {
     Map entity = getEntity()
     if (entity?.supportedColorModes) {
@@ -360,28 +408,30 @@ private void setColorInternal(Map colorMap) {
 }
 
 private void setColorTemperatureInternal(BigDecimal colorTemperature, BigDecimal level = null, BigDecimal duration = null) {
-    float mireds = 1000000f / colorTemperature
+    Integer transitionLength = duration
+    Integer newLevel = level
+    BigDecimal mireds = 1000000f / colorTemperature
     Map entity = getEntity()
     int maxMireds = entity.maxMireds ?: 370
     int minMireds = entity.minMireds ?: 153
     if (mireds > maxMireds) { mireds = maxMireds }
     if (mireds < minMireds) { mireds = minMireds }
-    if (duration != null && duration < 0) { duration = 0 }
-    if (level != null && level < 1) { level = 1 }
-    if (level != null && level > 100) { level = 100 }
+    if (transitionLength != null && transitionLength < 0) { transitionLength = 0 }
+    if (newLevel != null && newLevel < 1) { newLevel = 1 }
+    if (newLevel != null && newLevel > 100) { newLevel = 100 }
     int kelvin = 1000000f / mireds
     if (device.currentValue('colorMode') != 'CT') {
-        duration = 0 // when switching from RGB to CT make it fast
+        transitionLength = 0 // when switching from RGB to CT make it fast
     }
     if (device.currentValue('colorTemperature') != kelvin || device.currentValue('switch') == 'off') {
         if (logTextEnable) { log.info "${device} ${state ? 'set' : 'preset'} color temperature ${kelvin}" }
         espHomeLightCommand(
             key: settings.light as Long,
             colorTemperature: mireds,
-            masterBrightness: level != null ? level / 100f : null,
+            masterBrightness: newLevel != null ? newLevel / 100f : null,
             colorMode: getColorMode(COLOR_CAP_COLOR_TEMPERATURE | COLOR_CAP_COLD_WARM_WHITE),
             state: true,
-            transitionLength: duration != null ? duration * 1000 : null
+            transitionLength: transitionLength != null ? transitionLength * 1000 : null
         )
     } else if (level != null) {
         setLevelInternal(level, duration, state)
@@ -389,16 +439,18 @@ private void setColorTemperatureInternal(BigDecimal colorTemperature, BigDecimal
 }
 
 private void setLevelInternal(BigDecimal level, BigDecimal duration = null) {
-    if (level < 1) { level = 1 }
-    if (level > 100) { level = 100 }
-    if (duration != null && duration < 0) { duration = 0 }
+    Integer newLevel = level
+    Integer transitionLength = duration
+    if (newLevel < 1) { newLevel = 1 }
+    if (newLevel > 100) { newLevel = 100 }
+    if (transitionLength != null && transitionLength < 0) { transitionLength = 0 }
     if (device.currentValue('level') != level || device.currentValue('switch') == 'off') {
         if (logTextEnable) { log.info "${device} ${state ? 'set' : 'preset'} level to ${level}%" }
         espHomeLightCommand(
             key: settings.light as Long,
             state: true,
-            masterBrightness: level / 100f,
-            transitionLength: duration != null ? duration * 1000 : null
+            masterBrightness: newLevel / 100f,
+            transitionLength: transitionLength != null ? transitionLength * 1000 : null
         )
     }
 }
