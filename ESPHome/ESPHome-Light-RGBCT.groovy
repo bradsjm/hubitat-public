@@ -251,8 +251,10 @@ void parse(Map message) {
 
         case 'state':
             String type = message.isDigital ? 'digital' : 'physical'
+
             // Check if the entity key matches the message entity key received to update device state
             if (settings.light as Long == message.key) {
+                boolean isRgb = message.colorMode & COLOR_CAP_RGB
                 String descriptionText
 
                 String state = message.state ? 'on' : 'off'
@@ -271,7 +273,7 @@ void parse(Map message) {
 
                 def (int h, int s, int b) = ColorUtils.rgbToHSV([message.red * 255f, message.green * 255f, message.blue * 255f])
                 String colorName = colorNameMap.find { k, v -> h * 3.6 <= k }.value
-                if (message.colorModeCapabilities.contains('RGB') && device.currentValue('colorName') != colorName) {
+                if (isRgb && device.currentValue('colorName') != colorName) {
                     descriptionText = "${device} color name was set to ${colorName}"
                     sendEvent name: 'colorName', value: colorName, type: type, descriptionText: descriptionText
                     if (logTextEnable) { log.info descriptionText }
@@ -302,7 +304,7 @@ void parse(Map message) {
                 }
 
                 colorName = colorTempNameMap.find { k, v -> colorTemperature < k }.value
-                if (message.colorModeCapabilities.contains('COLOR TEMPERATURE') && device.currentValue('colorName') != colorName) {
+                if (!isRgb && device.currentValue('colorName') != colorName) {
                     descriptionText = "${device} color name is ${colorName}"
                     sendEvent(name: 'colorName', value: colorName, type: type, descriptionText: descriptionText)
                     if (logTextEnable) { log.info descriptionText }
@@ -315,7 +317,6 @@ void parse(Map message) {
                     if (logTextEnable) { log.info descriptionText }
                 }
 
-                boolean isRgb = message.colorMode & COLOR_CAP_RGB
                 String colorMode = isRgb ? 'RGB' : 'CT'
                 if (message.effect && message.effect != 'None') { colorMode = 'EFFECTS' }
                 if (device.currentValue('colorMode') != colorMode) {
