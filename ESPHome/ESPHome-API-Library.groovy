@@ -279,18 +279,26 @@ void parse(String hexString) {
 }
 
 @CompileStatic
-private static boolean getBooleanTag(Map<Integer, List> tags, int index, boolean invert = false) {
+private static Boolean getBooleanTag(Map<Integer, List> tags, int index, boolean invert = false) {
     return tags && tags[index] && tags[index][0] ? !invert : invert
 }
 
 @CompileStatic
-private static BigDecimal getFloatTag(Map<Integer, List> tags, int index, BigDecimal defaultValue = BigDecimal.ZERO) {
-    return tags && tags[index] ? Float.intBitsToFloat(tags[index][0] as int) : defaultValue
+private static BigDecimal getFloatTag(Map<Integer, List> tags, int index, BigDecimal defaultValue = 0) {
+    try {
+        return tags && tags[index] ? Float.intBitsToFloat(tags[index][0] as int) : defaultValue
+    } catch (NumberFormatException) {
+        return defaultValue
+    }
 }
 
 @CompileStatic
-private static int getIntTag(Map<Integer, List> tags, int index, int defaultValue = 0) {
-    return tags && tags[index] ? tags[index][0] as int : defaultValue
+private static Integer getIntTag(Map<Integer, List> tags, int index, int defaultValue = 0) {
+    try {
+        return tags && tags[index] ? tags[index][0] as int : defaultValue
+    } catch (NumberFormatException) {
+        return defaultValue
+    }
 }
 
 @CompileStatic
@@ -300,8 +308,12 @@ private static List<Integer> getIntTagList(Map<Integer, List> tags, int index) {
 }
 
 @CompileStatic
-private static long getLongTag(Map<Integer, List> tags, int index, long defaultValue = 0) {
-    return tags && tags[index] ? tags[index][0] as long : defaultValue
+private static Long getLongTag(Map<Integer, List> tags, int index, long defaultValue = 0) {
+    try {
+        return tags && tags[index] ? tags[index][0] as long : defaultValue
+    } catch (NumberFormatException) {
+        return defaultValue
+    }
 }
 
 @CompileStatic
@@ -1059,7 +1071,7 @@ private void espHomeDeviceInfoResponse(Map<Integer, List> tags) {
         updateDataValue 'Project Name', deviceInfo.projectName
         updateDataValue 'Project Version', deviceInfo.projectVersion
         updateDataValue 'Web Server', deviceInfo.webServer
-        updateDataValue 'Bluetooth Proxy Version', deviceInfo.btProxyVersion
+        updateDataValue 'Bluetooth Proxy Version', deviceInfo.btProxyVersion as String
         updateDataValue 'Manufacturer', deviceInfo.manufacturer
     }
 
