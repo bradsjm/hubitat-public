@@ -1325,6 +1325,7 @@ private void setNetworkStatus(String state, String reason = '') {
     if (reason) { descriptionText += ": ${reason}" }
     sendEvent([ name: NETWORK_ATTRIBUTE, value: state, descriptionText: descriptionText ])
     log.info descriptionText
+    parse([ 'platform': 'network', 'type': 'state', 'state': state, 'reason': reason ])
 }
 
 @CompileStatic
