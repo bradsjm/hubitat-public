@@ -157,7 +157,7 @@ public void parse(Map message) {
             }
 
             // Receives entity state updates to send to child device
-            if (message.platform == 'switch' && message.hasState) {
+            if (message.platform == 'switch') {
                 String dni = "${device.id}-${message.key}"
                 String type = message.isDigital ? 'digital' : 'physical'
                 String value = message.state ? 'on' : 'off'
