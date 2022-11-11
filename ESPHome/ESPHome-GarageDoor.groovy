@@ -21,7 +21,11 @@
  *  SOFTWARE.
  */
 metadata {
-    definition(name: 'ESPHome Garage Door', namespace: 'esphome', author: 'Jonathan Bradshaw') {
+    definition(
+        name: 'ESPHome Garage Door',
+        namespace: 'esphome',
+        author: 'Jonathan Bradshaw',
+        importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-GarageDoor.groovy') {
 
         capability 'Actuator'
         capability 'GarageDoorControl'

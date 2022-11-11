@@ -21,7 +21,11 @@
  *  SOFTWARE.
  */
 metadata {
-    definition(name: 'ESPHome Motion Switch', namespace: 'esphome', author: 'Jonathan Bradshaw') {
+    definition(
+        name: 'ESPHome Motion Switch',
+        namespace: 'esphome',
+        author: 'Jonathan Bradshaw',
+        importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-MotionSwitch.groovy') {
 
         capability 'Sensor'
         capability 'MotionSensor'

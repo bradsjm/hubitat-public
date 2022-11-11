@@ -21,7 +21,11 @@
  *  SOFTWARE.
  */
 metadata {
-    definition(name: 'ESPHome Button Switch', namespace: 'esphome', author: 'Jonathan Bradshaw') {
+    definition(
+        name: 'ESPHome Button Switch',
+        namespace: 'esphome',
+        author: 'Jonathan Bradshaw',
+        importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-ButtonSwitch.groovy') {
 
         capability 'DoubleTapableButton'
         capability 'Sensor'

@@ -21,7 +21,12 @@
  *  SOFTWARE.
  */
 metadata {
-    definition(name: 'ESPHome RGBCT Light', namespace: 'esphome', author: 'Jonathan Bradshaw') {
+    definition(
+        name: 'ESPHome RGBCT Light',
+        namespace: 'esphome',
+        author: 'Jonathan Bradshaw',
+        importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-Light-RGBCT.groovy') {
+
         capability 'Actuator'
         capability 'Bulb'
         capability 'ChangeLevel'

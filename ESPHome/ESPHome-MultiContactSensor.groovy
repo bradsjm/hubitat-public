@@ -21,7 +21,11 @@
  *  SOFTWARE.
  */
 metadata {
-    definition(name: 'ESPHome Multi Contact Sensor', namespace: 'esphome', author: 'Jonathan Bradshaw') {
+    definition(
+        name: 'ESPHome Multi Contact Sensor',
+        namespace: 'esphome',
+        author: 'Jonathan Bradshaw',
+        importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-MultiContactSensor.groovy') {
 
         capability 'Refresh'
         capability 'Initialize'

@@ -25,8 +25,11 @@ library(
         name: 'espHomeApiHelper',
         namespace: 'esphome',
         author: 'jb@nrgup.net',
-        description: 'ESPHome Native Protobuf API'
+        description: 'ESPHome Native Protobuf API Library',
+        importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-API-Library.groovy'
 )
+
+@Field static final String API_HELPER_VERSION = '1.0'
 
 import groovy.transform.CompileStatic
 import groovy.transform.Field
