@@ -9,7 +9,7 @@
   "bundles": [
     {
       "id": "948fa4dc-8209-442b-b590-749f0ae899a0",
-      "name": "ESPHome API Library Bundle",
+      "name": "ESPHome Core API Library Bundle",
       "namespace": "esphome",
       "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-API-Library-Bundle.zip",
       "required": true
@@ -18,7 +18,7 @@
   "drivers": [
     {
       "id": "ee279aed-320d-4cb9-94de-7e93e52b0681",
-      "name": "ESPHome Button Switch",
+      "name": "ESPHome Button Switch Example Driver",
       "namespace": "esphome",
       "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-ButtonSwitch.groovy",
       "required": false,
@@ -26,80 +26,80 @@
     },
     {
       "id": "349c8700-5ebc-4c50-9cba-04e9f14faeb8",
-      "name": "",
-      "namespace": "",
+      "name": "ESPHome Contact Sensor Example Driver",
+      "namespace": "esphome",
       "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-ContactSensor.groovy",
       "required": false,
       "version": "1.0"
     },
     {
       "id": "9a091984-1f09-421a-8abe-442cbc9bccee",
-      "name": "",
-      "namespace": "",
+      "name": "ESPHome Fan Control Example Driver",
+      "namespace": "esphome",
       "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-FanControl.groovy",
       "required": false,
       "version": "1.0"
     },
     {
       "id": "a0cd377a-88eb-428a-ac35-824c686337b6",
-      "name": "",
-      "namespace": "",
+      "name": "ESPHome Garage Door Example Driver",
+      "namespace": "esphome",
       "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-GarageDoor.groovy",
       "required": false,
       "version": "1.0"
     },
     {
       "id": "38dc977c-d222-4c04-83e6-8cf0ffb4a605",
-      "name": "",
-      "namespace": "",
+      "name": "ESPHome RGBCT Light Example Driver",
+      "namespace": "esphome",
       "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-Light-RGBCT.groovy",
       "required": false,
       "version": "1.0"
     },
     {
       "id": "42ff55e8-6d61-400a-80ba-05c985dde00f",
-      "name": "",
-      "namespace": "",
+      "name": "ESPHome Metering Outlet Example Driver",
+      "namespace": "esphome",
       "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-MeteringOutlet.groovy",
       "required": false,
       "version": "1.0"
     },
     {
       "id": "e556539a-3df5-4dd1-be38-00b52375dc0e",
-      "name": "",
-      "namespace": "",
+      "name": "ESPHome Motion Sensor Example Driver",
+      "namespace": "esphome",
       "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-MotionSensor.groovy",
       "required": false,
       "version": "1.0"
     },
     {
       "id": "547d90f6-3361-4a56-b699-20e2fb96aa6a",
-      "name": "",
-      "namespace": "",
+      "name": "ESPHome Motion Switch Driver Example Driver",
+      "namespace": "esphome",
       "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-MotionSwitch.groovy",
       "required": false,
       "version": "1.0"
     },
     {
       "id": "5556dd41-5d3b-49ae-a1eb-682753c29960",
-      "name": "",
-      "namespace": "",
+      "name": "ESPHome Multiple Contact Sensor Example Driver",
+      "namespace": "esphome",
       "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-MultiContactSensor.groovy",
       "required": false,
       "version": "1.0"
     },
     {
       "id": "a3794bd9-d4d5-4322-b765-ef8bf77bddab",
-      "name": "",
-      "namespace": "",
+      "name": "ESPHome Multiple Switch Example Driver",
+      "namespace": "esphome",
       "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-MultiSwitch.groovy",
       "required": false,
       "version": "1.0"
     },
     {
       "id": "c3919e73-e074-4f51-9750-7f2857f1e3bb",
-      "name": "",
-      "namespace": "",
+      "name": "ESPHome Switch Example Driver",
+      "namespace": "esphome",
       "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-Switch.groovy",
       "required": false,
       "version": "1.0"
