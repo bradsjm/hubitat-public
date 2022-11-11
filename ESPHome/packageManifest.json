@@ -5,7 +5,9 @@
   "minimumHEVersion": "2.1.9",
   "communityLink": "https://community.hubitat.com/t/esphome-hubitat/68341",
   "documentationLink": "https://github.com/bradsjm/hubitat-drivers/blob/main/ESPHome/README.md",
+  "licenseFile": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/LICENSE",
   "dateReleased": "2022-11-11",
+  "releaseNotes": "v1.0 - Initial Release",
   "bundles": [
     {
       "id": "948fa4dc-8209-442b-b590-749f0ae899a0",
@@ -14,7 +16,7 @@
       "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-API-Library-Bundle.zip",
       "required": true
     }
-  ],  
+  ],
   "drivers": [
     {
       "id": "ee279aed-320d-4cb9-94de-7e93e52b0681",
