@@ -9,7 +9,17 @@
       "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/Tuya/packageManifest.json",
       "description": "Tuya IoT Platform (Cloud)",
       "tags": [
-        "Cloud"
+        "Tuya"
+      ]
+    },
+    {
+      "id": "939ef90a-dff1-42f4-ae58-0a6709c83af7",
+      "name": "ESPHome Integration Library and Example Drivers",
+      "category": "Integrations",
+      "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/packageManifest.json",
+      "description": "Library and example drivers for ESPHome devices using the Native (Home Assistant) API",
+      "tags": [
+        "ESPHome"
       ]
     }
   ]
