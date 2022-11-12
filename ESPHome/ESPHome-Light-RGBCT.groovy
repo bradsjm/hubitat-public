@@ -25,6 +25,7 @@ metadata {
         name: 'ESPHome RGBCT Light',
         namespace: 'esphome',
         author: 'Jonathan Bradshaw',
+        singleThreaded: true,
         importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-Light-RGBCT.groovy') {
 
         capability 'Actuator'

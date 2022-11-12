@@ -25,6 +25,7 @@ metadata {
         name: 'ESPHome Garage Door',
         namespace: 'esphome',
         author: 'Jonathan Bradshaw',
+        singleThreaded: true,
         importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-GarageDoor.groovy') {
 
         capability 'Actuator'

@@ -25,6 +25,7 @@ metadata {
         name: 'ESPHome Motion Switch',
         namespace: 'esphome',
         author: 'Jonathan Bradshaw',
+        singleThreaded: true,
         importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-MotionSwitch.groovy') {
 
         capability 'Sensor'

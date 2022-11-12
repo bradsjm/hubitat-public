@@ -25,6 +25,7 @@ metadata {
         name: 'ESPHome Multi Contact Sensor',
         namespace: 'esphome',
         author: 'Jonathan Bradshaw',
+        singleThreaded: true,
         importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-MultiContactSensor.groovy') {
 
         capability 'Refresh'

@@ -25,6 +25,7 @@ metadata {
         name: 'ESPHome Switch',
         namespace: 'esphome',
         author: 'Jonathan Bradshaw',
+        singleThreaded: true,
         importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-FanControl.groovy') {
 
         capability 'Sensor'
