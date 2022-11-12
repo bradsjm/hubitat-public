@@ -1,6 +1,7 @@
 metadata {
     definition(name: 'Generic Component Audio Notification', namespace: 'component', author: 'Jonathan Bradshaw') {
         capability 'AudioNotification'
+        capability 'SpeechSynthesis'
     }
 }
 
@@ -62,6 +63,11 @@ void playTrackAndRestore(String uri, BigDecimal volume = null) {
 // Play Track and Resume
 void playTrackAndResume(String uri, BigDecimal volume = null) {
     parent?.componentPlayTrack(device, uri, volume)
+}
+
+// Speak Text
+void speak(String text, BigDecimal volume = null, String voice = null) {
+    parent?.componentPlayText(device, text, volume)
 }
 
 // Called when the device is removed
