@@ -384,8 +384,8 @@ private void updateLamp(DeviceWrapper device) {
     }
 
     if (device.id in settings.colorTemperatureOnDevices*.id &&
-        device.currentValue('switch') == 'on' &&
-        device.currentValue('colorTemperature') != null &&
+        device.currentValue('switch', true) == 'on' &&
+        device.currentValue('colorTemperature', true) != null &&
         Math.abs(device.currentValue('colorTemperature') - current.colorTemperature) > 100) {
         log.info "Setting ${device} color temperature from ${device.currentValue('colorTemperature')}K " +
                  "to ${current.colorTemperature}K"

@@ -426,7 +426,7 @@ private void getColorSchemeHandler(AsyncResponse response, Map data) {
             if (colorMap.level > settings.maxBright) { colorMap.level = settings.maxBright }
             if (state.lamps == null) { state.lamps = [:] }
             state.lamps[lamp.id] = colorMap
-            if (lamp && lamp.currentValue('switch') == 'on') {
+            if (lamp && lamp.currentValue('switch', true) == 'on') {
                 log.info "Set ${lamp} (Group ${data.group + 1}) to ${colorMap}"
                 lamp.setColor(colorMap)
             }
