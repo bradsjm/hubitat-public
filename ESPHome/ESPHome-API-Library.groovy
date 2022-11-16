@@ -404,22 +404,48 @@ private static Map espHomeBinarySensorState(Map<Integer, List> tags, boolean isD
 
 @CompileStatic
 private static Map espHomeBluetoothLeResponse(Map<Integer, List> tags) {
-    return [
+    Map message = [
             type: 'state',
             platform: 'bluetoothle',
             isDigital: true,
-            address: getLongTag(tags, 1),
+            address: formatMacAddress(getLongTag(tags, 1)),
             name: getStringTag(tags, 2),
             rssi: getIntTag(tags, 3),
-            service_uuids: getStringTagList(tags, 4),
-            service_data: tags[5],
-            manufacturer_data: tags[6]
+            services: [],
+            serviceData: [:],
+            manufacturerData: [:]
     ]
-    //TODO: parse data tags
-    // message BluetoothServiceData {
-    //   string uuid = 1;
-    //   repeated uint32 data = 2 [packed=false];
-    // }
+
+    if (tags[4]) { // services
+        List<String> services = getStringTagList(tags, 4)
+        message.services = services*.toLowerCase()
+    }
+
+    if (tags[5]) { // service data
+        Map<String, List> payload = [:]
+        for (int i = 0; i < tags[5].size(); i++) {
+            byte[] buffer = tags[5][i]
+            Map<Integer, List> subtags = protobufDecode(new ByteArrayInputStream(buffer), buffer.size())
+            String uuid = getStringTag(subtags, 1).toLowerCase()
+            List data = getIntTagList(subtags, 2)
+            payload[uuid] = data
+        }
+        message.serviceData = payload
+    }
+
+    if (tags[6]) { // manufacturer data
+        Map<String, List> payload = [:]
+        for (int i = 0; i < tags[6].size(); i++) {
+            byte[] buffer = tags[6][i]
+            Map<Integer, List> subtags = protobufDecode(new ByteArrayInputStream(buffer), buffer.size())
+            String uuid = getStringTag(subtags, 1).toLowerCase()
+            List data = getIntTagList(subtags, 2)
+            payload[uuid] = data
+        }
+        message.manufacturerData = payload
+    }
+
+    return message
 }
 
 @CompileStatic
@@ -866,6 +892,18 @@ private static int protobufEncode(ByteArrayOutputStream stream, Map<Integer, Lis
         }
     }
     return bytes
+}
+
+@CompileStatic
+private static String formatMacAddress(Long macAddress) {
+    String value = String.format('%012x', macAddress)
+    char[] chars = value.toCharArray()
+    final StringBuilder stringBuilder = new StringBuilder()
+    stringBuilder.append(chars[0]).append(chars[1])
+    for (int pos = 2; pos < value.length(); pos += 2) {
+        stringBuilder.append(":").append(chars[pos]).append(chars[pos + 1])
+    }
+    return stringBuilder.toString()
 }
 
 @CompileStatic
