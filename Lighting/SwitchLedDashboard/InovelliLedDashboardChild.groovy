@@ -473,7 +473,11 @@ void eventHandler(Event event) {
         }
     }
     log.debug ledStates
-    ledStates.values().each { config -> setLedConfiguration(config) }
+    if (ledStates.containsKey('All')) {
+        setLedConfiguration(ledStates['All'])
+    } else {
+        ledStates.values().each { config -> setLedConfiguration(config) }
+    }
 }
 
 @CompileStatic
@@ -586,7 +590,7 @@ private void setLedConfiguration(Map config) {
         devices.each { d ->
             int duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255)
             if (config.lednumber == 'All') {
-                logInfo "setting ${d} all leds (priority=${config.priority}, effect=${config.effect}, color=${config.color}, level=${config.level}, duration=${duration})"
+                logInfo "setting ${d} all leds (name=${config.name}, priority=${config.priority}, effect=${config.effect}, color=${config.color}, level=${config.level}, duration=${duration})"
                 d.ledEffectAll(
                     config.effect as int,
                     config.color as int,
@@ -594,7 +598,7 @@ private void setLedConfiguration(Map config) {
                     duration
                 )
             } else {
-                logInfo "setting ${d} led ${config.lednumber} (priority=${config.priority}, effect=${config.effect}, color=${config.color}, level=${config.level}, duration=${duration})"
+                logInfo "setting ${d} led ${config.lednumber} (name=${config.name}, priority=${config.priority}, effect=${config.effect}, color=${config.color}, level=${config.level}, duration=${duration})"
                 d.ledEffectOne(
                     config.lednumber as String,
                     config.effect as int,

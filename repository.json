@@ -9,7 +9,7 @@
       "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/Tuya/packageManifest.json",
       "description": "Tuya IoT Platform (Cloud)",
       "tags": [
-        "Tuya"
+        "Cloud"
       ]
     },
     {
@@ -19,7 +19,20 @@
       "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/packageManifest.json",
       "description": "Library and example drivers for ESPHome devices using the Native (Home Assistant) API",
       "tags": [
-        "ESPHome"
+        "LAN"
+      ]
+    },
+    {
+      "id": "44d4b107-afa8-404d-ac50-ea79501f0f24",
+      "name": "Switch LED Dashboard for Inovelli Blue Series",
+      "category": "Notifcations",
+      "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/Lighting/SwitchLedDashboard/packageManifest.json",
+      "description": "This application allows easy linking of Hubitat device, variables and HSM states to LEDs of your Inovelli Blue Series Zigbee switches",
+      "tags": [
+        "Dashboards",
+        "Lights & Switches",
+        "Monitoring",
+        "Notifications"
       ]
     }
   ]
