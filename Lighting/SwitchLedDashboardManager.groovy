@@ -38,7 +38,6 @@ definition(
     iconUrl: '',
     iconX2Url: '',
     installOnOpen: true,
-    singleInstance: true,
     singleThreaded: true
 )
 
@@ -62,15 +61,20 @@ Map mainPage() {
                 multiple: true
             )
         }
+
+        section {
+            label title: '<b>Name this LED Dashboard Manager:</b>', width: 6
+        }
     }
 }
 
 private String getDescription() {
     return '''\
-        <b>This application allows easy linking of Hubitat sensor states
-        to LEDs of your switches.</b><p>You can link states such as contact
+        <b>This application allows easy linking of Hubitat device, variables and HSM
+        states to LEDs of your switches.</b><br>You can link states such as contact
         sensors open/closed, motion sensors active/inactive, locks locked/unlocked
-        and more to LEDs of various colors on your switch. Several sensors can
-        share an LED such that the same LED can show yellow if a door is unlocked and red if open.
+        and more to LEDs of various colors on your switch. States can share an LED
+        by using priority levels allowing the same LED to show yellow if a door is
+        unlocked, red if locked and blink if the alarm has been tripped.
     '''.stripIndent().replaceAll('\n', ' ')
 }

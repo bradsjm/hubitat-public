@@ -41,13 +41,12 @@ import com.hubitat.app.DeviceWrapper
 import com.hubitat.hub.domain.Event
 import groovy.transform.CompileStatic
 import groovy.transform.Field
-import java.util.concurrent.ConcurrentHashMap
 import java.util.regex.Matcher
 
 /*
- *  SensorMap provides the available events to select from for the LED dashboard
+ *  Provides the available conditions to select from
  */
-@Field static final Map<String, Map> testConditions = [
+@Field static final Map<String, Map> conditionsMap = [
     'contactClose': [
         name: 'Contact sensor',
         title: 'Contact sensor closed',
@@ -178,21 +177,22 @@ import java.util.regex.Matcher
     ],
     'global_var': [
         name: 'Variable',
-        title: 'Variable',
+        title: 'Hub Variable',
         type: 'enum',
-        multiple: false,
+        attribute: 'location',
+        multiple: false
     ],
     'hsmStatus': [
         name: 'HSM Status',
-        title: 'HSM Status',
+        title: 'HSM Arming Status',
         type: 'enum',
         options: [ 'armedAway': 'Armed Away', 'armedHome': 'Armed Home', 'disarmed': 'Disarmed' ],
         attribute: 'location',
-        multiple: true,
+        multiple: true
     ],
     'hsmAlert': [
         name: 'HSM Alert',
-        title: 'HSM Alert',
+        title: 'HSM Intrusion Alert',
         type: 'enum',
         options: [ 'intrusion': 'Intrusion Away', 'intrusion-home': 'Intrusion Home', 'smoke': 'Smoke', 'water': 'Water', 'arming': 'Arming fail', 'cancel': 'Alert cancelled' ],
         attribute: 'location',
@@ -201,19 +201,17 @@ import java.util.regex.Matcher
 ].asImmutable()
 
 // Definitions for condition options
-@Field static final Map<String, String> priorities = [ '1': 'Priority 1 (Low)', '2': 'Priority 2', '3': 'Priority 3', '4': 'Priority 4', '5': 'Priority 5 (Medium)', '6': 'Priority 6', '7': 'Priority 7', '8': 'Priority 8', '9': 'Priority 9', '10': 'Priority 10 (High)' ].asImmutable()
-@Field static final Map<String, String> switchColors = [ '0': 'Red', '7': 'Orange', '28': 'Lemon', '64': 'Lime', '85': 'Green', '106': 'Teal', '127': 'Cyan', '148': 'Aqua', '170': 'Blue', '190': 'Violet', '212': 'Magenta', '234': 'Pink', '255': 'White', 'Variable': 'Variable' ].asImmutable()
-@Field static final Map<String, String> switchEffects = [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Falling', '7': 'Rising', '8': 'Aurora', '255': 'Stop', 'Variable': 'Variable' ].asImmutable()
-@Field static final Map<String, String> switchLeds = [ '1': 'LED 1', '2': 'LED 2', '3': 'LED 3', '4': 'LED 4', '5': 'LED 5', '6': 'LED 6', '7': 'LED 7', 'All': 'All LEDs', 'Variable': 'Variable' ].asImmutable()
-@Field static final Map<String, String> timePeriods = [ '0': 'x seconds', '60': 'x minutes', '120': 'x hours', '255': 'Indefinitely' ].asImmutable()
-
-// Track the led state of each switch id
-@Field static final Map<String, byte[]> ledState = new ConcurrentHashMap<>()
-@Field static final String pauseText = '<span style=\'color: red;\'> (Paused) </span>'
+@Field static final Map<String, String> prioritiesMap = [ '1': 'Priority 1 (Low)', '2': 'Priority 2', '3': 'Priority 3', '4': 'Priority 4', '5': 'Priority 5 (Medium)', '6': 'Priority 6', '7': 'Priority 7', '8': 'Priority 8', '9': 'Priority 9', '10': 'Priority 10 (High)' ].asImmutable()
+@Field static final Map<String, String> switchColorsMap = [ '0': 'Red', '7': 'Orange', '28': 'Lemon', '64': 'Lime', '85': 'Green', '106': 'Teal', '127': 'Cyan', '148': 'Aqua', '170': 'Blue', '190': 'Violet', '212': 'Magenta', '234': 'Pink', '255': 'White', 'var': 'Variable' ].asImmutable()
+@Field static final Map<String, String> switchEffectsMap = [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Falling', '7': 'Rising', '8': 'Aurora', '255': 'Stop', 'var': 'Variable' ].asImmutable()
+@Field static final Map<String, String> switchLedsMap = [ '1': 'LED 1', '2': 'LED 2', '3': 'LED 3', '4': 'LED 4', '5': 'LED 5', '6': 'LED 6', '7': 'LED 7', 'All': 'All LEDs', 'var': 'Variable' ].asImmutable()
+@Field static final Map<String, String> timePeriodsMap = [ '0': 'Seconds', '60': 'Minutes', '120': 'Hours', '255': 'Indefinitely' ].asImmutable()
 
 // Inovelli Device Driver and count of LEDs on the switches
 @Field static final String deviceDriver = 'InovelliDimmer2-in-1BlueSeriesVZM31-SN'
 @Field static final int ledCount = 7
+
+@Field static final String pauseText = '<span style=\'color: red;\'> (Paused) </span>'
 
 // Called when the app is first created.
 void installed() {
@@ -237,7 +235,7 @@ void updated() {
 }
 
 /*
- * Configuration UI
+ * Application Main Page
  */
 Map mainPage() {
     updatePauseLabel()
@@ -276,10 +274,10 @@ Map mainPage() {
                 width: 11
         }
 
-        Set<String> prefixes = getConditionPrefixes()
+        Set<String> prefixes = getConditionList()
         section('<b>Dashboard Conditions</b>') {
             for (String prefix in prefixes) {
-                Map config = getConditionSettings(prefix)
+                Map config = getConditionConfig(prefix)
                 href(
                     name: "edit_${prefix}",
                     title: "<b>${config.name}</b>",
@@ -307,6 +305,9 @@ Map mainPage() {
     }
 }
 
+/*
+ * Application Condition Edit Page
+ */
 Map editPage(Map params = [:]) {
     String prefix = params.prefix
     String name = settings["${prefix}_name"] ?: 'New'
@@ -314,28 +315,30 @@ Map editPage(Map params = [:]) {
     return dynamicPage(name: 'editPage', title: "<h2 style=\'color: #1A77C9; font-weight: bold\'>${name} Condition</h2>") {
         section {
             input name: "${prefix}_name", title: '', description: 'Condition Name', type: 'text', width: 6, required: true, submitOnChange: true
-            input name: "${prefix}_priority", title: '', description: 'Priority', type: 'enum', options: priorities, width: 3, required: true
+            input name: "${prefix}_priority", title: '', description: 'Priority', type: 'enum', options: prioritiesMap, width: 3, required: true
             paragraph 'Higher priority conditions will take precedence.'
         }
 
         section('<b>Select LED indication when condition is active:</b>') {
-            input name: "${prefix}_lednumber", title: '<span style=\'color: blue;\'>LED&nbsp;Number</span>', type: 'enum', options: switchLeds, defaultValue: 'All', width: 2, required: true, submitOnChange: true
-            if (settings["${prefix}_lednumber"] == 'Variable') {
-                input name: "${prefix}_lednumber_var", title: "<span style=\'color: blue;\'>LED Number Variable&nbsp;</span>", type: 'enum', options: getGlobalVarsByType('integer').keySet(), width: 3, required: true
+            input name: "${prefix}_lednumber", title: '<span style=\'color: blue;\'>LED Number</span>', type: 'enum', options: switchLedsMap, defaultValue: 'All', width: 2, required: true, submitOnChange: true
+            if (settings["${prefix}_lednumber"] == 'var') {
+                input name: "${prefix}_lednumber_var", title: "<span style=\'color: blue;\'>LED Number Variable</span>", type: 'enum', options: getGlobalVarsByType('integer').keySet(), width: 3, required: true
             }
-            input name: "${prefix}_effect", title: '<span style=\'color: blue;\'>LED&nbsp;Effect</span>', type: 'enum', options: switchEffects, defaultValue: '1', width: 3, required: true, submitOnChange: true
-            if (settings["${prefix}_effect"] == 'Variable') {
-                input name: "${prefix}_effect_var", title: "<span style=\'color: blue;\'>Effect Variable&nbsp;</span>", type: 'enum', options: getGlobalVarsByType('string').keySet(), width: 3, required: true
+            input name: "${prefix}_effect", title: '<span style=\'color: blue;\'>LED Effect</span>', type: 'enum', options: switchEffectsMap, defaultValue: '1', width: 3, required: true, submitOnChange: true
+            if (settings["${prefix}_effect"] == 'var') {
+                input name: "${prefix}_effect_var", title: "<span style=\'color: blue;\'>LED Effect Variable</span>", type: 'enum', options: getGlobalVarsByType('string').keySet(), width: 3, required: true
             }
-            input name: "${prefix}_color", title: '<span style=\'color: blue;\'>LED&nbsp;Color</span>', type: 'enum', options: switchColors, width: 3, defaultValue: '170', required: true, submitOnChange: true
-            if (settings["${prefix}_color"] == 'Variable') {
-                input name: "${prefix}_color_var", title: "<span style=\'color: blue;\'>Color Variable&nbsp;</span>", type: 'enum', options: getGlobalVarsByType('string').keySet(), width: 3, required: true
+            input name: "${prefix}_color", title: '<span style=\'color: blue;\'>LED Color</span>', type: 'enum', options: switchColorsMap, width: 3, defaultValue: '170', required: true, submitOnChange: true
+            if (settings["${prefix}_color"] == 'var') {
+                input name: "${prefix}_color_var", title: "<span style=\'color: blue;\'>LED Color Variable</span>", type: 'enum', options: getGlobalVarsByType('string').keySet(), width: 3, required: true
             }
-            input name: "${prefix}_level", title: '<span style=\'color: blue;\'>LED&nbsp;Level&nbsp;</span>', description: '1..100', type: 'number', width: 2, defaultValue: 100, range: '1..100', required: true
-            input name: "${prefix}_unit", title: '<span style=\'color: blue;\'>Time&nbsp;</span>', description: 'Select', type: 'enum', options: timePeriods, width: 2, defaultValue: 'Indefinitely', required: true, submitOnChange: true
-            if (settings["${prefix}_unit"] in ['0', '60', '180']) {
-                input name: "${prefix}_duration", title: "<span style=\'color: blue;\'>${settings["${prefix}_unit"]}&nbsp;</span>", description: '1..60', type: 'number', width: 2, defaultValue: 1, range: '1..60', required: true
+            input name: "${prefix}_unit", title: '<span style=\'color: blue;\'>Duration</span>', description: 'Select', type: 'enum', options: timePeriodsMap, width: 2, defaultValue: 'Indefinitely', required: true, submitOnChange: true
+            if (settings["${prefix}_unit"] in ['0', '60', '120']) {
+                input name: "${prefix}_duration", title: "<span style=\'color: blue;\'># ${timePeriodsMap[settings["${prefix}_unit"]]}&nbsp;</span>", description: '1..60', type: 'number', width: 2, defaultValue: 1, range: '1..60', required: true
+            } else {
+                app.removeSetting("${prefix}_duration")
             }
+            input name: "${prefix}_level", title: '<span style=\'color: blue;\'>LED Level&nbsp;</span>', description: '1..100', type: 'number', width: 2, defaultValue: 100, range: '1..100', required: true
             paragraph ''
         }
 
@@ -343,7 +346,7 @@ Map editPage(Map params = [:]) {
             input name: "${prefix}_conditions",
                 title: '',
                 type: 'enum',
-                options: testConditions.collectEntries { k, v -> [ k, v.title ] }.sort { kv -> kv.value },
+                options: conditionsMap.collectEntries { k, v -> [ k, v.title ] }.sort { kv -> kv.value },
                 multiple: true,
                 submitOnChange: true,
                 width: 7
@@ -360,14 +363,14 @@ Map editPage(Map params = [:]) {
 
             List<String> conditionList = settings["${prefix}_conditions"] ?: []
             boolean isFirst = true
-            for (Map.Entry condition in testConditions) {
-                String key = "${prefix}_${condition.key}"
-                Boolean allDeviceMode = settings["${key}_all"] ?: false
+            for (Map.Entry condition in conditionsMap) {
+                String id = "${prefix}_${condition.key}"
+                Boolean allDeviceMode = settings["${id}_all"] ?: false
                 if (condition.key in conditionList) {
                     paragraph isFirst ? '' : (allMode ? '<i>and</i>' : '<i>or</i>')
                     isFirst = false
 
-                    input name: key,
+                    input name: id,
                         title: "${condition.value.title}",
                         type: condition.value.type,
                         multiple: condition.value.multiple,
@@ -376,23 +379,23 @@ Map editPage(Map params = [:]) {
                         submitOnChange: true,
                         required: true
 
-                    if (condition.key == 'global_var' && settings[key]) {
-                        input name: "${key}_value",
-                            title: settings[key] + ' Value ',
+                    if (condition.key == 'global_var' && settings[id]) {
+                        input name: "${id}_value",
+                            title: settings[id] + ' Value ',
                             type: 'text',
                             required: true,
                             width: 3
-                    } else if (condition.value.type != 'enum' && condition.value.multiple && settings[key]?.size() > 1) {
+                    } else if (condition.value.type != 'enum' && condition.value.multiple && settings[id]?.size() > 1) {
                         String title = "Trigger requires ${allDeviceMode ? '<b>all</b>' : '<b>any</b>'}"
-                        input name: "${key}_all",
+                        input name: "${id}_all",
                             title: title,
                             type: 'bool',
                             width: 4,
                             submitOnChange: true
                     }
-                } else if (settings[key]) {
-                    app.removeSetting(key)
-                    app.removeSetting(key + '_all')
+                } else if (settings[id]) {
+                    app.removeSetting(id)
+                    app.removeSetting(id + '_all')
                 }
             }
         }
@@ -419,11 +422,11 @@ void appButtonHandler(String buttonName) {
 
 String getConditionDescription(Map config) {
     StringBuilder sb = new StringBuilder()
-    sb << "Priority: ${config.priority}, LED number: ${config.lednumber}, Color: ${switchColors[config.color]}, Effect: ${switchEffects[config.effect]}"
+    sb << "Priority: ${config.priority}, LED number: ${config.lednumber}, Color: ${switchColorsMap[config.color]}, Effect: ${switchEffectsMap[config.effect]}"
     if (config.conditions) {
         List<String> conditions = config.conditions
-            .findAll { c -> testConditions.containsKey(c) }
-            .collect { c -> testConditions[c].title }
+            .findAll { c -> conditionsMap.containsKey(c) }
+            .collect { c -> conditionsMap[c].title }
         sb << "\nActivation${conditions.size() > 1 ? 's' : ''}: ${conditions.join(', ')}"
     }
     return sb.toString()
@@ -451,20 +454,26 @@ void updatePauseLabel() {
  */
 void eventHandler(Event event) {
     logEvent(event)
-    if (event.source == 'LOCATION' && event.name in testConditions.keySet()) {
+    if (event.source == 'LOCATION' && event.name in conditionsMap.keySet()) {
         // Persist the latest location event value
         state[event.name] = event.value
     }
 
-    // Conditions are sorted by descending priority level
-    for (String prefix in getConditionPrefixes()) {
-        Map config = getConditionSettings(prefix)
-        // Populate variables before running tests
-        populateVariables(config)
+    Map<String, Map> ledStates = [:]
+    for (String prefix in getConditionList()) {
+        Map config = getConditionConfig(prefix)
+        replaceVariables(config)
         if (checkConditions(config, state)) {
-            setLedConfiguration(config)
+            Map oldState = ledStates[config.lednumber as String] ?: [:]
+            int oldPriority = oldState.priority as Integer ?: 0
+            int newPriority = config.priority as Integer ?: 0
+            if (newPriority >= oldPriority) {
+                ledStates[config.lednumber as String] = config
+            }
         }
     }
+    log.debug ledStates
+    ledStates.values().each { config -> setLedConfiguration(config) }
 }
 
 @CompileStatic
@@ -473,7 +482,7 @@ private boolean checkConditions(Map config, Map state) {
     boolean allConditions = config['conditions_all'] ?: false
     for (String testName in config.conditions) {
         boolean testResult
-        Map testCondition = testConditions[testName]
+        Map testCondition = conditionsMap[testName]
         // Handle global variable test
         if (testName == 'global_var') {
             String currentValue = config.global_var as String
@@ -507,7 +516,7 @@ private boolean checkConditions(Map config, Map state) {
 }
 
 // Returns key value map of specific condition settings
-private Map getConditionSettings(String prefix) {
+private Map getConditionConfig(String prefix) {
     int startPos = prefix.size() + 1
     return settings
         .findAll { s -> s.key.startsWith(prefix + '_') }
@@ -515,7 +524,7 @@ private Map getConditionSettings(String prefix) {
 }
 
 // Returns condition setting prefix sorted by priority (descending)
-private Set<String> getConditionPrefixes() {
+private Set<String> getConditionList() {
     return settings.keySet()
         .findAll { s -> s.matches('^condition_[0-9]+_priority$') }
         .sort { s -> settings[s] as int }
@@ -523,31 +532,10 @@ private Set<String> getConditionPrefixes() {
         .reverse()
 }
 
-@CompileStatic
-private int getDuration(Integer duration, String unit) {
-    switch (unit) {
-        case '255':
-            return 255
-        case '0':
-            return duration
-        case '60':
-            return 60 + duration
-        case '120':
-            return 120 + duration
-        default:
-            return duration
-    }
-}
-
-// Get the LED state for the device representing the priority level for each LED
-private byte[] getLedStates(DeviceWrapper dw) {
-    return ledState.computeIfAbsent(dw.id) { k -> new byte[ledCount - 1] }
-}
-
 // Returns next condition settings prefix
 @CompileStatic
 private String getNextPrefix() {
-    List<Integer> keys = getConditionPrefixes().collect { p -> p.substring(10) as Integer }
+    List<Integer> keys = getConditionList().collect { p -> p.substring(10) as Integer }
     int maxId = keys ? Collections.max(keys) : 0
     return "condition_${maxId + 1}"
 }
@@ -570,15 +558,15 @@ private String lookupVariable(String variableName, Map lookupTable) {
 }
 
 // Populate configuration values with specified global variables
-private void populateVariables(Map config) {
-    if (config.lednumber == 'Variable') {
-        config.lednumber = lookupVariable(config.lednumber_var, switchLeds) ?: 'All'
+private void replaceVariables(Map config) {
+    if (config.lednumber == 'var') {
+        config.lednumber = lookupVariable(config.lednumber_var, switchLedsMap) ?: 'All'
     }
-    if (config.effect == 'Variable') {
-        config.effect = lookupVariable(config.effect_var, switchEffects) ?: '1'
+    if (config.effect == 'var') {
+        config.effect = lookupVariable(config.effect_var, switchEffectsMap) ?: '1'
     }
-    if (config.color == 'Variable') {
-        config.color = lookupVariable(config.color_var, switchColors) ?: '170'
+    if (config.color == 'var') {
+        config.color = lookupVariable(config.color_var, switchColorsMap) ?: '170'
     }
     if (config.global_var) {
         config.global_var = getGlobalVar(config.global_var)?.value as String
@@ -593,24 +581,20 @@ private void removeCondition(String prefix) {
 
 // Set Inovelli switch LEDs
 private void setLedConfiguration(Map config) {
-    int priority = config.priority as int
     List<DeviceWrapper> devices = settings.switches as List<DeviceWrapper>
     if (devices) {
         devices.each { d ->
-            byte[] leds = getLedStates(d)
-            int duration = getDuration(config.duration as Integer, config.unit)
-            if (config.lednumber == 'All' && leds.every { l -> priority >= l }) {
-                logInfo "setting ${d} all leds (priority=${priority}, effect=${config.effect}, color=${config.color}, level=${config.level}, duration=${duration})"
+            int duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255)
+            if (config.lednumber == 'All') {
+                logInfo "setting ${d} all leds (priority=${config.priority}, effect=${config.effect}, color=${config.color}, level=${config.level}, duration=${duration})"
                 d.ledEffectAll(
                     config.effect as int,
                     config.color as int,
                     config.level as int,
                     duration
                 )
-                if (config.effect == 0 || config.effect == 255) { priority = 0 } // off and stop effect
-                for (int i = 0; i++; i < ledCount) { leds[i] = priority }
-            } else if (config.lednumber != 'All' && priority >= leds[(config.lednumber as int) - 1]) {
-                logInfo "setting ${d} led ${config.lednumber} (priority=${priority}, effect=${config.effect}, color=${config.color}, level=${config.level}, duration=${duration})"
+            } else {
+                logInfo "setting ${d} led ${config.lednumber} (priority=${config.priority}, effect=${config.effect}, color=${config.color}, level=${config.level}, duration=${duration})"
                 d.ledEffectOne(
                     config.lednumber as String,
                     config.effect as int,
@@ -618,10 +602,6 @@ private void setLedConfiguration(Map config) {
                     config.level as int,
                     duration
                 )
-                if (config.effect == 0 || config.effect == 255) { priority = 0 } // off and stop effect
-                leds[(config.lednumber as int) - 1] = priority
-            } else {
-                logInfo "not setting ${d} led ${config.lednumber} (priority=${priority})"
             }
         }
     }
@@ -630,12 +610,12 @@ private void setLedConfiguration(Map config) {
 // Subscribe to all the devices for all the conditions
 private void subscribeDevices() {
     if (!state.paused) {
-        for (String prefix in getConditionPrefixes()) {
+        for (String prefix in getConditionList()) {
             List<String> conditionList = settings["${prefix}_conditions"] ?: []
             conditionList.each { condition ->
                 String key = "${prefix}_${condition}"
-                if (settings[key] && testConditions.containsKey(condition)) {
-                    String attribute = testConditions[condition].attribute
+                if (settings[key] && conditionsMap.containsKey(condition)) {
+                    String attribute = conditionsMap[condition].attribute
                     if (attribute == 'location') {
                         log.info "subscribing to ${condition} location event"
                         subscribe(location, condition, 'eventHandler', null)
