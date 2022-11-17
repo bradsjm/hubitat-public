@@ -27,6 +27,7 @@ definition(
     parent: 'nrgup:Switch LED Dashboard Manager',
     author: 'Jonathan Bradshaw',
     description: 'LED Dashboard Child for Inovelli Blue Series Switches',
+    importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/Lighting/SwitchLedDashboard/InovelliLedDashboardChild.groovy',
     iconUrl: '',
     iconX2Url: '',
     singleThreaded: true
@@ -49,7 +50,7 @@ import java.util.regex.Matcher
 @Field static final Map<String, Map> conditionsMap = [
     'contactClose': [
         name: 'Contact sensor',
-        title: 'Contact sensor closed',
+        title: 'Contact sensor is closed',
         type: 'capability.contactSensor',
         multiple: true,
         attribute: 'contact',
@@ -57,15 +58,38 @@ import java.util.regex.Matcher
     ],
     'contactOpen': [
         name: 'Contact sensor',
-        title: 'Contact sensor opened',
+        title: 'Contact sensor is open',
         type: 'capability.contactSensor',
         multiple: true,
         attribute: 'contact',
         value: 'open'
     ],
+    'global_var': [
+        name: 'Hub variable',
+        title: 'Hub variable is set',
+        type: 'enum',
+        attribute: 'location',
+        multiple: false
+    ],
+    'hsmStatus': [
+        name: 'HSM Status',
+        title: 'HSM arming status',
+        type: 'enum',
+        values: [ 'armedAway': 'Armed Away', 'armedHome': 'Armed Home', 'disarmed': 'Disarmed' ],
+        attribute: 'location',
+        multiple: true
+    ],
+    'hsmAlert': [
+        name: 'HSM Alert',
+        title: 'HSM intrusion alert',
+        type: 'enum',
+        values: [ 'intrusion': 'Intrusion Away', 'intrusion-home': 'Intrusion Home', 'smoke': 'Smoke', 'water': 'Water', 'arming': 'Arming fail', 'cancel': 'Alert cancelled' ],
+        attribute: 'location',
+        multiple: true,
+    ],
     'locked': [
         name: 'Lock',
-        title: 'Device locked',
+        title: 'Device is locked',
         type: 'capability.lock',
         multiple: true,
         attribute: 'lock',
@@ -73,7 +97,7 @@ import java.util.regex.Matcher
     ],
     'unlocked': [
         name: 'Lock',
-        title: 'Device unlocked',
+        title: 'Device is unlocked',
         type: 'capability.lock',
         multiple: true,
         attribute: 'lock',
@@ -81,35 +105,35 @@ import java.util.regex.Matcher
     ],
     'motionActive': [
         name: 'Motion sensor',
-        title: 'Motion sensor activated',
+        title: 'Motion sensor is active',
         type: 'capability.motionSensor',
         multiple: true,
         attribute: 'motion',
         value: 'active'
     ],
-    'presence': [
+    'motionInactive': [
+        name: 'Motion sensor',
+        title: 'Motion sensor is inactive',
+        type: 'capability.motionSensor',
+        multiple: true,
+        attribute: 'motion',
+        value: 'inactive'
+    ],
+    'present': [
         name: 'Presence sensor',
-        title: 'Device becomes present',
+        title: 'Presence sensor is present',
         type: 'capability.presenceSensor',
         multiple: true,
         attribute: 'presence',
         value: 'present'
     ],
-    'shock': [
-        name: 'Shock sensor',
-        title: 'Shock sensor activated',
-        type: 'capability.shockSensor',
+    'notpresent': [
+        name: 'Presence sensor',
+        title: 'Presence sensor not present',
+        type: 'capability.presenceSensor',
         multiple: true,
-        attribute: 'shock',
-        value: 'detected'
-    ],
-    'sleep': [
-        name: 'Sleep sensor',
-        title: 'Sleep sensor activated',
-        type: 'capability.sleepSensor',
-        multiple: true,
-        attribute: 'sleep',
-        value: 'sleeping'
+        attribute: 'presence',
+        value: 'not present'
     ],
     'smoke': [
         name: 'Smoke detector',
@@ -119,17 +143,9 @@ import java.util.regex.Matcher
         attribute: 'smoke',
         value: 'detected'
     ],
-    'sound': [
-        name: 'Sound sensor',
-        title: 'Sound detected',
-        type: 'capability.soundSensor',
-        multiple: true,
-        attribute: 'sound',
-        value: 'detected'
-    ],
     'switchOff': [
         name: 'Switch',
-        title: 'Switch turns off',
+        title: 'Switch is off',
         type: 'capability.switch',
         multiple: true,
         attribute: 'switch',
@@ -137,23 +153,15 @@ import java.util.regex.Matcher
     ],
     'switchOn': [
         name: 'Switch',
-        title: 'Switch turns on',
+        title: 'Switch is on',
         type: 'capability.switch',
         multiple: true,
         attribute: 'switch',
         value: 'on'
     ],
-    'tamper': [
-        name: 'Tamper sensor',
-        title: 'Tamper alert detected',
-        type: 'capability.tamperAlert',
-        multiple: true,
-        attribute: 'tamper',
-        value: 'detected'
-    ],
     'valveClose': [
         name: 'Valve',
-        title: 'Valve closes',
+        title: 'Valve is closed',
         type: 'capability.valve',
         multiple: true,
         attribute: 'valve',
@@ -161,50 +169,35 @@ import java.util.regex.Matcher
     ],
     'valveOpen': [
         name: 'Valve',
-        title: 'Valve opens',
+        title: 'Valve is open',
         type: 'capability.valve',
         multiple: true,
         attribute: 'valve',
         value: 'open'
     ],
-    'water': [
+    'waterWet': [
         name: 'Water sensor',
-        title: 'Water detected',
+        title: 'Water sensor is wet',
         type: 'capability.waterSensor',
         multiple: true,
         attribute: 'water',
         value: 'wet'
     ],
-    'global_var': [
-        name: 'Variable',
-        title: 'Hub Variable',
-        type: 'enum',
-        attribute: 'location',
-        multiple: false
-    ],
-    'hsmStatus': [
-        name: 'HSM Status',
-        title: 'HSM Arming Status',
-        type: 'enum',
-        options: [ 'armedAway': 'Armed Away', 'armedHome': 'Armed Home', 'disarmed': 'Disarmed' ],
-        attribute: 'location',
-        multiple: true
-    ],
-    'hsmAlert': [
-        name: 'HSM Alert',
-        title: 'HSM Intrusion Alert',
-        type: 'enum',
-        options: [ 'intrusion': 'Intrusion Away', 'intrusion-home': 'Intrusion Home', 'smoke': 'Smoke', 'water': 'Water', 'arming': 'Arming fail', 'cancel': 'Alert cancelled' ],
-        attribute: 'location',
+    'waterDry': [
+        name: 'Water sensor',
+        title: 'Water sensor is dry',
+        type: 'capability.waterSensor',
         multiple: true,
+        attribute: 'water',
+        value: 'dry'
     ],
 ].asImmutable()
 
 // Definitions for condition options
-@Field static final Map<String, String> prioritiesMap = [ '1': 'Priority 1 (Low)', '2': 'Priority 2', '3': 'Priority 3', '4': 'Priority 4', '5': 'Priority 5 (Medium)', '6': 'Priority 6', '7': 'Priority 7', '8': 'Priority 8', '9': 'Priority 9', '10': 'Priority 10 (High)' ].asImmutable()
-@Field static final Map<String, String> switchColorsMap = [ '0': 'Red', '7': 'Orange', '28': 'Lemon', '64': 'Lime', '85': 'Green', '106': 'Teal', '127': 'Cyan', '148': 'Aqua', '170': 'Blue', '190': 'Violet', '212': 'Magenta', '234': 'Pink', '255': 'White', 'var': 'Variable' ].asImmutable()
-@Field static final Map<String, String> switchEffectsMap = [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Falling', '7': 'Rising', '8': 'Aurora', '255': 'Stop', 'var': 'Variable' ].asImmutable()
-@Field static final Map<String, String> switchLedsMap = [ '1': 'LED 1', '2': 'LED 2', '3': 'LED 3', '4': 'LED 4', '5': 'LED 5', '6': 'LED 6', '7': 'LED 7', 'All': 'All LEDs', 'var': 'Variable' ].asImmutable()
+@Field static final Map<String, String> prioritiesMap = [ '1': 'Priority 1 (low)', '2': 'Priority 2', '3': 'Priority 3', '4': 'Priority 4', '5': 'Priority 5 (medium)', '6': 'Priority 6', '7': 'Priority 7', '8': 'Priority 8', '9': 'Priority 9 (high)' ].asImmutable()
+@Field static final Map<String, String> switchColorsMap = [ '0': 'Red', '7': 'Orange', '28': 'Lemon', '64': 'Lime', '85': 'Green', '106': 'Teal', '127': 'Cyan', '148': 'Aqua', '170': 'Blue', '190': 'Violet', '212': 'Magenta', '234': 'Pink', '255': 'White', 'var': 'Variable Color' ].asImmutable()
+@Field static final Map<String, String> switchEffectsMap = [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Falling', '7': 'Rising', '8': 'Aurora', '255': 'Stop', 'var': 'Variable Effect' ].asImmutable()
+@Field static final Map<String, String> switchLedsMap = [ '1': 'LED 1', '2': 'LED 2', '3': 'LED 3', '4': 'LED 4', '5': 'LED 5', '6': 'LED 6', '7': 'LED 7', 'All': 'All LEDs', 'var': 'Variable LED' ].asImmutable()
 @Field static final Map<String, String> timePeriodsMap = [ '0': 'Seconds', '60': 'Minutes', '120': 'Hours', '255': 'Indefinitely' ].asImmutable()
 
 // Inovelli Device Driver and count of LEDs on the switches
@@ -267,7 +260,7 @@ Map mainPage() {
 
         section {
             input name: 'switches',
-                title: 'Select Inovelli switches to display LED dashboard',
+                title: 'Select Inovelli switches to display LED dashboard on',
                 type: 'device.' + deviceDriver,
                 required: true,
                 multiple: true,
@@ -310,55 +303,59 @@ Map mainPage() {
  */
 Map editPage(Map params = [:]) {
     String prefix = params.prefix
+    if (!prefix) { return mainPage() }
     String name = settings["${prefix}_name"] ?: 'New'
+    String ledName = switchLedsMap[settings["${prefix}_lednumber"]] ?: 'LED'
 
     return dynamicPage(name: 'editPage', title: "<h2 style=\'color: #1A77C9; font-weight: bold\'>${name} Condition</h2>") {
         section {
             input name: "${prefix}_name", title: '', description: 'Condition Name', type: 'text', width: 6, required: true, submitOnChange: true
-            input name: "${prefix}_priority", title: '', description: 'Priority', type: 'enum', options: prioritiesMap, width: 3, required: true
-            paragraph 'Higher priority conditions will take precedence.'
+            input name: "${prefix}_priority", title: '', description: 'Select Priority', type: 'enum', options: prioritiesMap, defaultValue: '5', width: 3, required: true
+            paragraph '<i>Higher number priority conditions take LED precedence.</i>'
         }
 
         section('<b>Select LED indication when condition is active:</b>') {
             input name: "${prefix}_lednumber", title: '<span style=\'color: blue;\'>LED Number</span>', type: 'enum', options: switchLedsMap, defaultValue: 'All', width: 2, required: true, submitOnChange: true
             if (settings["${prefix}_lednumber"] == 'var') {
                 input name: "${prefix}_lednumber_var", title: "<span style=\'color: blue;\'>LED Number Variable</span>", type: 'enum', options: getGlobalVarsByType('integer').keySet(), width: 3, required: true
-            }
-            input name: "${prefix}_effect", title: '<span style=\'color: blue;\'>LED Effect</span>', type: 'enum', options: switchEffectsMap, defaultValue: '1', width: 3, required: true, submitOnChange: true
-            if (settings["${prefix}_effect"] == 'var') {
-                input name: "${prefix}_effect_var", title: "<span style=\'color: blue;\'>LED Effect Variable</span>", type: 'enum', options: getGlobalVarsByType('string').keySet(), width: 3, required: true
-            }
-            input name: "${prefix}_color", title: '<span style=\'color: blue;\'>LED Color</span>', type: 'enum', options: switchColorsMap, width: 3, defaultValue: '170', required: true, submitOnChange: true
-            if (settings["${prefix}_color"] == 'var') {
-                input name: "${prefix}_color_var", title: "<span style=\'color: blue;\'>LED Color Variable</span>", type: 'enum', options: getGlobalVarsByType('string').keySet(), width: 3, required: true
-            }
-            input name: "${prefix}_unit", title: '<span style=\'color: blue;\'>Duration</span>', description: 'Select', type: 'enum', options: timePeriodsMap, width: 2, defaultValue: 'Indefinitely', required: true, submitOnChange: true
-            if (settings["${prefix}_unit"] in ['0', '60', '120']) {
-                input name: "${prefix}_duration", title: "<span style=\'color: blue;\'># ${timePeriodsMap[settings["${prefix}_unit"]]}&nbsp;</span>", description: '1..60', type: 'number', width: 2, defaultValue: 1, range: '1..60', required: true
             } else {
-                app.removeSetting("${prefix}_duration")
+                app.removeSetting("${prefix}_lednumber_var")
             }
-            input name: "${prefix}_level", title: '<span style=\'color: blue;\'>LED Level&nbsp;</span>', description: '1..100', type: 'number', width: 2, defaultValue: 100, range: '1..100', required: true
+            input name: "${prefix}_effect", title: "<span style=\'color: blue;\'>${ledName} Effect</span>", type: 'enum', options: switchEffectsMap, defaultValue: '1', width: 3, required: true, submitOnChange: true
+            if (settings["${prefix}_effect"] == 'var') {
+                input name: "${prefix}_effect_var", title: "<span style=\'color: blue;\'>Effect Variable</span>", type: 'enum', options: getGlobalVarsByType('string').keySet(), width: 3, required: true
+            } else {
+                app.removeSetting("${prefix}_effect_var")
+            }
+            if (settings["${prefix}_effect"] in ['0', '255']) {
+                ["${prefix}_color", "${prefix}_color_var", "${prefix}_unit", "${prefix}_duration", "${prefix}_level"].each { s -> app.removeSetting(s) }
+            } else {
+                input name: "${prefix}_color", title: "<span style=\'color: blue;\'>${ledName} Color</span>", type: 'enum', options: switchColorsMap, width: 3, defaultValue: '170', required: true, submitOnChange: true
+                if (settings["${prefix}_color"] == 'var') {
+                    input name: "${prefix}_color_var", title: "<span style=\'color: blue;\'>Color Variable</span>", type: 'enum', options: getGlobalVarsByType('string').keySet(), width: 3, required: true
+                } else {
+                    app.removeSetting("${prefix}_color_var")
+                }
+                input name: "${prefix}_unit", title: '<span style=\'color: blue;\'>Duration</span>', description: 'Select', type: 'enum', options: timePeriodsMap, width: 2, defaultValue: 'Indefinitely', required: true, submitOnChange: true
+                if (settings["${prefix}_unit"] in ['0', '60', '120']) {
+                    String timePeriod = timePeriodsMap[settings["${prefix}_unit"]]
+                    input name: "${prefix}_duration", title: "<span style=\'color: blue;\'># ${timePeriod}&nbsp;</span>", description: '1..60', type: 'number', width: 2, defaultValue: 1, range: '1..60', required: true
+                } else {
+                    app.removeSetting("${prefix}_duration")
+                }
+                input name: "${prefix}_level", title: "<span style=\'color: blue;\'>Level&nbsp;</span>", description: '1..100', type: 'number', width: 1, defaultValue: 100, range: '1..100', required: true
+            }
             paragraph ''
         }
 
-        section('<b>Select conditions for activation:</b>') {
-            input name: "${prefix}_conditions",
-                title: '',
-                type: 'enum',
-                options: conditionsMap.collectEntries { k, v -> [ k, v.title ] }.sort { kv -> kv.value },
-                multiple: true,
-                submitOnChange: true,
-                width: 7
-
+        String ledEffect = switchEffectsMap[settings["${prefix}_effect"]] ?: 'condition'
+        section("<b>Select conditions to activate ${ledName} ${ledEffect} effect:</b>") {
+            Map options = conditionsMap.collectEntries { k, v -> [ k, v.title ] }.sort { kv -> kv.value }
+            input name: "${prefix}_conditions", title: '', type: 'enum', options: options, multiple: true, submitOnChange: true, width: 9
             Boolean allMode = settings["${prefix}_conditions_all"] ?: false
             if (settings["${prefix}_conditions"]?.size() > 1) {
-                String title = "Require ${allMode ? '<b>all</b> conditions' : '<b>any</b> condition'}"
-                input name: "${prefix}_conditions_all",
-                    title: title,
-                    type: 'bool',
-                    width: 4,
-                    submitOnChange: true
+                String title = "${allMode ? '<b>All</b> conditions' : '<b>Any</b> condition'}"
+                input name: "${prefix}_conditions_all", title: title, type: 'bool', width: 4, submitOnChange: true
             }
 
             List<String> conditionList = settings["${prefix}_conditions"] ?: []
@@ -369,29 +366,13 @@ Map editPage(Map params = [:]) {
                 if (condition.key in conditionList) {
                     paragraph isFirst ? '' : (allMode ? '<i>and</i>' : '<i>or</i>')
                     isFirst = false
-
-                    input name: id,
-                        title: "${condition.value.title}",
-                        type: condition.value.type,
-                        multiple: condition.value.multiple,
-                        options: condition.key == 'global_var' ? getAllGlobalVars().keySet() : condition.value.options,
-                        width: 7,
-                        submitOnChange: true,
-                        required: true
-
+                    input name: id, title: "${condition.value.title}", type: condition.value.type, multiple: condition.value.multiple,
+                        options: condition.key == 'global_var' ? getAllGlobalVars().keySet() : condition.value.values, width: 7, submitOnChange: true, required: true
                     if (condition.key == 'global_var' && settings[id]) {
-                        input name: "${id}_value",
-                            title: settings[id] + ' Value ',
-                            type: 'text',
-                            required: true,
-                            width: 3
+                        input name: "${id}_value", title: settings[id] + ' Value ', type: 'text', required: true, width: 3
                     } else if (condition.value.type != 'enum' && condition.value.multiple && settings[id]?.size() > 1) {
-                        String title = "Trigger requires ${allDeviceMode ? '<b>all</b>' : '<b>any</b>'}"
-                        input name: "${id}_all",
-                            title: title,
-                            type: 'bool',
-                            width: 4,
-                            submitOnChange: true
+                        String title = allDeviceMode ? "<b>All</b> ${condition.value.name} devices" : "<b>Any</b> ${condition.value.name} device"
+                        input name: "${id}_all", title: title, type: 'bool', width: 4, submitOnChange: true
                     }
                 } else if (settings[id]) {
                     app.removeSetting(id)
@@ -420,14 +401,44 @@ void appButtonHandler(String buttonName) {
     }
 }
 
+String getColorSpan(Integer color, String text) {
+    String css = 'white'
+    if (color != 255) {
+        int hue = Math.round((color / 254) * 360)
+        css = "hsl(${hue}, 50%, 50%)"
+    }
+    return "<span style=\'color: ${css}\'>${text}</span>"
+}
+
 String getConditionDescription(Map config) {
     StringBuilder sb = new StringBuilder()
-    sb << "Priority: ${config.priority}, LED number: ${config.lednumber}, Color: ${switchColorsMap[config.color]}, Effect: ${switchEffectsMap[config.effect]}"
+    if (config.lednumber && config.lednumber != 'var') {
+        sb << "<b>${switchLedsMap[config.lednumber]}</b>"
+    } else if (config.lednumber == 'var') {
+        sb << "<b>LED Variable:</b> <i>${config.lednumber_var}</i>"
+    }
+    sb << ", <b>Priority</b>: ${config.priority}"
+    if (config.effect && config.effect != 'var') {
+        sb << ", <b>Effect:</b> ${switchEffectsMap[config.effect]}"
+    } else if (config.effect == 'var') {
+        sb << ", <b>Effect Variable</b>: <i>${config.effect_var}</i>"
+    }
+    if (config.color && config.color != 'var') {
+        sb << ", <b>Color</b>: ${getColorSpan(config.color as Integer, switchColorsMap[config.color])}"
+    } else if (config.color == 'var') {
+        sb << ", <b>Color Variable:</b> <i>${config.color_var}</i>"
+    }
+    if (config.level) {
+        sb << ", <b>Level:</b> ${config.level}%"
+    }
+    if (config.duration && config.unit) {
+        sb << ", <b>Duration:</b> ${config.duration} ${timePeriodsMap[config.unit]?.toLowerCase()}"
+    }
     if (config.conditions) {
         List<String> conditions = config.conditions
             .findAll { c -> conditionsMap.containsKey(c) }
             .collect { c -> conditionsMap[c].title }
-        sb << "\nActivation${conditions.size() > 1 ? 's' : ''}: ${conditions.join(', ')}"
+        sb << "\n<b>Activation${conditions.size() > 1 ? 's' : ''}:</b> ${conditions.join(', ')}"
     }
     return sb.toString()
 }
@@ -472,7 +483,7 @@ void eventHandler(Event event) {
             }
         }
     }
-    log.debug ledStates
+
     if (ledStates.containsKey('All')) {
         setLedConfiguration(ledStates['All'])
     } else {
@@ -521,8 +532,9 @@ private boolean checkConditions(Map config, Map state) {
 
 // Returns key value map of specific condition settings
 private Map getConditionConfig(String prefix) {
+    String id = (prefix =~ /^condition_([0-9]+)/)[0][1]
     int startPos = prefix.size() + 1
-    return settings
+    return [ 'id': id ] + settings
         .findAll { s -> s.key.startsWith(prefix + '_') }
         .collectEntries { s -> [ s.key.substring(startPos), s.value ] }
 }
@@ -588,22 +600,22 @@ private void setLedConfiguration(Map config) {
     List<DeviceWrapper> devices = settings.switches as List<DeviceWrapper>
     if (devices) {
         devices.each { d ->
-            int duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255)
+            Integer duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255)
             if (config.lednumber == 'All') {
-                logInfo "setting ${d} all leds (name=${config.name}, priority=${config.priority}, effect=${config.effect}, color=${config.color}, level=${config.level}, duration=${duration})"
+                logInfo "setting ${d} all leds (id=${config.id}, name=${config.name}, priority=${config.priority}, effect=${config.effect}, color=${config.color}, level=${config.level}, duration=${duration})"
                 d.ledEffectAll(
-                    config.effect as int,
-                    config.color as int,
-                    config.level as int,
+                    config.effect as Integer,
+                    config.color as Integer,
+                    config.level as Integer,
                     duration
                 )
             } else {
-                logInfo "setting ${d} led ${config.lednumber} (name=${config.name}, priority=${config.priority}, effect=${config.effect}, color=${config.color}, level=${config.level}, duration=${duration})"
+                logInfo "setting ${d} led ${config.lednumber} (id=${config.id}, name=${config.name}, priority=${config.priority}, effect=${config.effect}, color=${config.color}, level=${config.level}, duration=${duration})"
                 d.ledEffectOne(
                     config.lednumber as String,
-                    config.effect as int,
-                    config.color as int,
-                    config.level as int,
+                    config.effect as Integer,
+                    config.color as Integer,
+                    config.level as Integer,
                     duration
                 )
             }

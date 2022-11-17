@@ -35,6 +35,7 @@ definition(
     author: 'Jonathan Bradshaw',
     category: 'Lighting',
     description: 'Turn your switch LEDs into mini-dashboards (supports Inovelli Blue Series Switches)',
+    importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/Lighting/SwitchLedDashboard/SwitchLedDashboardManager.groovy',
     iconUrl: '',
     iconX2Url: '',
     installOnOpen: true,
