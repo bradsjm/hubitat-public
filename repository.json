@@ -26,7 +26,7 @@
       "id": "44d4b107-afa8-404d-ac50-ea79501f0f24",
       "name": "Switch LED Dashboard for Inovelli Blue Series",
       "category": "Notifcations",
-      "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/Lighting/SwitchLedDashboard/packageManifest.json",
+      "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/SwitchLedDashboard/packageManifest.json",
       "description": "This application allows easy linking of Hubitat device, variables and HSM states to LEDs of your Inovelli Blue Series Zigbee switches",
       "tags": [
         "Dashboards",
