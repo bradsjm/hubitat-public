@@ -615,6 +615,11 @@ private String getNextPrefix() {
     return "condition_${maxId + 1}"
 }
 
+/**
+ *  ledEffectAll is a wrapper around the Inovelli device driver method of the same name
+ *  The wrapper uses the trackingState to reduce the Zigbee traffic by checking the
+ *  assumed LED state before sending changes.
+ */
 private void ledEffectAll(DeviceWrapper dw, Map params) {
     Map tracker = switchLedTracker.computeIfAbsent(dw.id) { k -> [:].withDefault { [:] } }
     if (tracker['All'].effect != params.effect
@@ -633,6 +638,11 @@ private void ledEffectAll(DeviceWrapper dw, Map params) {
     }
 }
 
+/**
+ *  ledEffectOne is a wrapper around the Inovelli device driver method of the same name
+ *  The wrapper uses the trackingState to reduce the Zigbee traffic by checking the
+ *  assumed LED state before sending changes.
+ */
 private void ledEffectOne(DeviceWrapper dw, Map params) {
     Map tracker = switchLedTracker.computeIfAbsent(dw.id) { k -> [:].withDefault { [:] } }
     String key = params.lednumber
