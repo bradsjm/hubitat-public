@@ -738,25 +738,6 @@ private void subscribeDevices() {
                 }
             }
         }
-
-        for (String prefix in getConditionList()) {
-            List<String> conditionList = settings["${prefix}_conditions"] ?: []
-            conditionList.each { condition ->
-                String key = "${prefix}_${condition}"
-                if (settings[key] && conditionsMap.containsKey(condition)) {
-                    String attribute = conditionsMap[condition].attribute
-                    if (attribute == 'location') {
-                        log.info "subscribing to ${condition} location event"
-                        subscribe(location, condition, 'eventHandler', null)
-                    } else if (attribute) {
-                        List<DeviceWrapper> devices = settings[key]
-                        log.info "subscribing to ${attribute} on ${devices}"
-                        subscribe(devices, attribute, 'eventHandler', null)
-                    }
-                }
-            }
-        }
-
     }
 }
 
