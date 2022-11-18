@@ -155,7 +155,7 @@ metadata {
     'light'          : [ 'switch_led', 'switch_led_1', 'light' ],
     'humiditySet'    : [ 'dehumidify_set_value' ],                                                                                       /* Inserted by SJB */
     'humiditySpeed'  : [ 'fan_speed_enum' ],
-    'humidity'       : [ 'temp_indoor', 'swing', 'child_lock', 'fan_speed_enum', 'dehumidify_set_value', 'humidity_indoor', 'switch' ],
+    'humidity'       : [ 'temp_indoor', 'swing', 'child_lock', 'fan_speed_enum', 'dehumidify_set_value', 'humidity_indoor', 'switch', 'mode', 'anion' ],
     'meteringSwitch' : [ 'countdown_1' , 'add_ele' , 'cur_current', 'cur_power', 'cur_voltage' , 'relay_status', 'light_mode' ],
     'omniSensor'     : [ 'bright_value', 'humidity_value', 'va_humidity', 'bright_sensitivity', 'shock_state', 'inactive_state', 'sensitivity' ],
     'pir'            : [ 'pir' ],
@@ -335,7 +335,7 @@ private static Map mapTuyaCategory(Map d) {
         case 'qn':    // Heater
             return [ namespace: 'component', driver: 'Generic Component Heating Device' ]
         case 'cs':    // DeHumidifer
-            return [ namespace: 'component', driver: 'Generic Component Dehumidifier' ]
+            return [ namespace: 'component', driver: 'Generic Component DeHumidifer Device' ]
         case 'fs':    // Fan
             Map devices = [:]
             if (getFunctionCode(d.statusSet, tuyaFunctions.colour)) {
@@ -1295,7 +1295,7 @@ private void updateMultiDeviceStatus(Map d) {
 private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
     String workMode = ''
     Map<String, Map> deviceStatusSet = getStatusSet(dw) ?: getFunctions(dw)
-    statusList.each { status -> 
+    statusList.each { status ->
         if (status.code in tuyaFunctions.workMode) {
             workMode = status.value
         }
@@ -1394,7 +1394,7 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
             Map speed = deviceStatusSet[status.code] ?: defaults[status.code]
             String fanSwitchCode = getFunctionCode(functions, tuyaFunctions.fanSwitch)
             int value
-            if (statusList[fanSwitchCode]) {
+            if (fanSwitchCode && statusList[fanSwitchCode]) {
                 switch (speed.type) {
                     case 'Enum':
                         if (speed.range.indexOf(status.value) > -1) {
@@ -1619,6 +1619,16 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
                     name = 'humidity'
                     value = scale(status.value, (int)set.scale)
                     unit = 'RH%'
+                    break
+                case 'mode':
+                    name = 'mode'
+                    value = status.value
+                    unit = ''
+                    break
+                case 'anion':
+                    name = 'anion'
+                    value = status.value
+                    unit = ''
                     break
                 default:
                     LOG.warn "${dw} unsupported Dehumidifier status.code ${status.code}"
