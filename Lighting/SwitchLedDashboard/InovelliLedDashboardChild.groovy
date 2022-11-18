@@ -42,6 +42,7 @@ import com.hubitat.app.DeviceWrapper
 import com.hubitat.hub.domain.Event
 import groovy.transform.CompileStatic
 import groovy.transform.Field
+import java.util.concurrent.ConcurrentHashMap
 import java.util.regex.Matcher
 
 /*
@@ -204,6 +205,9 @@ import java.util.regex.Matcher
 @Field static final String deviceDriver = 'InovelliDimmer2-in-1BlueSeriesVZM31-SN'
 @Field static final int ledCount = 7
 
+// Tracker for device LED state to optimize Zigbee traffic by only sending changes
+@Field static final Map<String, Map> switchLedTracker = new ConcurrentHashMap<>()
+
 @Field static final String pauseText = '<span style=\'color: red;\'> (Paused) </span>'
 
 // Called when the app is first created.
@@ -224,7 +228,9 @@ void updated() {
     log.debug settings
     unsubscribe()
     subscribeDevices()
+    subscribeSwitches()
     subscribeVariables()
+    switchLedTracker.clear()
 }
 
 /*
@@ -321,12 +327,14 @@ Map editPage(Map params = [:]) {
             } else {
                 app.removeSetting("${prefix}_lednumber_var")
             }
+
             input name: "${prefix}_effect", title: "<span style=\'color: blue;\'>${ledName} Effect</span>", type: 'enum', options: switchEffectsMap, defaultValue: '1', width: 3, required: true, submitOnChange: true
             if (settings["${prefix}_effect"] == 'var') {
                 input name: "${prefix}_effect_var", title: "<span style=\'color: blue;\'>Effect Variable</span>", type: 'enum', options: getGlobalVarsByType('string').keySet(), width: 3, required: true
             } else {
                 app.removeSetting("${prefix}_effect_var")
             }
+
             if (settings["${prefix}_effect"] in ['0', '255']) {
                 ["${prefix}_color", "${prefix}_color_var", "${prefix}_unit", "${prefix}_duration", "${prefix}_level"].each { s -> app.removeSetting(s) }
             } else {
@@ -336,6 +344,7 @@ Map editPage(Map params = [:]) {
                 } else {
                     app.removeSetting("${prefix}_color_var")
                 }
+
                 input name: "${prefix}_unit", title: '<span style=\'color: blue;\'>Duration</span>', description: 'Select', type: 'enum', options: timePeriodsMap, width: 2, defaultValue: 'Indefinitely', required: true, submitOnChange: true
                 if (settings["${prefix}_unit"] in ['0', '60', '120']) {
                     String timePeriod = timePeriodsMap[settings["${prefix}_unit"]]
@@ -343,19 +352,21 @@ Map editPage(Map params = [:]) {
                 } else {
                     app.removeSetting("${prefix}_duration")
                 }
+
                 input name: "${prefix}_level", title: "<span style=\'color: blue;\'>Level&nbsp;</span>", description: '1..100', type: 'number', width: 1, defaultValue: 100, range: '1..100', required: true
             }
             paragraph ''
         }
 
         String ledEffect = switchEffectsMap[settings["${prefix}_effect"]] ?: 'condition'
-        section("<b>Select conditions to activate ${ledName} ${ledEffect} effect:</b>") {
+        section("<b>Select condition rules to activate ${ledName} ${ledEffect} effect:</b>") {
             Map options = conditionsMap.collectEntries { k, v -> [ k, v.title ] }.sort { kv -> kv.value }
+
             input name: "${prefix}_conditions", title: '', type: 'enum', options: options, multiple: true, submitOnChange: true, width: 9
             Boolean allMode = settings["${prefix}_conditions_all"] ?: false
             if (settings["${prefix}_conditions"]?.size() > 1) {
                 String title = "${allMode ? '<b>All</b> conditions' : '<b>Any</b> condition'}"
-                input name: "${prefix}_conditions_all", title: title, type: 'bool', width: 4, submitOnChange: true
+                input name: "${prefix}_conditions_all", title: title, type: 'bool', width: 3, submitOnChange: true
             }
 
             List<String> conditionList = settings["${prefix}_conditions"] ?: []
@@ -364,8 +375,9 @@ Map editPage(Map params = [:]) {
                 String id = "${prefix}_${condition.key}"
                 Boolean allDeviceMode = settings["${id}_all"] ?: false
                 if (condition.key in conditionList) {
-                    paragraph isFirst ? '' : (allMode ? '<i>and</i>' : '<i>or</i>')
+                    paragraph isFirst ? '' : (allMode ? '<b>and</b>' : '<i>or</i>')
                     isFirst = false
+
                     input name: id, title: "${condition.value.title}", type: condition.value.type, multiple: condition.value.multiple,
                         options: condition.key == 'global_var' ? getAllGlobalVars().keySet() : condition.value.values, width: 7, submitOnChange: true, required: true
                     if (condition.key == 'global_var' && settings[id]) {
@@ -461,7 +473,11 @@ void updatePauseLabel() {
 }
 
 /*
- *  Dashboard Implementation
+ *  Main event handler receives device and location events and runs through
+ *  all the conditions to determine if LED states need to be updated on switches.
+ *
+ *  Maintains priorities per LED to ensure that higher priority conditions take
+ *  precedence over lower priorities.
  */
 void eventHandler(Event event) {
     logEvent(event)
@@ -484,13 +500,40 @@ void eventHandler(Event event) {
         }
     }
 
+    // Update switch LEDs as required
     if (ledStates.containsKey('All')) {
+        // Any 'All LED' condition takes precedence over individual LED conditions
         setLedConfiguration(ledStates['All'])
-    } else {
+    } else if (ledStates) {
+        // Sending individual LED updates is inefficient but necessary
         ledStates.values().each { config -> setLedConfiguration(config) }
     }
 }
 
+// Inovelli Blue Switch Tracker
+void switchTracker(Event event) {
+    switch (event.value) {
+        case 'Stop All':
+        case 'User Cleared':
+            switchLedTracker.remove(event.device.id)
+            log.info "clearing LED tracking for ${event.device}"
+            break
+        case ~/^Stop LED(\d)$/:
+            Map tracker = switchLedTracker[event.device.id]
+            if (tracker) {
+                String led = Matcher.lastMatcher[0][1]
+                tracker.remove(led)
+                log.info "cleared LED tracking for ${event.device} LED${led}"
+            }
+            break
+    }
+}
+
+/**
+ *  Checks the provided condition configuration and returns a pass/fail (boolean)
+ *  Supports tests against devices, hub (global) variables, and state values
+ *  Enables any/all type options against devices or conditions
+ */
 @CompileStatic
 private boolean checkConditions(Map config, Map state) {
     boolean result = false
@@ -530,7 +573,7 @@ private boolean checkConditions(Map config, Map state) {
     return result
 }
 
-// Returns key value map of specific condition settings
+// Returns key value map of specified condition settings
 private Map getConditionConfig(String prefix) {
     String id = (prefix =~ /^condition_([0-9]+)/)[0][1]
     int startPos = prefix.size() + 1
@@ -548,12 +591,64 @@ private Set<String> getConditionList() {
         .reverse()
 }
 
+// Calculate milliseconds from Inovelli duration parameter (0-255)
+// 1-60=seconds, 61-120=1-60 minutes, 121-254=1-134 hours, 255=Indefinitely
+@CompileStatic
+private long getDurationMs(int duration) {
+    if (duration <= 60) { // seconds (1-60)
+        return duration * 1000
+    }
+    if (duration <= 120) { // minutes (61-120)
+        return (duration - 60) * 60000
+    }
+    if (duration <= 254) { // hours (121-254)
+        return (duration - 120) * 3600000
+    }
+    return 86400000 // indefinite (using 24 hours)
+}
+
 // Returns next condition settings prefix
 @CompileStatic
 private String getNextPrefix() {
     List<Integer> keys = getConditionList().collect { p -> p.substring(10) as Integer }
     int maxId = keys ? Collections.max(keys) : 0
     return "condition_${maxId + 1}"
+}
+
+private void ledEffectAll(DeviceWrapper dw, Map params) {
+    Map tracker = switchLedTracker.computeIfAbsent(dw.id) { k -> [:].withDefault { [:] } }
+    if (tracker['All'].effect != params.effect
+        || tracker['All'].color != params.color
+        || tracker['All'].level != params.level
+        || tracker['All'].duration != params.duration
+        || tracker['All'].expires <= now()
+    ) {
+        dw.ledEffectAll(params.effect, params.color, params.level, params.duration)
+        // the switch will tell us when the effect stops so expires is a backup method
+        params.expires = now() + getDurationMs(params.duration)
+        tracker.clear()
+        tracker['All'] = params
+    } else {
+        log.info 'skipping update (no change to leds detected)'
+    }
+}
+
+private void ledEffectOne(DeviceWrapper dw, Map params) {
+    Map tracker = switchLedTracker.computeIfAbsent(dw.id) { k -> [:].withDefault { [:] } }
+    String key = params.lednumber
+    if (tracker[key].effect != params.effect
+        || tracker[key].color != params.color
+        || tracker[key].level != params.level
+        || tracker[key].duration != params.duration
+        || tracker[key].expires <= now()
+    ) {
+        dw.ledEffectOne(params.lednumber, params.effect, params.color, params.level, params.duration)
+        params.expires = now() + getDurationMs(params.duration)
+        tracker.remove('All')
+        tracker[key] = params
+    } else {
+        log.info 'skipping update (no change to leds detected)'
+    }
 }
 
 // Logs the received event
@@ -599,25 +694,25 @@ private void removeCondition(String prefix) {
 private void setLedConfiguration(Map config) {
     List<DeviceWrapper> devices = settings.switches as List<DeviceWrapper>
     if (devices) {
-        devices.each { d ->
+        devices.each { device ->
             Integer duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255)
             if (config.lednumber == 'All') {
-                logInfo "setting ${d} all leds (id=${config.id}, name=${config.name}, priority=${config.priority}, effect=${config.effect}, color=${config.color}, level=${config.level}, duration=${duration})"
-                d.ledEffectAll(
-                    config.effect as Integer,
-                    config.color as Integer,
-                    config.level as Integer,
-                    duration
-                )
+                logInfo "setting ${device} all leds (id=${config.id}, name=${config.name}, priority=${config.priority}, effect=${config.effect}, color=${config.color}, level=${config.level}, duration=${duration})"
+                ledEffectAll(device, [
+                    effect: config.effect as Integer,
+                    color: config.color as Integer,
+                    level: config.level as Integer,
+                    duration: duration
+                ])
             } else {
-                logInfo "setting ${d} led ${config.lednumber} (id=${config.id}, name=${config.name}, priority=${config.priority}, effect=${config.effect}, color=${config.color}, level=${config.level}, duration=${duration})"
-                d.ledEffectOne(
-                    config.lednumber as String,
-                    config.effect as Integer,
-                    config.color as Integer,
-                    config.level as Integer,
-                    duration
-                )
+                logInfo "setting ${device} led ${config.lednumber} (id=${config.id}, name=${config.name}, priority=${config.priority}, effect=${config.effect}, color=${config.color}, level=${config.level}, duration=${duration})"
+                ledEffectOne(device, [
+                    lednumber: config.lednumber as String,
+                    effect: config.effect as Integer,
+                    color: config.color as Integer,
+                    level: config.level as Integer,
+                    duration: duration
+                ])
             }
         }
     }
@@ -643,6 +738,13 @@ private void subscribeDevices() {
                 }
             }
         }
+    }
+}
+
+private void subscribeSwitches() {
+    if (!state.paused) {
+        log.info "subscribing to button pushes on ${settings.switches}"
+        subscribe(settings.switches, 'ledEffect', 'switchTracker', null)
     }
 }
 
