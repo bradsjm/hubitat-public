@@ -53,12 +53,12 @@ Map mainPage() {
             paragraph getDescription()
         }
 
-        section('<b>Inovelli Blue Series LED Dashboards:</b>') {
+        section('<b>LED Dashboard Groups (Inovelli Blue Series):</b>') {
             app(
                 name: 'childApp',
                 appName: 'Switch LED Dashboard (Inovelli Blue Series)',
                 namespace: 'nrgup',
-                title: 'Add a new Inovelli Blue Series LED dashboard',
+                title: 'Add Inovelli Blue Series LED dashboard group',
                 multiple: true
             )
         }
