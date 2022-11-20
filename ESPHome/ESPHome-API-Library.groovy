@@ -901,7 +901,7 @@ private static String formatMacAddress(Long macAddress) {
     final StringBuilder stringBuilder = new StringBuilder()
     stringBuilder.append(chars[0]).append(chars[1])
     for (int pos = 2; pos < value.length(); pos += 2) {
-        stringBuilder.append(":").append(chars[pos]).append(chars[pos + 1])
+        stringBuilder.append(':').append(chars[pos]).append(chars[pos + 1])
     }
     return stringBuilder.toString()
 }
@@ -1067,13 +1067,7 @@ private void espHomeConnectResponse(Map<Integer, List> tags) {
     device.updateDataValue 'Last Connected Time', new Date().toString()
     state.remove('reconnectDelay')
     espHomeSchedulePing()
-
-    if (state.requireRefresh) {
-        state.remove('requireRefresh')
-        espHomeDeviceInfoRequest()
-    } else {
-        espHomeSubscribe()
-    }
+    espHomeDeviceInfoRequest()
 }
 
 @CompileStatic
@@ -1102,6 +1096,9 @@ private void espHomeDeviceInfoResponse(Map<Integer, List> tags) {
             manufacturer: getStringTag(tags, 12)
     ]
 
+    boolean requireRefresh = (device.getDataValue('Compile Time') != deviceInfo.compileTime) ||
+        (device.getDataValue('MAC Address') != deviceInfo.macAddress)
+
     device.with {
         updateDataValue 'Board Model', deviceInfo.boardModel
         updateDataValue 'Board Model', deviceInfo.boardModel
@@ -1122,8 +1119,11 @@ private void espHomeDeviceInfoResponse(Map<Integer, List> tags) {
 
     parse(deviceInfo)
 
-    // Step 4: Get device entities
-    espHomeListEntitiesRequest()
+    if (requireRefresh) {
+        espHomeListEntitiesRequest()
+    } else {
+        espHomeSubscribe()
+    }
 }
 
 private void espHomeGetTimeRequest() {
@@ -1160,11 +1160,7 @@ private void espHomeHelloResponse(Map<Integer, List> tags) {
     String info = getStringTag(tags, 3)
     if (info) {
         log.info "ESPHome server info: ${info}"
-        if (device.getDataValue('Server Info') != info) {
-            device.updateDataValue 'Server Info', info
-            log.info 'ESPHome detected device update, flagging for refresh'
-            state.requireRefresh = true
-        }
+        device.updateDataValue 'Server Info', info
     }
 
     String name = getStringTag(tags, 4)
