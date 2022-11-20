@@ -55,7 +55,7 @@ import java.util.regex.Matcher
         type: 'capability.pushableButton',
         options: (1..14).collectEntries { n -> [ n, "Button ${n}" ] },
         multiple: true,
-        attribute: 'pushed',
+        event: 'pushed',
     ],
     'contactClose': [
         name: 'Contact sensor',
@@ -73,13 +73,12 @@ import java.util.regex.Matcher
         attribute: 'contact',
         value: 'open'
     ],
-    'global_var': [
-        name: 'Hub variable',
-        title: 'Hub variable is set',
-        type: 'variable',
-        attribute: 'location',
-        multiple: false
-    ],
+    // 'customAttribute': [
+    //     name: 'Custom attribute',
+    //     title: 'Custom attribute is set',
+    //     type: 'capability.sensor',
+    //     multiple: true
+    // ],
     'hsmStatus': [
         name: 'HSM Status',
         title: 'HSM arming status',
@@ -96,9 +95,16 @@ import java.util.regex.Matcher
         attribute: 'location',
         multiple: true,
     ],
+    'global_var': [
+        name: 'Hub variable',
+        title: 'Hub variable is set',
+        type: 'variable',
+        attribute: 'location',
+        multiple: false
+    ],
     'locked': [
         name: 'Lock',
-        title: 'Device is locked',
+        title: 'Lock is locked',
         type: 'capability.lock',
         multiple: true,
         attribute: 'lock',
@@ -106,7 +112,7 @@ import java.util.regex.Matcher
     ],
     'unlocked': [
         name: 'Lock',
-        title: 'Device is unlocked',
+        title: 'Lock is unlocked',
         type: 'capability.lock',
         multiple: true,
         attribute: 'lock',
@@ -184,14 +190,6 @@ import java.util.regex.Matcher
         attribute: 'valve',
         value: 'open'
     ],
-    'waterWet': [
-        name: 'Water sensor',
-        title: 'Water sensor is wet',
-        type: 'capability.waterSensor',
-        multiple: true,
-        attribute: 'water',
-        value: 'wet'
-    ],
     'waterDry': [
         name: 'Water sensor',
         title: 'Water sensor is dry',
@@ -199,6 +197,14 @@ import java.util.regex.Matcher
         multiple: true,
         attribute: 'water',
         value: 'dry'
+    ],
+    'waterWet': [
+        name: 'Water sensor',
+        title: 'Water sensor is wet',
+        type: 'capability.waterSensor',
+        multiple: true,
+        attribute: 'water',
+        value: 'wet'
     ],
 ].asImmutable()
 
@@ -281,14 +287,14 @@ Map mainPage() {
                 width: 11
         }
 
-        Set<String> prefixes = getConditionList()
-        section('<b>Dashboard Conditions</b>') {
+        Set<String> prefixes = getDashboardList()
+        section('<b>LED Dashboards</b>') {
             for (String prefix in prefixes) {
-                Map config = getConditionConfig(prefix)
+                Map config = getDashboardConfig(prefix)
                 href(
                     name: "edit_${prefix}",
                     title: "<b>${config.name}</b>",
-                    description: getConditionDescription(config),
+                    description: getDashboardDescription(config),
                     page: 'editPage',
                     params: [ prefix: prefix ],
                     state: 'complete',
@@ -301,9 +307,9 @@ Map mainPage() {
             }
 
             href(
-                name: 'addCondition',
-                title: 'Add new condition',
-                description: 'Click to add new dashboard condition',
+                name: 'addDashboard',
+                title: 'Add new dashboard',
+                description: 'Select to add new dashboard',
                 params: [ prefix: getNextPrefix() ],
                 page: 'editPage',
                 width: 11
@@ -313,7 +319,7 @@ Map mainPage() {
 }
 
 /*
- * Application Condition Edit Page
+ * Dashboard Edit Page
  */
 Map editPage(Map params = [:]) {
     String prefix = params.prefix
@@ -321,11 +327,11 @@ Map editPage(Map params = [:]) {
     String name = settings["${prefix}_name"] ?: 'New'
     String ledName = switchLedsMap[settings["${prefix}_lednumber"]] ?: 'LED'
 
-    return dynamicPage(name: 'editPage', title: "<h2 style=\'color: #1A77C9; font-weight: bold\'>${name} Condition</h2>") {
+    return dynamicPage(name: 'editPage', title: "<h2 style=\'color: #1A77C9; font-weight: bold\'>${name} Dashboard</h2>") {
         section {
-            input name: "${prefix}_name", title: '', description: 'Condition Name', type: 'text', width: 6, required: true, submitOnChange: true
+            input name: "${prefix}_name", title: '', description: 'Dashboard Name', type: 'text', width: 6, required: true, submitOnChange: true
             input name: "${prefix}_priority", title: '', description: 'Select Priority', type: 'enum', options: prioritiesMap, defaultValue: '5', width: 3, required: true
-            paragraph '<i>Higher number priority conditions take LED precedence.</i>'
+            paragraph '<i>Higher value priority dashboards take LED precedence.</i>'
         }
 
         renderIndicationSection(prefix, ledName)
@@ -381,11 +387,10 @@ Map renderIndicationSection(String prefix, String ledName) {
 
 Map renderConditionSection(String prefix, String ledName) {
     String ledEffect = switchEffectsMap[settings["${prefix}_effect"]] ?: 'condition'
-    return section("<b>Select condition rules for ${ledName} ${ledEffect} effect:</b>") {
-
-        // Present the list of condition rules defined in the conditionsMap
-        Map options = conditionsMap.collectEntries { k, v -> [ k, v.title ] }
-        input name: "${prefix}_conditions", title: '', type: 'enum', options: options, multiple: true, submitOnChange: true, width: 9
+    return section("<b>Select conditions to activate ${ledName} ${ledEffect} effect:</b>") {
+        // Present the list of conditions titles defined in the conditionsMap
+        Map conditionTitles = conditionsMap.collectEntries { k, v -> [ k, v.title ] }
+        input name: "${prefix}_conditions", title: '', type: 'enum', options: conditionTitles, multiple: true, submitOnChange: true, width: 9
 
         // If multiple conditions are selected allow selecting any or all modes
         Boolean allMode = settings["${prefix}_conditions_all"] ?: false
@@ -471,7 +476,7 @@ String getColorSpan(Integer color, String text) {
     return "<span style=\'color: ${css}\'>${text}</span>"
 }
 
-String getConditionDescription(Map config) {
+String getDashboardDescription(Map config) {
     StringBuilder sb = new StringBuilder()
     if (config.lednumber && config.lednumber != 'var') {
         sb << "<b>${switchLedsMap[config.lednumber]}</b>"
@@ -496,10 +501,11 @@ String getConditionDescription(Map config) {
         sb << ", <b>Duration:</b> ${config.duration} ${timePeriodsMap[config.unit]?.toLowerCase()}"
     }
     if (config.conditions) {
+        String allMode = config.conditions_all ? ' and ' : ' or '
         List<String> conditions = config.conditions
             .findAll { c -> conditionsMap.containsKey(c) }
-            .collect { c -> conditionsMap[c].title }
-        sb << "\n<b>Activation${conditions.size() > 1 ? 's' : ''}:</b> ${conditions.join(', ')}"
+            .collect { c -> conditionsMap[c].title + (config["${c}_all"] ? ' <i>(All)</i>' : ' <i>(Any)</i>') }
+        sb << "\n<b>Activation${conditions.size() > 1 ? 's' : ''}:</b> ${conditions.join(allMode)}"
     }
     return sb.toString()
 }
@@ -536,10 +542,10 @@ void eventHandler(Event event) {
     }
 
     Map<String, Map> ledStates = [:]
-    for (String prefix in getConditionList()) {
-        Map config = getConditionConfig(prefix)
+    for (String prefix in getDashboardList()) {
+        Map config = getDashboardConfig(prefix)
         replaceVariables(config)
-        if (checkConditions(config, state)) {
+        if (checkConditions(config, state, event)) {
             Map oldState = ledStates[config.lednumber as String] ?: [:]
             int oldPriority = oldState.priority as Integer ?: 0
             int newPriority = config.priority as Integer ?: 0
@@ -584,7 +590,7 @@ void switchTracker(Event event) {
  *  Enables any/all type options against devices or conditions
  */
 @CompileStatic
-private boolean checkConditions(Map config, Map state) {
+private boolean checkConditions(Map config, Map state, Event event) {
     boolean result = false
     boolean allConditionsFlag = config['conditions_all'] ?: false
     List<String> testList = (config.conditions as List<String>).intersect(conditionsMap.keySet() as List<String>)
@@ -624,6 +630,9 @@ private boolean checkConditions(Map config, Map state) {
                 boolean allDevices = config[testName + '_all'] ?: false
                 testResult = allDevices ? devices.every(testClosure) : devices.any(testClosure)
             }
+        } else if (testCondition.event == event.name) {
+            List<String> targetValues = config[testName + '_value'] as List<String>
+            testResult = (event.value as String) in targetValues 
         }
 
         logInfo "${config.name} condition '${testName}' returned ${testResult}"
@@ -637,8 +646,8 @@ private boolean checkConditions(Map config, Map state) {
     return result
 }
 
-// Returns key value map of specified condition settings
-private Map getConditionConfig(String prefix) {
+// Returns key value map of specified dashboard settings
+private Map getDashboardConfig(String prefix) {
     String id = (prefix =~ /^condition_([0-9]+)/)[0][1]
     int startPos = prefix.size() + 1
     return [ 'id': id ] + settings
@@ -646,8 +655,8 @@ private Map getConditionConfig(String prefix) {
         .collectEntries { s -> [ s.key.substring(startPos), s.value ] }
 }
 
-// Returns condition setting prefix sorted by priority (descending)
-private Set<String> getConditionList() {
+// Returns dashboard setting prefix sorted by priority (descending)
+private Set<String> getDashboardList() {
     return settings.keySet()
         .findAll { s -> s.matches('^condition_[0-9]+_priority$') }
         .sort { s -> settings[s] as int }
@@ -674,7 +683,7 @@ private long getDurationMs(int duration) {
 // Returns next condition settings prefix
 @CompileStatic
 private String getNextPrefix() {
-    List<Integer> keys = getConditionList().collect { p -> p.substring(10) as Integer }
+    List<Integer> keys = getDashboardList().collect { p -> p.substring(10) as Integer }
     int maxId = keys ? Collections.max(keys) : 0
     return "condition_${maxId + 1}"
 }
@@ -795,7 +804,7 @@ private void setLedConfiguration(Map config) {
 // Subscribe to all the devices for all the conditions
 private void subscribeDevices() {
     if (!state.paused) {
-        for (String prefix in getConditionList()) {
+        for (String prefix in getDashboardList()) {
             List<String> conditionList = settings["${prefix}_conditions"] ?: []
             conditionList.each { condition ->
                 String key = "${prefix}_${condition}"

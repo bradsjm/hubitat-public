@@ -27,6 +27,7 @@ import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import groovy.transform.CompileStatic
 import groovy.transform.Field
+import groovyx.net.http.HttpResponseDecorator
 import hubitat.helper.HexUtils
 import hubitat.scheduling.AsyncResponse
 import java.security.MessageDigest
@@ -196,21 +197,49 @@ void updated() {
 }
 
 /**
+ *  Tuya Open API
+ *  https://developer.tuya.com/en/docs/iot/api-request?id=Ka4a8uuo1j4t4
+ */
+
+@CompileStatic
+private static String tuyaCalculateSignature(String accessId, String accessToken, String nonce, long timestamp, String stringToSign) {
+    // https://developer.tuya.com/en/docs/iot/singnature?id=Ka43a5mtx1gsc
+    String message = accessId + accessToken + timestamp.toString() + nonce + stringToSign
+    Mac sha256HMAC = Mac.getInstance('HmacSHA256')
+    sha256HMAC.init(new SecretKeySpec(access_key.bytes, 'HmacSHA256'))
+    return HexUtils.byteArrayToHexString(sha256HMAC.doFinal(message.bytes))
+}
+
+@CompileStatic
+private static String tuyaCreateSigningString(String accessId, String method, String path, Map query, Map body) {
+    String url = query ? path + '?' + query.sort().collect { key, value -> "${key}=${value}" }.join('&') : path
+    String headers = 'client_id:' + accessId + '\n'
+    String bodyStream = (body == null) ? '' : JsonOutput.toJson(body)
+    MessageDigest sha256 = MessageDigest.getInstance('SHA-256')
+    String contentSHA256 = HexUtils.byteArrayToHexString(sha256.digest(bodyStream.bytes)).toLowerCase()
+    return method.toUpperCase() + '\n' + contentSHA256 + '\n' + headers + '\n' + url
+}
+
+/**
  *  Tuya Open API Authentication
  *  https://developer.tuya.com/en/docs/cloud/c40fc05907?id=Kawfjj0r2m82l
  */
-private void tuyaAuthenticateAsync() {
-    log.info "starting Tuya cloud authentication for ${settings.username}"
-    MessageDigest digest = MessageDigest.getInstance('MD5')
-    String md5pwd = HexUtils.byteArrayToHexString(digest.digest(settings.password.bytes)).toLowerCase()
-    Map body = [
-        'country_code': state.datacenter.countryCode,
-        'username': settings.username,
-        'password': md5pwd,
-        'schema': settings.appSchema
-    ]
-    state.tuyaAuth = [:]
-    tuyaPostAsync('/v1.0/iot-01/associated-users/actions/authorized-login', body, 'tuyaAuthenticateResponse')
+
+private boolean tuyaAuthenticate() {
+    MessageDigest md5 = MessageDigest.getInstance('MD5')
+    String md5pwd = HexUtils.byteArrayToHexString(md5.digest(settings.password.bytes)).toLowerCase()
+    HttpResponseDecorator response = tuyaPost([
+        uri: state.datacenter.endPoint,
+        path: '/v1.0/iot-01/associated-users/actions/authorized-login',
+        body: [
+            'country_code': state.datacenter.countryCode,
+            'username': settings.username,
+            'password': md5pwd,
+            'schema': settings.appSchema
+        ]
+    ], settings.access_id, settings.access_key)
+
+
 }
 
 private void tuyaAuthenticateResponse(AsyncResponse response, Map data) {
@@ -300,26 +329,16 @@ private void tuyaGetDeviceSpecificationsResponse(AsyncResponse response, Map dat
     }
 }
 
-
 /**
  *  Tuya Open API HTTP REST Implementation
  *  https://developer.tuya.com/en/docs/cloud/
  */
-private void tuyaGetAsync(String path, Map query, String callback, Map data = [:]) {
-    tuyaRequestAsync(settings.access_id, settings.access_key, state.tuyaAuth?.result?.access_token, 'get', state.datacenter.endpoint, path, callback, query, null, data)
-}
-
-private void tuyaPostAsync(String path, Map body, String callback, Map data = [:]) {
-    tuyaRequestAsync(settings.access_id, settings.access_key, state.tuyaAuth?.result?.access_token, 'post', state.datacenter.endpoint, path, callback, null, body ?: [:], data)
-}
-
-private void tuyaRequestAsync(String access_id, String access_key, String access_token, String method, String endPoint, String path, String callback, Map query, Map body, Map data) {
+private HttpResponseDecorator tuyaPost(Map request, String accessId, String accessKey, String accessToken = '') {
     long now = now()
-    query = query?.findAll { key, value -> value }
-    String nonce = UUID.randomUUID().toString()
-    String stringToSign = tuyaCreateSigningString(access_id, method, path, query, body)
-    String signature = tuyaCalculateSignature(access_id, access_key, access_token ?: '', nonce, now, stringToSign)
-    Map headers = [
+    String nonce = UUID.randomUUID()
+    String stringToSign = tuyaCreateSigningString(accessId, 'post', request.path, request.query, request.body)
+    String signature = tuyaCalculateSignature(accessId, accessKey, accessToken ?: '', nonce, now, stringToSign)
+    request.headers = [
       't': now,
       'nonce': nonce,
       'client_id': access_id,
@@ -330,20 +349,9 @@ private void tuyaRequestAsync(String access_id, String access_key, String access
       'lang': 'en' // use zh for china
     ]
 
-    Map request = [
-        uri: endPoint,
-        path: path,
-        query: query,
-        contentType: 'application/json',
-        headers: headers,
-        body: JsonOutput.toJson(body),
-        timeout: 5
-    ]
-
-    switch (method) {
-        case 'get': asynchttpGet(callback, request, data); break
-        case 'post': asynchttpPost(callback, request, data); break
-    }
+    HttpResponseDecorator response
+    httpPostJson(request, r -> response = r)
+    return response
 }
 
 private void tuyaLogError(AsyncResponse response) {
@@ -358,25 +366,6 @@ private void tuyaLogError(AsyncResponse response) {
     if (response.json?.success != true) {
         log.warn "Tuya API request failed: ${response.data}"
     }
-}
-
-@CompileStatic
-private static String tuyaCalculateSignature(String access_id, String access_key, String access_token, String nonce, long timestamp, String stringToSign) {
-    // https://developer.tuya.com/en/docs/iot/singnature?id=Ka43a5mtx1gsc
-    String message = access_id + access_token + timestamp.toString() + nonce + stringToSign
-    Mac sha256HMAC = Mac.getInstance('HmacSHA256')
-    sha256HMAC.init(new SecretKeySpec(access_key.bytes, 'HmacSHA256'))
-    return HexUtils.byteArrayToHexString(sha256HMAC.doFinal(message.bytes))
-}
-
-@CompileStatic
-private String tuyaCreateSigningString(String access_id, String method, String path, Map query, Map body) {
-    String url = query ? path + '?' + query.sort().collect { key, value -> "${key}=${value}" }.join('&') : path
-    String headers = 'client_id:' + access_id + '\n'
-    String bodyStream = (body == null) ? '' : JsonOutput.toJson(body)
-    MessageDigest sha256 = MessageDigest.getInstance('SHA-256')
-    String contentSHA256 = HexUtils.byteArrayToHexString(sha256.digest(bodyStream.bytes)).toLowerCase()
-    return method.toUpperCase() + '\n' + contentSHA256 + '\n' + headers + '\n' + url
 }
 
 /**
