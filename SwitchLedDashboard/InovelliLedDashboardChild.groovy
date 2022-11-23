@@ -21,6 +21,15 @@
  *  SOFTWARE.
 */
 
+/*
+ * Thanks to Mattias Fornander (@mfornander) for the original application concept
+ *
+ * Version history:
+ *  0.1 - Initial development (alpha)
+ *  0.2 - Beta Test
+ *
+*/
+
 definition(
     name: 'Switch LED Dashboard (Inovelli Blue Series)',
     namespace: 'nrgup',
@@ -49,7 +58,7 @@ import java.util.regex.Matcher
 @Field static final Map<String, String> prioritiesMap = [ '1': 'Priority 1 (low)', '2': 'Priority 2', '3': 'Priority 3', '4': 'Priority 4', '5': 'Priority 5 (medium)', '6': 'Priority 6', '7': 'Priority 7', '8': 'Priority 8', '9': 'Priority 9 (high)' ].asImmutable()
 @Field static final Map<String, String> switchColorsMap = [ '0': 'Red', '7': 'Orange', '28': 'Lemon', '64': 'Lime', '85': 'Green', '106': 'Teal', '127': 'Cyan', '148': 'Aqua', '170': 'Blue', '190': 'Violet', '212': 'Magenta', '234': 'Pink', '255': 'White', 'var': 'Variable Color' ].asImmutable()
 @Field static final Map<String, String> switchEffectsMap = [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Falling', '7': 'Rising', '8': 'Aurora', '255': 'Stop', 'var': 'Variable Effect' ].asImmutable()
-@Field static final Map<String, String> switchLedsMap = [ '1': 'LED 1', '2': 'LED 2', '3': 'LED 3', '4': 'LED 4', '5': 'LED 5', '6': 'LED 6', '7': 'LED 7', 'All': 'All LEDs', 'var': 'Variable LED' ].asImmutable()
+@Field static final Map<String, String> switchLedsMap = [ '1': 'LED 1 (Bottom)', '2': 'LED 2', '3': 'LED 3', '4': 'LED 4', '5': 'LED 5', '6': 'LED 6', '7': 'LED 7 (Top)', 'All': 'All LEDs', 'var': 'Variable LED' ].asImmutable()
 @Field static final Map<String, String> timePeriodsMap = [ '0': 'Seconds', '60': 'Minutes', '120': 'Hours', '255': 'Indefinitely' ].asImmutable()
 
 // Inovelli Device Driver and count of LEDs on the switches
@@ -64,6 +73,8 @@ import java.util.regex.Matcher
 // Called when the app is first created.
 void installed() {
     log.info "${app.name} child installed"
+    subscribeSwitches()
+    subscribeConditions()
 }
 
 // Called when the app is removed.
@@ -78,7 +89,6 @@ void updated() {
     log.info "${app.name} configuration updated"
     switchLedTracker.clear()
     cleanSettings()
-    log.debug settings
 
     unsubscribe()
     subscribeSwitches()
@@ -282,7 +292,7 @@ String getDashboardDescription(Map<String, String> config) {
         String allMode = config.conditions_all ? ' and ' : ' or '
         List<String> conditions = config.conditions
             .findAll { c -> conditionsMap.containsKey(c) }
-            .collect { c -> conditionsMap[c].title + (config["${c}_all"] ? ' <i>(All)</i>' : ' <i>(Any)</i>') }
+            .collect { c -> conditionsMap[c].title + (config["${c}_all"] ? ' <i>(All)</i>' : '') }
         sb << "\n<b>Activation${conditions.size() > 1 ? 's' : ''}:</b> ${conditions.join(allMode)}"
     }
     return sb.toString()
@@ -293,7 +303,7 @@ void renameVariable(String oldName, String newName) {
     settings.findAll { s -> s.key.endsWith('_var') && s.value == oldName }.each { s ->
         log.info "changing ${s.key} from ${oldName} to ${newName}"
         s.value = newName
-}
+    }
 }
 
 // Updates the app label based on pause state
@@ -316,7 +326,7 @@ void eventHandler(Event event) {
     logEvent(event)
     Map<String, Map> ledStates = [:]
     for (String prefix in getDashboardList()) {
-        if (checkConditions(prefix, event)) {
+        if (evaluateConditions(prefix, event)) {
             Map<String, String> config = getDashboardConfig(prefix)
             replaceVariables(config)
             Map<String, Map> oldState = ledStates[config.lednumber as String] ?: [:]
@@ -332,12 +342,12 @@ void eventHandler(Event event) {
     if (ledStates.containsKey('All')) {
         // Any 'All LED' condition takes precedence over individual LED conditions
         setLedConfiguration(ledStates['All'])
-        sendEvent([ name: ledStates['All'].name, value: 'All', descriptionText: ledStates['All'].toString() ])
+        sendEvent([ name: ledStates['All'].title, value: 'All', descriptionText: ledStates['All'].toString() ])
     } else if (ledStates) {
         // Sending individual LED updates is inefficient but necessary
         ledStates.values().each { config ->
             setLedConfiguration(config)
-            sendEvent([ name: config.name, value: config.lednumber, descriptionText: ledStates.toString() ])
+            sendEvent([ name: config.title, value: config.lednumber, descriptionText: ledStates.toString() ])
         }
     }
 }
@@ -363,6 +373,12 @@ void switchTracker(Event event) {
 
 // Cleans settings removing entries no longer in use
 private void cleanSettings() {
+    [ 'lednumber', 'effect', 'color' ].each { var ->
+        if (settings["${prefix}_${var}"] != 'var') {
+            app.removeSetting("${prefix}_${var}_var")
+        }
+    }
+
     for (String prefix in getDashboardList()) {
         List<String> selectedConditions = settings["${prefix}_conditions"] ?: []
         conditionsMap.keySet().findAll { key -> !(key in selectedConditions) }.each { key ->
@@ -460,7 +476,7 @@ private void ledEffectOne(DeviceWrapper dw, Map params) {
 
 // Logs the received event
 private void logEvent(Event event) {
-    log.info "${event.device ?: event.source} event ${event.name} is ${event.value}"
+    log.info "event ${event.name} received from ${event.device ?: event.source} (value ${event.value})"
 }
 
 // Logs information
@@ -529,7 +545,6 @@ private void setLedConfiguration(Map<String, String> config) {
 
 // Subscribe to all dashboard conditions
 private void subscribeConditions() {
-    log.info 'subscribing to dashboard conditions'
     for (String prefix in getDashboardList()) {
         subscribeCondition(prefix)
     }
@@ -618,7 +633,7 @@ private void subscribeSwitches() {
     ],
     'hsmStatus': [
         name: 'HSM Status',
-        title: 'HSM arming status',
+        title: 'HSM arming status changes to',
         inputs: [
             choice: [
                 options: [ 'armedAway': 'Armed Away', 'armedHome': 'Armed Home', 'disarmed': 'Disarmed' ],
@@ -630,7 +645,7 @@ private void subscribeSwitches() {
     ],
     'hsmAlert': [
         name: 'HSM Alert',
-        title: 'HSM intrusion alert',
+        title: 'HSM intrusion alert changes to',
         inputs: [
             choice: [
                 options: [ 'intrusion': 'Intrusion Away', 'intrusion-home': 'Intrusion Home', 'smoke': 'Smoke', 'water': 'Water', 'arming': 'Arming fail', 'cancel': 'Alert cancelled' ],
@@ -656,7 +671,7 @@ private void subscribeSwitches() {
             ]
         ],
         subscribe: { ctx -> "variable:${ctx.choice}" },
-        test: { ctx -> testComparison(ctx.event["variable:${ctx.choice}"], ctx.value, ctx.comparison) }
+        test: { ctx -> evaluateComparison(ctx.event["variable:${ctx.choice}"], ctx.value, ctx.comparison) }
     ],
     'locked': [
         name: 'Lock',
@@ -798,6 +813,147 @@ private void subscribeSwitches() {
     ],
 ].asImmutable()
 
+/**
+ *  Evaluates the provided condition configuration and returns a pass/fail (boolean)
+ *  Supports tests against devices, hub (global) variables, and state values
+ *  Enables any/all type options against devices or conditions
+ */
+private boolean evaluateConditions(String prefix, Event event, Map<String, Map> ruleDefinitions = conditionsMap) {
+    boolean result = false
+    boolean allConditionsFlag = settings["${prefix}_conditions_all"] ?: false
+
+    // Loop through all conditions updating the result
+    List<String> selectedConditions = settings["${prefix}_conditions"] ?: []
+    for (String conditionKey in selectedConditions) {
+        Map<String, Map> condition = ruleDefinitions[conditionKey]
+        if (!condition) { continue }
+        String attribute
+        if (condition.subscribe in Closure) {
+            Map ctx = [
+                device: settings["${id}_device"],
+                choice: settings["${id}_choice"],
+                value: settings["${id}_value"]
+            ].asImmutable()
+            attribute = runClosure(condition.subscribe as Closure, ctx)
+        } else {
+            attribute = condition.subscribe
+        }
+        String id = "${prefix}_${conditionKey}"
+        Map ctx = [
+            all: settings["${id}_all"],
+            attribute: attribute,
+            choice: settings["${id}_choice"],
+            comparison: settings["${id}_comparison"],
+            device: settings["${id}_device"],
+            event: [ (event.name): event.value ],
+            state: state,
+            value: settings["${id}_value"]
+        ].asImmutable()
+        boolean testResult = runClosure(condition.test as Closure, ctx) ?: false
+        logInfo "condition [${prefix}] ${condition.title} is ${testResult} ${ctx}"
+        // If all conditions is selected and the test failed, stop and return false
+        if (allConditionsFlag && !testResult) {
+            return false
+        // If any conditions is selected and the test passed, stop and return true
+        } else if (!allConditionsFlag && testResult) {
+            return true
+        }
+        // Otherwise update the result and try the next condition
+        result |= testResult
+    }
+}
+
+// Subscribe to a condition (devices, location, variable etc.)
+private void subscribeCondition(String prefix, Map<String, Map> ruleDefinitions = conditionsMap) {
+    String name = settings["${prefix}_name"] ?: prefix
+    List<String> selectedConditions = settings["${prefix}_conditions"] ?: []
+    for (String conditionKey in selectedConditions) {
+        Map<String, Map> condition = ruleDefinitions[conditionKey]
+        if (condition.subscribe) {
+            String id = "${prefix}_${conditionKey}"
+            Map ctx = [
+                device: settings["${id}_device"],
+                choice: settings["${id}_choice"],
+                value: settings["${id}_value"]
+            ].asImmutable()
+            String attribute
+            if (condition.subscribe in Closure) {
+                attribute = runClosure(condition.subscribe as Closure, ctx)
+            } else {
+                attribute = condition.subscribe
+            }
+            logInfo "${name} [${condition.name}] subscribing to ${ctx.device ?: 'location'} for '${attribute}'"
+            subscribe(ctx.device ?: location, attribute, 'eventHandler', null)
+        }
+    }
+}
+
+// Given a set of devices, returns if the attribute has the specified value (any or all as specified)
+// TODO: Support comparisons
+@CompileStatic
+private boolean deviceAttributeHasValue(List<DeviceWrapper> devices, String attribute, String value, Boolean all) {
+    if (all) {
+        return devices?.every { DeviceWrapper d -> d.currentValue(attribute) as String == value }
+    }
+    return devices?.any { DeviceWrapper d -> d.currentValue(attribute) as String == value }
+}
+
+// Given two strings return true if satisfied by the operator
+private boolean evaluateComparison(String a, String b, String operator) {
+    switch (operator) {
+        case '=': return a == b
+        case '<>': return a != b
+        case '>': return new BigDecimal(a) > new BigDecimal(b)
+        case '>=': return new BigDecimal(a) >= new BigDecimal(b)
+        case '<': return new BigDecimal(a) < new BigDecimal(b)
+        case '<=': return new BigDecimal(a) <= new BigDecimal(b)
+    }
+    return false
+}
+
+// Given a set of devices, provides the distinct set of attribute names
+@CompileStatic
+private List<String> getAttributeChoices(List<DeviceWrapper> devices) {
+    return devices?.collectMany { d -> d.getSupportedAttributes()*.name }.unique()
+}
+
+@CompileStatic
+private Map<String, String> getAttributeComparisons(List<DeviceWrapper> devices, String attribute) {
+    List<String> types = devices?.collect { d -> d.getSupportedAttributes().find { a -> a.name == attribute }.dataType }.unique()
+    return types.inject([:]) { map, type -> map += getComparisonsByType(type) }
+}
+
+// Given a set of devices, provides the distinct set of attribute names
+@CompileStatic
+private List<String> getAttributeOptions(List<DeviceWrapper> devices, String attribute) {
+    return devices?.collectMany { d -> d.getSupportedAttributes().find { a -> a.name == attribute }.getValues() }.unique()
+}
+
+// Given a set of button devices, provides the list of buttons to choose from
+@CompileStatic
+private Map<String, String> getButtonNumberChoices(List<DeviceWrapper> buttonDevices) {
+    Integer max = buttonDevices?.collect { DeviceWrapper d -> d.currentValue('numberOfButtons') as Integer ?: 0 }?.max()
+    if (max) {
+        return (1..max).collectEntries { int n -> [ n as String, "Button ${n}" ] }
+    }
+    return Collections.emptyMap()
+}
+
+// Given the Hubitat type, determine what comparisons are valid choices to present
+@CompileStatic
+private Map<String, String> getComparisonsByType(String type) {
+    Map<String, String> result = [ '=': 'Equals to', '<>': 'Not equals to' ]
+    if (type.toLowerCase() in [ 'number', 'integer', 'bigdecimal' ]) {
+        result += [
+            '<': 'Less than',
+            '<=': 'Less or equals',
+            '>': 'Greater than',
+            '>=': 'Greater or equals'
+        ]
+    }
+    return result
+}
+
 /*
  *  Called from the application page, renders to the user interface a section to view and edit
  *  conditions and events defined in the conditionsMap above.
@@ -894,87 +1050,13 @@ private Map renderConditionSection(String prefix, String sectionTitle, Map<Strin
                     options = inputs.value.options
                 }
                 input name: "${id}_value",
-                    title: (inputs.value.title ?: condition.value.title) + ' ',
+                    title: (inputs.value.title ?: 'Value') + ' ',
                     width: inputs.value.width ?: 3,
                     defaultValue: inputs.value.defaultValue,
                     options: options,
                     type: options ? 'enum' : 'text',
                     required: true
             }
-        }
-    }
-}
-
-/**
- *  Checks the provided condition configuration and returns a pass/fail (boolean)
- *  Supports tests against devices, hub (global) variables, and state values
- *  Enables any/all type options against devices or conditions
- */
-private boolean checkConditions(String prefix, Event event, Map<String, Map> ruleDefinitions = conditionsMap) {
-    boolean result = false
-    boolean allConditionsFlag = settings["${prefix}_conditions_all"] ?: false
-
-    // Loop through all conditions updating the result
-    List<String> selectedConditions = settings["${prefix}_conditions"] ?: []
-    for (String conditionKey in selectedConditions) {
-        Map<String, Map> condition = ruleDefinitions[conditionKey]
-        if (!condition) { continue }
-        String attribute
-        if (condition.subscribe in Closure) {
-            Map ctx = [
-                device: settings["${id}_device"],
-                choice: settings["${id}_choice"],
-                value: settings["${id}_value"]
-            ].asImmutable()
-            attribute = runClosure(condition.subscribe as Closure, ctx)
-        } else {
-            attribute = condition.subscribe
-        }
-        String id = "${prefix}_${conditionKey}"
-        Map ctx = [
-            all: settings["${id}_all"],
-            attribute: attribute,
-            choice: settings["${id}_choice"],
-            comparison: settings["${id}_comparison"],
-            device: settings["${id}_device"],
-            event: [ (event.name): event.value ],
-            state: state,
-            value: settings["${id}_value"]
-        ].asImmutable()
-        boolean testResult = runClosure(condition.test as Closure, ctx) ?: false
-        log.debug "testResult [${id}] is ${testResult} ${ctx}"
-        // If all conditions is selected and the test failed, stop and return false
-        if (allConditionsFlag && !testResult) {
-            return false
-        // If any conditions is selected and the test passed, stop and return true
-        } else if (!allConditionsFlag && testResult) {
-            return true
-        }
-        // Otherwise update the result and try the next condition
-        result |= testResult
-    }
-}
-
-// Subscribe to all dashboard conditions
-private void subscribeCondition(String prefix, Map<String, Map> ruleDefinitions = conditionsMap) {
-    List<String> selectedConditions = settings["${prefix}_conditions"] ?: []
-    for (String conditionKey in selectedConditions) {
-        Map<String, Map> condition = ruleDefinitions[conditionKey]
-        if (condition.subscribe) {
-            String id = "${prefix}_${conditionKey}"
-            Map ctx = [
-                device: settings["${id}_device"],
-                choice: settings["${id}_choice"],
-                value: settings["${id}_value"]
-            ].asImmutable()
-            String attribute
-            if (condition.subscribe in Closure) {
-                attribute = runClosure(condition.subscribe as Closure, ctx)
-            } else {
-                attribute = condition.subscribe
-            }
-            logInfo "subscribing to ${ctx.device ?: 'location'} for '${attribute}'"
-            subscribe(ctx.device ?: location, attribute, 'eventHandler', null)
         }
     }
 }
@@ -990,67 +1072,4 @@ private Object runClosure(Closure c, Map ctx) {
         logWarn "runClosure (${ctx}): ${e}"
     }
     return null
-}
-
-// Given a set of devices, returns if the attribute has the specified value (any or all as specified)
-@CompileStatic
-private boolean deviceAttributeHasValue(List<DeviceWrapper> devices, String attribute, String value, Boolean all) {
-    if (all) {
-        return devices?.every { DeviceWrapper d -> d.currentValue(attribute) as String == value }
-    }
-    return devices?.any { DeviceWrapper d -> d.currentValue(attribute) as String == value }
-}
-
-private boolean testComparison(String a, String b, String operator) {
-    switch (operator) {
-        case '=': return a == b
-        case '<>': return a != b
-        case '>': return new BigDecimal(a) > new BigDecimal(b)
-        case '>=': return new BigDecimal(a) >= new BigDecimal(b)
-        case '<': return new BigDecimal(a) < new BigDecimal(b)
-        case '<=': return new BigDecimal(a) <= new BigDecimal(b)
-    }
-    return false
-}
-
-// Given a set of devices, provides the distinct set of attribute names
-@CompileStatic
-private List<String> getAttributeChoices(List<DeviceWrapper> devices) {
-    return devices?.collectMany { d -> d.getSupportedAttributes()*.name }.unique()
-}
-
-// Given a set of devices, provides the distinct set of attribute names
-@CompileStatic
-private List<String> getAttributeOptions(List<DeviceWrapper> devices, String attribute) {
-    return devices?.collectMany { d -> d.getSupportedAttributes().find { a -> a.name == attribute }.getValues() }.unique()
-}
-
-@CompileStatic
-private Map<String, String> getAttributeComparisons(List<DeviceWrapper> devices, String attribute) {
-    List<String> types = devices?.collect { d -> d.getSupportedAttributes().find { a -> a.name == attribute }.dataType }.unique()
-    return types.inject([:]) { map, type -> map += getComparisonsByType(type) }
-}
-
-// Given a set of button devices, provides the list of buttons to choose from
-@CompileStatic
-private Map<String, String> getButtonNumberChoices(List<DeviceWrapper> buttonDevices) {
-    Integer max = buttonDevices?.collect { DeviceWrapper d -> d.currentValue('numberOfButtons') as Integer ?: 0 }?.max()
-    if (max) {
-        return (1..max).collectEntries { int n -> [ n as String, "Button ${n}" ] }
-    }
-    return Collections.emptyMap()
-}
-
-@CompileStatic
-private Map<String, String> getComparisonsByType(String type) {
-    Map<String, String> result = [ '=': 'Equals to', '<>': 'Not equals to' ]
-    if (type.toLowerCase() in [ 'number', 'integer', 'bigdecimal' ]) {
-        result += [
-            '<': 'Less than',
-            '<=': 'Less or equals',
-            '>': 'Greater than',
-            '>=': 'Greater or equals'
-        ]
-    }
-    return result
 }

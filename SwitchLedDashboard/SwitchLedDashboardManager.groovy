@@ -25,7 +25,8 @@
  * Thanks to Mattias Fornander (@mfornander) for the original application concept
  *
  * Version history:
- *  0.01 - Initial development
+ *  0.1 - Initial development (alpha)
+ *  0.2 - Beta Test
  *
 */
 
