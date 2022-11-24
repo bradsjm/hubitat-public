@@ -27,6 +27,7 @@
  * Version history:
  *  0.1 - Initial development (alpha)
  *  0.2 - Beta Test
+ *  0.3 - Add condition current state feedback indicator
  *
 */
 
@@ -139,9 +140,10 @@ Map mainPage() {
         section('<b>LED Dashboards</b>') {
             for (String prefix in prefixes) {
                 Map<String, String> config = getDashboardConfig(prefix)
+                String currentResult = evaluateConditions(prefix) ? ' <span style=\'color: green\'>(active)</span>' : ''
                 href(
                     name: "edit_${prefix}",
-                    title: "<b>${config.name}</b>",
+                    title: "<b>${config.name}</b>${currentResult}",
                     description: getDashboardDescription(config),
                     page: 'editPage',
                     params: [ prefix: prefix ],
@@ -818,7 +820,7 @@ private void subscribeSwitches() {
  *  Supports tests against devices, hub (global) variables, and state values
  *  Enables any/all type options against devices or conditions
  */
-private boolean evaluateConditions(String prefix, Event event, Map<String, Map> ruleDefinitions = conditionsMap) {
+private boolean evaluateConditions(String prefix, Event event = null, Map<String, Map> ruleDefinitions = conditionsMap) {
     boolean result = false
     boolean allConditionsFlag = settings["${prefix}_conditions_all"] ?: false
 
@@ -826,41 +828,51 @@ private boolean evaluateConditions(String prefix, Event event, Map<String, Map> 
     List<String> selectedConditions = settings["${prefix}_conditions"] ?: []
     for (String conditionKey in selectedConditions) {
         Map<String, Map> condition = ruleDefinitions[conditionKey]
-        if (!condition) { continue }
-        String attribute
-        if (condition.subscribe in Closure) {
-            Map ctx = [
-                device: settings["${id}_device"],
-                choice: settings["${id}_choice"],
-                value: settings["${id}_value"]
-            ].asImmutable()
-            attribute = runClosure(condition.subscribe as Closure, ctx)
-        } else {
-            attribute = condition.subscribe
+        if (condition) {
+            boolean testResult = evaluateCondition("${prefix}_${conditionKey}", condition, event)
+            // If all conditions is selected and the test failed, stop and return false
+            if (allConditionsFlag && !testResult) {
+                result = false
+                break
+            // If any conditions is selected and the test passed, stop and return true
+            } else if (!allConditionsFlag && testResult) {
+                result = true
+                break
+            }
+            // Otherwise update the result and try the next condition
+            result |= testResult
         }
-        String id = "${prefix}_${conditionKey}"
-        Map ctx = [
-            all: settings["${id}_all"],
-            attribute: attribute,
-            choice: settings["${id}_choice"],
-            comparison: settings["${id}_comparison"],
-            device: settings["${id}_device"],
-            event: [ (event.name): event.value ],
-            state: state,
-            value: settings["${id}_value"]
-        ].asImmutable()
-        boolean testResult = runClosure(condition.test as Closure, ctx) ?: false
-        logInfo "condition [${prefix}] ${condition.title} is ${testResult} ${ctx}"
-        // If all conditions is selected and the test failed, stop and return false
-        if (allConditionsFlag && !testResult) {
-            return false
-        // If any conditions is selected and the test passed, stop and return true
-        } else if (!allConditionsFlag && testResult) {
-            return true
-        }
-        // Otherwise update the result and try the next condition
-        result |= testResult
     }
+    logInfo "${prefix}: condition returns ${result ? 'TRUE' : 'false'}"
+    return result
+}
+
+private boolean evaluateCondition(String prefix, Map condition, Event event = null) {
+    if (!condition) { return false }
+    String attribute
+    if (condition.subscribe in Closure) {
+        Map ctx = [
+            device: settings["${prefix}_device"],
+            choice: settings["${prefix}_choice"],
+            value: settings["${prefix}_value"]
+        ].asImmutable()
+        attribute = runClosure(condition.subscribe as Closure, ctx)
+    } else {
+        attribute = condition.subscribe
+    }
+    Map ctx = [
+        all: settings["${prefix}_all"],
+        attribute: attribute,
+        choice: settings["${prefix}_choice"],
+        comparison: settings["${prefix}_comparison"],
+        device: settings["${prefix}_device"],
+        event: event ? [ (event.name): event.value ] : [:],
+        state: state,
+        value: settings["${prefix}_value"]
+    ].asImmutable()
+    boolean result = runClosure(condition.test as Closure, ctx) ?: false
+    logInfo "${prefix}: '${condition.title}' is ${result ? 'TRUE' : 'false'}"
+    return result
 }
 
 // Subscribe to a condition (devices, location, variable etc.)
@@ -979,6 +991,7 @@ private Map renderConditionSection(String prefix, String sectionTitle, Map<Strin
         Map<String, Map> selectedConditionsMap = ruleDefinitions.findAll { String k, Map v -> k in selectedConditions }
         for (Map.Entry<String, Map> condition in selectedConditionsMap) {
             String id = "${prefix}_${condition.key}"
+            String currentResult = evaluateCondition(id, condition.value) ? ' <span style=\'color: green\'>(true)</span>' : ''
             if (!isFirst) {
                 paragraph allConditionsMode ? '<b>and</b>' : '<i>or</i>'
             }
@@ -986,7 +999,7 @@ private Map renderConditionSection(String prefix, String sectionTitle, Map<Strin
             Map<String, Map> inputs = condition.value.inputs
             if (inputs.device) {
                 input name: "${id}_device",
-                    title: inputs.device.title ?: condition.value.title,
+                    title: (inputs.device.title ?: condition.value.title) + currentResult,
                     type: inputs.device.type,
                     width: inputs.device.width ?: 7,
                     multiple: inputs.device.multiple,
@@ -994,9 +1007,8 @@ private Map renderConditionSection(String prefix, String sectionTitle, Map<Strin
                     required: true
                 if (!inputs.device.any && settings["${id}_device"] in Collection && settings["${id}_device"]?.size() > 1) {
                     String name = inputs.device.name ?: condition.value.name
-                    String title = settings["${id}_device_all"] ? "<b>All</b> ${name} devices" : "<b>Any</b> ${name} device"
                     input name: "${id}_device_all",
-                        title: title,
+                        title: settings["${id}_device_all"] ? "<b>All</b> ${name} devices" : "<b>Any</b> ${name} device",
                         type: 'bool',
                         submitOnChange: true,
                         width: 4
@@ -1013,7 +1025,7 @@ private Map renderConditionSection(String prefix, String sectionTitle, Map<Strin
                 }
                 if (options) {
                     input name: "${id}_choice",
-                        title: inputs.choice.title ?: condition.value.title,
+                        title: (inputs.choice.title ?: condition.value.title) + currentResult,
                         defaultValue: inputs.choice.defaultValue,
                         options: options,
                         width: inputs.choice.width ?: 7,
