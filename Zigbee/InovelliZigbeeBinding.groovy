@@ -36,7 +36,7 @@ definition(
     singleThreaded: true
 )
 
-@Field static final String controllerEndpoint = '0x02'
+@Field static final String controllerEndpoint = '02'
 
 preferences {
     page name: 'mainPage', title: '', install: true, uninstall: true
@@ -115,24 +115,19 @@ void appButtonHandler(String buttonName) {
     bind(buttonName)
 }
 
-void parse(String description) {
-    Map descMap = zigbee.parseDescriptionAsMap(description)
-    log.info "Zigbee Received: ${descMap}"
-}
-
 private void bind(String bindAction) {
     for (DeviceWrapper replica in getValidReplicas()) {
         List<String> cmds = []
         if (bindPower) {
-            cmds << "zdo ${bindAction} 0x${controller.deviceNetworkId} ${controllerEndpoint} ${replica.endpointId} 0x0006 {${controller.zigbeeId}} {${replica.zigbeeId}}"
+            cmds << "zdo ${bindAction} 0x${controller.deviceNetworkId} 0x${controllerEndpoint} 0x${replica.endpointId} 0x0006 {${controller.zigbeeId}} {${replica.zigbeeId}}"
             cmds << 'delay 200'
         }
         if (bindLevel) {
-            cmds << "zdo ${bindAction} 0x${controller.deviceNetworkId} ${controllerEndpoint} ${replica.endpointId} 0x0008 {${controller.zigbeeId}} {${replica.zigbeeId}}"
+            cmds << "zdo ${bindAction} 0x${controller.deviceNetworkId} 0x${controllerEndpoint} 0x${replica.endpointId} 0x0008 {${controller.zigbeeId}} {${replica.zigbeeId}}"
             cmds << 'delay 200'
         }
         if (bindColor) {
-            cmds << "zdo ${bindAction} 0x${controller.deviceNetworkId} ${controllerEndpoint} ${replica.endpointId} 0x0300 {${controller.zigbeeId}} {${replica.zigbeeId}}"
+            cmds << "zdo ${bindAction} 0x${controller.deviceNetworkId} 0x${controllerEndpoint} 0x${replica.endpointId} 0x0300 {${controller.zigbeeId}} {${replica.zigbeeId}}"
             cmds << 'delay 200'
         }
 
