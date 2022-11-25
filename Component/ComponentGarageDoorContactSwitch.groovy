@@ -1,5 +1,5 @@
 metadata {
-    definition (name: 'Generic Component Garage Door Contact/Switch', namespace: 'component', author: 'Jonathan Bradshaw') {
+    definition(name: 'Generic Component Garage Door Contact/Switch', namespace: 'component', author: 'Jonathan Bradshaw') {
         capability 'Actuator'
         capability 'GarageDoorControl'
         capability 'Refresh'
@@ -30,14 +30,14 @@ void installed() {
 // Component command to open device
 void open() {
     if (device.currentValue('door') != 'open') {
-        parent?.on();
+        parent?.on()
     }
 }
 
 // Component command to close device
 void close() {
     if (device.currentValue('door') != 'closed') {
-        parent?.on();
+        parent?.on()
     }
 }
 
@@ -55,6 +55,11 @@ void parse(List<Map> description) {
                 break
         }
     }
+}
+
+// Component command to refresh device
+void refresh() {
+    parent?.componentRefresh(device)
 }
 
 // Called when the device is removed
