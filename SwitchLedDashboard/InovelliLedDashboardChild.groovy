@@ -64,7 +64,7 @@ import java.util.regex.Matcher
 @Field static final Map<String, String> timePeriodsMap = [ '0': 'Seconds', '60': 'Minutes', '120': 'Hours', '255': 'Indefinitely' ].asImmutable()
 
 // Inovelli Device Driver and count of LEDs on the switches
-@Field static final String[] deviceDriver = 'InovelliDimmer2-in-1BlueSeriesVZM31-SN'
+@Field static final String deviceDriver = 'InovelliDimmer2-in-1BlueSeriesVZM31-SN'
 @Field static final int ledCount = 7
 
 // Tracker for device LED state to optimize Zigbee traffic by only sending changes
