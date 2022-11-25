@@ -83,6 +83,7 @@ void installed() {
 void uninstalled() {
     unsubscribe()
     removeAllInUseGlobalVar()
+    resetSwitchDisplays()
     log.info "${app.name} uninstalled"
 }
 
@@ -93,8 +94,12 @@ void updated() {
     cleanSettings()
 
     unsubscribe()
-    subscribeSwitches()
-    subscribeConditions()
+    if (state.paused) {
+        resetSwitchDisplays()
+    } else {
+        subscribeSwitches()
+        subscribeConditions()
+    }
 }
 
 /*
@@ -534,6 +539,13 @@ private void replaceVariables(Map<String, String> config) {
     }
 }
 
+// Set all switches to stop
+private void resetSwitchDisplays() {
+    for (DeviceWrapper device in settings.switches) {
+        ledEffectAll(device, [ 255, null, null, null ])
+    }
+}
+
 // Removes all condition settings from application
 private void removeSettings(String prefix) {
     Set<String> entries = settings.keySet().findAll { s -> s.startsWith(prefix) }
@@ -576,10 +588,8 @@ private void subscribeConditions() {
 }
 
 private void subscribeSwitches() {
-    if (!state.paused) {
-        log.info "subscribing to ledEffect for ${settings.switches}"
-        subscribe(settings.switches, 'ledEffect', 'switchTracker', null)
-    }
+    log.info "subscribing to ledEffect for ${settings.switches}"
+    subscribe(settings.switches, 'ledEffect', 'switchTracker', null)
 }
 
 /*
