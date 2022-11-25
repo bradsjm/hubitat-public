@@ -63,7 +63,7 @@ import java.util.regex.Matcher
 @Field static final Map<String, String> timePeriodsMap = [ '0': 'Seconds', '60': 'Minutes', '120': 'Hours', '255': 'Indefinitely' ].asImmutable()
 
 // Inovelli Device Driver and count of LEDs on the switches
-@Field static final String deviceDriver = 'InovelliDimmer2-in-1BlueSeriesVZM31-SN'
+@Field static final String[] deviceDriver = 'InovelliDimmer2-in-1BlueSeriesVZM31-SN'
 @Field static final int ledCount = 7
 
 // Tracker for device LED state to optimize Zigbee traffic by only sending changes
@@ -188,6 +188,16 @@ Map editPage(Map params = [:]) {
 
         String ledEffect = switchEffectsMap[settings["${prefix}_effect"]] ?: 'condition'
         renderConditionSection(prefix, "<b>Activate ${ledName} ${ledEffect} effect when:</b>")
+
+        section {
+            String title = 'If conditions above do not match '
+            if (settings["${prefix}_autostop"] == false) {
+                title += '<i>make no change</i>'
+            } else {
+                title += '<b>stop the effect</b>'
+            }
+            input name: "${prefix}_autostop", title: title, type: 'bool', defaultValue: true, width: 7, submitOnChange: true
+        }
     }
 }
 
@@ -296,6 +306,9 @@ String getDashboardDescription(Map<String, String> config) {
             .findAll { c -> conditionsMap.containsKey(c) }
             .collect { c -> conditionsMap[c].title + (config["${c}_all"] ? ' <i>(All)</i>' : '') }
         sb << "\n<b>Activation${conditions.size() > 1 ? 's' : ''}:</b> ${conditions.join(allMode)}"
+        if (config.autostop != false) {
+            sb << ' (Autostop)'
+        }
     }
     return sb.toString()
 }
@@ -328,15 +341,24 @@ void eventHandler(Event event) {
     logEvent(event)
     Map<String, Map> ledStates = [:]
     for (String prefix in getDashboardList()) {
+        Map<String, String> config = getDashboardConfig(prefix)
+        Map<String, Map> oldState = ledStates[config.lednumber as String] ?: [:]
+        int oldPriority = oldState.priority as Integer ?: 0
         if (evaluateConditions(prefix, event)) {
-            Map<String, String> config = getDashboardConfig(prefix)
             replaceVariables(config)
-            Map<String, Map> oldState = ledStates[config.lednumber as String] ?: [:]
-            int oldPriority = oldState.priority as Integer ?: 0
             int newPriority = config.priority as Integer ?: 0
             if (newPriority >= oldPriority) {
                 ledStates[config.lednumber as String] = config
             }
+        } else if (config.autostop != false && !oldPriority) {
+            // Auto stop effect
+            ledStates[config.lednumber as String] = [
+                prefix: config.prefix,
+                name: config.name,
+                lednumber: config.lednumber,
+                priority: 0, // lowest priority
+                effect: 255 // stop effect
+            ]
         }
     }
 
@@ -978,8 +1000,8 @@ private Map<String, String> getComparisonsByType(String type) {
 private Map renderConditionSection(String prefix, String sectionTitle, Map<String, Map> ruleDefinitions = conditionsMap) {
     return section(sectionTitle) {
         Map<String, String> conditionTitles = ruleDefinitions.collectEntries { String k, Map v -> [ k, v.title ] }
-        input name: "${prefix}_conditions", title: '', type: 'enum', options: conditionTitles, multiple: true, submitOnChange: true, width: 9
         List<String> selectedConditions = settings["${prefix}_conditions"] ?: []
+        input name: "${prefix}_conditions", title: '', type: 'enum', options: conditionTitles, multiple: true, submitOnChange: true, width: 9
 
         Boolean allConditionsMode = settings["${prefix}_conditions_all"] ?: false
         if (settings["${prefix}_conditions"]?.size() > 1) {
