@@ -1,13 +1,13 @@
 {
   "packageName": "Switch LED Dashboard for Inovelli Blue Series",
   "author": "Jonathan Bradshaw",
-  "version": "0.2",
+  "version": "0.4",
   "minimumHEVersion": "2.1.9",
   "communityLink": "https://community.hubitat.com/t/switch-dashboard-and-switch-notifications/104986",
   "documentationLink": "https://github.com/bradsjm/hubitat-drivers/blob/main/SwitchLedDashboard/README.md",
   "licenseFile": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/LICENSE",
-  "dateReleased": "2022-11-17",
-  "releaseNotes": "v0.3 - Beta Testing Release",
+  "dateReleased": "2022-11-25",
+  "releaseNotes": "v0.4 - Beta Testing Release",
   "apps": [
     {
       "id": "a5578fb7-3eb6-46f2-9eec-cb25fa4a6fdb",

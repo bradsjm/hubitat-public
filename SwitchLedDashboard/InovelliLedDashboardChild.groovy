@@ -28,6 +28,7 @@
  *  0.1 - Initial development (alpha)
  *  0.2 - Beta Test
  *  0.3 - Add condition current state feedback indicator
+ *  0.4 - Add 'autostop' effect option
  *
 */
 
