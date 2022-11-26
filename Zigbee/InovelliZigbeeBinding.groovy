@@ -133,6 +133,8 @@ private void bind(String bindAction) {
 
         log.debug "Zigbee ${bindAction} commands: ${cmds}"
         controller.bind(cmds)
+        pauseExecution(1000)
+        controller.refresh()
     }
 }
 
