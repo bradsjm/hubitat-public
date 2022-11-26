@@ -30,14 +30,14 @@ void installed() {
 // Component command to open device
 void open() {
     if (device.currentValue('door') != 'open') {
-        parent?.on()
+        parent?.open()
     }
 }
 
 // Component command to close device
 void close() {
     if (device.currentValue('door') != 'closed') {
-        parent?.on()
+        parent?.close()
     }
 }
 
