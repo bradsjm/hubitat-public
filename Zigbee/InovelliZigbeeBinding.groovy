@@ -55,7 +55,7 @@ Map mainPage() {
 
         section {
             input name: 'controller',
-                type: 'device.InovelliDimmer2-in-1BlueSeriesVZM31-SN',
+                type: 'capability.switch',
                 title: 'Select Inovelli Blue controller',
                 multiple: false,
                 required: true,
@@ -63,7 +63,7 @@ Map mainPage() {
                 submitOnChange: true
         }
 
-        if (controller) {
+        if (controller?.hasCommand('bind')) {
             List validReplicas = getValidReplicas()
             section {
                 input name: 'replicas',
@@ -105,6 +105,10 @@ Map mainPage() {
                         type: 'button',
                         width: 2
                 }
+            }
+        } else if (controller) {
+            section {
+                paragraph '<h3 style=\'color: red;\'>Device selected does not have binding support in the driver</h3>'
             }
         }
     }
