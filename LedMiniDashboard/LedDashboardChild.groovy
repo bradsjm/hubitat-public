@@ -124,7 +124,7 @@ Map mainPage() {
         section {
             input name: 'deviceType',
                 title: '',
-                description: '<b>Select the device type to use in dashboard display</b>',
+                description: '<b>Select the device type to use in mini-dashboard LED display</b>',
                 type: 'enum',
                 options: DeviceTypeMap.collectEntries { dt -> [ dt.key, dt.value.title ] },
                 multiple: false,
@@ -146,7 +146,7 @@ Map mainPage() {
 
             if (deviceType) {
                 input name: 'switches',
-                    title: "Select ${settings['deviceType']} devices to include in dashboard",
+                    title: "Select ${settings['deviceType']} devices to include in mini-dashboard",
                     type: deviceType.type,
                     required: true,
                     multiple: true,
@@ -157,7 +157,7 @@ Map mainPage() {
 
         if (deviceType && settings['switches']) {
             Set<String> prefixes = getDashboardList()
-            section("<h3 style=\'color: #1A77C9; font-weight: bold\'>${app.label} Conditions</h3>") {
+            section("<h3 style=\'color: #1A77C9; font-weight: bold\'>${app.label} Activation Conditions</h3>") {
                 for (String prefix in prefixes) {
                     Map<String, String> config = getDashboardConfig(prefix)
                     String currentResult = evaluateConditions(prefix) ? ' <span style=\'color: green\'>(active)</span>' : ''
@@ -178,7 +178,7 @@ Map mainPage() {
 
                 href(
                     name: 'addDashboard',
-                    title: '<i>Select to add dashboard activation condition</i>',
+                    title: '<i>Select to add a new activation condition</i>',
                     description: '',
                     params: [ prefix: getNextPrefix() ],
                     page: 'editPage',
@@ -208,11 +208,11 @@ Map editPage(Map params = [:]) {
     String name = settings["${prefix}_name"] ?: 'New'
     String ledName = deviceType.leds[settings["${prefix}_lednumber"]] ?: 'LED'
 
-    return dynamicPage(name: 'editPage', title: "<h2 style=\'color: #1A77C9; font-weight: bold\'>${name} Dashboard</h2>") {
+    return dynamicPage(name: 'editPage', title: "<h2 style=\'color: #1A77C9; font-weight: bold\'>${name} Mini-Dashboard</h2>") {
         section {
-            input name: "${prefix}_name", title: '', description: 'Dashboard Name', type: 'text', width: 6, required: true, submitOnChange: true
+            input name: "${prefix}_name", title: '', description: 'Mini-Dashboard Name', type: 'text', width: 6, required: true, submitOnChange: true
             input name: "${prefix}_priority", title: '', description: 'Select Priority', type: 'enum', options: PrioritiesMap, defaultValue: '5', width: 3, required: true
-            paragraph '<i>Higher value priority dashboards take LED precedence.</i>'
+            paragraph '<i>Higher value priority mini-dashboards take LED precedence.</i>'
         }
 
         renderIndicationSection(prefix, ledName)
@@ -221,7 +221,7 @@ Map editPage(Map params = [:]) {
         renderConditionSection(prefix, "<b>Activate ${ledName} ${effectName} effect when:</b>")
 
         section {
-            String title = 'If conditions above do not match '
+            String title = 'If conditions above do not match then '
             if (settings["${prefix}_autostop"] == false) {
                 title += '<i>make no change</i>'
             } else {
@@ -234,7 +234,7 @@ Map editPage(Map params = [:]) {
 
 Map renderIndicationSection(String prefix, String ledName) {
     Map deviceType = DeviceTypeMap[settings['deviceType']] ?: [:]
-    return section('<b>Select LED indication when condition is active:</b>') {
+    return section('<b>Select LED mini-dashboard indication when active:</b>') {
         // LED Number
         input name: "${prefix}_lednumber", title: '<span style=\'color: blue;\'>LED Number</span>', type: 'enum', options: deviceType?.leds, defaultValue: 'All', width: 2, required: true, submitOnChange: true
         if (settings["${prefix}_lednumber"] == 'var') {
@@ -661,7 +661,7 @@ private void sendNotificationInovelliRed(DeviceWrapper dw, Map config) {
             }
         }
         log.debug "startNotification(${value})"
-        //dw.startNotification(value)
+        dw.startNotification(value)
         config.expires = now() + getDurationMs(duration)
         tracker[key] = config
     } else {

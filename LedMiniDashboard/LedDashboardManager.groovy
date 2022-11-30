@@ -54,18 +54,18 @@ Map mainPage() {
             paragraph getDescription()
         }
 
-        section('<b>LED Dashboard Topics:</b>') {
+        section('<b>LED Mini-Dashboard Topics:</b>') {
             app(
                 name: 'childApp',
-                appName: 'LED Dashboard Topic',
+                appName: 'LED Mini-Dashboard Topic',
                 namespace: 'nrgup',
-                title: 'Add LED dashboard topic',
+                title: 'Add new LED Mini-Dashboard topic',
                 multiple: true
             )
         }
 
         section {
-            label title: '<b>Name this LED Dashboard Manager:</b>', width: 6
+            label title: '<b>Name this LED Mini-Dashboard Manager:</b>', width: 6
         }
     }
 }
