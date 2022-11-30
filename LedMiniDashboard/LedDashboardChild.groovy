@@ -29,23 +29,24 @@
  *  0.2 - Beta Test
  *  0.3 - Add condition current state feedback indicator
  *  0.4 - Add 'autostop' effect option
+ *  0.5 - Add additional device support
  *
 */
 
 definition(
-    name: 'Switch LED Dashboard (Inovelli Blue Series)',
+    name: 'LED Mini-Dashboard Topic',
     namespace: 'nrgup',
-    parent: 'nrgup:Switch LED Dashboard Manager',
+    parent: 'nrgup:LED Mini-Dashboard Manager',
     author: 'Jonathan Bradshaw',
-    description: 'LED Dashboard Child for Inovelli Blue Series Switches',
-    importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/SwitchLedDashboard/InovelliLedDashboardChild.groovy',
+    description: 'LED Mini-Dashboard Child',
+    importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/LedMiniDashboard/LedDashboardChild.groovy',
     iconUrl: '',
     iconX2Url: '',
-    singleThreaded: true
+    singleThreaded: false
 )
 
 preferences {
-    page(name: 'mainPage', title: '<h2 style=\'color: #1A77C9; font-weight: bold\'>Inovelli LED Dashboard</h2>', install: true, uninstall: true)
+    page(name: 'mainPage', install: true, uninstall: true)
     page(name: 'editPage', previousPage: 'mainPage')
 }
 
@@ -56,51 +57,57 @@ import groovy.transform.Field
 import java.util.concurrent.ConcurrentHashMap
 import java.util.regex.Matcher
 
+/*
+ * Define the supported notification device types
+ */
+@Field static final Map<String, Map> DeviceTypeMap = [
+    'Inovelli Blue Switch': [
+        title: 'Inovelli Blue Switches (7 Segments)',
+        type: 'device.InovelliDimmer2-in-1BlueSeriesVZM31-SN',
+        leds: [ '1': 'LED 1 (Bottom)', '2': 'LED 2', '3': 'LED 3', '4': 'LED 4', '5': 'LED 5', '6': 'LED 6', '7': 'LED 7 (Top)', 'All': 'All LEDs', 'var': 'Variable LED' ],
+        effects: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Falling', '7': 'Rising', '8': 'Aurora', '255': 'Stop', 'var': 'Variable Effect' ],
+        stopEffect: 255
+    ],
+    'Inovelli Blue Fan Switch': [
+        title: 'Inovelli Blue Fan Switches (7 Segments)',
+        type: 'device.InovelliDimmer2-in-1BlueSeriesVZM35-SN',
+        leds: [ '1': 'LED 1 (Bottom)', '2': 'LED 2', '3': 'LED 3', '4': 'LED 4', '5': 'LED 5', '6': 'LED 6', '7': 'LED 7 (Top)', 'All': 'All LEDs', 'var': 'Variable LED' ],
+        effects: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Falling', '7': 'Rising', '8': 'Aurora', '255': 'Stop', 'var': 'Variable Effect' ],
+        stopEffect: 255
+    ],
+    'Inovelli Red Switch': [
+        title: 'Inovelli Red Switches (Single Segment)',
+        type: 'device.InovelliDimmerRedSeriesLZW30-SN',
+        leds: [ 'All': 'Notification' ],
+        effects: [ '0': 'Off', '1': 'Solid', '2': 'Chase', '3': 'Fast Blink', '4': 'Slow Blink', '5': 'Pulse', 'var': 'Variable Effect' ],
+        stopEffect: 0
+    ],
+    'Inovelli Red Dimmer': [
+        title: 'Inovelli Red Dimmers (Single Segment)',
+        type: 'device.InovelliDimmerRedSeriesLZW31-SN',
+        leds: [ 'All': 'Notification' ],
+        effects: [ '0': 'Off', '1': 'Solid', '2': 'Chase', '3': 'Fast Blink', '4': 'Slow Blink', '5': 'Pulse', 'var': 'Variable Effect' ],
+        stopEffect: 0
+    ],
+    // 'RGB': [
+    //     title: 'Color Devices (Single Color)',
+    //     type: 'capability.colorControl',
+    //     leds: [ 'All': 'All LEDs' ],
+    //     effects: [ '0': 'Off', '1': 'Solid', 'var': 'Variable Effect' ],
+    //     stopEffect: 0
+    // ]
+].asImmutable()
+
 // Definitions for condition options
-@Field static final Map<String, String> prioritiesMap = [ '1': 'Priority 1 (low)', '2': 'Priority 2', '3': 'Priority 3', '4': 'Priority 4', '5': 'Priority 5 (medium)', '6': 'Priority 6', '7': 'Priority 7', '8': 'Priority 8', '9': 'Priority 9 (high)' ].asImmutable()
-@Field static final Map<String, String> switchColorsMap = [ '0': 'Red', '7': 'Orange', '28': 'Lemon', '64': 'Lime', '85': 'Green', '106': 'Teal', '127': 'Cyan', '148': 'Aqua', '170': 'Blue', '190': 'Violet', '212': 'Magenta', '234': 'Pink', '255': 'White', 'var': 'Variable Color' ].asImmutable()
-@Field static final Map<String, String> switchEffectsMap = [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Falling', '7': 'Rising', '8': 'Aurora', '255': 'Stop', 'var': 'Variable Effect' ].asImmutable()
-@Field static final Map<String, String> switchLedsMap = [ '1': 'LED 1 (Bottom)', '2': 'LED 2', '3': 'LED 3', '4': 'LED 4', '5': 'LED 5', '6': 'LED 6', '7': 'LED 7 (Top)', 'All': 'All LEDs', 'var': 'Variable LED' ].asImmutable()
-@Field static final Map<String, String> timePeriodsMap = [ '0': 'Seconds', '60': 'Minutes', '120': 'Hours', '255': 'Indefinitely' ].asImmutable()
+@Field static final Map<String, String> PrioritiesMap = [ '1': 'Priority 1 (low)', '2': 'Priority 2', '3': 'Priority 3', '4': 'Priority 4', '5': 'Priority 5 (medium)', '6': 'Priority 6', '7': 'Priority 7', '8': 'Priority 8', '9': 'Priority 9 (high)' ].asImmutable()
+@Field static final Map<String, String> TimePeriodsMap = [ '0': 'Seconds', '60': 'Minutes', '120': 'Hours', '255': 'Indefinitely' ].asImmutable()
+@Field static final Map<String, String> ColorMap = [ '0': 'Red', '10': 'Orange', '40': 'Lemon', '91': 'Lime', '120': 'Green', '150': 'Teal', '180': 'Cyan', '210': 'Aqua', '241': 'Blue', '269': 'Violet', '300': 'Magenta', '332': 'Pink', '360': 'White', 'var': 'Variable Color' ].asImmutable()
 
-// Inovelli Device Driver and count of LEDs on the switches
-@Field static final String deviceDriver = 'InovelliDimmer2-in-1BlueSeriesVZM31-SN'
-@Field static final int ledCount = 7
+// Tracker for device LED state to optimize traffic by only sending changes
+@Field static final Map<String, Map> DeviceStateTracker = new ConcurrentHashMap<>()
 
-// Tracker for device LED state to optimize Zigbee traffic by only sending changes
-@Field static final Map<String, Map> switchLedTracker = new ConcurrentHashMap<>()
-
+// Defines the text used to show the application is paused
 @Field static final String pauseText = '<span style=\'color: red;\'> (Paused) </span>'
-
-// Called when the app is first created.
-void installed() {
-    log.info "${app.name} child installed"
-    subscribeSwitches()
-    subscribeConditions()
-}
-
-// Called when the app is removed.
-void uninstalled() {
-    unsubscribe()
-    removeAllInUseGlobalVar()
-    resetSwitchDisplays()
-    log.info "${app.name} uninstalled"
-}
-
-// Called when the settings are updated.
-void updated() {
-    log.info "${app.name} configuration updated"
-    switchLedTracker.clear()
-    cleanSettings()
-
-    unsubscribe()
-    if (state.paused) {
-        resetSwitchDisplays()
-    } else {
-        subscribeSwitches()
-        subscribeConditions()
-    }
-}
 
 /*
  * Application Main Page
@@ -112,64 +119,81 @@ Map mainPage() {
         app.removeSetting('removeSettings')
     }
 
-    return dynamicPage(name: 'mainPage') {
+    return dynamicPage(name: 'mainPage', title: "<h2 style=\'color: #1A77C9; font-weight: bold\'>${app.label}</h2>") {
+        Map deviceType = DeviceTypeMap[settings['deviceType']] ?: [:]
         section {
+            input name: 'deviceType',
+                title: '',
+                description: '<b>Select the device type to use in dashboard display</b>',
+                type: 'enum',
+                options: DeviceTypeMap.collectEntries { dt -> [ dt.key, dt.value.title ] },
+                multiple: false,
+                required: true,
+                submitOnChange: true,
+                width: 10
+
             if (state.paused) {
                 input name: 'resume',
                     title: 'Resume',
                     type: 'button',
                     width: 1
             } else {
-                label title: '',
-                description: 'Name this LED Dashboard',
-                width: 9,
-                submitOnChange: true,
-                required: true
-
                 input name: 'pause',
                     title: 'Pause',
                     type: 'button',
                     width: 1
             }
-        }
 
-        section {
-            input name: 'switches',
-                title: 'Select Inovelli switches to display LED dashboard on',
-                type: 'device.' + deviceDriver,
-                required: true,
-                multiple: true,
-                width: 11
-        }
-
-        Set<String> prefixes = getDashboardList()
-        section('<b>LED Dashboards</b>') {
-            for (String prefix in prefixes) {
-                Map<String, String> config = getDashboardConfig(prefix)
-                String currentResult = evaluateConditions(prefix) ? ' <span style=\'color: green\'>(active)</span>' : ''
-                href(
-                    name: "edit_${prefix}",
-                    title: "<b>${config.name}</b>${currentResult}",
-                    description: getDashboardDescription(config),
-                    page: 'editPage',
-                    params: [ prefix: prefix ],
-                    state: 'complete',
-                    width: 11
-                )
-                input name: 'remove_' + prefix,
-                    title: '<i style="font-size:1rem; color:red;" class="material-icons he-bin"></i>',
-                    type: 'button',
-                    width: 1
+            if (deviceType) {
+                input name: 'switches',
+                    title: "Select ${settings['deviceType']} devices to include in dashboard",
+                    type: deviceType.type,
+                    required: true,
+                    multiple: true,
+                    submitOnChange: true,
+                    width: 10
             }
+        }
 
-            href(
-                name: 'addDashboard',
-                title: 'Add new dashboard',
-                description: 'Select to add new dashboard',
-                params: [ prefix: getNextPrefix() ],
-                page: 'editPage',
-                width: 11
-            )
+        if (deviceType && settings['switches']) {
+            Set<String> prefixes = getDashboardList()
+            section("<h3 style=\'color: #1A77C9; font-weight: bold\'>${app.label} Conditions</h3>") {
+                for (String prefix in prefixes) {
+                    Map<String, String> config = getDashboardConfig(prefix)
+                    String currentResult = evaluateConditions(prefix) ? ' <span style=\'color: green\'>(active)</span>' : ''
+                    href(
+                        name: "edit_${prefix}",
+                        title: "<b>${config.name}</b>${currentResult}",
+                        description: getDashboardDescription(config),
+                        page: 'editPage',
+                        params: [ prefix: prefix ],
+                        state: currentResult ? 'complete' : '',
+                        width: 10
+                    )
+                    input name: 'remove_' + prefix,
+                        title: '<i style="font-size:1rem; color:red;" class="material-icons he-bin"></i>',
+                        type: 'button',
+                        width: 1
+                }
+
+                href(
+                    name: 'addDashboard',
+                    title: '<i>Select to add dashboard activation condition</i>',
+                    description: '',
+                    params: [ prefix: getNextPrefix() ],
+                    page: 'editPage',
+                    width: 10
+                )
+            }
+        }
+
+        if (!state.paused) {
+            section {
+                label title: 'Name this LED Mini-Dashboard Topic:',
+                width: 9,
+                submitOnChange: true,
+                required: true
+            }
         }
     }
 }
@@ -180,20 +204,21 @@ Map mainPage() {
 Map editPage(Map params = [:]) {
     String prefix = params.prefix
     if (!prefix) { return mainPage() }
+    Map deviceType = DeviceTypeMap[settings['deviceType']] ?: [:]
     String name = settings["${prefix}_name"] ?: 'New'
-    String ledName = switchLedsMap[settings["${prefix}_lednumber"]] ?: 'LED'
+    String ledName = deviceType.leds[settings["${prefix}_lednumber"]] ?: 'LED'
 
     return dynamicPage(name: 'editPage', title: "<h2 style=\'color: #1A77C9; font-weight: bold\'>${name} Dashboard</h2>") {
         section {
             input name: "${prefix}_name", title: '', description: 'Dashboard Name', type: 'text', width: 6, required: true, submitOnChange: true
-            input name: "${prefix}_priority", title: '', description: 'Select Priority', type: 'enum', options: prioritiesMap, defaultValue: '5', width: 3, required: true
+            input name: "${prefix}_priority", title: '', description: 'Select Priority', type: 'enum', options: PrioritiesMap, defaultValue: '5', width: 3, required: true
             paragraph '<i>Higher value priority dashboards take LED precedence.</i>'
         }
 
         renderIndicationSection(prefix, ledName)
 
-        String ledEffect = switchEffectsMap[settings["${prefix}_effect"]] ?: 'condition'
-        renderConditionSection(prefix, "<b>Activate ${ledName} ${ledEffect} effect when:</b>")
+        String effectName = deviceType.effects[settings["${prefix}_effect"]] ?: 'condition'
+        renderConditionSection(prefix, "<b>Activate ${ledName} ${effectName} effect when:</b>")
 
         section {
             String title = 'If conditions above do not match '
@@ -208,9 +233,10 @@ Map editPage(Map params = [:]) {
 }
 
 Map renderIndicationSection(String prefix, String ledName) {
+    Map deviceType = DeviceTypeMap[settings['deviceType']] ?: [:]
     return section('<b>Select LED indication when condition is active:</b>') {
         // LED Number
-        input name: "${prefix}_lednumber", title: '<span style=\'color: blue;\'>LED Number</span>', type: 'enum', options: switchLedsMap, defaultValue: 'All', width: 2, required: true, submitOnChange: true
+        input name: "${prefix}_lednumber", title: '<span style=\'color: blue;\'>LED Number</span>', type: 'enum', options: deviceType?.leds, defaultValue: 'All', width: 2, required: true, submitOnChange: true
         if (settings["${prefix}_lednumber"] == 'var') {
             input name: "${prefix}_lednumber_var", title: "<span style=\'color: blue;\'>LED Number Variable</span>", type: 'enum', options: getGlobalVarsByType('integer').keySet(), width: 3, required: true
         } else {
@@ -218,7 +244,7 @@ Map renderIndicationSection(String prefix, String ledName) {
         }
 
         // Effect
-        input name: "${prefix}_effect", title: "<span style=\'color: blue;\'>${ledName} Effect</span>", type: 'enum', options: switchEffectsMap, defaultValue: '1', width: 3, required: true, submitOnChange: true
+        input name: "${prefix}_effect", title: "<span style=\'color: blue;\'>${ledName} Effect</span>", type: 'enum', options: deviceType?.effects, defaultValue: '1', width: 3, required: true, submitOnChange: true
         if (settings["${prefix}_effect"] == 'var') {
             input name: "${prefix}_effect_var", title: "<span style=\'color: blue;\'>Effect Variable</span>", type: 'enum', options: getGlobalVarsByType('string').keySet(), width: 3, required: true
         } else {
@@ -229,7 +255,7 @@ Map renderIndicationSection(String prefix, String ledName) {
         if (settings["${prefix}_effect"] in ['0', '255']) {
             ["${prefix}_color", "${prefix}_color_var", "${prefix}_unit", "${prefix}_duration", "${prefix}_level"].each { s -> app.removeSetting(s) }
         } else {
-            input name: "${prefix}_color", title: "<span style=\'color: blue;\'>${ledName} Color</span>", type: 'enum', options: switchColorsMap, width: 3, defaultValue: '170', required: true, submitOnChange: true
+            input name: "${prefix}_color", title: "<span style=\'color: blue;\'>${ledName} Color</span>", type: 'enum', options: ColorMap, width: 3, defaultValue: '170', required: true, submitOnChange: true
             if (settings["${prefix}_color"] == 'var') {
                 input name: "${prefix}_color_var", title: "<span style=\'color: blue;\'>Color Variable</span>", type: 'enum', options: getGlobalVarsByType('string').keySet(), width: 3, required: true
             } else {
@@ -237,10 +263,10 @@ Map renderIndicationSection(String prefix, String ledName) {
             }
 
             // Time Unit
-            input name: "${prefix}_unit", title: '<span style=\'color: blue;\'>Duration</span>', description: 'Select', type: 'enum', options: timePeriodsMap, width: 2, defaultValue: 'Indefinitely', required: true, submitOnChange: true
+            input name: "${prefix}_unit", title: '<span style=\'color: blue;\'>Duration</span>', description: 'Select', type: 'enum', options: TimePeriodsMap, width: 2, defaultValue: 'Indefinitely', required: true, submitOnChange: true
             if (settings["${prefix}_unit"] in ['0', '60', '120']) {
                 // Time Duration
-                String timePeriod = timePeriodsMap[settings["${prefix}_unit"]]
+                String timePeriod = TimePeriodsMap[settings["${prefix}_unit"]]
                 input name: "${prefix}_duration", title: "<span style=\'color: blue;\'># ${timePeriod}&nbsp;</span>", description: '1..60', type: 'number', width: 2, defaultValue: 1, range: '1..60', required: true
             } else {
                 app.removeSetting("${prefix}_duration")
@@ -253,13 +279,20 @@ Map renderIndicationSection(String prefix, String ledName) {
     }
 }
 
+/*
+ * Event Handlers (methods invoked by the Hub)
+ */
+
+// Invoked when a button input in the UI is pressed
 void appButtonHandler(String buttonName) {
     switch (buttonName) {
         case 'pause':
             state.paused = true
+            updated()
             break
         case 'resume':
             state.paused = false
+            updated()
             break
         case ~/^remove_(.+)/:
             String prefix = Matcher.lastMatcher[0][1]
@@ -271,55 +304,14 @@ void appButtonHandler(String buttonName) {
     }
 }
 
-// Utility method for CSS colored text
-String getColorSpan(Integer color, String text) {
-    String css = 'white'
-    if (color != 255) {
-        int hue = Math.round((color / 254) * 360)
-        css = "hsl(${hue}, 50%, 50%)"
-    }
-    return "<span style=\'color: ${css}\'>${text}</span>"
+// Invoked when the app is first created.
+void installed() {
+    log.info "${app.name} child installed"
+    subscribeSwitches()
+    subscribeConditions()
 }
 
-// Creates a description string for the dashboard configuration for display
-String getDashboardDescription(Map<String, String> config) {
-    StringBuilder sb = new StringBuilder()
-    if (config.lednumber && config.lednumber != 'var') {
-        sb << "<b>${switchLedsMap[config.lednumber]}</b>"
-    } else if (config.lednumber == 'var') {
-        sb << "<b>LED Variable:</b> <i>${config.lednumber_var}</i>"
-    }
-    sb << ", <b>Priority</b>: ${config.priority}"
-    if (config.effect && config.effect != 'var') {
-        sb << ", <b>Effect:</b> ${switchEffectsMap[config.effect]}"
-    } else if (config.effect == 'var') {
-        sb << ", <b>Effect Variable</b>: <i>${config.effect_var}</i>"
-    }
-    if (config.color && config.color != 'var') {
-        sb << ", <b>Color</b>: ${getColorSpan(config.color as Integer, switchColorsMap[config.color])}"
-    } else if (config.color == 'var') {
-        sb << ", <b>Color Variable:</b> <i>${config.color_var}</i>"
-    }
-    if (config.level) {
-        sb << ", <b>Level:</b> ${config.level}%"
-    }
-    if (config.duration && config.unit) {
-        sb << ", <b>Duration:</b> ${config.duration} ${timePeriodsMap[config.unit]?.toLowerCase()}"
-    }
-    if (config.conditions) {
-        String allMode = config.conditions_all ? ' and ' : ' or '
-        List<String> conditions = config.conditions
-            .findAll { c -> conditionsMap.containsKey(c) }
-            .collect { c -> conditionsMap[c].title + (config["${c}_all"] ? ' <i>(All)</i>' : '') }
-        sb << "\n<b>Activation${conditions.size() > 1 ? 's' : ''}:</b> ${conditions.join(allMode)}"
-        if (config.autostop != false) {
-            sb << ' (Autostop)'
-        }
-    }
-    return sb.toString()
-}
-
-// Called by the hub when a global variable is renamed
+// Invoked by the hub when a global variable is renamed
 void renameVariable(String oldName, String newName) {
     settings.findAll { s -> s.key.endsWith('_var') && s.value == oldName }.each { s ->
         log.info "changing ${s.key} from ${oldName} to ${newName}"
@@ -327,12 +319,26 @@ void renameVariable(String oldName, String newName) {
     }
 }
 
-// Updates the app label based on pause state
-void updatePauseLabel() {
-    if (state.paused && !app.label?.endsWith(pauseText)) {
-        app.updateLabel(app.label + pauseText)
-    } else if (app.label?.endsWith(pauseText)) {
-        app.updateLabel(app.label - pauseText)
+// Invoked when the app is removed.
+void uninstalled() {
+    unsubscribe()
+    removeAllInUseGlobalVar()
+    resetNotifications()
+    log.info "${app.name} uninstalled"
+}
+
+// Invoked when the settings are updated.
+void updated() {
+    log.info "${app.name} configuration updated"
+    DeviceStateTracker.clear()
+    cleanupSettings()
+
+    unsubscribe()
+    if (state.paused) {
+        resetNotifications()
+    } else {
+        subscribeSwitches()
+        subscribeConditions()
     }
 }
 
@@ -344,11 +350,14 @@ void updatePauseLabel() {
  *  precedence over lower priorities.
  */
 void eventHandler(Event event) {
-    logEvent(event)
     Map<String, Map> ledStates = [:]
+    logEvent(event)
+    state[event.name] = event.value
+
     for (String prefix in getDashboardList()) {
         Map<String, String> config = getDashboardConfig(prefix)
         Map<String, Map> oldState = ledStates[config.lednumber as String] ?: [:]
+        Map deviceType = DeviceTypeMap[settings['deviceType']] ?: [:]
         int oldPriority = oldState.priority as Integer ?: 0
         if (evaluateConditions(prefix, event)) {
             replaceVariables(config)
@@ -363,7 +372,7 @@ void eventHandler(Event event) {
                 name: config.name,
                 lednumber: config.lednumber,
                 priority: 0, // lowest priority
-                effect: 255 // stop effect
+                effect: deviceType.stopEffect
             ]
         }
     }
@@ -371,27 +380,27 @@ void eventHandler(Event event) {
     // Update switch LEDs as required
     if (ledStates.containsKey('All')) {
         // Any 'All LED' condition takes precedence over individual LED conditions
-        setLedConfiguration(ledStates['All'])
+        sendNotification(ledStates['All'])
         sendEvent([ name: ledStates['All'].title, value: 'All', descriptionText: ledStates['All'].toString() ])
     } else if (ledStates) {
-        // Sending individual LED updates is inefficient but necessary
+        // Sending individual LED updates
         ledStates.values().each { config ->
-            setLedConfiguration(config)
+            sendNotification(config)
             sendEvent([ name: config.title, value: config.lednumber, descriptionText: ledStates.toString() ])
         }
     }
 }
 
-// Inovelli Blue Switch Tracker
-void switchTracker(Event event) {
+// For Inovelli Blue devices track the led state changes and update the device tracker
+void deviceStateTracker(Event event) {
     switch (event.value) {
         case 'Stop All':
         case 'User Cleared':
-            switchLedTracker.remove(event.device.id)
+            DeviceStateTracker.remove(event.device.id)
             log.info "clearing LED tracking for ${event.device}"
             break
         case ~/^Stop LED(\d)$/:
-            Map<String, Map> tracker = switchLedTracker[event.device.id]
+            Map<String, Map> tracker = DeviceStateTracker[event.device.id]
             if (tracker) {
                 String led = Matcher.lastMatcher[0][1]
                 tracker.remove(led)
@@ -401,20 +410,34 @@ void switchTracker(Event event) {
     }
 }
 
+/*
+ * Internal Methods
+ */
+
 // Cleans settings removing entries no longer in use
-private void cleanSettings() {
+private void cleanupSettings() {
+    // Clean unused variable settings
     [ 'lednumber', 'effect', 'color' ].each { var ->
         if (settings["${prefix}_${var}"] != 'var') {
             app.removeSetting("${prefix}_${var}_var")
         }
     }
 
+    // Clean unused dashboard settings
     for (String prefix in getDashboardList()) {
-        List<String> selectedConditions = settings["${prefix}_conditions"] ?: []
-        conditionsMap.keySet().findAll { key -> !(key in selectedConditions) }.each { key ->
-            removeSettings("${prefix}_${key}")
-        }
+        conditionsMap.keySet()
+            .findAll { key -> !(key in settings["${prefix}_conditions"]) }
+            .each { key -> removeSettings("${prefix}_${key}") }
     }
+}
+
+// Utility method for CSS colored text
+private String getColorSpan(Integer hue, String text) {
+    if (hue != null && text) {
+        String css = (hue == 360) ? 'white' : "hsl(${hue}, 50%, 50%)"
+        return "<span style=\'color: ${css}\'>${text}</span>"
+    }
+    return 'n/a'
 }
 
 // Returns key value map of specified dashboard settings
@@ -423,6 +446,45 @@ private Map<String, String> getDashboardConfig(String prefix) {
     return [ 'prefix': prefix ] + settings
         .findAll { s -> s.key.startsWith(prefix + '_') }
         .collectEntries { s -> [ s.key.substring(startPos), s.value ] }
+}
+
+// Creates a description string for the dashboard configuration for display
+private String getDashboardDescription(Map<String, String> config) {
+    Map deviceType = DeviceTypeMap[settings['deviceType']] ?: [:]
+    StringBuilder sb = new StringBuilder()
+    if (config.lednumber && config.lednumber != 'var') {
+        sb << "<b>${deviceType?.leds[config.lednumber] ?: 'n/a'}</b>"
+    } else if (config.lednumber == 'var') {
+        sb << "<b>LED Variable:</b> <i>${config.lednumber_var}</i>"
+    }
+    sb << ", <b>Priority</b>: ${config.priority}"
+    if (config.effect && config.effect != 'var') {
+        sb << ", <b>Effect:</b> ${deviceType?.effects[config.effect] ?: 'n/a' }"
+    } else if (config.effect == 'var') {
+        sb << ", <b>Effect Variable</b>: <i>${config.effect_var}</i>"
+    }
+    if (config.color && config.color != 'var') {
+        sb << ", <b>Color</b>: ${getColorSpan(config.color as Integer, ColorMap[config.color])}"
+    } else if (config.color == 'var') {
+        sb << ", <b>Color Variable:</b> <i>${config.color_var}</i>"
+    }
+    if (config.level) {
+        sb << ", <b>Level:</b> ${config.level}%"
+    }
+    if (config.duration && config.unit) {
+        sb << ", <b>Duration:</b> ${config.duration} ${TimePeriodsMap[config.unit]?.toLowerCase()}"
+    }
+    if (config.conditions) {
+        String allMode = config.conditions_all ? ' and ' : ' or '
+        List<String> conditions = config.conditions
+            .findAll { c -> conditionsMap.containsKey(c) }
+            .collect { c -> conditionsMap[c].title + (config["${c}_all"] ? ' <i>(All)</i>' : '') }
+        sb << "\n<b>Activation${conditions.size() > 1 ? 's' : ''}:</b> ${conditions.join(allMode)}"
+        if (config.autostop != false) {
+            sb << ' (Autostop)'
+        }
+    }
+    return sb.toString()
 }
 
 // Returns dashboard setting prefix sorted by priority (descending)
@@ -437,7 +499,10 @@ private Set<String> getDashboardList() {
 // Calculate milliseconds from Inovelli duration parameter (0-255)
 // 1-60=seconds, 61-120=1-60 minutes, 121-254=1-134 hours, 255=Indefinitely
 @CompileStatic
-private long getDurationMs(int duration) {
+private long getDurationMs(Integer duration) {
+    if (!duration) {
+        return 0
+    }
     if (duration <= 60) { // seconds (1-60)
         return duration * 1000
     }
@@ -456,52 +521,6 @@ private String getNextPrefix() {
     List<Integer> keys = getDashboardList().collect { p -> p.substring(10) as Integer }
     int maxId = keys ? Collections.max(keys) : 0
     return "condition_${maxId + 1}"
-}
-
-/**
- *  ledEffectAll is a wrapper around the Inovelli device driver method of the same name
- *  The wrapper uses the trackingState to reduce the Zigbee traffic by checking the
- *  assumed LED state before sending changes.
- */
-private void ledEffectAll(DeviceWrapper dw, Map params) {
-    Map<String, Map> tracker = switchLedTracker.computeIfAbsent(dw.id) { k -> [:].withDefault { [:] } }
-    if (tracker['All'].effect != params.effect
-        || tracker['All'].color != params.color
-        || tracker['All'].level != params.level
-        || tracker['All'].duration != params.duration
-        || tracker['All'].expires <= now()
-    ) {
-        dw.ledEffectAll(params.effect, params.color, params.level, params.duration)
-        // the switch will tell us when the effect stops so expires is a backup method
-        params.expires = now() + getDurationMs(params.duration)
-        tracker.clear()
-        tracker['All'] = params
-    } else {
-        log.info 'skipping update (no change to leds detected)'
-    }
-}
-
-/**
- *  ledEffectOne is a wrapper around the Inovelli device driver method of the same name
- *  The wrapper uses the trackingState to reduce the Zigbee traffic by checking the
- *  assumed LED state before sending changes.
- */
-private void ledEffectOne(DeviceWrapper dw, Map params) {
-    Map<String, Map> tracker = switchLedTracker.computeIfAbsent(dw.id) { k -> [:].withDefault { [:] } }
-    String key = params.lednumber
-    if (tracker[key].effect != params.effect
-        || tracker[key].color != params.color
-        || tracker[key].level != params.level
-        || tracker[key].duration != params.duration
-        || tracker[key].expires <= now()
-    ) {
-        dw.ledEffectOne(params.lednumber, params.effect, params.color, params.level, params.duration)
-        params.expires = now() + getDurationMs(params.duration)
-        tracker.remove('All')
-        tracker[key] = params
-    } else {
-        log.info 'skipping update (no change to leds detected)'
-    }
 }
 
 // Logs the received event
@@ -528,21 +547,25 @@ private String lookupVariable(String variableName, Map<String, String> lookupTab
 
 // Populate configuration values with specified global variables
 private void replaceVariables(Map<String, String> config) {
-    if (config.lednumber == 'var') {
-        config.lednumber = lookupVariable(config.lednumber_var, switchLedsMap) ?: 'All'
-    }
-    if (config.effect == 'var') {
-        config.effect = lookupVariable(config.effect_var, switchEffectsMap) ?: '1'
-    }
-    if (config.color == 'var') {
-        config.color = lookupVariable(config.color_var, switchColorsMap) ?: '170'
+    Map deviceType = DeviceTypeMap[settings['deviceType']] ?: [:]
+    if (deviceType) {
+        if (config.lednumber == 'var') {
+            config.lednumber = lookupVariable(config.lednumber_var, deviceType.leds) ?: 'All'
+        }
+        if (config.effect == 'var') {
+            config.effect = lookupVariable(config.effect_var, deviceType.effects) ?: '1'
+        }
+        if (config.color == 'var') {
+            config.color = lookupVariable(config.color_var, ColorMap) ?: '170'
+        }
     }
 }
 
 // Set all switches to stop
-private void resetSwitchDisplays() {
-    for (DeviceWrapper device in settings.switches) {
-        ledEffectAll(device, [ 255, null, null, null ])
+private void resetNotifications() {
+    Map deviceType = DeviceTypeMap[settings['deviceType']]
+    if (deviceType) {
+        sendNotification([ lednumber: 'All', effect: deviceType.stopEffect ])
     }
 }
 
@@ -552,32 +575,119 @@ private void removeSettings(String prefix) {
     entries.each { s -> app.removeSetting(s) }
 }
 
-// Set Inovelli switch LEDs
-private void setLedConfiguration(Map<String, String> config) {
-    List<DeviceWrapper> devices = settings.switches as List<DeviceWrapper>
-    if (devices) {
-        devices.each { device ->
-            Integer duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255)
-            if (config.lednumber == 'All') {
-                logInfo "setting ${device} ALL LEDs (id=${config.prefix}, name=${config.name}, priority=${config.priority}, effect=${config.effect}, color=${config.color}, level=${config.level}, duration=${duration})"
-                ledEffectAll(device, [
-                    effect: config.effect as Integer,
-                    color: config.color as Integer,
-                    level: config.level as Integer,
-                    duration: duration
-                ])
-            } else {
-                logInfo "setting ${device} LED #${config.lednumber} (id=${config.prefix}, name=${config.name}, priority=${config.priority}, effect=${config.effect}, color=${config.color}, level=${config.level}, duration=${duration})"
-                ledEffectOne(device, [
-                    lednumber: config.lednumber as String,
-                    effect: config.effect as Integer,
-                    color: config.color as Integer,
-                    level: config.level as Integer,
-                    duration: duration
-                ])
-            }
+/**
+ *  sendNotification is a wrapper around driver specific commands for setting LED notifications
+ */
+private void sendNotification(Map config) {
+    for (DeviceWrapper device in settings['switches']) {
+        logInfo "setting ${device} LED #${config.lednumber} (" +
+            "id=${config.prefix}, name=${config.name}, priority=${config.priority}, " +
+            "effect=${config.effect}, color=${config.color}, level=${config.level}, " +
+            "duration=${config.duration} ${TimePeriodsMap[config.unit]})"
+
+        if (device.hasCommand('ledEffectOne')) {
+            sendNotificationInovelliBlue(device, config)
+        } else if (device.hasCommand('startNotification')) {
+            sendNotificationInovelliRed(device, config)
+        } else if (device.hasCommand('setColor')) {
+            sendNotificationColor(device, config)
+        } else {
+            logWarn "unable to determine notification command for ${device}"
         }
     }
+}
+
+/**
+ *  setNotificationInovelliBlue is a wrapper around the Inovelli device ledEffect driver methods
+ *  The wrapper uses the trackingState to reduce the Zigbee traffic by checking the
+ *  assumed LED state before sending changes.
+ */
+private void sendNotificationInovelliBlue(DeviceWrapper dw, Map config) {
+    Map<String, Map> tracker = DeviceStateTracker.computeIfAbsent(dw.id) { k -> [:].withDefault { [:] } }
+    String key = config.lednumber
+    if (tracker[key].effect != config.effect
+        || tracker[key].color != config.color
+        || tracker[key].level != config.level
+        || tracker[key].duration != config.duration
+        || tracker[key].expires <= now()
+    ) {
+        Integer color, duration
+        if (config.duration != null && config.unit != null) {
+            duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255)
+        }
+        if (config.color != null) {
+            color = Math.min(Math.round(((config.color as Integer) / 360.0) * 255), 255)
+        }
+        if (config.lednumber == 'All') {
+            log.debug "${dw}.ledEffectAll(${config.effect},${color},${config.level},${duration})"
+            dw.ledEffectAll(config.effect, color, config.level, duration)
+        } else {
+            log.debug "${dw}.ledEffectOne(${config.lednumber},${config.effect},${color},${config.level},${duration})"
+            dw.ledEffectOne(config.lednumber, config.effect, color, config.level, duration)
+        }
+        config.expires = now() + getDurationMs(duration)
+        tracker.remove('All')
+        tracker[key] = config
+    } else {
+        log.info 'skipping update (no change to leds detected)'
+    }
+}
+
+/**
+ *  startNotification is a wrapper around the Inovelli device driver method of the same name
+ */
+private void sendNotificationInovelliRed(DeviceWrapper dw, Map config) {
+    Map<String, Map> tracker = DeviceStateTracker.computeIfAbsent(dw.id) { k -> [:].withDefault { [:] } }
+    String key = 'All'
+    if (tracker[key].effect != config.effect
+        || tracker[key].color != config.color
+        || tracker[key].level != config.level
+        || tracker[key].duration != config.duration
+        || tracker[key].expires <= now()
+    ) {
+        int value = 0
+        if (config.effect) {
+            if (config.color) {
+                value += Math.round(((config.color as int) / 360.0) * 255)
+            }
+            if (config.level) {
+                value += ((config.level as int) * 256)
+            }
+            if (config.duration) {
+                value += ((config.duration as int) * 65536)
+            }
+            if (config.effect) {
+                value += ((config.effect as int) * 16777216)
+            }
+        }
+        log.debug "startNotification(${value})"
+        //dw.startNotification(value)
+        config.expires = now() + getDurationMs(duration)
+        tracker[key] = config
+    } else {
+        log.info 'skipping update (no change to leds detected)'
+    }
+}
+
+/**
+ *  sendNotificationColor is a wrapper around the color device driver methods
+ */
+private void sendNotificationColor(DeviceWrapper dw, Map config) {
+    if (config.color < 360) {
+        int huePercent = Math.round(((config.color as int) / 360.0) * 100)
+        dw.setColor([
+            hue: huePercent,
+            saturation: 100,
+            level: config.level as Integer
+        ])
+    } else if (config.colr == 360) { // white
+        dw.setColor([
+            hue: 0,
+            saturation: 0,
+            level: config.level as Integer
+        ])
+    }
+    // TODO: Duration and effect support
 }
 
 // Subscribe to all dashboard conditions
@@ -588,8 +698,22 @@ private void subscribeConditions() {
 }
 
 private void subscribeSwitches() {
-    log.info "subscribing to ledEffect for ${settings.switches}"
-    subscribe(settings.switches, 'ledEffect', 'switchTracker', null)
+    String type = DeviceTypeMap[settings.deviceType]?.type
+    switch (type) {
+        case ~/^device.InovelliDimmer2-in-1BlueSeries.*/:
+            log.info "subscribing to ledEffect event for ${settings.switches}"
+            subscribe(settings.switches, 'ledEffect', 'deviceStateTracker', null)
+            break
+    }
+}
+
+// Updates the app label based on pause state
+private void updatePauseLabel() {
+    if (state.paused && !app.label?.endsWith(pauseText)) {
+        app.updateLabel(app.label + pauseText)
+    } else if (app.label?.endsWith(pauseText)) {
+        app.updateLabel(app.label - pauseText)
+    }
 }
 
 /*
@@ -676,7 +800,7 @@ private void subscribeSwitches() {
             ]
         ],
         subscribe: 'hsmStatus',
-        test: { ctx -> ctx.event.hsmStatus in ctx.choice }
+        test: { ctx -> ctx.state.hsmStatus in ctx.choice }
     ],
     'hsmAlert': [
         name: 'HSM Alert',
@@ -688,7 +812,7 @@ private void subscribeSwitches() {
             ]
         ],
         subscribe: 'hsmAlert',
-        test: { ctx -> ctx.event.hsmAlert in ctx.choice }
+        test: { ctx -> ctx.state.hsmAlert in ctx.choice }
     ],
     'variable': [
         name: 'Hub variable',
@@ -944,6 +1068,7 @@ private boolean deviceAttributeHasValue(List<DeviceWrapper> devices, String attr
 }
 
 // Given two strings return true if satisfied by the operator
+@CompileStatic
 private boolean evaluateComparison(String a, String b, String operator) {
     switch (operator) {
         case '=': return a == b
@@ -960,12 +1085,6 @@ private boolean evaluateComparison(String a, String b, String operator) {
 @CompileStatic
 private List<String> getAttributeChoices(List<DeviceWrapper> devices) {
     return devices?.collectMany { d -> d.getSupportedAttributes()*.name }.unique()
-}
-
-@CompileStatic
-private Map<String, String> getAttributeComparisons(List<DeviceWrapper> devices, String attribute) {
-    List<String> types = devices?.collect { d -> d.getSupportedAttributes().find { a -> a.name == attribute }.dataType }.unique()
-    return types.inject([:]) { map, type -> map += getComparisonsByType(type) }
 }
 
 // Given a set of devices, provides the distinct set of attribute names
