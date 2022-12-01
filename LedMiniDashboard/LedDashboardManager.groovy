@@ -31,7 +31,7 @@
 */
 
 definition(
-    name: 'LED Mini-Dashboard Manager',
+    name: 'LED Mini-Dashboard',
     namespace: 'nrgup',
     author: 'Jonathan Bradshaw',
     category: 'Lighting',

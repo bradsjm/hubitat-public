@@ -37,7 +37,7 @@
 definition(
     name: 'LED Mini-Dashboard Topic',
     namespace: 'nrgup',
-    parent: 'nrgup:LED Mini-Dashboard Manager',
+    parent: 'nrgup:LED Mini-Dashboard',
     author: 'Jonathan Bradshaw',
     description: 'LED Mini-Dashboard Child',
     importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/LedMiniDashboard/LedDashboardChild.groovy',
@@ -354,10 +354,16 @@ void eventHandler(Event event) {
 // For Inovelli Blue devices track the led state changes and update the device tracker
 void deviceStateTracker(Event event) {
     switch (event.value) {
-        case 'Stop All':
         case 'User Cleared':
             DeviceStateTracker.remove(event.device.id)
-            log.info "clearing LED tracking for ${event.device}"
+            log.info "clearing all LED tracking for ${event.device}"
+            break
+        case 'Stop All':
+            Map<String, Map> tracker = DeviceStateTracker[event.device.id]
+            if (tracker) {
+                tracker.remove('All')
+                log.info "cleared LED tracking for ${event.device} All LED"
+            }
             break
         case ~/^Stop LED(\d)$/:
             Map<String, Map> tracker = DeviceStateTracker[event.device.id]
@@ -559,7 +565,7 @@ private void replaceVariables(Map<String, String> config) {
 private void resetNotifications() {
     Map deviceType = DeviceTypeMap[settings['deviceType']]
     if (deviceType) {
-        deviceType.leds.keySet().findAll{ s -> s != 'var'}.each { led ->
+        deviceType.leds.keySet().findAll { s -> s != 'var' }.each { led ->
             updateDeviceLedState([ lednumber: led, effect: deviceType.stopEffect ?: 0 ])
         }
     }
