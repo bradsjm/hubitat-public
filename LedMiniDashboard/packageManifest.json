@@ -7,22 +7,22 @@
   "documentationLink": "https://github.com/bradsjm/hubitat-drivers/blob/main/SwitchLedDashboard/README.md",
   "licenseFile": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/LICENSE",
   "dateReleased": "2022-11-25",
-  "releaseNotes": "v0.4 - Beta Testing Release",
+  "releaseNotes": "v0.6 - Beta Testing Release",
   "apps": [
     {
       "id": "a5578fb7-3eb6-46f2-9eec-cb25fa4a6fdb",
-      "name": "Switch LED Dashboard Manager",
+      "name": "LED Mini-Dashboard Manager",
       "namespace": "nrgup",
-      "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/SwitchLedDashboard/SwitchLedDashboardManager.groovy",
+      "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/SwitchLedDashboard/LedDashboardManager.groovy",
       "required": true,
       "oauth": false,
       "primary": true
     },
     {
       "id": "a0495dde-b93c-464a-a718-807913f779f4",
-      "name": "Switch LED Dashboard (Inovelli Blue Series)",
+      "name": "LED Mini-Dashboard Topic",
       "namespace": "nrgup",
-      "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/SwitchLedDashboard/InovelliLedDashboardChild.groovy",
+      "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/SwitchLedDashboard/LedDashboardChild.groovy",
       "required": true,
       "oauth": false,
       "primary": false

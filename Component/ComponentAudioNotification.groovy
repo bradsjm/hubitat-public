@@ -30,7 +30,7 @@ void installed() {
 void parse(List<Map> description) {
     if (logEnable) { log.debug description }
     description.each { d ->
-        if (d.descriptionText && txtEnable) { LOG.info d.descriptionText }
+        if (d.descriptionText && txtEnable) { log.info d.descriptionText }
         sendEvent(d)
     }
 }

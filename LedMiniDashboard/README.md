@@ -1,4 +1,4 @@
-# Switch LED Dashboard
+# LED Mini-Dashboard
 
 This application allows easy linking of Hubitat device, variables and HSM states to LEDs of your [Inovelli Blue Series Zigbee switches](https://inovelli.com/collections/inovelli-blue-series).
 
@@ -10,8 +10,8 @@ You can link states such as contact sensors open/closed, motion sensors active/i
 Dashboards can share an LED by using priority levels allowing, for example, the same LED to show yellow if a door is unlocked, red if locked and blink if the alarm has been tripped.
 
 ### Application Details
-- Each *Switch LED Dashboard Manager* app may have one or more LED dashboards
-- You can create one or more *Switch LED Dashboard Manager* apps to organize your dashboards
+- Each *LED Mini-Dashboard Manager* app may have one or more LED dashboards
+- You can create one or more *LED Mini-Dashboard Manager* apps to organize your dashboards
 - Using the same switches across multiple dashboards and managers is supported
 - Each dashboard may be *paused and resumed* using the button next to the name field
 - Each dashboard may have any number of **conditions** defined with each condition being assigned a priority from 1 - 9

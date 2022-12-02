@@ -24,19 +24,15 @@
 /*
  * Thanks to Mattias Fornander (@mfornander) for the original application concept
  *
- * Version history:
- *  0.1 - Initial development (alpha)
- *  0.2 - Beta Test
- *
 */
 
 definition(
-    name: 'Switch LED Dashboard Manager',
+    name: 'LED Mini-Dashboard',
     namespace: 'nrgup',
     author: 'Jonathan Bradshaw',
     category: 'Lighting',
-    description: 'Turn your switch LEDs into mini-dashboards (supports Inovelli Blue Series Switches)',
-    importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/SwitchLedDashboard/SwitchLedDashboardManager.groovy',
+    description: 'Turn your switch LEDs into mini-dashboards',
+    importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/LedMiniDashboard/LedDashboardManager.groovy',
     iconUrl: '',
     iconX2Url: '',
     installOnOpen: true,
@@ -54,18 +50,18 @@ Map mainPage() {
             paragraph getDescription()
         }
 
-        section('<b>LED Dashboard Groups (Inovelli Blue Series):</b>') {
+        section('<b>LED Mini-Dashboard Topics:</b>') {
             app(
                 name: 'childApp',
-                appName: 'Switch LED Dashboard (Inovelli Blue Series)',
+                appName: 'LED Mini-Dashboard Topic',
                 namespace: 'nrgup',
-                title: 'Add Inovelli Blue Series LED dashboard group',
+                title: 'Add new LED Mini-Dashboard topic',
                 multiple: true
             )
         }
 
         section {
-            label title: '<b>Name this LED Dashboard Manager:</b>', width: 6
+            label title: '<b>Name this LED Mini-Dashboard Manager:</b>', width: 6
         }
     }
 }
