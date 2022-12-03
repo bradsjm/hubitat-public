@@ -39,6 +39,7 @@ metadata {
         attribute 'errorDescription', 'string'
         attribute 'fanSpeed', 'enum', [ 'off', 'min', 'low', 'medium', 'high', 'turbo', 'max' ]
         attribute 'mop', 'enum', [ 'true', 'false' ]
+        attribute 'networkStatus', 'enum', [ 'connecting', 'online', 'offline' ]
         attribute 'rooms', 'json_object'
         attribute 'status', 'enum', [ 'error', 'docked', 'idle', 'returning', 'cleaning', 'paused', 'manual_control', 'moving' ]
         attribute 'statusDetail', 'enum', [ 'none', 'zone', 'segment', 'spot', 'target', 'resumable', 'mapping' ]
@@ -48,8 +49,8 @@ metadata {
 
         command 'cleanRooms', [
             [
-                name: 'rooms*',
-                description: 'comma seperated list of room numbers',
+                name: 'rooms',
+                description: 'comma seperated room ids or blank for switched on child rooms',
                 type: 'STRING'
             ],
             [
@@ -58,6 +59,7 @@ metadata {
                 type: 'NUMBER'
             ]
         ]
+        command 'createChildRooms'
         command 'emptyDock'
         command 'setFanSpeed', [
             [
@@ -78,6 +80,7 @@ metadata {
         command 'home'
         command 'locate'
         command 'pause'
+        command 'removeChildRooms'
         command 'setVolume', [
             [
                 name: 'level*',
@@ -112,8 +115,14 @@ metadata {
 
             input name: 'namespace',
                 type: 'string',
-                title: 'Valetudo namespace',
-                defaultValue: 'valetudo/',
+                title: 'Valetudo name space',
+                defaultValue: 'valetudo',
+                required: true
+
+            input name: 'identifier',
+                type: 'string',
+                title: 'Vacuum machine name',
+                defaultValue: 'robot',
                 required: true
         }
 
@@ -284,48 +293,89 @@ void updated() {
 }
 
 // Commands
-void cleanRooms(String rooms, BigDecimal iterations = 1) {
+void cleanRooms() { cleanRooms(null, null) }
+
+void cleanRooms(String rooms, BigDecimal iterations) {
+    List<String> roomList = []
+    if (rooms) {
+        roomList = rooms.split(',')
+    } else {
+        roomList = getChildDevices().
+            findAll { d -> d.currentValue('switch') == 'on' }.
+            collect { d ->
+                String dni = d.getDeviceNetworkId()
+                return dni.substring(dni.indexOf('-') + 1)
+            }
+    }
+    log.info "cleaning rooms ${roomList}"
     String json = JsonOutput.toJson([
-        'segment_ids': rooms.split(','),
-        'iterations': iterations,
+        'segment_ids': roomList,
+        'iterations': iterations ?: 1,
         'customOrder': true
     ])
     mqttPublish(getTopic('MapSegmentationCapability/clean/set'), json)
 }
 
+void createChildRooms() {
+    String deviceName = device.name
+    Map<String, String> rooms = parseJson(device.currentValue('rooms')) ?: [:]
+    log.info "creating child device rooms for ${rooms}"
+    rooms.each { String id, String roomName ->
+        String dni = "${device.id}-${id}"
+        (getChildDevice(dni) ?: addChildDevice('hubitat', 'Virtual Switch', dni)).with {
+            name = "${deviceName} segment #${id}"
+            label = "${roomName} Cleaning"
+        }
+    }
+}
+
 void emptyDock() {
+    log.info 'emptying vacuum into dock'
     mqttPublish(getTopic('AutoEmptyDockManualTriggerCapability/trigger/set'), 'PERFORM')
 }
 
 void home() {
+    log.info 'vacuum returning to dock'
     mqttPublish(getTopic('BasicControlCapability/operation/set'), 'HOME')
 }
 
 void locate() {
+    log.info 'locating vacuum'
     mqttPublish(getTopic('LocateCapability/locate/set'), 'PERFORM')
 }
 
 void off() {
+    log.info 'stopping vacuum'
     mqttPublish(getTopic('BasicControlCapability/operation/set'), 'STOP')
 }
 
 void on() {
+    log.info 'starting vacuum'
     mqttPublish(getTopic('BasicControlCapability/operation/set'), 'START')
 }
 
 void pause() {
+    log.info 'pausing vacuum'
     mqttPublish(getTopic('BasicControlCapability/operation/set'), 'PAUSE')
 }
 
+void removeChildRooms() {
+    log.info 'removing all child devices'
+    childDevices.each { device -> deleteChildDevice(device.deviceNetworkId) }
+}
+
 void setFanSpeed(String speed) {
+    log.info "setting fan speed to ${speed}"
     mqttPublish(getTopic('/FanSpeedControlCapability/preset/set'), speed)
 }
 
 void setVolume(BigDecimal volume) {
+    log.info "setting volume to ${volume}"
     mqttPublish(getTopic('SpeakerVolumeControlCapability/value/set'), volume as String)
 }
 
 void setWaterGrade(String grade) {
+    log.info "setting water grade to ${grade}"
     mqttPublish(getTopic('WaterUsageControlCapability/preset/set'), grade)
 }
 
@@ -337,9 +387,11 @@ void mqttConnect() {
         state.clientId = state.clientId ?: new BigDecimal(119, new Random()).toString(36)
         String uri = getBrokerUri()
         log.info "Connecting to MQTT broker at ${uri}"
+        sendEvent([ name: 'networkStatus', value: 'connecting', descriptionText: "connecting to ${uri}" ])
         interfaces.mqtt.connect(uri, state.clientId, settings?.brokerUser, settings?.brokerPassword)
     } catch (e) {
         log.error "MQTT connect error: ${e}"
+        sendEvent([ name: 'networkStatus', value: 'disconnected', descriptionText: "error ${e}" ])
         scheduleConnect()
     }
 }
@@ -349,6 +401,7 @@ void mqttSubscribe() {
         state.remove('reconnectDelay')
         String topic = getTopic('#')
         if (logEnable) { log.debug "SUB: ${topic}" }
+        sendEvent([ name: 'networkStatus', value: 'connected', descriptionText: "subscriig to ${topic}" ])
         interfaces.mqtt.subscribe(topic)
     }
 }
@@ -357,6 +410,7 @@ private void mqttDisconnect() {
     if (interfaces.mqtt.connected) {
         log.info 'disconnecting from MQTT broker'
         interfaces.mqtt.disconnect()
+        sendEvent([ name: 'networkStatus', value: 'disconnected' ])
         pauseExecution(1000)
     }
 }
@@ -376,7 +430,7 @@ private String getBrokerUri() {
 }
 
 private String getTopic(String topic) {
-    return "${settings?.namespace.replaceAll('/$', '')}/${topic}"
+    return "${settings?.namespace.replaceAll('/$', '')}/${identifier.replaceAll('/$', '')}/${topic}"
 }
 
 private void mqttPublish(String topic, String payload = '', int qos = 0) {
