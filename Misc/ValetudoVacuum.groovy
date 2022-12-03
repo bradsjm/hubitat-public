@@ -207,6 +207,20 @@ metadata {
         name: 'status',
         attribute: 'status'
     ],
+    'StatusStateAttribute/status': [
+        name: 'switch',
+        attribute: 'switch',
+        conversion: { value ->
+            switch (value) {
+                case 'cleaning':
+                case 'moving':
+                case 'manual_control':
+                    return 'on'
+                default:
+                    return 'off'
+            }
+        }
+    ],
     'WaterUsageControlCapability/preset': [
         name: 'water grade',
         attribute: 'waterGrade'
@@ -265,7 +279,7 @@ void parse(String data) {
     String topic = message['topic'] ?: ''
     String payload = message['payload'] ?: ''
     if (settings.logEnable) { log.debug "mqtt: ${topic} = ${payload}" }
-    TopicAttributeMap.find { path, map ->
+    TopicAttributeMap.each { path, map ->
         if (topic.endsWith('/' + path)) {
             String value = map.conversion ? map.conversion(payload) : payload
             if ((device.currentValue(map.attribute) as String) != (value as String)) {
