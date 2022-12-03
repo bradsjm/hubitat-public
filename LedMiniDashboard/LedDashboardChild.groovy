@@ -82,6 +82,7 @@ import java.util.regex.Matcher
         title: 'Inovelli Red Switches (Single Segment)',
         type: 'device.InovelliDimmerRedSeriesLZW30-SN',
         leds: [ 'All': 'Notification' ],
+        effects: [:],
         effectsAll: [ '0': 'Off', '1': 'Solid', '2': 'Chase', '3': 'Fast Blink', '4': 'Slow Blink', '5': 'Pulse', 'var': 'Variable Effect' ],
         stopEffect: 0
     ],
@@ -89,6 +90,7 @@ import java.util.regex.Matcher
         title: 'Inovelli Red Dimmers (Single Segment)',
         type: 'device.InovelliDimmerRedSeriesLZW31-SN',
         leds: [ 'All': 'Notification' ],
+        effects: [:],
         effectsAll: [ '0': 'Off', '1': 'Solid', '2': 'Chase', '3': 'Fast Blink', '4': 'Slow Blink', '5': 'Pulse', 'var': 'Variable Effect' ],
         stopEffect: 0
     ],
@@ -103,7 +105,7 @@ import java.util.regex.Matcher
 
 // Definitions for condition options
 @Field static final Map<String, String> PrioritiesMap = [ '1': 'Priority 1 (low)', '2': 'Priority 2', '3': 'Priority 3', '4': 'Priority 4', '5': 'Priority 5 (medium)', '6': 'Priority 6', '7': 'Priority 7', '8': 'Priority 8', '9': 'Priority 9 (high)' ].asImmutable()
-@Field static final Map<String, String> TimePeriodsMap = [ '0': 'Seconds', '60': 'Minutes', '120': 'Hours', '255': 'Indefinitely' ].asImmutable()
+@Field static final Map<String, String> TimePeriodsMap = [ '0': 'Seconds', '60': 'Minutes', '120': 'Hours', '255': 'Infinite' ].asImmutable()
 @Field static final Map<String, String> ColorMap = [ '0': 'Red', '10': 'Orange', '40': 'Lemon', '91': 'Lime', '120': 'Green', '150': 'Teal', '180': 'Cyan', '210': 'Aqua', '241': 'Blue', '269': 'Violet', '300': 'Magenta', '332': 'Pink', '360': 'White', 'var': 'Variable Color' ].asImmutable()
 
 // Tracker for device LED state to optimize traffic by only sending changes
@@ -116,6 +118,9 @@ import java.util.regex.Matcher
  * Application Main Page
  */
 Map mainPage() {
+    if (app.label == null) {
+        app.updateLabel('New Mini-Dashboard')
+    }
     updatePauseLabel()
     if (settings.removeSettings) {
         removeSettings(settings.removeSettings)
@@ -198,21 +203,17 @@ Map mainPage() {
 Map editPage(Map params = [:]) {
     String prefix = params.prefix
     if (!prefix) { return mainPage() }
-    Map deviceType = DeviceTypeMap[settings['deviceType']] ?: [:]
     String name = settings["${prefix}_name"] ?: 'New'
 
     return dynamicPage(name: 'editPage', title: "<h2 style=\'color: #1A77C9; font-weight: bold\'>${name} Mini-Dashboard</h2>") {
         section {
             input name: "${prefix}_name", title: '', description: 'Mini-Dashboard Name', type: 'text', width: 6, required: true, submitOnChange: true
-            input name: "${prefix}_priority", title: '', description: 'Select Priority', type: 'enum', options: PrioritiesMap, defaultValue: '5', width: 3, required: true
+            input name: "${prefix}_priority", title: '', description: 'Select Priority', type: 'enum', options: PrioritiesMap, defaultValue: 'Priority 5 (medium)', width: 3, required: true
             paragraph '<i>Higher value priority mini-dashboards take LED precedence.</i>'
         }
 
         renderIndicationSection(prefix)
-
-        String ledName = deviceType.leds[settings["${prefix}_lednumber"]] ?: 'LED'
-        String effectName = deviceType.effects[settings["${prefix}_effect"]] ?: 'condition'
-        renderConditionSection(prefix, "<b>Activate ${ledName} ${effectName} effect when:</b>")
+        renderConditionSection(prefix, '<b>Activate LED effect when:</b>')
 
         section {
             String title = 'If conditions above do not match then '
@@ -229,7 +230,7 @@ Map renderIndicationSection(String prefix) {
 
     return section('<b>Select LED mini-dashboard indication when active:</b>') {
         // LED Number
-        input name: "${prefix}_lednumber", title: '<span style=\'color: blue;\'>LED Number</span>', type: 'enum', options: deviceType?.leds, defaultValue: 'All', width: 2, required: true, submitOnChange: true
+        input name: "${prefix}_lednumber", title: '<span style=\'color: blue;\'>LED Number</span>', type: 'enum', options: deviceType.leds, width: 3, required: true, submitOnChange: true
         if (settings["${prefix}_lednumber"] == 'var') {
             input name: "${prefix}_lednumber_var", title: "<span style=\'color: blue;\'>LED Number Variable</span>", type: 'enum', options: getGlobalVarsByType('integer').keySet(), width: 3, required: true
         } else {
@@ -237,39 +238,41 @@ Map renderIndicationSection(String prefix) {
         }
 
         // Effect
-        Map<String, String> fxOptions = ledNumber == 'All' ? deviceType?.effectsAll : deviceType?.effects
-        input name: "${prefix}_effect", title: "<span style=\'color: blue;\'>${ledName} Effect</span>", type: 'enum', options: fxOptions, defaultValue: '1', width: 3, required: true, submitOnChange: true
-        if (settings["${prefix}_effect"] == 'var') {
-            input name: "${prefix}_effect_var", title: "<span style=\'color: blue;\'>Effect Variable</span>", type: 'enum', options: getGlobalVarsByType('string').keySet(), width: 3, required: true
-        } else {
-            app.removeSetting("${prefix}_effect_var")
-        }
-
-        // Color
-        if (settings["${prefix}_effect"] in ['0', '255']) {
-            ["${prefix}_color", "${prefix}_color_var", "${prefix}_unit", "${prefix}_duration", "${prefix}_level"].each { s -> app.removeSetting(s) }
-        } else {
-            input name: "${prefix}_color", title: "<span style=\'color: blue;\'>${ledName} Color</span>", type: 'enum', options: ColorMap, width: 3, defaultValue: '170', required: true, submitOnChange: true
-            if (settings["${prefix}_color"] == 'var') {
-                input name: "${prefix}_color_var", title: "<span style=\'color: blue;\'>Color Variable</span>", type: 'enum', options: getGlobalVarsByType('string').keySet(), width: 3, required: true
+        if (ledNumber) {
+            Map<String, String> fxOptions = ledNumber == 'All' ? deviceType.effectsAll : deviceType.effects
+            input name: "${prefix}_effect", title: "<span style=\'color: blue;\'>${ledName} Effect</span>", type: 'enum', options: fxOptions, width: 2, required: true, submitOnChange: true
+            if (settings["${prefix}_effect"] == 'var') {
+                input name: "${prefix}_effect_var", title: "<span style=\'color: blue;\'>Effect Variable</span>", type: 'enum', options: getGlobalVarsByType('string').keySet(), width: 3, required: true
             } else {
-                app.removeSetting("${prefix}_color_var")
+                app.removeSetting("${prefix}_effect_var")
             }
 
-            // Time Unit
-            input name: "${prefix}_unit", title: '<span style=\'color: blue;\'>Duration</span>', description: 'Select', type: 'enum', options: TimePeriodsMap, width: 2, defaultValue: 'Indefinitely', required: true, submitOnChange: true
-            if (settings["${prefix}_unit"] in ['0', '60', '120']) {
-                // Time Duration
-                String timePeriod = TimePeriodsMap[settings["${prefix}_unit"]]
-                input name: "${prefix}_duration", title: "<span style=\'color: blue;\'># ${timePeriod}&nbsp;</span>", description: '1..60', type: 'number', width: 2, defaultValue: 1, range: '1..60', required: true
+            // Color
+            if (settings["${prefix}_effect"] in ['0', '255']) {
+                ["${prefix}_color", "${prefix}_color_var", "${prefix}_unit", "${prefix}_duration", "${prefix}_level"].each { s -> app.removeSetting(s) }
             } else {
-                app.removeSetting("${prefix}_duration")
-            }
+                input name: "${prefix}_color", title: "<span style=\'color: blue;\'>${ledName} Color</span>", type: 'enum', options: ColorMap, width: 3, required: true, submitOnChange: true
+                if (settings["${prefix}_color"] == 'var') {
+                    input name: "${prefix}_color_var", title: "<span style=\'color: blue;\'>Color Variable</span>", type: 'enum', options: getGlobalVarsByType('string').keySet(), width: 3, required: true
+                } else {
+                    app.removeSetting("${prefix}_color_var")
+                }
 
-            // Level
-            input name: "${prefix}_level", title: "<span style=\'color: blue;\'>Level&nbsp;</span>", description: '1..100', type: 'number', width: 1, defaultValue: 100, range: '1..100', required: true
+                // Time Unit
+                input name: "${prefix}_unit", title: '<span style=\'color: blue;\'>Duration</span>', description: 'Select', type: 'enum', options: TimePeriodsMap, width: 2, defaultValue: 'Infinite', required: true, submitOnChange: true
+                if (settings["${prefix}_unit"] in ['0', '60', '120']) {
+                    // Time Duration
+                    String timePeriod = TimePeriodsMap[settings["${prefix}_unit"]]
+                    input name: "${prefix}_duration", title: "<span style=\'color: blue;\'># ${timePeriod}&nbsp;</span>", description: '1..60', type: 'number', width: 2, defaultValue: 1, range: '1..60', required: true
+                } else {
+                    app.removeSetting("${prefix}_duration")
+                }
+
+                // Level
+                input name: "${prefix}_level", title: "<span style=\'color: blue;\'>Level&nbsp;</span>", description: '1..100', type: 'number', width: 1, defaultValue: 100, range: '1..100', required: true
+            }
+            paragraph ''
         }
-        paragraph ''
     }
 }
 
@@ -325,9 +328,10 @@ void uninstalled() {
 void updated() {
     log.info "${app.name} configuration updated"
     DeviceStateTracker.clear()
+    state.clear()
     cleanSettings()
-
     unsubscribe()
+
     if (state.paused) {
         resetNotifications()
     } else {
@@ -449,7 +453,7 @@ private Map<String, String> getDashboardConfig(String prefix) {
 // Creates a description string for the dashboard configuration for display
 private String getDashboardDescription(String prefix) {
     Map config = getDashboardConfig(prefix)
-    Map deviceType = DeviceTypeMap[settings['deviceType']] ?: [:]
+    Map deviceType = DeviceTypeMap[settings['deviceType']]
     StringBuilder sb = new StringBuilder()
     if (config.lednumber && config.lednumber != 'var') {
         sb << "<b>${deviceType?.leds[config.lednumber] ?: 'n/a'}</b>"
@@ -458,7 +462,8 @@ private String getDashboardDescription(String prefix) {
     }
     sb << ", <b>Priority</b>: ${config.priority}"
     if (config.effect && config.effect != 'var') {
-        sb << ", <b>Effect:</b> ${deviceType?.effects[config.effect] ?: 'n/a' }"
+        Map<String, String> fxOptions = deviceType.effectsAll + deviceType.effects
+        sb << ", <b>Effect:</b> ${fxOptions[config.effect] ?: 'n/a' }"
     } else if (config.effect == 'var') {
         sb << ", <b>Effect Variable</b>: <i>${config.effect_var}</i>"
     }
@@ -552,7 +557,7 @@ private void replaceVariables(Map<String, String> config) {
             config.lednumber = lookupVariable(config.lednumber_var, deviceType.leds) ?: 'All'
         }
         if (config.effect == 'var') {
-            Map<String, String> fxOptions = deviceType.leds == 'All' ? deviceType.effectsAll : deviceType.effects
+            Map<String, String> fxOptions = deviceType.effectsAll + deviceType.effects
             config.effect = lookupVariable(config.effect_var, fxOptions) ?: '1'
         }
         if (config.color == 'var') {
