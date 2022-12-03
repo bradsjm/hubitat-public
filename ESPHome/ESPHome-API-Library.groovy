@@ -58,14 +58,19 @@ import java.util.concurrent.ConcurrentLinkedQueue
  * ESPHome Native API Plaintext Socket IO Implementation
  */
 void openSocket() {
-    try {
-        setNetworkStatus('connecting', "host ${settings.ipAddress}:${API_PORT_NUMBER}")
-        interfaces.rawSocket.connect(settings.ipAddress, API_PORT_NUMBER, byteInterface: true)
-        runInMillis(250, 'espHomeHelloRequest')
-    } catch (e) {
-        scheduleConnect()
-        setNetworkStatus('offline', e.getMessage())
+    if (device.isDisabled()) {
+        state.reconnectDelay = MAX_RECONNECT_SECONDS
+    } else {
+        try {
+            setNetworkStatus('connecting', "host ${settings.ipAddress}:${API_PORT_NUMBER}")
+            interfaces.rawSocket.connect(settings.ipAddress, API_PORT_NUMBER, byteInterface: true)
+            runInMillis(250, 'espHomeHelloRequest')
+            return
+        } catch (e) {
+            setNetworkStatus('offline', e.getMessage())
+        }
     }
+    scheduleConnect()
 }
 
 void closeSocket(String reason) {
@@ -1042,6 +1047,7 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
                 logWarning "ESPHome received unhandled message type ${msgType} with ${tags}"
             }
     }
+
     espHomeSchedulePing()
 }
 
@@ -1274,6 +1280,13 @@ private ByteArrayOutputStream getReceiveBuffer() {
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void healthCheck() {
+    if (device.isDisabled()) {
+        state.reconnectDelay = MAX_RECONNECT_SECONDS
+        closeSocket('device is disabled')
+        scheduleConnect()
+        return
+    }
+
     // send ping request when online and send queue is empty
     if (!isOffline() && getSendQueue().isEmpty()) {
         if (logEnable) { log.trace 'ESPHome sending ping to device' }
