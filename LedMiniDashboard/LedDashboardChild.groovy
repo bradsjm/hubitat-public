@@ -31,6 +31,7 @@
  *  0.4 - Add 'autostop' effect option to clear effect
  *  0.5 - Add additional device support for Inovelli Red switches and dimmers
  *  0.6 - Add additional effect types support
+ *  0.7 - Fixes for split effect definitions (effects vs effectsAll)
  *
 */
 

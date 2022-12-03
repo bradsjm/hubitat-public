@@ -7,7 +7,7 @@
   "documentationLink": "https://github.com/bradsjm/hubitat-drivers/blob/main/SwitchLedDashboard/README.md",
   "licenseFile": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/LICENSE",
   "dateReleased": "2022-11-25",
-  "releaseNotes": "v0.6 - Beta Testing Release",
+  "releaseNotes": "v0.7 - Beta Testing Release",
   "apps": [
     {
       "id": "a5578fb7-3eb6-46f2-9eec-cb25fa4a6fdb",
