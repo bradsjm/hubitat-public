@@ -1,6 +1,9 @@
 {
     "extends": "recommended",
     "rules": {
+        "BuilderMethodWithSideEffects": {
+            "enabled": false
+        },
         "CompileStatic": {
             "enabled": false
         },
