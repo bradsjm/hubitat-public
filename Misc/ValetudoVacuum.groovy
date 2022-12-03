@@ -22,7 +22,11 @@
 */
 
 import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+import groovy.transform.CompileStatic
 import groovy.transform.Field
+import hubitat.helper.HexUtils
+import java.util.zip.Inflater
 
 metadata {
     definition(name: 'Valetudo Robot Vacuum', namespace: 'nrgup', author: 'Jonathan Bradshaw',
@@ -145,73 +149,87 @@ metadata {
 /**
  * MQTT Topic to Hubitat Attribute Mapping & Conversion
  */
-@Field static final Map TopicAttributeMap = [
-    'AttachmentStateAttribute/dustbin': [
+@Field static final List<Map> TopicAttributeMap = [
+    [
+        path: 'AttachmentStateAttribute/dustbin',
         name: 'dust bin',
         attribute: 'dustbin'
     ],
-    'AttachmentStateAttribute/mop': [
+    [
+        path: 'AttachmentStateAttribute/mop',
         name: 'mop',
         attribute: 'mop'
     ],
-    'AttachmentStateAttribute/watertank': [
+    [
+        path: 'AttachmentStateAttribute/watertank',
         name: 'water tank',
         attribute: 'waterTank'
     ],
-    'BatteryStateAttribute/level': [
+    [
+        path: 'BatteryStateAttribute/level',
         name: 'battery level',
         attribute: 'battery',
         unit: '%',
-        conversion: { value -> value.toInteger() }
+        conversion: { payload -> new String(payload, 'UTF-8').toInteger() }
     ],
-    'BatteryStateAttribute/status': [
+    [
+        path: 'BatteryStateAttribute/status',
         name: 'battery state',
         attribute: 'batteryStatus'
     ],
-    'CurrentStatisticsCapability/area': [
+    [
+        path: 'CurrentStatisticsCapability/area',
         name: 'area covered',
         attribute: 'area',
         unit: 'm²',
-        conversion: { value -> (value.toInteger() / 10000.0) as int }
+        conversion: { payload -> (new String(payload, 'UTF-8').toInteger() / 10000.0) as int }
     ],
-    'CurrentStatisticsCapability/time': [
+    [
+        path: 'CurrentStatisticsCapability/time',
         name: 'elapsed minutes',
         attribute: 'elapsedMin',
         unit: 'm',
-        conversion: { value -> (value.toInteger() / 60.0) as int }
+        conversion: { payload -> (new String(payload, 'UTF-8').toInteger() / 60.0) as int }
     ],
-    'FanSpeedControlCapability/preset': [
+    [
+        path: 'FanSpeedControlCapability/preset',
         name: 'fan speed',
         attribute: 'fanSpeed'
     ],
-    'SpeakerVolumeControlCapability/value': [
+    [
+        path: 'SpeakerVolumeControlCapability/value',
         name: 'volume level',
         attribute: 'volume',
         unit: '%',
-        conversion: { value -> value.toInteger() }
+        conversion: { payload -> new String(payload, 'UTF-8').toInteger() }
     ],
-    'MapData/segments': [
+    [
+        path: 'MapData/segments',
         name: 'room segments',
         attribute: 'rooms'
     ],
-    'StatusStateAttribute/detail': [
+    [
+        path: 'StatusStateAttribute/detail',
         name: 'status detail',
         attribute: 'statusDetail',
-        conversion: { value -> value.replace('segment', 'room') }
+        conversion: { payload -> new String(payload, 'UTF-8').replace('segment', 'room') }
     ],
-    'StatusStateAttribute/error_description': [
+    [
+        path: 'StatusStateAttribute/error_description',
         name: 'error description',
         attribute: 'errorDescription'
     ],
-    'StatusStateAttribute/status': [
+    [
+        path: 'StatusStateAttribute/status',
         name: 'status',
         attribute: 'status'
     ],
-    'StatusStateAttribute/status': [
+    [
+        path: 'StatusStateAttribute/status',
         name: 'switch',
         attribute: 'switch',
-        conversion: { value ->
-            switch (value) {
+        conversion: { payload ->
+            switch (new String(payload, 'UTF-8')) {
                 case 'cleaning':
                 case 'moving':
                 case 'manual_control':
@@ -221,16 +239,23 @@ metadata {
             }
         }
     ],
-    'WaterUsageControlCapability/preset': [
+    [
+        path: 'WaterUsageControlCapability/preset',
         name: 'water grade',
         attribute: 'waterGrade'
     ],
-    'WifiConfigurationCapability/signal': [
+    [
+        path: 'WifiConfigurationCapability/signal',
         name: 'WiFi rssi',
         attribute: 'rssi',
         unit: 'dBm',
-        conversion: { value -> 5 * (Math.round(value.toInteger() / 5)) } // multiples of 5db
+        conversion: { payload -> 5 * (Math.round(new String(payload, 'UTF-8').toInteger() / 5)) } // multiples of 5db
     ],
+    // [
+    //     path: 'MapData/map-data',
+    //     name: 'map',
+    //     conversion: { payload -> parseMap(payload) }
+    // ]
 ].asImmutable()
 
 @Field static final Random random = new Random()
@@ -277,11 +302,11 @@ void mqttClientStatus(String status) {
 void parse(String data) {
     Map message = interfaces.mqtt.parseMessage(data)
     String topic = message['topic'] ?: ''
-    String payload = message['payload'] ?: ''
+    byte[] payload = HexUtils.hexStringToByteArray(message['payload'])
     if (settings.logEnable) { log.debug "mqtt: ${topic} = ${payload}" }
-    TopicAttributeMap.each { path, map ->
-        if (topic.endsWith('/' + path)) {
-            String value = map.conversion ? map.conversion(payload) : payload
+    TopicAttributeMap.each { map ->
+        if (topic.endsWith('/' + map.path)) {
+            String value = map.conversion ? map.conversion(payload) : new String(payload, 'UTF-8')
             if ((device.currentValue(map.attribute) as String) != (value as String)) {
                 String descriptionText = "${map.name} is ${value}${map.unit ?: ''}"
                 sendEvent(name: map.attribute, value: value, descriptionText: descriptionText)
@@ -402,7 +427,7 @@ void mqttConnect() {
         String uri = getBrokerUri()
         log.info "Connecting to MQTT broker at ${uri}"
         sendEvent([ name: 'networkStatus', value: 'connecting', descriptionText: "connecting to ${uri}" ])
-        interfaces.mqtt.connect(uri, state.clientId, settings?.brokerUser, settings?.brokerPassword)
+        interfaces.mqtt.connect(uri, state.clientId, settings?.brokerUser, settings?.brokerPassword, byteInterface: true)
     } catch (e) {
         log.error "MQTT connect error: ${e}"
         sendEvent([ name: 'networkStatus', value: 'disconnected', descriptionText: "error ${e}" ])
@@ -418,6 +443,27 @@ void mqttSubscribe() {
         sendEvent([ name: 'networkStatus', value: 'connected', descriptionText: "subscriig to ${topic}" ])
         interfaces.mqtt.subscribe(topic)
     }
+}
+
+@CompileStatic
+private static String parseMap(byte[] payload) {
+    //Map json = new JsonSlurper().parseText(inflateJson(payload))
+    return inflateString(payload)
+}
+
+@CompileStatic
+private static String inflateString(byte[] data) {
+    ByteArrayOutputStream outputstream = new ByteArrayOutputStream(data.size())
+    Inflater inflater = new Inflater()
+    inflater.setInput(data)
+    byte[] buffer = new byte[data.size()]
+    while (inflater.finished() != true) {
+        inflater.inflate(buffer)
+        outputstream.write(buffer)
+    }
+    inflater.end()
+    outputstream.close()
+    return outputstream.toString('UTF-8')
 }
 
 private void mqttDisconnect() {
