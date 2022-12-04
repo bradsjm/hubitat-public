@@ -129,7 +129,7 @@ Map mainPage() {
     }
 
     return dynamicPage(name: 'mainPage', title: "<h2 style=\'color: #1A77C9; font-weight: bold\'>${app.label}</h2>") {
-        Map deviceType = DeviceTypeMap[settings['deviceType']] ?: [:]
+        Map deviceType = getDeviceType()
         section {
             input name: 'deviceType',
                 title: '',
@@ -233,7 +233,7 @@ Map editPage(Map params = [:]) {
 }
 
 Map renderIndicationSection(String prefix) {
-    Map deviceType = DeviceTypeMap[settings['deviceType']] ?: [:]
+    Map deviceType = getDeviceType()
     String ledNumber = settings["${prefix}_lednumber"]
     String ledName = deviceType.leds[settings[ledNumber]] ?: 'LED'
 
@@ -306,14 +306,14 @@ void appButtonHandler(String buttonName) {
             removeSettings(prefix)
             break
         default:
-            log.warn "unknown app button ${buttonName}"
+            logWarn "unknown app button ${buttonName}"
             break
     }
 }
 
 // Invoked when the app is first created.
 void installed() {
-    log.info "${app.name} child installed"
+    logInfo "${app.name} child installed"
     subscribeAllSwitches()
     subscribeAllConditions()
 }
@@ -321,7 +321,7 @@ void installed() {
 // Invoked by the hub when a global variable is renamed
 void renameVariable(String oldName, String newName) {
     settings.findAll { s -> s.key.endsWith('_var') && s.value == oldName }.each { s ->
-        log.info "changing ${s.key} from ${oldName} to ${newName}"
+        logInfo "changing ${s.key} from ${oldName} to ${newName}"
         s.value = newName
     }
 }
@@ -331,12 +331,12 @@ void uninstalled() {
     unsubscribe()
     removeAllInUseGlobalVar()
     resetNotifications()
-    log.info "${app.name} uninstalled"
+    logInfo "${app.name} uninstalled"
 }
 
 // Invoked when the settings are updated.
 void updated() {
-    log.info "${app.name} configuration updated"
+    logInfo "${app.name} configuration updated"
     DeviceStateTracker.clear()
     cleanSettings()
     unsubscribe()
@@ -365,25 +365,26 @@ void eventHandler(Event event) {
 }
 
 // For Inovelli Blue devices track the led state changes and update the device tracker
+@CompileStatic
 void deviceStateTracker(Event event) {
     switch (event.value) {
         case 'User Cleared':
             DeviceStateTracker.remove(event.device.id)
-            log.info "clearing all LED tracking for ${event.device}"
+            logInfo "clearing all LED tracking for ${event.device}"
             break
         case 'Stop All':
             Map<String, Map> tracker = DeviceStateTracker[event.device.id]
             if (tracker) {
                 tracker.remove('All')
-                log.info "cleared LED tracking for ${event.device} All LED"
+                logInfo "cleared LED tracking for ${event.device} All LED"
             }
             break
         case ~/^Stop LED(\d)$/:
             Map<String, Map> tracker = DeviceStateTracker[event.device.id]
             if (tracker) {
-                String led = Matcher.lastMatcher[0][1]
+                String led = (Matcher.lastMatcher[0] as List)[1]
                 tracker.remove(led)
-                log.info "cleared LED tracking for ${event.device} LED${led}"
+                logInfo "cleared LED tracking for ${event.device} LED${led}"
             }
             break
     }
@@ -403,7 +404,7 @@ private Map<String, Map> calculateLedState(Event event = null) {
     for (String prefix in getDashboardList()) {
         Map<String, String> config = getDashboardConfig(prefix)
         Map<String, Map> oldState = ledStates[config.lednumber as String] ?: [:]
-        Map deviceType = DeviceTypeMap[settings['deviceType']] ?: [:]
+        Map deviceType = getDeviceType()
         int oldPriority = oldState.priority as Integer ?: 0
         if (evaluateConditions(prefix, event)) {
             replaceVariables(config)
@@ -462,7 +463,7 @@ private Map<String, String> getDashboardConfig(String prefix) {
 // Creates a description string for the dashboard configuration for display
 private String getDashboardDescription(String prefix) {
     Map config = getDashboardConfig(prefix)
-    Map deviceType = DeviceTypeMap[settings['deviceType']]
+    Map deviceType = getDeviceType()
     StringBuilder sb = new StringBuilder()
     if (config.lednumber && config.lednumber != 'var') {
         sb << "<b>${deviceType?.leds[config.lednumber] ?: 'n/a'}</b>"
@@ -509,6 +510,10 @@ private Set<String> getDashboardList() {
         .reverse()
 }
 
+private Map getDeviceType() {
+    return DeviceTypeMap[settings['deviceType']] ?: [:]
+}
+
 // Calculate milliseconds from Inovelli duration parameter (0-255)
 // 1-60=seconds, 61-120=1-60 minutes, 121-254=1-134 hours, 255=Indefinitely
 @CompileStatic
@@ -534,6 +539,10 @@ private String getNextPrefix() {
     List<Integer> keys = getDashboardList().collect { p -> p.substring(10) as Integer }
     int maxId = keys ? Collections.max(keys) : 0
     return "condition_${maxId + 1}"
+}
+
+private long getOffsetMs(long offset = 0) {
+    return now() + offset
 }
 
 // Logs the received event
@@ -567,7 +576,7 @@ private String lookupVariable(String variableName, Map<String, String> lookupTab
 
 // Populate configuration values with specified global variables
 private void replaceVariables(Map<String, String> config) {
-    Map deviceType = DeviceTypeMap[settings['deviceType']] ?: [:]
+    Map deviceType = getDeviceType()
     if (deviceType) {
         if (config.lednumber == 'var') {
             config.lednumber = lookupVariable(config.lednumber_var, deviceType.leds) ?: 'All'
@@ -584,7 +593,7 @@ private void replaceVariables(Map<String, String> config) {
 
 // Set all switches to stop
 private void resetNotifications() {
-    Map deviceType = DeviceTypeMap[settings['deviceType']]
+    Map deviceType = getDeviceType()
     if (deviceType) {
         deviceType.leds.keySet().findAll { s -> s != 'var' }.each { led ->
             updateDeviceLedState([ lednumber: led, effect: deviceType.stopEffect ?: 0 ])
@@ -599,17 +608,19 @@ private void removeSettings(String prefix) {
 }
 
 // Subscribe to all dashboard conditions
+@CompileStatic
 private void subscribeAllConditions() {
     for (String prefix in getDashboardList()) {
         subscribeCondition(prefix)
     }
 }
 
+// Subscribe to switches with driver support
 private void subscribeAllSwitches() {
-    String type = DeviceTypeMap[settings.deviceType]?.type
+    String type = getDeviceType().type
     switch (type) {
         case ~/^device.InovelliDimmer2-in-1BlueSeries.*/:
-            log.info "subscribing to ledEffect event for ${settings.switches}"
+            logInfo "subscribing to ledEffect event for ${settings.switches}"
             subscribe(settings.switches, 'ledEffect', 'deviceStateTracker', null)
             break
     }
@@ -680,10 +691,10 @@ private void updateDeviceLedStateInovelliBlue(DeviceWrapper dw, Map config) {
             logDebug "${dw}.ledEffectONE(${config.lednumber},${config.effect},${color},${config.level},${duration})"
             dw.ledEffectOne(config.lednumber, config.effect, color, config.level, duration)
         }
-        config.expires = now() + getDurationMs(duration)
+        config.expires = getOffsetMs(getDurationMs(duration))
         tracker[key] = config
     } else {
-        log.info 'skipping update (no change to leds detected)'
+        logInfo 'skipping update (no change to leds detected)'
     }
 }
 
@@ -716,10 +727,10 @@ private void updateDeviceLedStateInovelliRed(DeviceWrapper dw, Map config) {
         int value = new BigInteger(bytes).intValue()
         logDebug "startNotification(${value}) [${bytes[0] & 0xff}, ${bytes[1] & 0xff}, ${bytes[2] & 0xff}, ${bytes[3] & 0xff}]"
         dw.startNotification(value)
-        config.expires = now() + getDurationMs(duration)
+        config.expires = getOffsetMs(getDurationMs(duration))
         tracker[key] = config
     } else {
-        log.info 'skipping update (no change to leds detected)'
+        logInfo 'skipping update (no change to leds detected)'
     }
 }
 
