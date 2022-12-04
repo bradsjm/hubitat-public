@@ -80,15 +80,15 @@ import java.util.regex.Matcher
         stopEffect: 255
     ],
     'Inovelli Red Switch': [
-        title: 'Inovelli Red Switches (Single Segment)',
+        title: 'Inovelli Red Switches (Single LED)',
         type: 'device.InovelliDimmerRedSeriesLZW30-SN',
         leds: [ 'All': 'Notification' ],
         effects: [:],
-        effectsAll: [ '0': 'Off', '1': 'Solid', '2': 'Chase', '3': 'Fast Blink', '4': 'Slow Blink', '5': 'Pulse', 'var': 'Variable Effect' ],
+        effectsAll: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', 'var': 'Variable Effect' ],
         stopEffect: 0
     ],
     'Inovelli Red Dimmer': [
-        title: 'Inovelli Red Dimmers (Single Segment)',
+        title: 'Inovelli Red Dimmers (LED Strip)',
         type: 'device.InovelliDimmerRedSeriesLZW31-SN',
         leds: [ 'All': 'Notification' ],
         effects: [:],
@@ -652,7 +652,7 @@ private void updateDeviceLedStateInovelliBlue(DeviceWrapper dw, Map config) {
         || tracker[key].expires <= now()
     ) {
         Integer color, duration
-        if (config.duration != null && config.unit != null) {
+        if (config.unit != null) {
             duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255)
         }
         if (config.color != null) {
@@ -684,22 +684,22 @@ private void updateDeviceLedStateInovelliRed(DeviceWrapper dw, Map config) {
         || tracker[key].duration != config.duration
         || tracker[key].expires <= now()
     ) {
-        int value = 0
-        if (config.effect) {
-            if (config.color) {
-                value += Math.round(((config.color as int) / 360.0) * 255)
-            }
-            if (config.level) {
-                value += ((config.level as int) * 256)
-            }
-            if (config.duration) {
-                value += ((config.duration as int) * 65536)
-            }
-            if (config.effect) {
-                value += ((config.effect as int) * 16777216)
-            }
+        byte color, duration, effect, level
+        if (config.unit != null) {
+            duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255) as byte
         }
-        log.debug "startNotification(${value})"
+        if (config.color != null) {
+            color = Math.min(Math.round(((config.color as Integer) / 360.0) * 255), 255) as byte
+        }
+        if (config.level != null) {
+            level = Math.round((config.level as int) / 10) as byte
+        }
+        if (config.effect != null) {
+            effect = config.effect as byte
+        }
+        byte[] bytes = [ effect, duration, level, color ]
+        int value = new BigInteger(bytes).intValue()
+        log.debug "startNotification(${value}) [${bytes[0] & 0xff}, ${bytes[1] & 0xff}, ${bytes[2] & 0xff}, ${bytes[3] & 0xff}]"
         dw.startNotification(value)
         config.expires = now() + getDurationMs(duration)
         tracker[key] = config
@@ -719,7 +719,7 @@ private void updateDeviceLedStateColor(DeviceWrapper dw, Map config) {
             saturation: 100,
             level: config.level as Integer
         ])
-    } else if (config.colr == 360) { // white
+    } else if (config.color == 360) { // white
         dw.setColor([
             hue: 0,
             saturation: 0,
