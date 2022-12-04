@@ -195,6 +195,14 @@ Map mainPage() {
                 label title: 'Name this LED Mini-Dashboard Topic:', width: 9, submitOnChange: true, required: true
             }
         }
+
+        section {
+            input name: 'logEnable',
+                title: 'Enable Debug logging',
+                type: 'bool',
+                required: false,
+                defaultValue: false
+        }
     }
 }
 
@@ -283,6 +291,7 @@ Map renderIndicationSection(String prefix) {
 
 // Invoked when a button input in the UI is pressed
 void appButtonHandler(String buttonName) {
+    logDebug "button ${buttonName} pushed"
     switch (buttonName) {
         case 'pause':
             state.paused = true
@@ -329,7 +338,6 @@ void uninstalled() {
 void updated() {
     log.info "${app.name} configuration updated"
     DeviceStateTracker.clear()
-    state.clear()
     cleanSettings()
     unsubscribe()
 
@@ -534,6 +542,13 @@ private void logEvent(Event event) {
 }
 
 // Logs information
+private void logDebug(String s) {
+    if (logEnable) {
+        log.debug s
+    }
+}
+
+// Logs information
 private void logWarn(String s) {
     log.warn s
 }
@@ -659,10 +674,10 @@ private void updateDeviceLedStateInovelliBlue(DeviceWrapper dw, Map config) {
             color = Math.min(Math.round(((config.color as Integer) / 360.0) * 255), 255)
         }
         if (config.lednumber == 'All') {
-            log.debug "${dw}.ledEffectALL(${config.effect},${color},${config.level},${duration})"
+            logDebug "${dw}.ledEffectALL(${config.effect},${color},${config.level},${duration})"
             dw.ledEffectAll(config.effect, color, config.level, duration)
         } else {
-            log.debug "${dw}.ledEffectONE(${config.lednumber},${config.effect},${color},${config.level},${duration})"
+            logDebug "${dw}.ledEffectONE(${config.lednumber},${config.effect},${color},${config.level},${duration})"
             dw.ledEffectOne(config.lednumber, config.effect, color, config.level, duration)
         }
         config.expires = now() + getDurationMs(duration)
@@ -699,7 +714,7 @@ private void updateDeviceLedStateInovelliRed(DeviceWrapper dw, Map config) {
         }
         byte[] bytes = [ effect, duration, level, color ]
         int value = new BigInteger(bytes).intValue()
-        log.debug "startNotification(${value}) [${bytes[0] & 0xff}, ${bytes[1] & 0xff}, ${bytes[2] & 0xff}, ${bytes[3] & 0xff}]"
+        logDebug "startNotification(${value}) [${bytes[0] & 0xff}, ${bytes[1] & 0xff}, ${bytes[2] & 0xff}, ${bytes[3] & 0xff}]"
         dw.startNotification(value)
         config.expires = now() + getDurationMs(duration)
         tracker[key] = config
