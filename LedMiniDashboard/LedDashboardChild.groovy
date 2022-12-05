@@ -222,23 +222,26 @@ Map editPage(Map params = [:]) {
             paragraph '<i>Higher value priority mini-dashboards take LED precedence.</i>'
         }
 
-        renderIndicationSection(prefix)
-        renderConditionSection(prefix, '<b>Activate LED effect when:</b>')
+        renderIndicationSection(prefix, '<b>Select LED mini-dashboard indication when active:</b>')
+        renderConditionSection(prefix, '<b>Activate LED mini-dashboard effect when:</b>')
 
         section {
-            String title = 'If conditions above do not match then '
-            title += settings["${prefix}_autostop"] == false ? '<i>make no change</i>' : '<b>stop the effect</b>'
-            input name: "${prefix}_autostop", title: title, type: 'bool', defaultValue: true, width: 7, submitOnChange: true
+            Boolean all = settings["${prefix}_conditions_all"] ?: false
+            input name: "${prefix}_delay", title: "<b>If ${all ? 'all' : 'any'} conditions active for:</b>", description: 'seconds', type: 'number', width: 3, range: '1..3600', required: false
+
+            String title = "If ${all ? 'all' : 'any'} conditions above do not match then "
+            title += settings["${prefix}_autostop"] == false ? '<i>take no action</i>' : '<b>stop the effect</b>'
+            input name: "${prefix}_autostop", title: title, type: 'bool', defaultValue: true, width: 4, submitOnChange: true
         }
     }
 }
 
-Map renderIndicationSection(String prefix) {
+Map renderIndicationSection(String prefix, String title) {
     Map deviceType = getDeviceType()
     String ledNumber = settings["${prefix}_lednumber"]
     String ledName = deviceType.leds[settings[ledNumber]] ?: 'LED'
 
-    return section('<b>Select LED mini-dashboard indication when active:</b>') {
+    return section(title) {
         // LED Number
         input name: "${prefix}_lednumber", title: '<span style=\'color: blue;\'>LED Number</span>', type: 'enum', options: deviceType.leds, width: 3, required: true, submitOnChange: true
         if (settings["${prefix}_lednumber"] == 'var') {
@@ -1133,10 +1136,8 @@ private void subscribeCondition(String prefix, Map<String, Map> ruleDefinitions 
 // TODO: Support comparisons
 @CompileStatic
 private boolean deviceAttributeHasValue(List<DeviceWrapper> devices, String attribute, String value, Boolean all) {
-    if (all) {
-        return devices?.every { DeviceWrapper d -> d.currentValue(attribute) as String == value }
-    }
-    return devices?.any { DeviceWrapper d -> d.currentValue(attribute) as String == value }
+    Closure test = { DeviceWrapper d -> d.currentValue(attribute) as String == value }
+    return all ? devices?.every(test) : devices?.any(test)
 }
 
 // Given two strings return true if satisfied by the operator
@@ -1215,7 +1216,7 @@ private Map renderConditionSection(String prefix, String sectionTitle, Map<Strin
         Map<String, Map> selectedConditionsMap = ruleDefinitions.findAll { String k, Map v -> k in selectedConditions }
         for (Map.Entry<String, Map> condition in selectedConditionsMap) {
             String id = "${prefix}_${condition.key}"
-            String currentResult = evaluateCondition(id, condition.value) ? ' <span style=\'color: green\'>(true)</span>' : ''
+            String currentResult = evaluateCondition(id, condition.value) ? ' <span style=\'color: green\'>(currently true)</span>' : ''
             if (!isFirst) {
                 paragraph allConditionsMode ? '<b>and</b>' : '<i>or</i>'
             }
