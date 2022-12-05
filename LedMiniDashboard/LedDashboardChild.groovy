@@ -32,6 +32,7 @@
  *  0.5 - Add additional device support for Inovelli Red switches and dimmers
  *  0.6 - Add additional effect types support
  *  0.7 - Fixes for split effect definitions (effects vs effectsAll)
+ *  0.8 - Add location mode condition
  *
 */
 
@@ -73,7 +74,7 @@ import java.util.regex.Matcher
     ],
     'Inovelli Blue Fan Switch': [
         title: 'Inovelli Blue Fan Switches (7 Segments)',
-        type: 'device.InovelliDimmer2-in-1BlueSeriesVZM35-SN',
+        type: 'device.InovelliVZM35-SNZigbeeFanSwitch',
         leds: [ '1': 'LED 1 (Bottom)', '2': 'LED 2', '3': 'LED 3', '4': 'LED 4', '5': 'LED 5', '6': 'LED 6', '7': 'LED 7 (Top)', 'All': 'All LEDs', 'var': 'Variable LED' ],
         effects: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Falling', '7': 'Rising', '8': 'Aurora', '255': 'Stop', 'var': 'Variable Effect' ],
         effectsAll: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Falling', '7': 'Rising', '8': 'Aurora', '9': 'Slow Falling', '10': 'Medium Falling', '11': 'Fast Falling', '12': 'Slow Rising', '13': 'Medium Rising', '14': 'Fast Rising', '15': 'Medium Blink', '16': 'Slow Chase', '17': 'Fast Chase', '18': 'Fast Siren', '19': 'Slow Siren', '255': 'Stop', 'var': 'Variable Effect' ],
@@ -129,7 +130,7 @@ Map mainPage() {
     }
 
     return dynamicPage(name: 'mainPage', title: "<h2 style=\'color: #1A77C9; font-weight: bold\'>${app.label}</h2>") {
-        Map deviceType = DeviceTypeMap[settings['deviceType']] ?: [:]
+        Map deviceType = getDeviceType()
         section {
             input name: 'deviceType',
                 title: '',
@@ -233,7 +234,7 @@ Map editPage(Map params = [:]) {
 }
 
 Map renderIndicationSection(String prefix) {
-    Map deviceType = DeviceTypeMap[settings['deviceType']] ?: [:]
+    Map deviceType = getDeviceType()
     String ledNumber = settings["${prefix}_lednumber"]
     String ledName = deviceType.leds[settings[ledNumber]] ?: 'LED'
 
@@ -306,22 +307,21 @@ void appButtonHandler(String buttonName) {
             removeSettings(prefix)
             break
         default:
-            log.warn "unknown app button ${buttonName}"
+            logWarn "unknown app button ${buttonName}"
             break
     }
 }
 
 // Invoked when the app is first created.
 void installed() {
-    log.info "${app.name} child installed"
-    subscribeAllSwitches()
-    subscribeAllConditions()
+    logInfo "${app.name} child installed"
+    updated()
 }
 
 // Invoked by the hub when a global variable is renamed
 void renameVariable(String oldName, String newName) {
     settings.findAll { s -> s.key.endsWith('_var') && s.value == oldName }.each { s ->
-        log.info "changing ${s.key} from ${oldName} to ${newName}"
+        logInfo "changing ${s.key} from ${oldName} to ${newName}"
         s.value = newName
     }
 }
@@ -331,12 +331,12 @@ void uninstalled() {
     unsubscribe()
     removeAllInUseGlobalVar()
     resetNotifications()
-    log.info "${app.name} uninstalled"
+    logInfo "${app.name} uninstalled"
 }
 
 // Invoked when the settings are updated.
 void updated() {
-    log.info "${app.name} configuration updated"
+    logInfo "${app.name} configuration updated"
     DeviceStateTracker.clear()
     cleanSettings()
     unsubscribe()
@@ -360,30 +360,30 @@ void updated() {
  */
 void eventHandler(Event event) {
     logEvent(event)
-    state[event.name] = event.value
     updateAllDeviceLedStates(event)
 }
 
 // For Inovelli Blue devices track the led state changes and update the device tracker
+@CompileStatic
 void deviceStateTracker(Event event) {
     switch (event.value) {
         case 'User Cleared':
             DeviceStateTracker.remove(event.device.id)
-            log.info "clearing all LED tracking for ${event.device}"
+            logInfo "clearing all LED tracking for ${event.device}"
             break
         case 'Stop All':
             Map<String, Map> tracker = DeviceStateTracker[event.device.id]
             if (tracker) {
                 tracker.remove('All')
-                log.info "cleared LED tracking for ${event.device} All LED"
+                logInfo "cleared LED tracking for ${event.device} All LED"
             }
             break
         case ~/^Stop LED(\d)$/:
             Map<String, Map> tracker = DeviceStateTracker[event.device.id]
             if (tracker) {
-                String led = Matcher.lastMatcher[0][1]
+                String led = (Matcher.lastMatcher[0] as List)[1]
                 tracker.remove(led)
-                log.info "cleared LED tracking for ${event.device} LED${led}"
+                logInfo "cleared LED tracking for ${event.device} LED${led}"
             }
             break
     }
@@ -403,7 +403,7 @@ private Map<String, Map> calculateLedState(Event event = null) {
     for (String prefix in getDashboardList()) {
         Map<String, String> config = getDashboardConfig(prefix)
         Map<String, Map> oldState = ledStates[config.lednumber as String] ?: [:]
-        Map deviceType = DeviceTypeMap[settings['deviceType']] ?: [:]
+        Map deviceType = getDeviceType()
         int oldPriority = oldState.priority as Integer ?: 0
         if (evaluateConditions(prefix, event)) {
             replaceVariables(config)
@@ -462,7 +462,7 @@ private Map<String, String> getDashboardConfig(String prefix) {
 // Creates a description string for the dashboard configuration for display
 private String getDashboardDescription(String prefix) {
     Map config = getDashboardConfig(prefix)
-    Map deviceType = DeviceTypeMap[settings['deviceType']]
+    Map deviceType = getDeviceType()
     StringBuilder sb = new StringBuilder()
     if (config.lednumber && config.lednumber != 'var') {
         sb << "<b>${deviceType?.leds[config.lednumber] ?: 'n/a'}</b>"
@@ -509,6 +509,10 @@ private Set<String> getDashboardList() {
         .reverse()
 }
 
+private Map getDeviceType() {
+    return DeviceTypeMap[settings['deviceType']] ?: [:]
+}
+
 // Calculate milliseconds from Inovelli duration parameter (0-255)
 // 1-60=seconds, 61-120=1-60 minutes, 121-254=1-134 hours, 255=Indefinitely
 @CompileStatic
@@ -534,6 +538,10 @@ private String getNextPrefix() {
     List<Integer> keys = getDashboardList().collect { p -> p.substring(10) as Integer }
     int maxId = keys ? Collections.max(keys) : 0
     return "condition_${maxId + 1}"
+}
+
+private long getOffsetMs(long offset = 0) {
+    return now() + offset
 }
 
 // Logs the received event
@@ -567,7 +575,7 @@ private String lookupVariable(String variableName, Map<String, String> lookupTab
 
 // Populate configuration values with specified global variables
 private void replaceVariables(Map<String, String> config) {
-    Map deviceType = DeviceTypeMap[settings['deviceType']] ?: [:]
+    Map deviceType = getDeviceType()
     if (deviceType) {
         if (config.lednumber == 'var') {
             config.lednumber = lookupVariable(config.lednumber_var, deviceType.leds) ?: 'All'
@@ -584,7 +592,7 @@ private void replaceVariables(Map<String, String> config) {
 
 // Set all switches to stop
 private void resetNotifications() {
-    Map deviceType = DeviceTypeMap[settings['deviceType']]
+    Map deviceType = getDeviceType()
     if (deviceType) {
         deviceType.leds.keySet().findAll { s -> s != 'var' }.each { led ->
             updateDeviceLedState([ lednumber: led, effect: deviceType.stopEffect ?: 0 ])
@@ -599,17 +607,19 @@ private void removeSettings(String prefix) {
 }
 
 // Subscribe to all dashboard conditions
+@CompileStatic
 private void subscribeAllConditions() {
     for (String prefix in getDashboardList()) {
         subscribeCondition(prefix)
     }
 }
 
+// Subscribe to switches with driver support
 private void subscribeAllSwitches() {
-    String type = DeviceTypeMap[settings.deviceType]?.type
+    String type = getDeviceType().type
     switch (type) {
         case ~/^device.InovelliDimmer2-in-1BlueSeries.*/:
-            log.info "subscribing to ledEffect event for ${settings.switches}"
+            logInfo "subscribing to ledEffect event for ${settings.switches}"
             subscribe(settings.switches, 'ledEffect', 'deviceStateTracker', null)
             break
     }
@@ -680,10 +690,10 @@ private void updateDeviceLedStateInovelliBlue(DeviceWrapper dw, Map config) {
             logDebug "${dw}.ledEffectONE(${config.lednumber},${config.effect},${color},${config.level},${duration})"
             dw.ledEffectOne(config.lednumber, config.effect, color, config.level, duration)
         }
-        config.expires = now() + getDurationMs(duration)
+        config.expires = getOffsetMs(getDurationMs(duration))
         tracker[key] = config
     } else {
-        log.info 'skipping update (no change to leds detected)'
+        logInfo 'skipping update (no change to leds detected)'
     }
 }
 
@@ -716,10 +726,10 @@ private void updateDeviceLedStateInovelliRed(DeviceWrapper dw, Map config) {
         int value = new BigInteger(bytes).intValue()
         logDebug "startNotification(${value}) [${bytes[0] & 0xff}, ${bytes[1] & 0xff}, ${bytes[2] & 0xff}, ${bytes[3] & 0xff}]"
         dw.startNotification(value)
-        config.expires = now() + getDurationMs(duration)
+        config.expires = getOffsetMs(getDurationMs(duration))
         tracker[key] = config
     } else {
-        log.info 'skipping update (no change to leds detected)'
+        logInfo 'skipping update (no change to leds detected)'
     }
 }
 
@@ -777,7 +787,7 @@ private void updatePauseLabel() {
             ]
         ],
         subscribe: 'pushed',
-        test: { ctx -> ctx.event.pushed in ctx.choice }
+        test: { ctx -> ctx.event['pushed'] in ctx.choice }
     ],
     'contactClose': [
         name: 'Contact sensor',
@@ -827,18 +837,6 @@ private void updatePauseLabel() {
         subscribe: { ctx -> ctx.choice },
         test: { ctx -> deviceAttributeHasValue(ctx.device, ctx.choice, ctx.value, ctx.all) }
     ],
-    'hsmStatus': [
-        name: 'HSM Status',
-        title: 'HSM arming status changes to',
-        inputs: [
-            choice: [
-                options: [ 'armedAway': 'Armed Away', 'armedHome': 'Armed Home', 'disarmed': 'Disarmed' ],
-                multiple: true
-            ]
-        ],
-        subscribe: 'hsmStatus',
-        test: { ctx -> ctx.state.hsmStatus in ctx.choice }
-    ],
     'hsmAlert': [
         name: 'HSM Alert',
         title: 'HSM intrusion alert changes to',
@@ -849,25 +847,40 @@ private void updatePauseLabel() {
             ]
         ],
         subscribe: 'hsmAlert',
-        test: { ctx -> ctx.state.hsmAlert in ctx.choice }
+        test: { ctx -> ctx.event['hsmAlert'] in ctx.choice }
     ],
-    'variable': [
-        name: 'Hub variable',
-        title: 'Hub variable is set',
+    'hsmStatus': [
+        name: 'HSM Status',
+        title: 'HSM arming status is set',
         inputs: [
             choice: [
-                options: { ctx -> getAllGlobalVars().keySet() }
-            ],
-            comparison: [
-                options: { ctx -> getComparisonsByType(getGlobalVar(ctx.choice)?.type) }
-            ],
-            value: [
-                title: 'Variable Value',
-                options: { ctx -> getGlobalVar(ctx.choice)?.type == 'boolean' ? [ 'true': 'True', 'false': 'False' ] : null }
+                options: [
+                    'armedAway': 'Armed Away',
+                    'armingAway': 'Arming Away',
+                    'armedHome': 'Armed Home',
+                    'armingHome': 'Arming Home',
+                    'armedNight': 'Armed Night',
+                    'armingNight': 'Arming Night',
+                    'disarmed': 'Disarmed',
+                    'allDisarmed': 'All Disarmed'
+                ],
+                multiple: true
             ]
         ],
-        subscribe: { ctx -> "variable:${ctx.choice}" },
-        test: { ctx -> evaluateComparison(ctx.event["variable:${ctx.choice}"], ctx.value, ctx.comparison) }
+        subscribe: 'hsmStatus',
+        test: { ctx -> location.hsmStatus in ctx.choice }
+    ],
+    'hubMode': [
+        name: 'Hub Mode',
+        title: 'Hub mode is active',
+        inputs: [
+            choice: [
+                options: { ctx -> location.modes.collectEntries { m -> [ m.id as String, m.name ] } },
+                multiple: true
+            ],
+        ],
+        subscribe: 'mode',
+        test: { ctx -> (location.currentMode.id as String) in ctx.choice }
     ],
     'locked': [
         name: 'Lock',
@@ -880,20 +893,6 @@ private void updatePauseLabel() {
         ],
         subscribe: 'lock',
         test: { ctx -> deviceAttributeHasValue(ctx.device, 'lock', 'locked', ctx.all) }
-    ],
-    'unlocked': [
-        name: 'Lock',
-        title: 'Lock is unlocked',
-        attribute: 'lock',
-        value: 'unlocked',
-        inputs: [
-            device: [
-                type: 'capability.lock',
-                multiple: true
-            ]
-        ],
-        subscribe: 'lock',
-        test: { ctx -> deviceAttributeHasValue(ctx.device, 'lock', 'unlocked', ctx.all) }
     ],
     'motionActive': [
         name: 'Motion sensor',
@@ -919,18 +918,6 @@ private void updatePauseLabel() {
         subscribe: 'motion',
         test: { ctx -> deviceAttributeHasValue(ctx.device, 'motion', 'inactive', ctx.all) }
     ],
-    'present': [
-        name: 'Presence sensor',
-        title: 'Presence sensor is present',
-        inputs: [
-            device: [
-                type: 'capability.presenceSensor',
-                multiple: true
-            ]
-        ],
-        subscribe: 'presence',
-        test: { ctx -> deviceAttributeHasValue(ctx.device, 'presence', 'present', ctx.all) }
-    ],
     'notpresent': [
         name: 'Presence sensor',
         title: 'Presence sensor not present',
@@ -942,6 +929,18 @@ private void updatePauseLabel() {
         ],
         subscribe: 'presence',
         test: { ctx -> deviceAttributeHasValue(ctx.device, 'presence', 'not present', ctx.all) }
+    ],
+    'present': [
+        name: 'Presence sensor',
+        title: 'Presence sensor is present',
+        inputs: [
+            device: [
+                type: 'capability.presenceSensor',
+                multiple: true
+            ]
+        ],
+        subscribe: 'presence',
+        test: { ctx -> deviceAttributeHasValue(ctx.device, 'presence', 'present', ctx.all) }
     ],
     'smoke': [
         name: 'Smoke detector',
@@ -983,6 +982,38 @@ private void updatePauseLabel() {
         subscribe: 'switch',
         test: { ctx -> deviceAttributeHasValue(ctx.device, 'switch', 'on', ctx.all) }
     ],
+    'unlocked': [
+        name: 'Lock',
+        title: 'Lock is unlocked',
+        attribute: 'lock',
+        value: 'unlocked',
+        inputs: [
+            device: [
+                type: 'capability.lock',
+                multiple: true
+            ]
+        ],
+        subscribe: 'lock',
+        test: { ctx -> deviceAttributeHasValue(ctx.device, 'lock', 'unlocked', ctx.all) }
+    ],
+    'variable': [
+        name: 'Hub variable',
+        title: 'Variable is set',
+        inputs: [
+            choice: [
+                options: { ctx -> getAllGlobalVars().keySet() }
+            ],
+            comparison: [
+                options: { ctx -> getComparisonsByType(getGlobalVar(ctx.choice)?.type) }
+            ],
+            value: [
+                title: 'Variable Value',
+                options: { ctx -> getGlobalVar(ctx.choice)?.type == 'boolean' ? [ 'true': 'True', 'false': 'False' ] : null }
+            ]
+        ],
+        subscribe: { ctx -> "variable:${ctx.choice}" },
+        test: { ctx -> evaluateComparison(ctx.event["variable:${ctx.choice}"], ctx.value, ctx.comparison) }
+    ],
     'waterDry': [
         name: 'Water sensor',
         title: 'Water sensor is dry',
@@ -1017,6 +1048,7 @@ private void updatePauseLabel() {
 private boolean evaluateConditions(String prefix, Event event = null, Map<String, Map> ruleDefinitions = conditionsMap) {
     boolean result = false
     boolean allConditionsFlag = settings["${prefix}_conditions_all"] ?: false
+    String name = settings["${prefix}_name"]
 
     // Loop through all conditions updating the result
     List<String> selectedConditions = settings["${prefix}_conditions"] ?: []
@@ -1037,7 +1069,7 @@ private boolean evaluateConditions(String prefix, Event event = null, Map<String
             result |= testResult
         }
     }
-    logInfo "${prefix}: condition returns ${result ? 'TRUE' : 'false'}"
+    logDebug "${prefix}: ${name} condition ${allConditionsFlag ? '(all)' : ''} returns ${result ? 'TRUE' : 'false'}"
     return result
 }
 
@@ -1065,11 +1097,10 @@ private boolean evaluateCondition(String prefix, Map condition, Event event = nu
         comparison: settings["${prefix}_comparison"],
         device: settings["${prefix}_device"],
         event: event ? [ (event.name): event.value ] : [:],
-        state: state,
         value: settings["${prefix}_value"]
     ].asImmutable()
     boolean result = runClosure(condition.test as Closure, ctx) ?: false
-    logInfo "${prefix}: '${condition.title}' is ${result ? 'TRUE' : 'false'}"
+    logDebug "${prefix}: ${condition.title} ${ctx} returns ${result ? 'TRUE' : 'false'}"
     return result
 }
 
