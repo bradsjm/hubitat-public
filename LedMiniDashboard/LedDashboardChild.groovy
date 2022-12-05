@@ -1091,7 +1091,7 @@ private boolean evaluateCondition(String prefix, Map condition, Event event = nu
         attribute = condition.subscribe
     }
     Map ctx = [
-        all: settings["${prefix}_all"],
+        all: settings["${prefix}_device_all"],
         attribute: attribute,
         choice: settings["${prefix}_choice"],
         comparison: settings["${prefix}_comparison"],
