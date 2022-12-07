@@ -1144,8 +1144,9 @@ private boolean deviceAttributeHasValue(List<DeviceWrapper> devices, String attr
 @CompileStatic
 private boolean evaluateComparison(String a, String b, String operator) {
     switch (operator) {
-        case '=': return a == b
-        case '<>': return a != b
+        case '=': return a.equalsIgnoreCase(b)
+        case '!=': return !a.equalsIgnoreCase(b)
+        case '<>': return !a.equalsIgnoreCase(b)
         case '>': return new BigDecimal(a) > new BigDecimal(b)
         case '>=': return new BigDecimal(a) >= new BigDecimal(b)
         case '<': return new BigDecimal(a) < new BigDecimal(b)
