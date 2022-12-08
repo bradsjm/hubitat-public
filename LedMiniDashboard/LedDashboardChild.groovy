@@ -218,19 +218,19 @@ Map editPage(Map params = [:]) {
     return dynamicPage(name: 'editPage', title: "<h2 style=\'color: #1A77C9; font-weight: bold\'>${name} Mini-Dashboard</h2>") {
         section {
             input name: "${prefix}_name", title: '', description: 'Mini-Dashboard Name', type: 'text', width: 6, required: true, submitOnChange: true
+            paragraph '', width: 1
             input name: "${prefix}_priority", title: '', description: 'Select Priority', type: 'enum', options: PrioritiesMap, defaultValue: 'Priority 5 (medium)', width: 3, required: true
             paragraph '<i>Higher value priority mini-dashboards take LED precedence.</i>'
         }
 
-        renderIndicationSection(prefix, '<b>Select LED mini-dashboard indication when active:</b>')
-        renderConditionSection(prefix, '<b>Activate LED mini-dashboard effect when:</b>')
+        renderIndicationSection(prefix, '<b>Select LED mini-dashboard indication options:</b>')
+        renderConditionSection(prefix, '<b>Select means to activate LED mini-dashboard effect:</b>')
 
         section {
-            Boolean all = settings["${prefix}_conditions_all"] ?: false
-            input name: "${prefix}_delay", title: "<b>If ${all ? 'all' : 'any'} conditions active for:</b>", description: 'seconds', type: 'number', width: 3, range: '1..3600', required: false
+            input name: "${prefix}_delay", title: '<b>For this many minutes:</b>', description: 'minutes', type: 'number', width: 3, range: '1..60', required: false
 
-            String title = "If ${all ? 'all' : 'any'} conditions above do not match then "
-            title += settings["${prefix}_autostop"] == false ? '<i>take no action</i>' : '<b>stop the effect</b>'
+            String title = 'If conditions stop matching '
+            title += settings["${prefix}_autostop"] == false ? '<i>leave effect running</i>' : '<b>stop the effect</b>'
             input name: "${prefix}_autostop", title: title, type: 'bool', defaultValue: true, width: 4, submitOnChange: true
         }
     }
@@ -243,7 +243,7 @@ Map renderIndicationSection(String prefix, String title) {
 
     return section(title) {
         // LED Number
-        input name: "${prefix}_lednumber", title: '<span style=\'color: blue;\'>LED Number</span>', type: 'enum', options: deviceType.leds, width: 3, required: true, submitOnChange: true
+        input name: "${prefix}_lednumber", title: '<span style=\'color: blue;\'>LED Number</span>', type: 'enum', options: deviceType.leds, width: 2, required: true, submitOnChange: true
         if (settings["${prefix}_lednumber"] == 'var') {
             input name: "${prefix}_lednumber_var", title: "<span style=\'color: blue;\'>LED Number Variable</span>", type: 'enum', options: getGlobalVarsByType('integer').keySet(), width: 3, required: true
         } else {
@@ -276,13 +276,14 @@ Map renderIndicationSection(String prefix, String title) {
                 if (settings["${prefix}_unit"] in ['0', '60', '120']) {
                     // Time Duration
                     String timePeriod = TimePeriodsMap[settings["${prefix}_unit"]]
-                    input name: "${prefix}_duration", title: "<span style=\'color: blue;\'># ${timePeriod}&nbsp;</span>", description: '1..60', type: 'number', width: 2, defaultValue: 1, range: '1..60', required: true
+                    input name: "${prefix}_duration", title: "<span style=\'color: blue;\'>${timePeriod}&nbsp;</span>", type: 'enum', width: 2, defaultValue: 1, required: true, options:
+                        [ '1', '2', '3', '4', '5', '10', '15', '20', '25', '30', '40', '50', '60' ]
                 } else {
                     app.removeSetting("${prefix}_duration")
                 }
 
                 // Level
-                input name: "${prefix}_level", title: "<span style=\'color: blue;\'>Level&nbsp;</span>", description: '1..100', type: 'number', width: 1, defaultValue: 100, range: '1..100', required: true
+                input name: "${prefix}_level", title: "<span style=\'color: blue;\'>Level&nbsp;</span>", type: 'enum', width: 2, defaultValue: 100, options: [ '10', '20', '30', '40', '50', '60', '70', '80', '90', '100' ], required: true
             }
             paragraph ''
         }
@@ -790,7 +791,7 @@ private void updatePauseLabel() {
             ]
         ],
         subscribe: 'pushed',
-        test: { ctx -> ctx.event['pushed'] in ctx.choice }
+        test: { ctx -> ctx.choice && ctx.event['pushed'] in ctx.choice }
     ],
     'contactClose': [
         name: 'Contact sensor',
@@ -1205,7 +1206,7 @@ private Map renderConditionSection(String prefix, String sectionTitle, Map<Strin
     return section(sectionTitle) {
         Map<String, String> conditionTitles = ruleDefinitions.collectEntries { String k, Map v -> [ k, v.title ] }
         List<String> selectedConditions = settings["${prefix}_conditions"] ?: []
-        input name: "${prefix}_conditions", title: '', type: 'enum', options: conditionTitles, multiple: true, submitOnChange: true, width: 9
+        input name: "${prefix}_conditions", title: '', desscription: 'Select means to activate', type: 'enum', options: conditionTitles, multiple: true, submitOnChange: true, width: 9
 
         Boolean allConditionsMode = settings["${prefix}_conditions_all"] ?: false
         if (settings["${prefix}_conditions"]?.size() > 1) {
