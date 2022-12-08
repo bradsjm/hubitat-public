@@ -155,7 +155,7 @@ metadata {
     'light'          : [ 'switch_led', 'switch_led_1', 'light' ],
     'humiditySet'    : [ 'dehumidify_set_value' ],                                                                                       /* Inserted by SJB */
     'humiditySpeed'  : [ 'fan_speed_enum' ],
-    'humidity'       : [ 'temp_indoor', 'swing', 'child_lock', 'fan_speed_enum', 'dehumidify_set_value', 'humidity_indoor', 'switch', 'mode', 'anion' ],
+    'humidity'       : [ 'temp_indoor', 'swing', 'shake', 'child_lock', 'lock', 'fan_speed_enum', 'dehumidify_set_value', 'humidity_indoor', 'humidity', 'envhumid', 'switch', 'mode', 'anion', 'pump', 'dry', 'windspeed', 'countdown', 'countdown_left', 'fault' ],
     'meteringSwitch' : [ 'countdown_1' , 'add_ele' , 'cur_current', 'cur_power', 'cur_voltage' , 'relay_status', 'light_mode' ],
     'omniSensor'     : [ 'bright_value', 'humidity_value', 'va_humidity', 'bright_sensitivity', 'shock_state', 'inactive_state', 'sensitivity' ],
     'pir'            : [ 'pir' ],
@@ -1595,26 +1595,32 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
                     value = scale(status.value, (int)set.scale)
                     unit = set.unit
                     break
+                case 'shake':
                 case 'swing':
                     name = 'swing'
-                    value = status.value
+                    value = status.value ? 'on' : 'off'
                     unit = ''
                     break
+                case 'lock':
                 case 'child_lock':
                     name = 'child_lock'
-                    value = status.value
+                    value = status.value ? 'on' : 'off'
                     unit = ''
                     break
+                case 'windspeed':
+                case 'speed':
                 case 'fan_speed_enum':
                     name = 'speed'
-                    value = status.value
+                    value = (status.value?.toInteger() == 0 ? 'high' : 'low')
                     unit = ''
                     break
+                case 'humidity':
                 case 'dehumidify_set_value':
                     name = 'humiditySetpoint'
                     value = scale(status.value, (int)set.scale)
                     unit = 'RH%'
                     break
+                case 'envhumid':
                 case 'humidity_indoor':
                     name = 'humidity'
                     value = scale(status.value, (int)set.scale)
@@ -1622,12 +1628,61 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
                     break
                 case 'mode':
                     name = 'mode'
-                    value = status.value
+                    value = (status.value?.toInteger() == 0 ? 'auto' : 'continuous')
                     unit = ''
                     break
                 case 'anion':
                     name = 'anion'
+                    value = status.value ? 'on' : 'off'
+                    unit = ''
+                    break
+                case 'pump':
+                    name = 'waterPump'
+                    value = status.value ? 'on' : 'off'
+                    unit = ''
+                    break
+                case 'dry':
+                    name = 'insideDrying'
+                    value = status.value ? 'on' : 'off'
+                    unit = ''
+                    break
+                case 'countdown':
+                    name = 'countdown'
                     value = status.value
+                    unit = 'Hours'
+                    break
+                case 'countdown_left':
+                    name = 'countdown_left'
+                    value = status.value
+                    unit = 'Minutes'
+                    break
+                case 'fault':
+                    name = 'fault'
+                    switch (status.value) {
+                      case 0:
+                        value = 'ok'
+                      break
+                      case 1:
+                        value = 'temperature sensor failure (E2)'
+                      break
+                      case 2:
+                        value = 'coil sensor (E1)'
+                      break
+                      case 4:
+                        value = 'defrost (P1)'
+                      break
+                      case 8:
+                        value = 'water full (FL)'
+                      break
+                      case 16:
+                        value = 'low temperature alarm (LO)'
+                      break
+                      case 32:
+                        value = 'high temperature alarm (HI)'
+                      break
+                      default:
+                        value = 'unknown ('+ status.value +')'
+                    }
                     unit = ''
                     break
                 default:
