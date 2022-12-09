@@ -26,7 +26,7 @@
             "enabled": false
         },
         "LineLength": {
-            "enabled": false
+            "length": 240
         },
         "MethodCount": {
             "enabled": false
@@ -36,6 +36,14 @@
         },
         "UnnecessarySetter": {
             "enabled": false
+        },
+        "UnnecessaryReturnKeyword": {
+            "enabled": false
+        },
+        "comments.ClassJavadoc": "off",
+        "formatting.Indentation": {
+            "spacesPerIndentLevel": 4,
+            "severity": "info"
         }
     }
 }
