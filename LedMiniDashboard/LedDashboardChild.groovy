@@ -69,7 +69,8 @@ import java.util.regex.Matcher
         type: 'device.InovelliDimmer2-in-1BlueSeriesVZM31-SN',
         leds: [ '1': 'LED 1 (Bottom)', '2': 'LED 2', '3': 'LED 3', '4': 'LED 4', '5': 'LED 5', '6': 'LED 6', '7': 'LED 7 (Top)', 'All': 'All LEDs', 'var': 'Variable LED' ],
         effects: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Falling', '7': 'Rising', '8': 'Aurora', '255': 'Stop', 'var': 'Variable Effect' ],
-        effectsAll: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Falling', '7': 'Rising', '8': 'Aurora', '9': 'Slow Falling', '10': 'Medium Falling', '11': 'Fast Falling', '12': 'Slow Rising', '13': 'Medium Rising', '14': 'Fast Rising', '15': 'Medium Blink', '16': 'Slow Chase', '17': 'Fast Chase', '18': 'Fast Siren', '19': 'Slow Siren', '255': 'Stop', 'var': 'Variable Effect' ],
+        effectsAll: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Falling', '7': 'Rising', '8': 'Aurora', '9': 'Slow Falling', '10': 'Medium Falling', '11': 'Fast Falling',
+            '12': 'Slow Rising', '13': 'Medium Rising', '14': 'Fast Rising', '15': 'Medium Blink', '16': 'Slow Chase', '17': 'Fast Chase', '18': 'Fast Siren', '19': 'Slow Siren', '255': 'Stop', 'var': 'Variable Effect' ],
         stopEffect: 255
     ],
     'Inovelli Blue Fan Switch': [
@@ -77,7 +78,8 @@ import java.util.regex.Matcher
         type: 'device.InovelliVZM35-SNZigbeeFanSwitch',
         leds: [ '1': 'LED 1 (Bottom)', '2': 'LED 2', '3': 'LED 3', '4': 'LED 4', '5': 'LED 5', '6': 'LED 6', '7': 'LED 7 (Top)', 'All': 'All LEDs', 'var': 'Variable LED' ],
         effects: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Falling', '7': 'Rising', '8': 'Aurora', '255': 'Stop', 'var': 'Variable Effect' ],
-        effectsAll: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Falling', '7': 'Rising', '8': 'Aurora', '9': 'Slow Falling', '10': 'Medium Falling', '11': 'Fast Falling', '12': 'Slow Rising', '13': 'Medium Rising', '14': 'Fast Rising', '15': 'Medium Blink', '16': 'Slow Chase', '17': 'Fast Chase', '18': 'Fast Siren', '19': 'Slow Siren', '255': 'Stop', 'var': 'Variable Effect' ],
+        effectsAll: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Falling', '7': 'Rising', '8': 'Aurora', '9': 'Slow Falling', '10': 'Medium Falling', '11': 'Fast Falling',
+            '12': 'Slow Rising', '13': 'Medium Rising', '14': 'Fast Rising', '15': 'Medium Blink', '16': 'Slow Chase', '17': 'Fast Chase', '18': 'Fast Siren', '19': 'Slow Siren', '255': 'Stop', 'var': 'Variable Effect' ],
         stopEffect: 255
     ],
     'Inovelli Red Switch': [
@@ -106,9 +108,11 @@ import java.util.regex.Matcher
 ].asImmutable()
 
 // Definitions for condition options
-@Field static final Map<String, String> PrioritiesMap = [ '1': 'Priority 1 (low)', '2': 'Priority 2', '3': 'Priority 3', '4': 'Priority 4', '5': 'Priority 5 (medium)', '6': 'Priority 6', '7': 'Priority 7', '8': 'Priority 8', '9': 'Priority 9 (high)' ].asImmutable()
+@Field static final Map<String, String> PrioritiesMap = [ '1': 'Priority 1 (low)', '2': 'Priority 2', '3': 'Priority 3', '4': 'Priority 4', '5': 'Priority 5 (medium)',
+    '6': 'Priority 6', '7': 'Priority 7', '8': 'Priority 8', '9': 'Priority 9 (high)' ].asImmutable()
 @Field static final Map<String, String> TimePeriodsMap = [ '0': 'Seconds', '60': 'Minutes', '120': 'Hours', '255': 'Infinite' ].asImmutable()
-@Field static final Map<String, String> ColorMap = [ '0': 'Red', '10': 'Orange', '40': 'Lemon', '91': 'Lime', '120': 'Green', '150': 'Teal', '180': 'Cyan', '210': 'Aqua', '241': 'Blue', '269': 'Violet', '300': 'Magenta', '332': 'Pink', '360': 'White', 'var': 'Variable Color' ].asImmutable()
+@Field static final Map<String, String> ColorMap = [ '0': 'Red', '10': 'Orange', '40': 'Lemon', '91': 'Lime', '120': 'Green', '150': 'Teal', '180': 'Cyan', '210': 'Aqua',
+    '241': 'Blue', '269': 'Violet', '300': 'Magenta', '332': 'Pink', '360': 'White', 'var': 'Variable Color' ].asImmutable()
 
 // Tracker for device LED state to optimize traffic by only sending changes
 @Field static final Map<String, Map> DeviceStateTracker = new ConcurrentHashMap<>()
@@ -343,6 +347,7 @@ void updated() {
     logInfo "${app.name} configuration updated"
     DeviceStateTracker.clear()
     cleanSettings()
+    cleanState()
     unsubscribe()
 
     if (state.paused) {
@@ -363,8 +368,21 @@ void updated() {
  *  precedence over lower priorities.
  */
 void eventHandler(Event event) {
-    logEvent(event)
-    updateAllDeviceLedStates(event)
+    Map lastEvent = [
+        descriptionText: event.descriptionText,
+        deviceId: event.deviceId,
+        isStateChange: event.isStateChange,
+        name: event.name,
+        source: event.source,
+        type: event.type,
+        unit: event.unit,
+        unixTime: event.unixTime,
+        value: event.value
+    ]
+    logInfo 'event received ' + lastEvent
+    state.lastEvent = lastEvent
+    // Debounce multiple events hitting at the same time
+    runInMillis(200, 'updateAllDeviceLedStates')
 }
 
 // For Inovelli Blue devices track the led state changes and update the device tracker
@@ -402,14 +420,14 @@ void deviceStateTracker(Event event) {
  *  Evaluates the dashboard rules with priorities and determines the resulting led state
  *  Returns a map of each LED number and the state config associated with it for actioning
  */
-private Map<String, Map> calculateLedState(Event event = null) {
+private Map<String, Map> calculateLedState() {
     Map<String, Map> ledStates = [:]
     for (String prefix in getDashboardList()) {
         Map<String, String> config = getDashboardConfig(prefix)
         Map<String, Map> oldState = ledStates[config.lednumber as String] ?: [:]
         Map deviceType = getDeviceType()
         int oldPriority = oldState.priority as Integer ?: 0
-        if (evaluateConditions(prefix, event)) {
+        if (evaluateConditions(prefix)) {
             replaceVariables(config)
             int newPriority = config.priority as Integer ?: 0
             if (newPriority >= oldPriority) {
@@ -444,6 +462,10 @@ private void cleanSettings() {
             .findAll { key -> !(key in settings["${prefix}_conditions"]) }
             .each { key -> removeSettings("${prefix}_${key}") }
     }
+}
+
+private void cleanState() {
+    state.remove('lastEvent')
 }
 
 // Utility method for CSS colored text
@@ -548,11 +570,6 @@ private long getOffsetMs(long offset = 0) {
     return now() + offset
 }
 
-// Logs the received event
-private void logEvent(Event event) {
-    log.info "event ${event.name} received from ${event.device ?: event.source} (value ${event.value})"
-}
-
 // Logs information
 private void logDebug(String s) {
     if (logEnable) {
@@ -632,9 +649,9 @@ private void subscribeAllSwitches() {
 /**
  *  Main entry point for changing LED notifications on devices
  */
-private void updateAllDeviceLedStates(Event event = null) {
+private void updateAllDeviceLedStates() {
     // Calculate led state and sends device led update notifications
-    Map<String, Map> ledStates = calculateLedState(event)
+    Map<String, Map> ledStates = calculateLedState()
     if (ledStates) {
         // Sending individual LED updates
         ledStates.values().each { config ->
@@ -791,7 +808,7 @@ private void updatePauseLabel() {
             ]
         ],
         subscribe: 'pushed',
-        test: { ctx -> ctx.choice && ctx.event['pushed'] in ctx.choice }
+        test: { ctx -> ctx.choice && ctx.event.value in ctx.choice }
     ],
     'contactClose': [
         name: 'Contact sensor',
@@ -851,7 +868,7 @@ private void updatePauseLabel() {
             ]
         ],
         subscribe: 'hsmAlert',
-        test: { ctx -> ctx.event['hsmAlert'] in ctx.choice }
+        test: { ctx -> ctx.event.value in ctx.choice }
     ],
     'hsmStatus': [
         name: 'HSM Status',
@@ -1016,7 +1033,7 @@ private void updatePauseLabel() {
             ]
         ],
         subscribe: { ctx -> "variable:${ctx.choice}" },
-        test: { ctx -> evaluateComparison(ctx.event["variable:${ctx.choice}"], ctx.value, ctx.comparison) }
+        test: { ctx -> evaluateComparison(ctx.event.value, ctx.value, ctx.comparison) }
     ],
     'waterDry': [
         name: 'Water sensor',
@@ -1049,7 +1066,7 @@ private void updatePauseLabel() {
  *  Supports tests against devices, hub (global) variables, and state values
  *  Enables any/all type options against devices or conditions
  */
-private boolean evaluateConditions(String prefix, Event event = null, Map<String, Map> ruleDefinitions = conditionsMap) {
+private boolean evaluateConditions(String prefix, Map<String, Map> ruleDefinitions = conditionsMap) {
     boolean result = false
     boolean allConditionsFlag = settings["${prefix}_conditions_all"] ?: false
     String name = settings["${prefix}_name"]
@@ -1059,7 +1076,7 @@ private boolean evaluateConditions(String prefix, Event event = null, Map<String
     for (String conditionKey in selectedConditions) {
         Map<String, Map> condition = ruleDefinitions[conditionKey]
         if (condition) {
-            boolean testResult = evaluateCondition("${prefix}_${conditionKey}", condition, event)
+            boolean testResult = evaluateCondition("${prefix}_${conditionKey}", condition)
             // If all conditions is selected and the test failed, stop and return false
             if (allConditionsFlag && !testResult) {
                 result = false
@@ -1081,7 +1098,7 @@ private boolean evaluateConditions(String prefix, Event event = null, Map<String
  *  Evaluates the provided condition configuration and returns a pass/fail (boolean)
  *  Supports tests against devices, hub (global) variables, and state values
  */
-private boolean evaluateCondition(String prefix, Map condition, Event event = null) {
+private boolean evaluateCondition(String prefix, Map condition) {
     if (!condition) { return false }
     String attribute
     if (condition.subscribe in Closure) {
@@ -1100,7 +1117,7 @@ private boolean evaluateCondition(String prefix, Map condition, Event event = nu
         choice: settings["${prefix}_choice"],
         comparison: settings["${prefix}_comparison"],
         device: settings["${prefix}_device"],
-        event: event ? [ (event.name): event.value ] : [:],
+        event: state.lastEvent ?: [:],
         value: settings["${prefix}_value"]
     ].asImmutable()
     boolean result = runClosure(condition.test as Closure, ctx) ?: false
