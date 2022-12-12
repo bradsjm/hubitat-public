@@ -496,6 +496,6 @@ private String getTopic(String topic) {
 private void mqttPublish(String topic, String payload = '', int qos = 0) {
     if (interfaces.mqtt.connected) {
         if (logEnable) { log.debug "send: ${topic} = ${payload}" }
-        interfaces.mqtt.publish(topic, payload, qos, false)
+        interfaces.mqtt.publish(topic, HexUtils.byteArrayToHexString(payload.bytes), qos, false)
     }
 }
