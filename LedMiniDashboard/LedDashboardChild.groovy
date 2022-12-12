@@ -108,17 +108,17 @@ import java.util.regex.Matcher
 ].asImmutable()
 
 // Definitions for condition options
+@Field static final Map<String, String> ColorMap = [ '0': 'Red', '10': 'Orange', '40': 'Lemon', '91': 'Lime', '120': 'Green', '150': 'Teal', '180': 'Cyan', '210': 'Aqua',
+    '241': 'Blue', '269': 'Violet', '300': 'Magenta', '332': 'Pink', '360': 'White', 'var': 'Variable Color' ].asImmutable()
 @Field static final Map<String, String> PrioritiesMap = [ '1': 'Priority 1 (low)', '2': 'Priority 2', '3': 'Priority 3', '4': 'Priority 4', '5': 'Priority 5 (medium)',
     '6': 'Priority 6', '7': 'Priority 7', '8': 'Priority 8', '9': 'Priority 9 (high)' ].asImmutable()
 @Field static final Map<String, String> TimePeriodsMap = [ '0': 'Seconds', '60': 'Minutes', '120': 'Hours', '255': 'Infinite' ].asImmutable()
-@Field static final Map<String, String> ColorMap = [ '0': 'Red', '10': 'Orange', '40': 'Lemon', '91': 'Lime', '120': 'Green', '150': 'Teal', '180': 'Cyan', '210': 'Aqua',
-    '241': 'Blue', '269': 'Violet', '300': 'Magenta', '332': 'Pink', '360': 'White', 'var': 'Variable Color' ].asImmutable()
 
 // Tracker for device LED state to optimize traffic by only sending changes
 @Field static final Map<String, Map> DeviceStateTracker = new ConcurrentHashMap<>()
 
 // Defines the text used to show the application is paused
-@Field static final String pauseText = '<span style=\'color: red;\'> (Paused) </span>'
+@Field static final String pauseText = '<span style=\'color: red;\'> (Paused)</span>'
 
 /*
  * Application Main Page
@@ -164,6 +164,7 @@ Map mainPage() {
         }
 
         if (deviceType && settings['switches']) {
+            cleanState()
             Set<String> prefixes = getDashboardList()
             section("<h3 style=\'color: #1A77C9; font-weight: bold\'>${app.label} Activation Conditions</h3>") {
                 for (String prefix in prefixes) {
@@ -412,10 +413,6 @@ void deviceStateTracker(Event event) {
 }
 
 /*
- * Internal Methods
- */
-
-/*
  *  Calculate Notification LED States
  *  Evaluates the dashboard rules with priorities and determines the resulting led state
  *  Returns a map of each LED number and the state config associated with it for actioning
@@ -424,8 +421,14 @@ private Map<String, Map> calculateLedState() {
     Map<String, Map> ledStates = [:]
     for (String prefix in getDashboardList()) {
         Map<String, String> config = getDashboardConfig(prefix)
+        logDebug "now = ${now()}, unixTime = ${state.lastEvent.unixTime}, diff = ${now() - state.lastEvent.unixTime}"
+        // this code will move somewhere else
+        if (config.delay && state.lastEvent && (now() - state.lastEvent.unixTime) < (config.delay as int) * 1000) {
+            logInfo "Delaying for ${config.delay} seconds"
+            runIn(config.delay as int, 'updateAllDeviceLedStates')
+            continue
+        }
         Map<String, Map> oldState = ledStates[config.lednumber as String] ?: [:]
-        Map deviceType = getDeviceType()
         int oldPriority = oldState.priority as Integer ?: 0
         if (evaluateConditions(prefix)) {
             replaceVariables(config)
@@ -435,6 +438,7 @@ private Map<String, Map> calculateLedState() {
             }
         } else if (config.autostop != false && !oldPriority) {
             // Auto stop effect
+            Map deviceType = getDeviceType()
             ledStates[config.lednumber as String] = [
                 prefix: config.prefix,
                 name: config.name,
