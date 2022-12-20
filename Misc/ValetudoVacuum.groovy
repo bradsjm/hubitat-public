@@ -384,13 +384,11 @@ void locate() {
 }
 
 void off() {
-    log.info 'stopping vacuum'
-    mqttPublish(getTopic('BasicControlCapability/operation/set'), 'STOP')
+    home()
 }
 
 void on() {
-    log.info 'starting vacuum'
-    mqttPublish(getTopic('BasicControlCapability/operation/set'), 'START')
+    cleanRooms()
 }
 
 void pause() {
