@@ -346,13 +346,18 @@ void cleanRooms(String rooms, BigDecimal iterations) {
                 return dni.substring(dni.indexOf('-') + 1)
             }
     }
-    log.info "cleaning rooms ${roomList}"
-    String json = JsonOutput.toJson([
-        'segment_ids': roomList,
-        'iterations': iterations ?: 1,
-        'customOrder': true
-    ])
-    mqttPublish(getTopic('MapSegmentationCapability/clean/set'), json)
+    if (roomList) {
+        log.info "cleaning rooms ${roomList}"
+        String json = JsonOutput.toJson([
+            'segment_ids': roomList,
+            'iterations': iterations ?: 1,
+            'customOrder': true
+        ])
+        mqttPublish(getTopic('MapSegmentationCapability/clean/set'), json)
+    } else {
+        log.info 'starting vacuum'
+        mqttPublish(getTopic('BasicControlCapability/operation/set'), 'START')
+    }
 }
 
 void createChildRooms() {
