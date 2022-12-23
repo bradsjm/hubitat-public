@@ -33,6 +33,7 @@
  *  0.6 - Add additional effect types support
  *  0.7 - Fixes for split effect definitions (effects vs effectsAll)
  *  0.8 - Add location mode condition
+ *  0.9 - Add delayed activation option per dashboard
  *
 */
 
@@ -110,8 +111,10 @@ import java.util.regex.Matcher
 // Definitions for condition options
 @Field static final Map<String, String> ColorMap = [ '0': 'Red', '10': 'Orange', '40': 'Lemon', '91': 'Lime', '120': 'Green', '150': 'Teal', '180': 'Cyan', '210': 'Aqua',
     '241': 'Blue', '269': 'Violet', '300': 'Magenta', '332': 'Pink', '360': 'White', 'var': 'Variable Color' ].asImmutable()
+
 @Field static final Map<String, String> PrioritiesMap = [ '1': 'Priority 1 (low)', '2': 'Priority 2', '3': 'Priority 3', '4': 'Priority 4', '5': 'Priority 5 (medium)',
     '6': 'Priority 6', '7': 'Priority 7', '8': 'Priority 8', '9': 'Priority 9 (high)' ].asImmutable()
+
 @Field static final Map<String, String> TimePeriodsMap = [ '0': 'Seconds', '60': 'Minutes', '120': 'Hours', '255': 'Infinite' ].asImmutable()
 
 // Tracker for device LED state to optimize traffic by only sending changes
@@ -169,7 +172,8 @@ Map mainPage() {
             section("<h3 style=\'color: #1A77C9; font-weight: bold\'>${app.label} Activation Conditions</h3>") {
                 for (String prefix in prefixes) {
                     String name = settings["${prefix}_name"]
-                    String currentResult = evaluateConditions(prefix) ? ' <span style=\'color: green\'>(active)</span>' : ''
+                    boolean active = evaluateConditions(prefix)
+                    String currentResult = active ? ' <span style=\'color: green\'>(true)</span>' : ''
                     href(
                         name: "edit_${prefix}",
                         title: "<b>${name}</b>${currentResult}",
@@ -204,7 +208,7 @@ Map mainPage() {
 
         section {
             input name: 'logEnable',
-                title: 'Enable Debug logging',
+                title: 'Enable debug logging',
                 type: 'bool',
                 required: false,
                 defaultValue: false
@@ -220,27 +224,33 @@ Map editPage(Map params = [:]) {
     if (!prefix) { return mainPage() }
     String name = settings["${prefix}_name"] ?: 'New'
 
-    return dynamicPage(name: 'editPage', title: "<h2 style=\'color: #1A77C9; font-weight: bold\'>${name} Mini-Dashboard</h2>") {
-        section {
-            input name: "${prefix}_name", title: '', description: 'Mini-Dashboard Name', type: 'text', width: 6, required: true, submitOnChange: true
-            paragraph '', width: 1
-            input name: "${prefix}_priority", title: '', description: 'Select Priority', type: 'enum', options: PrioritiesMap, defaultValue: 'Priority 5 (medium)', width: 3, required: true
-            paragraph '<i>Higher value priority mini-dashboards take LED precedence.</i>'
-        }
-
+    return dynamicPage(name: 'editPage', title: "<h3 style=\'color: #1A77C9; font-weight: bold\'>${name} activation condition:</h3><br>") {
         renderIndicationSection(prefix, '<b>Select LED mini-dashboard indication options:</b>')
-        renderConditionSection(prefix, '<b>Select means to activate LED mini-dashboard effect:</b>')
+        if (settings["${prefix}_lednumber"]) {
+            renderConditionSection(prefix, '<b>Select means to activate LED mini-dashboard effect:</b><span class="required-indicator">*</span>')
 
-        section {
-            input name: "${prefix}_delay", title: '<b>For this many minutes:</b>', description: 'minutes', type: 'number', width: 3, range: '1..60', required: false
+            if (settings["${prefix}_conditions"]) {
+                section {
+                    input name: "${prefix}_delay", title: '<b>For number of minutes:</b>', description: '1..60', type: 'number', width: 3, range: '1..60', required: false
+                    paragraph '', width: 2
+                    String title = 'When conditions stop matching '
+                    title += settings["${prefix}_autostop"] == false ? '<i>leave effect running</i>' : '<b>stop the effect</b>'
+                    input name: "${prefix}_autostop", title: title, type: 'bool', defaultValue: true, width: 4, submitOnChange: true
+                }
 
-            String title = 'If conditions stop matching '
-            title += settings["${prefix}_autostop"] == false ? '<i>leave effect running</i>' : '<b>stop the effect</b>'
-            input name: "${prefix}_autostop", title: title, type: 'bool', defaultValue: true, width: 4, submitOnChange: true
+                section {
+                    input name: "${prefix}_name", title: '<b>Activation Condition Name:</b>', type: 'text', defaultValue: getSuggestedConditionName(prefix), width: 7, required: true, submitOnChange: true
+                    input name: "${prefix}_priority", title: '', description: 'Select Priority', type: 'enum', options: PrioritiesMap, defaultValue: 'Priority 5 (medium)', width: 3, required: true
+                    paragraph '<i>Higher value condition priorities take LED precedence.</i>'
+                }
+            }
         }
     }
 }
 
+/*
+ * Dashboard Edit Page LED Indication Section
+ */
 Map renderIndicationSection(String prefix, String title) {
     Map deviceType = getDeviceType()
     String ledNumber = settings["${prefix}_lednumber"]
@@ -296,6 +306,114 @@ Map renderIndicationSection(String prefix, String title) {
 }
 
 /*
+ *  Dashboard Edit Page Conditions Section
+ *  Called from the application page, renders to the user interface a section to view and edit
+ *  conditions and events defined in the conditionsMap above.
+ *
+ *  @param prefix          The settings prefix to use (e.g. conditions_1) for persistence
+ *  @param sectionTitle    The section title to use
+ *  @param ruleDefinitions The rule definitions to use (see conditionsMap)
+ *  @returns page section
+ */
+Map renderConditionSection(String prefix, String sectionTitle, Map<String, Map> ruleDefinitions = conditionsMap) {
+    return section(sectionTitle) {
+        Map<String, String> conditionTitles = ruleDefinitions.collectEntries { String k, Map v -> [ k, v.title ] }
+        List<String> selectedConditions = settings["${prefix}_conditions"] ?: []
+        input name: "${prefix}_conditions", title: '', description: 'Select means to activate', type: 'enum', options: conditionTitles, multiple: true, submitOnChange: true, required: true, width: 9
+
+        Boolean allConditionsMode = settings["${prefix}_conditions_all"] ?: false
+        if (settings["${prefix}_conditions"]?.size() > 1) {
+            String title = "${allConditionsMode ? '<b>All</b> conditions' : '<b>Any</b> condition'}"
+            input name: "${prefix}_conditions_all", title: title, type: 'bool', width: 3, submitOnChange: true
+        }
+
+        boolean isFirst = true
+        Map<String, Map> selectedConditionsMap = ruleDefinitions.findAll { String k, Map v -> k in selectedConditions }
+        for (Map.Entry<String, Map> condition in selectedConditionsMap) {
+            String id = "${prefix}_${condition.key}"
+            String currentResult = evaluateCondition(id, condition.value) ? ' <span style=\'color: green\'>(currently true)</span>' : ''
+            if (!isFirst) {
+                paragraph allConditionsMode ? '<b>and</b>' : '<i>or</i>'
+            }
+            isFirst = false
+            Map<String, Map> inputs = condition.value.inputs
+            if (inputs.device) {
+                input name: "${id}_device",
+                    title: (inputs.device.title ?: condition.value.title) + currentResult,
+                    type: inputs.device.type,
+                    width: inputs.device.width ?: 7,
+                    multiple: inputs.device.multiple,
+                    submitOnChange: true,
+                    required: true
+                if (!inputs.device.any && settings["${id}_device"] in Collection && settings["${id}_device"]?.size() > 1) {
+                    String name = inputs.device.name ?: condition.value.name
+                    input name: "${id}_device_all",
+                        title: settings["${id}_device_all"] ? "<b>All</b> ${name} devices" : "<b>Any</b> ${name} device",
+                        type: 'bool',
+                        submitOnChange: true,
+                        width: 4
+                }
+            }
+
+            if (inputs.choice) {
+                Object options
+                if (inputs.choice.options in Closure) {
+                    Map ctx = [ device: settings["${id}_device"] ]
+                    options = runClosure(inputs.choice.options as Closure, ctx)
+                } else {
+                    options = inputs.choice.options
+                }
+                if (options) {
+                    input name: "${id}_choice",
+                        title: (inputs.choice.title ?: condition.value.title) + currentResult,
+                        defaultValue: inputs.choice.defaultValue,
+                        options: options,
+                        width: inputs.choice.width ?: 7,
+                        multiple: inputs.choice.multiple,
+                        type: 'enum',
+                        submitOnChange: true,
+                        required: true
+                }
+            }
+
+            if (inputs.comparison) {
+                Object options
+                if (inputs.comparison.options in Closure) {
+                    Map ctx = [ device: settings["${id}_device"], choice: settings["${id}_choice"] ]
+                    options = runClosure(inputs.comparison.options as Closure, ctx)
+                } else {
+                    options = inputs.comparison.options
+                }
+                input name: "${id}_comparison",
+                    title: (inputs.comparison.title ?: 'Comparison') + ' ',
+                    width: inputs.comparison.width ?: 2,
+                    type: 'enum',
+                    options: options,
+                    defaultValue: inputs.comparison.defaultValue,
+                    required: true
+            }
+
+            if (inputs.value) {
+                Object options
+                if (inputs.value.options in Closure) {
+                    Map ctx = [ device: settings["${id}_device"], choice: settings["${id}_choice"] ]
+                    options = runClosure(inputs.value.options as Closure, ctx)
+                } else {
+                    options = inputs.value.options
+                }
+                input name: "${id}_value",
+                    title: (inputs.value.title ?: 'Value') + ' ',
+                    width: inputs.value.width ?: 3,
+                    defaultValue: inputs.value.defaultValue,
+                    options: options,
+                    type: options ? 'enum' : 'text',
+                    required: true
+            }
+        }
+    }
+}
+
+/*
  * Event Handlers (methods invoked by the Hub)
  */
 
@@ -319,6 +437,32 @@ void appButtonHandler(String buttonName) {
             logWarn "unknown app button ${buttonName}"
             break
     }
+}
+
+/*
+ *  Main event handler receives device and location events and runs through
+ *  all the conditions to determine if LED states need to be updated on switches.
+ *
+ *  Maintains priorities per LED to ensure that higher priority conditions take
+ *  precedence over lower priorities.
+ */
+void eventHandler(Event event) {
+    Map lastEvent = [
+        descriptionText: event.descriptionText,
+        deviceId: event.deviceId,
+        isStateChange: event.isStateChange,
+        name: event.name,
+        source: event.source,
+        type: event.type,
+        unit: event.unit,
+        unixTime: event.unixTime,
+        value: event.value
+    ]
+    logInfo "<b>eventHandler:</b> ${lastEvent}"
+    state.lastEvent = lastEvent
+
+    // Debounce multiple events hitting at the same time by using timer job
+    runInMillis(200, 'notificationDispatcher')
 }
 
 // Invoked when the app is first created.
@@ -357,36 +501,14 @@ void updated() {
         subscribeAllSwitches()
         subscribeAllConditions()
         resetNotifications()
-        updateAllDeviceLedStates()
+        notificationDispatcher()
     }
 }
 
 /*
- *  Main event handler receives device and location events and runs through
- *  all the conditions to determine if LED states need to be updated on switches.
- *
- *  Maintains priorities per LED to ensure that higher priority conditions take
- *  precedence over lower priorities.
+ *  Track the led state changes and update the device tracker object
+ *  Only supported for the Inovelli Blue LED driver
  */
-void eventHandler(Event event) {
-    Map lastEvent = [
-        descriptionText: event.descriptionText,
-        deviceId: event.deviceId,
-        isStateChange: event.isStateChange,
-        name: event.name,
-        source: event.source,
-        type: event.type,
-        unit: event.unit,
-        unixTime: event.unixTime,
-        value: event.value
-    ]
-    logInfo 'event received ' + lastEvent
-    state.lastEvent = lastEvent
-    // Debounce multiple events hitting at the same time
-    runInMillis(200, 'updateAllDeviceLedStates')
-}
-
-// For Inovelli Blue devices track the led state changes and update the device tracker
 @CompileStatic
 void deviceStateTracker(Event event) {
     switch (event.value) {
@@ -412,25 +534,74 @@ void deviceStateTracker(Event event) {
     }
 }
 
+/**
+ *  Main entry point for updating LED notifications on devices
+ */
+void notificationDispatcher() {
+    Map<String, Boolean> dashboardResults = evaluateDashboardConditions()
+    Map<String, Map> ledStates = calculateLedState(dashboardResults)
+
+    if (ledStates) {
+        ledStates.values().each { config ->
+            updateDeviceLedState(config)
+            pauseExecution(200)
+        }
+    }
+}
+
 /*
- *  Calculate Notification LED States
- *  Evaluates the dashboard rules with priorities and determines the resulting led state
+ *  Dashboard evaluation function responsible for iterating each condition over
+ *  the dashboards and returning a map with true/false result for each dashboard prefix.
+ *
+ *  Includes logic for delayed activiation by scheduling an update job
+ */
+Map<String, Map> evaluateDashboardConditions() {
+    long nextEvaluationTime = 0
+    Map<String, Map> evaluationResults = [:]
+    // Iterate each dashboard
+    for (String prefix in getDashboardList()) {
+        String key = "${prefix}_delay"
+        // Evaluate the dashboard conditions
+        boolean active = evaluateConditions(prefix)
+        // Check if dashboard delay configured
+        int delayMs = (settings[key] ?: 0) * 60000
+        if (active && delayMs) {
+            // Determine if delay has expired yet
+            long targetTime = state.computeIfAbsent(key) { k -> getOffsetMs(delayMs) }
+            if (now() < targetTime) {
+                logDebug "[evaluateDashboardConditions] ${prefix} has delayed evaluation (${delayMs}ms)"
+                active = false
+                // calculate when we need to check again
+                if (!nextEvaluationTime || nextEvaluationTime > targetTime) {
+                    nextEvaluationTime = targetTime
+                }
+            }
+        } else if (state[key]) {
+            state.remove(key)
+        }
+        evaluationResults[prefix] = active
+    }
+
+    if (nextEvaluationTime) {
+        long delay = nextEvaluationTime - now()
+        logDebug "[evaluateDashboardConditions] scheduling evaluation in ${delay}ms"
+        runInMillis(delay, 'notificationDispatcher')
+    }
+
+    return evaluationResults
+}
+
+/*
+ *  Calculate Notification LED States from condition results
  *  Returns a map of each LED number and the state config associated with it for actioning
  */
-private Map<String, Map> calculateLedState() {
+Map<String, Map> calculateLedState(Map<String, Boolean> results) {
     Map<String, Map> ledStates = [:]
     for (String prefix in getDashboardList()) {
         Map<String, String> config = getDashboardConfig(prefix)
-        logDebug "now = ${now()}, unixTime = ${state.lastEvent.unixTime}, diff = ${now() - state.lastEvent.unixTime}"
-        // this code will move somewhere else
-        if (config.delay && state.lastEvent && (now() - state.lastEvent.unixTime) < (config.delay as int) * 1000) {
-            logInfo "Delaying for ${config.delay} seconds"
-            runIn(config.delay as int, 'updateAllDeviceLedStates')
-            continue
-        }
         Map<String, Map> oldState = ledStates[config.lednumber as String] ?: [:]
         int oldPriority = oldState.priority as Integer ?: 0
-        if (evaluateConditions(prefix)) {
+        if (results[prefix]) {
             replaceVariables(config)
             int newPriority = config.priority as Integer ?: 0
             if (newPriority >= oldPriority) {
@@ -451,25 +622,32 @@ private Map<String, Map> calculateLedState() {
     return ledStates
 }
 
+/*
+ *  Private Implementation Helper Methods
+ */
+
 // Cleans settings removing entries no longer in use
 private void cleanSettings() {
-    // Clean unused variable settings
-    [ 'lednumber', 'effect', 'color' ].each { var ->
-        if (settings["${prefix}_${var}"] != 'var') {
-            app.removeSetting("${prefix}_${var}_var")
-        }
-    }
-
     // Clean unused dashboard settings
     for (String prefix in getDashboardList()) {
         conditionsMap.keySet()
             .findAll { key -> !(key in settings["${prefix}_conditions"]) }
             .each { key -> removeSettings("${prefix}_${key}") }
+
+        // Clean unused variable settings
+        [ 'lednumber', 'effect', 'color' ].each { var ->
+            if (settings["${prefix}_${var}"] != 'var') {
+                app.removeSetting("${prefix}_${var}_var")
+            }
+        }
     }
 }
 
 private void cleanState() {
     state.remove('lastEvent')
+    for (String prefix in getDashboardList()) {
+        state.remove("${prefix}_delay")
+    }
 }
 
 // Utility method for CSS colored text
@@ -487,6 +665,34 @@ private Map<String, String> getDashboardConfig(String prefix) {
     return [ 'prefix': prefix ] + settings
         .findAll { s -> s.key.startsWith(prefix + '_') }
         .collectEntries { s -> [ s.key.substring(startPos), s.value ] }
+}
+
+private String getSuggestedConditionName(String prefix) {
+    Map config = getDashboardConfig(prefix)
+    Map deviceType = getDeviceType()
+    StringBuilder sb = new StringBuilder('Set ')
+
+    if (config.lednumber && config.lednumber != 'var') {
+        sb << deviceType?.leds[config.lednumber] ?: 'n/a'
+    } else {
+        sb << 'LED'
+    }
+    if (config.color && config.color != 'var') {
+        sb << " to ${ColorMap[config.color]}"
+    }
+
+    List<String> conditions = config.conditions
+        .findAll { c -> conditionsMap.containsKey(c) }
+        .collect { c -> conditionsMap[c].title + (config["${c}_all"] ? ' <i>(All)</i>' : '') }
+    if (conditions) {
+        sb << " when ${conditions[0]}"
+    }
+
+    if (config.delay) {
+        sb << " for ${config.delay}"
+    }
+
+    return sb.toString()
 }
 
 // Creates a description string for the dashboard configuration for display
@@ -527,6 +733,12 @@ private String getDashboardDescription(String prefix) {
             sb << ' (Autostop)'
         }
     }
+    if (config.delay) {
+        sb << " for ${config.delay} minute"
+        if (config.delay > 1) {
+            sb << 's'
+        }
+    }
     return sb.toString()
 }
 
@@ -539,8 +751,13 @@ private Set<String> getDashboardList() {
         .reverse()
 }
 
+// Returns the active device type configuration map
 private Map getDeviceType() {
-    return DeviceTypeMap[settings['deviceType']] ?: [:]
+    Map deviceTypeMap = DeviceTypeMap.get(settings['deviceType']) ?: [:]
+    if (!deviceTypeMap) {
+        logError "Unable to retrieve device type map for ${settings['deviceType']}"
+    }
+    return deviceTypeMap
 }
 
 // Calculate milliseconds from Inovelli duration parameter (0-255)
@@ -570,6 +787,7 @@ private String getNextPrefix() {
     return "condition_${maxId + 1}"
 }
 
+// Returns current time plus specified offset
 private long getOffsetMs(long offset = 0) {
     return now() + offset
 }
@@ -579,6 +797,11 @@ private void logDebug(String s) {
     if (logEnable) {
         log.debug s
     }
+}
+
+// Logs Error
+private void logError(String s) {
+    log.error s
 }
 
 // Logs information
@@ -647,21 +870,6 @@ private void subscribeAllSwitches() {
             logInfo "subscribing to ledEffect event for ${settings.switches}"
             subscribe(settings.switches, 'ledEffect', 'deviceStateTracker', null)
             break
-    }
-}
-
-/**
- *  Main entry point for changing LED notifications on devices
- */
-private void updateAllDeviceLedStates() {
-    // Calculate led state and sends device led update notifications
-    Map<String, Map> ledStates = calculateLedState()
-    if (ledStates) {
-        // Sending individual LED updates
-        ledStates.values().each { config ->
-            updateDeviceLedState(config)
-            pauseExecution(200)
-        }
     }
 }
 
@@ -1067,8 +1275,9 @@ private void updatePauseLabel() {
 
 /**
  *  Evaluates all conditions and returns a pass/fail (boolean)
- *  Supports tests against devices, hub (global) variables, and state values
- *  Enables any/all type options against devices or conditions
+ *
+ *  @param prefix           The settings prefix to use (e.g. conditions_1) for persistence
+ *  @param ruleDefinitions  The rule definitions to use (defaults to global conditionsMap)
  */
 private boolean evaluateConditions(String prefix, Map<String, Map> ruleDefinitions = conditionsMap) {
     boolean result = false
@@ -1094,17 +1303,19 @@ private boolean evaluateConditions(String prefix, Map<String, Map> ruleDefinitio
             result |= testResult
         }
     }
-    logDebug "${prefix}: ${name} condition ${allConditionsFlag ? '(all)' : ''} returns ${result ? 'TRUE' : 'false'}"
+    logDebug "[evaluateConditions] ${name} (${prefix}) returns ${result}"
     return result
 }
 
 /**
- *  Evaluates the provided condition configuration and returns a pass/fail (boolean)
- *  Supports tests against devices, hub (global) variables, and state values
+ *  Evaluates the specified condition configuration and returns a pass/fail (boolean)
+ *
+ *  @param prefix       The settings prefix to use (e.g. conditions_1) for persistence
+ *  @param condition    The condition to evaluate
  */
 private boolean evaluateCondition(String prefix, Map condition) {
-    if (!condition) { return false }
     String attribute
+    if (!condition) { return false }
     if (condition.subscribe in Closure) {
         Map ctx = [
             device: settings["${prefix}_device"],
@@ -1125,7 +1336,7 @@ private boolean evaluateCondition(String prefix, Map condition) {
         value: settings["${prefix}_value"]
     ].asImmutable()
     boolean result = runClosure(condition.test as Closure, ctx) ?: false
-    logDebug "${prefix}: ${condition.title} ${ctx} returns ${result ? 'TRUE' : 'false'}"
+    logDebug "[evaluateCondition] ${condition.title} (${prefix}) is ${result}"
     return result
 }
 
@@ -1212,113 +1423,6 @@ private Map<String, String> getComparisonsByType(String type) {
         ]
     }
     return result
-}
-
-/*
- *  Called from the application page, renders to the user interface a section to view and edit
- *  conditions and events defined in the conditionsMap above.
- *
- *  @param prefix          The settings prefix to use (e.g. conditions_1) for persistence
- *  @param sectionTitle    The section title to use
- *  @param ruleDefinitions The rule definitions to use (see conditionsMap)
- *  @returns page section
- */
-private Map renderConditionSection(String prefix, String sectionTitle, Map<String, Map> ruleDefinitions = conditionsMap) {
-    return section(sectionTitle) {
-        Map<String, String> conditionTitles = ruleDefinitions.collectEntries { String k, Map v -> [ k, v.title ] }
-        List<String> selectedConditions = settings["${prefix}_conditions"] ?: []
-        input name: "${prefix}_conditions", title: '', desscription: 'Select means to activate', type: 'enum', options: conditionTitles, multiple: true, submitOnChange: true, width: 9
-
-        Boolean allConditionsMode = settings["${prefix}_conditions_all"] ?: false
-        if (settings["${prefix}_conditions"]?.size() > 1) {
-            String title = "${allConditionsMode ? '<b>All</b> conditions' : '<b>Any</b> condition'}"
-            input name: "${prefix}_conditions_all", title: title, type: 'bool', width: 3, submitOnChange: true
-        }
-
-        boolean isFirst = true
-        Map<String, Map> selectedConditionsMap = ruleDefinitions.findAll { String k, Map v -> k in selectedConditions }
-        for (Map.Entry<String, Map> condition in selectedConditionsMap) {
-            String id = "${prefix}_${condition.key}"
-            String currentResult = evaluateCondition(id, condition.value) ? ' <span style=\'color: green\'>(currently true)</span>' : ''
-            if (!isFirst) {
-                paragraph allConditionsMode ? '<b>and</b>' : '<i>or</i>'
-            }
-            isFirst = false
-            Map<String, Map> inputs = condition.value.inputs
-            if (inputs.device) {
-                input name: "${id}_device",
-                    title: (inputs.device.title ?: condition.value.title) + currentResult,
-                    type: inputs.device.type,
-                    width: inputs.device.width ?: 7,
-                    multiple: inputs.device.multiple,
-                    submitOnChange: true,
-                    required: true
-                if (!inputs.device.any && settings["${id}_device"] in Collection && settings["${id}_device"]?.size() > 1) {
-                    String name = inputs.device.name ?: condition.value.name
-                    input name: "${id}_device_all",
-                        title: settings["${id}_device_all"] ? "<b>All</b> ${name} devices" : "<b>Any</b> ${name} device",
-                        type: 'bool',
-                        submitOnChange: true,
-                        width: 4
-                }
-            }
-
-            if (inputs.choice) {
-                Object options
-                if (inputs.choice.options in Closure) {
-                    Map ctx = [ device: settings["${id}_device"] ]
-                    options = runClosure(inputs.choice.options as Closure, ctx)
-                } else {
-                    options = inputs.choice.options
-                }
-                if (options) {
-                    input name: "${id}_choice",
-                        title: (inputs.choice.title ?: condition.value.title) + currentResult,
-                        defaultValue: inputs.choice.defaultValue,
-                        options: options,
-                        width: inputs.choice.width ?: 7,
-                        multiple: inputs.choice.multiple,
-                        type: 'enum',
-                        submitOnChange: true,
-                        required: true
-                }
-            }
-
-            if (inputs.comparison) {
-                Object options
-                if (inputs.comparison.options in Closure) {
-                    Map ctx = [ device: settings["${id}_device"], choice: settings["${id}_choice"] ]
-                    options = runClosure(inputs.comparison.options as Closure, ctx)
-                } else {
-                    options = inputs.comparison.options
-                }
-                input name: "${id}_comparison",
-                    title: (inputs.comparison.title ?: 'Comparison') + ' ',
-                    width: inputs.comparison.width ?: 2,
-                    type: 'enum',
-                    options: options,
-                    defaultValue: inputs.comparison.defaultValue,
-                    required: true
-            }
-
-            if (inputs.value) {
-                Object options
-                if (inputs.value.options in Closure) {
-                    Map ctx = [ device: settings["${id}_device"], choice: settings["${id}_choice"] ]
-                    options = runClosure(inputs.value.options as Closure, ctx)
-                } else {
-                    options = inputs.value.options
-                }
-                input name: "${id}_value",
-                    title: (inputs.value.title ?: 'Value') + ' ',
-                    width: inputs.value.width ?: 3,
-                    defaultValue: inputs.value.defaultValue,
-                    options: options,
-                    type: options ? 'enum' : 'text',
-                    required: true
-            }
-        }
-    }
 }
 
 // Internal method to call closure (with this as delegate) passing the context parameter
