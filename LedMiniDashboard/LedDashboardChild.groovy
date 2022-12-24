@@ -115,6 +115,9 @@ import java.util.regex.Matcher
 @Field static final Map<String, String> PrioritiesMap = [ '1': 'Priority 1 (low)', '2': 'Priority 2', '3': 'Priority 3', '4': 'Priority 4', '5': 'Priority 5 (medium)',
     '6': 'Priority 6', '7': 'Priority 7', '8': 'Priority 8', '9': 'Priority 9 (high)' ].asImmutable()
 
+@Field static final Map<String, String> LevelMap = [ '10': '10', '20': '20', '30': '30', '40': '40', '50': '50',
+    '60': '60', '70': '70', '80': '80', '90': '90', '100': '100', 'var': 'Variable' ].asImmutable()
+
 @Field static final Map<String, String> TimePeriodsMap = [ '0': 'Seconds', '60': 'Minutes', '120': 'Hours', '255': 'Infinite' ].asImmutable()
 
 // Tracker for device LED state to optimize traffic by only sending changes
@@ -167,7 +170,6 @@ Map mainPage() {
         }
 
         if (deviceType && settings['switches']) {
-            cleanState()
             Set<String> prefixes = getDashboardList()
             section("<h3 style=\'color: #1A77C9; font-weight: bold\'>${app.label} Activation Conditions</h3>") {
                 for (String prefix in prefixes) {
@@ -211,7 +213,14 @@ Map mainPage() {
                 title: 'Enable debug logging',
                 type: 'bool',
                 required: false,
-                defaultValue: false
+                defaultValue: false,
+                width: 4
+
+            input name: 'periodicRefresh',
+                title: 'Enable periodic refresh',
+                type: 'bool',
+                required: false,
+                width: 4
         }
     }
 }
@@ -227,7 +236,7 @@ Map editPage(Map params = [:]) {
     return dynamicPage(name: 'editPage', title: "<h3 style=\'color: #1A77C9; font-weight: bold\'>${name} activation condition:</h3><br>") {
         renderIndicationSection(prefix, '<b>Select LED mini-dashboard indication options:</b>')
         if (settings["${prefix}_lednumber"]) {
-            renderConditionSection(prefix, '<b>Select means to activate LED mini-dashboard effect:</b><span class="required-indicator">*</span>')
+            renderConditionSection(prefix, '<span style=\'color: green; font-weight: bold\'>Select means to activate LED mini-dashboard effect:</span><span class="required-indicator">*</span>')
 
             if (settings["${prefix}_conditions"]) {
                 section {
@@ -298,7 +307,13 @@ Map renderIndicationSection(String prefix, String title) {
                 }
 
                 // Level
-                input name: "${prefix}_level", title: "<span style=\'color: blue;\'>Level&nbsp;</span>", type: 'enum', width: 2, defaultValue: 100, options: [ '10', '20', '30', '40', '50', '60', '70', '80', '90', '100' ], required: true
+                input name: "${prefix}_level", title: "<span style=\'color: blue;\'>Level&nbsp;</span>", type: 'enum', width: 2,
+                    defaultValue: 100, options: LevelMap, required: true, submitOnChange: true
+                if (settings["${prefix}_level"] == 'var') {
+                    input name: "${prefix}_level_var", title: "<span style=\'color: blue;\'>Level Variable</span>", type: 'enum', options: getGlobalVarsByType('integer').keySet(), width: 3, required: true
+                } else {
+                    app.removeSetting("${prefix}_level_var")
+                }
             }
             paragraph ''
         }
@@ -308,18 +323,18 @@ Map renderIndicationSection(String prefix, String title) {
 /*
  *  Dashboard Edit Page Conditions Section
  *  Called from the application page, renders to the user interface a section to view and edit
- *  conditions and events defined in the conditionsMap above.
+ *  conditions and events defined in the ConditionsMap above.
  *
  *  @param prefix          The settings prefix to use (e.g. conditions_1) for persistence
  *  @param sectionTitle    The section title to use
- *  @param ruleDefinitions The rule definitions to use (see conditionsMap)
+ *  @param ruleDefinitions The rule definitions to use (see ConditionsMap)
  *  @returns page section
  */
-Map renderConditionSection(String prefix, String sectionTitle, Map<String, Map> ruleDefinitions = conditionsMap) {
+Map renderConditionSection(String prefix, String sectionTitle, Map<String, Map> ruleDefinitions = ConditionsMap) {
     return section(sectionTitle) {
         Map<String, String> conditionTitles = ruleDefinitions.collectEntries { String k, Map v -> [ k, v.title ] }
         List<String> selectedConditions = settings["${prefix}_conditions"] ?: []
-        input name: "${prefix}_conditions", title: '', description: 'Select means to activate', type: 'enum', options: conditionTitles, multiple: true, submitOnChange: true, required: true, width: 9
+        input name: "${prefix}_conditions", title: '', type: 'enum', options: conditionTitles, multiple: true, required: true, submitOnChange: true, width: 9
 
         Boolean allConditionsMode = settings["${prefix}_conditions_all"] ?: false
         if (settings["${prefix}_conditions"]?.size() > 1) {
@@ -491,17 +506,25 @@ void uninstalled() {
 void updated() {
     logInfo "${app.name} configuration updated"
     DeviceStateTracker.clear()
+    state.clear()
     cleanSettings()
-    cleanState()
+    unschedule()
     unsubscribe()
 
     if (state.paused) {
         resetNotifications()
-    } else {
-        subscribeAllSwitches()
-        subscribeAllConditions()
-        resetNotifications()
-        notificationDispatcher()
+        return
+    }
+
+    subscribeAllSwitches()
+    subscribeAllConditions()
+    resetNotifications()
+    notificationDispatcher()
+
+    if (settings.periodicRefresh) {
+        logInfo 'Enabling periodic refresh schedule'
+        int rnd = new Random().nextInt(59)
+        schedule("0 ${rnd} * ? * * *", 'notificationDispatcher')
     }
 }
 
@@ -630,7 +653,7 @@ Map<String, Map> calculateLedState(Map<String, Boolean> results) {
 private void cleanSettings() {
     // Clean unused dashboard settings
     for (String prefix in getDashboardList()) {
-        conditionsMap.keySet()
+        ConditionsMap.keySet()
             .findAll { key -> !(key in settings["${prefix}_conditions"]) }
             .each { key -> removeSettings("${prefix}_${key}") }
 
@@ -640,13 +663,6 @@ private void cleanSettings() {
                 app.removeSetting("${prefix}_${var}_var")
             }
         }
-    }
-}
-
-private void cleanState() {
-    state.remove('lastEvent')
-    for (String prefix in getDashboardList()) {
-        state.remove("${prefix}_delay")
     }
 }
 
@@ -682,8 +698,8 @@ private String getSuggestedConditionName(String prefix) {
     }
 
     List<String> conditions = config.conditions
-        .findAll { c -> conditionsMap.containsKey(c) }
-        .collect { c -> conditionsMap[c].title + (config["${c}_all"] ? ' <i>(All)</i>' : '') }
+        .findAll { c -> ConditionsMap.containsKey(c) }
+        .collect { c -> ConditionsMap[c].title + (config["${c}_all"] ? ' <i>(All)</i>' : '') }
     if (conditions) {
         sb << " when ${conditions[0]}"
     }
@@ -717,8 +733,10 @@ private String getDashboardDescription(String prefix) {
     } else if (config.color == 'var') {
         sb << ", <b>Color Variable:</b> <i>${config.color_var}</i>"
     }
-    if (config.level) {
+    if (config.level && config.level != 'var') {
         sb << ", <b>Level:</b> ${config.level}%"
+    } else if (config.level == 'var') {
+        sb << ", <b>Level Variable:</b> <i>${config.level_var}</i>"
     }
     if (config.duration && config.unit) {
         sb << ", <b>Duration:</b> ${config.duration} ${TimePeriodsMap[config.unit]?.toLowerCase()}"
@@ -726,8 +744,8 @@ private String getDashboardDescription(String prefix) {
     if (config.conditions) {
         String allMode = config.conditions_all ? ' and ' : ' or '
         List<String> conditions = config.conditions
-            .findAll { c -> conditionsMap.containsKey(c) }
-            .collect { c -> conditionsMap[c].title + (config["${c}_all"] ? ' <i>(All)</i>' : '') }
+            .findAll { c -> ConditionsMap.containsKey(c) }
+            .collect { c -> ConditionsMap[c].title + (config["${c}_all"] ? ' <i>(All)</i>' : '') }
         sb << "\n<b>Activation${conditions.size() > 1 ? 's' : ''}:</b> ${conditions.join(allMode)}"
         if (config.autostop != false) {
             sb << ' (Autostop)'
@@ -834,6 +852,9 @@ private void replaceVariables(Map<String, String> config) {
         }
         if (config.color == 'var') {
             config.color = lookupVariable(config.color_var, ColorMap) ?: '170'
+        }
+        if (config.level == 'var') {
+            config.level = lookupVariable(config.level_var, LevelMap) ?: '100'
         }
     }
 }
@@ -1003,7 +1024,7 @@ private void updatePauseLabel() {
  */
 
 // TODO: Consider explicit event vs. condition (e.g. door has opened in last x seconds vs. door is open)
-@Field static final Map<String, Map> conditionsMap = [
+@Field static final Map<String, Map> ConditionsMap = [
     'buttonPress': [
         name: 'Button Push',
         title: 'Button is pushed',
@@ -1277,9 +1298,9 @@ private void updatePauseLabel() {
  *  Evaluates all conditions and returns a pass/fail (boolean)
  *
  *  @param prefix           The settings prefix to use (e.g. conditions_1) for persistence
- *  @param ruleDefinitions  The rule definitions to use (defaults to global conditionsMap)
+ *  @param ruleDefinitions  The rule definitions to use (defaults to global ConditionsMap)
  */
-private boolean evaluateConditions(String prefix, Map<String, Map> ruleDefinitions = conditionsMap) {
+private boolean evaluateConditions(String prefix, Map<String, Map> ruleDefinitions = ConditionsMap) {
     boolean result = false
     boolean allConditionsFlag = settings["${prefix}_conditions_all"] ?: false
     String name = settings["${prefix}_name"]
@@ -1341,7 +1362,7 @@ private boolean evaluateCondition(String prefix, Map condition) {
 }
 
 // Subscribe to a condition (devices, location, variable etc.)
-private void subscribeCondition(String prefix, Map<String, Map> ruleDefinitions = conditionsMap) {
+private void subscribeCondition(String prefix, Map<String, Map> ruleDefinitions = ConditionsMap) {
     String name = settings["${prefix}_name"] ?: prefix
     List<String> selectedConditions = settings["${prefix}_conditions"] ?: []
     for (String conditionKey in selectedConditions) {
