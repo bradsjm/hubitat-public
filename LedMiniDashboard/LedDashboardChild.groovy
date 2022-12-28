@@ -66,7 +66,7 @@ import java.util.regex.Matcher
  */
 @Field static final Map<String, Map> DeviceTypeMap = [
     'Inovelli Blue Switch': [
-        title: 'Inovelli Blue Switches (7 Segments)',
+        title: 'Inovelli Dimmer 2-in-1 Blue Series VZM31-SN',
         type: 'device.InovelliDimmer2-in-1BlueSeriesVZM31-SN',
         leds: [ '1': 'LED 1 (Bottom)', '2': 'LED 2', '3': 'LED 3', '4': 'LED 4', '5': 'LED 5', '6': 'LED 6', '7': 'LED 7 (Top)', 'All': 'All LEDs', 'var': 'Variable LED' ],
         effects: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Falling', '7': 'Rising', '8': 'Aurora', '255': 'Stop', 'var': 'Variable Effect' ],
@@ -75,7 +75,7 @@ import java.util.regex.Matcher
         stopEffect: 255
     ],
     'Inovelli Blue Fan Switch': [
-        title: 'Inovelli Blue Fan Switches (7 Segments)',
+        title: 'Inovelli Fan Switch Blue Series VZM35-SN',
         type: 'device.InovelliVZM35-SNZigbeeFanSwitch',
         leds: [ '1': 'LED 1 (Bottom)', '2': 'LED 2', '3': 'LED 3', '4': 'LED 4', '5': 'LED 5', '6': 'LED 6', '7': 'LED 7 (Top)', 'All': 'All LEDs', 'var': 'Variable LED' ],
         effects: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Falling', '7': 'Rising', '8': 'Aurora', '255': 'Stop', 'var': 'Variable Effect' ],
@@ -84,15 +84,15 @@ import java.util.regex.Matcher
         stopEffect: 255
     ],
     'Inovelli Red Switch': [
-        title: 'Inovelli Red Switches (Single LED)',
-        type: 'device.InovelliDimmerRedSeriesLZW30-SN',
+        title: 'Inovelli Switch Red Series LZW30-SN',
+        type: 'device.InovelliSwitchRedSeriesLZW30-SN',
         leds: [ 'All': 'Notification' ],
         effects: [:],
         effectsAll: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', 'var': 'Variable Effect' ],
         stopEffect: 0
     ],
     'Inovelli Red Dimmer': [
-        title: 'Inovelli Red Dimmers (LED Strip)',
+        title: 'Inovelli Dimmer Red Series LZW31-SN',
         type: 'device.InovelliDimmerRedSeriesLZW31-SN',
         leds: [ 'All': 'Notification' ],
         effects: [:],
