@@ -33,7 +33,7 @@
  *  0.6 - Add additional effect types support
  *  0.7 - Fixes for split effect definitions (effects vs effectsAll)
  *  0.8 - Add location mode condition
- *  0.9 - Add delayed activation option per dashboard
+ *  0.9 - Add delayed activation option per dashboard and variable level
  *
 */
 
@@ -488,8 +488,8 @@ void installed() {
 
 // Invoked by the hub when a global variable is renamed
 void renameVariable(String oldName, String newName) {
-    settings.findAll { s -> s.key.endsWith('_var') && s.value == oldName }.each { s ->
-        logInfo "changing ${s.key} from ${oldName} to ${newName}"
+    settings.findAll { s -> s.value == oldName }.each { s ->
+        logInfo "updating variable name ${oldName} to ${newName} for ${s.key}"
         s.value = newName
     }
 }
@@ -510,6 +510,7 @@ void updated() {
     cleanSettings()
     unschedule()
     unsubscribe()
+    removeAllInUseGlobalVar()
 
     if (state.paused) {
         resetNotifications()
@@ -518,6 +519,7 @@ void updated() {
 
     subscribeAllSwitches()
     subscribeAllConditions()
+    subscribeVariables()
     resetNotifications()
     notificationDispatcher()
 
@@ -607,7 +609,7 @@ Map<String, Map> evaluateDashboardConditions() {
 
     if (nextEvaluationTime) {
         long delay = nextEvaluationTime - now()
-        logDebug "[evaluateDashboardConditions] scheduling evaluation in ${delay}ms"
+        logInfo "[evaluateDashboardConditions] scheduling evaluation in ${delay}ms"
         runInMillis(delay, 'notificationDispatcher')
     }
 
@@ -863,6 +865,7 @@ private void replaceVariables(Map<String, String> config) {
 private void resetNotifications() {
     Map deviceType = getDeviceType()
     if (deviceType) {
+        logInfo 'resetting all device notifications'
         deviceType.leds.keySet().findAll { s -> s != 'var' }.each { led ->
             updateDeviceLedState([ lednumber: led, effect: deviceType.stopEffect ?: 0 ])
         }
@@ -888,7 +891,7 @@ private void subscribeAllSwitches() {
     String type = getDeviceType().type
     switch (type) {
         case ~/^device.InovelliDimmer2-in-1BlueSeries.*/:
-            logInfo "subscribing to ledEffect event for ${settings.switches}"
+            logDebug "subscribing to ledEffect event for ${settings.switches}"
             subscribe(settings.switches, 'ledEffect', 'deviceStateTracker', null)
             break
     }
@@ -955,36 +958,23 @@ private void updateDeviceLedStateInovelliBlue(DeviceWrapper dw, Map config) {
  *  updateDeviceLedStateInovelliRed is a wrapper around the Inovelli device driver method of the same name
  */
 private void updateDeviceLedStateInovelliRed(DeviceWrapper dw, Map config) {
-    Map<String, Map> tracker = DeviceStateTracker.computeIfAbsent(dw.id) { k -> [:].withDefault { [:] } }
-    String key = 'All'
-    if (tracker[key].effect != config.effect
-        || tracker[key].color != config.color
-        || tracker[key].level != config.level
-        || tracker[key].duration != config.duration
-        || tracker[key].expires <= now()
-    ) {
-        byte color, duration, effect, level
-        if (config.unit != null) {
-            duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255) as byte
-        }
-        if (config.color != null) {
-            color = Math.min(Math.round(((config.color as Integer) / 360.0) * 255), 255) as byte
-        }
-        if (config.level != null) {
-            level = Math.round((config.level as int) / 10) as byte
-        }
-        if (config.effect != null) {
-            effect = config.effect as byte
-        }
-        byte[] bytes = [ effect, duration, level, color ]
-        int value = new BigInteger(bytes).intValue()
-        logDebug "startNotification(${value}) [${bytes[0] & 0xff}, ${bytes[1] & 0xff}, ${bytes[2] & 0xff}, ${bytes[3] & 0xff}]"
-        dw.startNotification(value)
-        config.expires = getOffsetMs(getDurationMs(duration))
-        tracker[key] = config
-    } else {
-        logInfo 'skipping update (no change to leds detected)'
+    byte color, duration, effect, level
+    if (config.unit != null) {
+        duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255) as byte
     }
+    if (config.color != null) {
+        color = Math.min(Math.round(((config.color as Integer) / 360.0) * 255), 255) as byte
+    }
+    if (config.level != null) {
+        level = Math.round((config.level as int) / 10) as byte
+    }
+    if (config.effect != null) {
+        effect = config.effect as byte
+    }
+    byte[] bytes = [ effect, duration, level, color ]
+    int value = new BigInteger(bytes).intValue()
+    logDebug "startNotification(${value}) [${bytes[0] & 0xff}, ${bytes[1] & 0xff}, ${bytes[2] & 0xff}, ${bytes[3] & 0xff}]"
+    dw.startNotification(value)
 }
 
 /**
@@ -1382,7 +1372,18 @@ private void subscribeCondition(String prefix, Map<String, Map> ruleDefinitions 
             }
             logInfo "${name} [${condition.name}] subscribing to ${ctx.device ?: 'location'} for '${attribute}'"
             subscribe(ctx.device ?: location, attribute, 'eventHandler', null)
+            if (attribute.startsWith('variable:')) {
+                addInUseGlobalVar(attribute.substring(9))
+            }
         }
+    }
+}
+
+private void subscribeVariables() {
+    settings.findAll { s -> s.key.endsWith('_var') }.each { s ->
+        logDebug "subscribing to variable ${s.value}"
+        addInUseGlobalVar(s.value)
+        subscribe(location, 'variable:' + s.value, 'eventHandler', null)
     }
 }
 
