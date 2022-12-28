@@ -24,7 +24,7 @@
     },
     {
       "id": "44d4b107-afa8-404d-ac50-ea79501f0f24",
-      "name": "LED Mini-Dashboard",
+      "name": "LED Mini-Dashboards",
       "category": "Notifications",
       "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/LedMiniDashboard/packageManifest.json",
       "description": "This application allows easy linking of Hubitat device, variables and HSM states to LEDs of your switches",
