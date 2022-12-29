@@ -25,15 +25,16 @@
  * Thanks to Mattias Fornander (@mfornander) for the original application concept
  *
  * Version history:
- *  0.1 - Initial development (alpha)
- *  0.2 - Initial Beta Test release
- *  0.3 - Add condition current state feedback indicator
- *  0.4 - Add 'autostop' effect option to clear effect
- *  0.5 - Add additional device support for Inovelli Red switches and dimmers
- *  0.6 - Add additional effect types support
- *  0.7 - Fixes for split effect definitions (effects vs effectsAll)
- *  0.8 - Add location mode condition
- *  0.9 - Add delayed activation option per dashboard and variable level
+ *  0.1  - Initial development (alpha)
+ *  0.2  - Initial Beta Test release
+ *  0.3  - Add condition current state feedback indicator
+ *  0.4  - Add 'autostop' effect option to clear effect
+ *  0.5  - Add additional device support for Inovelli Red switches and dimmers
+ *  0.6  - Add additional effect types support
+ *  0.7  - Fixes for split effect definitions (effects vs effectsAll)
+ *  0.8  - Add location mode condition
+ *  0.9  - Add delayed activation option per dashboard and variable level
+ *  0.91 - Increase number of priorities, fix driver titles, allow 0 for delay time
  *
 */
 
@@ -239,7 +240,7 @@ Map editPage(Map params = [:]) {
 
             if (settings["${prefix}_conditions"]) {
                 section {
-                    input name: "${prefix}_delay", title: '<b>For number of minutes:</b>', description: '1..60', type: 'number', width: 3, range: '1..60', required: false
+                    input name: "${prefix}_delay", title: '<i>For number of minutes:</i>', description: '1..60', type: 'number', width: 3, range: '0..60', required: false
                     paragraph '', width: 2
                     String title = 'When conditions stop matching '
                     title += settings["${prefix}_autostop"] == false ? '<i>leave effect running</i>' : '<b>stop the effect</b>'
@@ -248,7 +249,7 @@ Map editPage(Map params = [:]) {
 
                 section {
                     input name: "${prefix}_name", title: '<b>Activation Condition Name:</b>', type: 'text', defaultValue: getSuggestedConditionName(prefix), width: 7, required: true, submitOnChange: true
-                    input name: "${prefix}_priority", title: '', description: 'Select Priority', type: 'enum', options: getAvailablePriorities(prefix), width: 3, required: true
+                    input name: "${prefix}_priority", title: '<b>Priority:</b>', type: 'enum', options: getAvailablePriorities(prefix), width: 2, required: true
                     paragraph '<i>Higher value condition priorities take LED precedence.</i>'
                 }
             }
@@ -695,7 +696,7 @@ private Map<String, String> getAvailablePriorities(String prefix) {
         .findAll { String p -> settings["${p}_lednumber"] as String == ledNumber }
         .collect { String p -> settings["${p}_priority"] as Integer }
     return Priorities.collectEntries { Integer p ->
-        String text = "Priority ${p}"
+        String text = p as String
         if (p in usedPriorities) {
             text += ' (In Use)'
         } else if (p == 1) {

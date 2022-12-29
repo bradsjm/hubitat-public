@@ -5,9 +5,9 @@
   "communityLink": "https://community.hubitat.com/t/switch-dashboard-and-switch-notifications/104986",
   "documentationLink": "https://github.com/bradsjm/hubitat-drivers/blob/main/SwitchLedDashboard/README.md",
   "licenseFile": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/LICENSE",
-  "version": "0.9",
-  "dateReleased": "2022-12-28",
-  "releaseNotes": "v0.9 - Beta Testing (Added delayed conditions and level variable)",
+  "version": "0.91",
+  "dateReleased": "2022-12-29",
+  "releaseNotes": "v0.91 - Beta Testing (Increase number of priorities, fix driver titles, allow 0 for delay time)",
   "apps": [
     {
       "id": "a5578fb7-3eb6-46f2-9eec-cb25fa4a6fdb",
