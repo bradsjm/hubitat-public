@@ -171,7 +171,7 @@ Map mainPage() {
         }
 
         if (deviceType && settings['switches']) {
-            Set<String> prefixes = getDashboardList()
+            Set<String> prefixes = getSortedDashboardPrefixes()
             section("<h3 style=\'color: #1A77C9; font-weight: bold\'>${app.label} Activation Conditions</h3>") {
                 for (String prefix in prefixes) {
                     String name = settings["${prefix}_name"]
@@ -628,7 +628,7 @@ Map<String, Map> evaluateDashboardConditions() {
     long nextEvaluationTime = 0
     Map<String, Map> evaluationResults = [:]
     // Iterate each dashboard
-    for (String prefix in getDashboardList()) {
+    for (String prefix in getSortedDashboardPrefixes()) {
         String key = "${prefix}_delay"
         // Evaluate the dashboard conditions
         boolean active = evaluateConditions(prefix)
@@ -666,7 +666,7 @@ Map<String, Map> evaluateDashboardConditions() {
  */
 Map<String, Map> calculateLedState(Map<String, Boolean> results) {
     Map<String, Map> ledStates = [:]
-    for (String prefix in getDashboardList()) {
+    for (String prefix in getSortedDashboardPrefixes()) {
         Map<String, String> config = getDashboardConfig(prefix)
         Map<String, Map> oldState = ledStates[config.lednumber as String] ?: [:]
         int oldPriority = oldState.priority as Integer ?: 0
@@ -698,7 +698,7 @@ Map<String, Map> calculateLedState(Map<String, Boolean> results) {
 // Cleans settings removing entries no longer in use
 private void cleanSettings() {
     // Clean unused dashboard settings
-    for (String prefix in getDashboardList()) {
+    for (String prefix in getDashboardPrefixes()) {
         ConditionsMap.keySet()
             .findAll { key -> !(key in settings["${prefix}_conditions"]) }
             .each { key -> removeSettings("${prefix}_${key}") }
@@ -719,7 +719,7 @@ private Map<String, String> getAvailablePriorities(String prefix) {
         Map deviceType = getDeviceType()
         lednumber = lookupVariable(settings["${prefix}_lednumber_var"], deviceType.leds) ?: 'All'
     }
-    Set<Integer> usedPriorities = (getDashboardList() - prefix)
+    Set<Integer> usedPriorities = (getDashboardPrefixes() - prefix)
         .findAll { String p -> settings["${p}_lednumber"] as String == ledNumber }
         .collect { String p -> settings["${p}_priority"] as Integer }
     return Priorities.collectEntries { Integer p ->
@@ -834,13 +834,22 @@ private String getDashboardDescription(String prefix) {
     return sb.toString()
 }
 
-// Returns dashboard setting prefix sorted by priority (descending)
-private Set<String> getDashboardList() {
-    return settings.keySet()
-        .findAll { s -> s.matches('^condition_[0-9]+_priority$') }
-        .sort { s -> settings[s] as int }
-        .collect { s -> s - '_priority' }
-        .reverse()
+// Returns a set of dashboard prefixes
+private Set<String> getDashboardPrefixes() {
+    return settings.keySet().findAll { s ->
+        s.matches('^condition_[0-9]+_priority$')
+    }.collect { s -> s - '_priority' }
+}
+
+// Returns dashboard setting prefix sorted by priority (descending) then name (ascending)
+private List<String> getSortedDashboardPrefixes() {
+    return getDashboardPrefixes().collect { String prefix ->
+        [
+            prefix: prefix,
+            name: settings["${prefix}_name"] as String,
+            priority: settings["${prefix}_priority"] as Integer
+        ]
+    }.sort { a, b -> a.priority <=> b.priority ?: a.name <=> b.name }*.prefix
 }
 
 // Returns the active device type configuration map
@@ -874,7 +883,7 @@ private long getDurationMs(Integer duration) {
 // Returns next condition settings prefix
 @CompileStatic
 private String getNextPrefix() {
-    List<Integer> keys = getDashboardList().collect { p -> p.substring(10) as Integer }
+    List<Integer> keys = getDashboardPrefixes().collect { p -> p.substring(10) as Integer }
     int maxId = keys ? Collections.max(keys) : 0
     return "condition_${maxId + 1}"
 }
@@ -953,7 +962,7 @@ private void removeSettings(String prefix) {
 // Subscribe to all dashboard conditions
 @CompileStatic
 private void subscribeAllConditions() {
-    for (String prefix in getDashboardList()) {
+    for (String prefix in getDashboardPrefixes()) {
         subscribeCondition(prefix)
     }
 }
