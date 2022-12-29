@@ -112,8 +112,7 @@ import java.util.regex.Matcher
 @Field static final Map<String, String> ColorMap = [ '0': 'Red', '10': 'Orange', '40': 'Lemon', '91': 'Lime', '120': 'Green', '150': 'Teal', '180': 'Cyan', '210': 'Aqua',
     '241': 'Blue', '269': 'Violet', '300': 'Magenta', '332': 'Pink', '360': 'White', 'var': 'Variable Color' ].asImmutable()
 
-@Field static final Map<String, String> PrioritiesMap = [ '1': 'Priority 1 (low)', '2': 'Priority 2', '3': 'Priority 3', '4': 'Priority 4', '5': 'Priority 5 (medium)',
-    '6': 'Priority 6', '7': 'Priority 7', '8': 'Priority 8', '9': 'Priority 9 (high)' ].asImmutable()
+@Field static final Set<Integer> Priorities = 1..20 // can be increased if desired
 
 @Field static final Map<String, String> LevelMap = [ '10': '10', '20': '20', '30': '30', '40': '40', '50': '50',
     '60': '60', '70': '70', '80': '80', '90': '90', '100': '100', 'var': 'Variable' ].asImmutable()
@@ -249,7 +248,7 @@ Map editPage(Map params = [:]) {
 
                 section {
                     input name: "${prefix}_name", title: '<b>Activation Condition Name:</b>', type: 'text', defaultValue: getSuggestedConditionName(prefix), width: 7, required: true, submitOnChange: true
-                    input name: "${prefix}_priority", title: '', description: 'Select Priority', type: 'enum', options: PrioritiesMap, defaultValue: 'Priority 5 (medium)', width: 3, required: true
+                    input name: "${prefix}_priority", title: '', description: 'Select Priority', type: 'enum', options: getAvailablePriorities(prefix), width: 3, required: true
                     paragraph '<i>Higher value condition priorities take LED precedence.</i>'
                 }
             }
@@ -497,6 +496,7 @@ void renameVariable(String oldName, String newName) {
 // Invoked when the app is removed.
 void uninstalled() {
     unsubscribe()
+    unschedule()
     removeAllInUseGlobalVar()
     resetNotifications()
     logInfo "${app.name} uninstalled"
@@ -505,23 +505,43 @@ void uninstalled() {
 // Invoked when the settings are updated.
 void updated() {
     logInfo "${app.name} configuration updated"
+
+    // Clear tracked devices
     DeviceStateTracker.clear()
+
+    // Clear state (used mostly for tracking delayed conditions)
     state.clear()
+
+    // Clean out unused settings
     cleanSettings()
+
+    // Remove any scheduled tasks
     unschedule()
+
+    // Unsubscribe from any events
     unsubscribe()
+
+    // Remove global variable registrations
     removeAllInUseGlobalVar()
 
+    // Reset all notifications
+    resetNotifications()
+
     if (state.paused) {
-        resetNotifications()
         return
     }
 
+    // Subscribe to events from switches
     subscribeAllSwitches()
+
+    // Subscribe to events from conditions
     subscribeAllConditions()
+
+    // Subscribe to global variables
     subscribeVariables()
-    resetNotifications()
-    notificationDispatcher()
+
+    // Dispatch the current notifications
+    runInMillis(200, 'notificationDispatcher')
 
     if (settings.periodicRefresh) {
         logInfo 'Enabling periodic refresh schedule'
@@ -665,6 +685,25 @@ private void cleanSettings() {
                 app.removeSetting("${prefix}_${var}_var")
             }
         }
+    }
+}
+
+// Returns available priorities based on lednumber
+private Map<String, String> getAvailablePriorities(String prefix) {
+    String ledNumber = settings["${prefix}_lednumber"]
+    Set<Integer> usedPriorities = (getDashboardList() - prefix)
+        .findAll { String p -> settings["${p}_lednumber"] as String == ledNumber }
+        .collect { String p -> settings["${p}_priority"] as Integer }
+    return Priorities.collectEntries { Integer p ->
+        String text = "Priority ${p}"
+        if (p in usedPriorities) {
+            text += ' (In Use)'
+        } else if (p == 1) {
+            text += ' (Low)'
+        } else if (p == Priorities.max()) {
+            text += ' (High)'
+        }
+        return [ p, text ]
     }
 }
 
