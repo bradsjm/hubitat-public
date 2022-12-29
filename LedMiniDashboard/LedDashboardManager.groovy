@@ -43,6 +43,8 @@ preferences {
     page name: 'mainPage', title: '', install: true, uninstall: true
 }
 
+import com.hubitat.app.InstalledAppWrapper
+
 // Main Application Page
 Map mainPage() {
     return dynamicPage(name: 'mainPage') {
@@ -64,6 +66,14 @@ Map mainPage() {
             label title: '<b>Name this LED Mini-Dashboard Manager:</b>', width: 6
         }
     }
+}
+
+// called from child app to duplicate itself
+void duplicate(Long id) {
+    InstalledAppWrapper source = getChildAppById(id)
+    InstalledAppWrapper target = addChildApp('nrgup', 'LED Mini-Dashboard Topic', "${source.label} duplicate")
+    log.info "duplicating ${source.label}"
+    target.putSettings(source.getSettings())
 }
 
 private String getDescription() {

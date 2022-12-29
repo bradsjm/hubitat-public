@@ -204,7 +204,8 @@ Map mainPage() {
 
         if (!state.paused) {
             section {
-                label title: 'Name this LED Mini-Dashboard Topic:', width: 9, submitOnChange: true, required: true
+                label title: 'Name this LED Mini-Dashboard Topic:', width: 8, submitOnChange: true, required: true
+                input name: 'duplicate', title: 'Duplicate', type: 'button', width: 2
             }
         }
 
@@ -243,7 +244,7 @@ Map editPage(Map params = [:]) {
                     input name: "${prefix}_delay", title: '<i>For number of minutes:</i>', description: '1..60', type: 'number', width: 3, range: '0..60', required: false
                     paragraph '', width: 2
                     String title = 'When conditions stop matching '
-                    title += settings["${prefix}_autostop"] == false ? '<i>leave effect running</i>' : '<b>stop the effect</b>'
+                    title += settings["${prefix}_autostop"] == false ? '<i>leave effect running</i>' : '<b>clear the effect</b>'
                     input name: "${prefix}_autostop", title: title, type: 'bool', defaultValue: true, width: 4, submitOnChange: true
                 }
 
@@ -429,6 +430,19 @@ Map renderConditionSection(String prefix, String sectionTitle, Map<String, Map> 
 }
 
 /*
+ * Used by parent to create duplicate dashboards
+ */
+Map getSettings() {
+    return settings.findAll { k, v ->
+        k != 'switches' && !k.endsWith('_device')
+    }
+}
+
+void putSettings(Map newSettings) {
+    newSettings.each { k, v -> app.updateSetting(k, v) }
+}
+
+/*
  * Event Handlers (methods invoked by the Hub)
  */
 
@@ -436,6 +450,8 @@ Map renderConditionSection(String prefix, String sectionTitle, Map<String, Map> 
 void appButtonHandler(String buttonName) {
     logDebug "button ${buttonName} pushed"
     switch (buttonName) {
+        case 'duplicate':
+            parent.duplicate(app.id)
         case 'pause':
             state.paused = true
             updated()
@@ -482,8 +498,7 @@ void eventHandler(Event event) {
 
 // Invoked when the app is first created.
 void installed() {
-    logInfo "${app.name} child installed"
-    updated()
+    logInfo 'child created'
 }
 
 // Invoked by the hub when a global variable is renamed
@@ -692,6 +707,10 @@ private void cleanSettings() {
 // Returns available priorities based on lednumber
 private Map<String, String> getAvailablePriorities(String prefix) {
     String ledNumber = settings["${prefix}_lednumber"]
+    if (ledNumber == 'var') {
+        Map deviceType = getDeviceType()
+        lednumber = lookupVariable(settings["${prefix}_lednumber_var"], deviceType.leds) ?: 'All'
+    }
     Set<Integer> usedPriorities = (getDashboardList() - prefix)
         .findAll { String p -> settings["${p}_lednumber"] as String == ledNumber }
         .collect { String p -> settings["${p}_priority"] as Integer }
@@ -787,10 +806,15 @@ private String getDashboardDescription(String prefix) {
         String allMode = config.conditions_all ? ' and ' : ' or '
         List<String> conditions = config.conditions
             .findAll { c -> ConditionsMap.containsKey(c) }
-            .collect { c -> ConditionsMap[c].title + (config["${c}_all"] ? ' <i>(All)</i>' : '') }
+            .collect { c ->
+                String title = ConditionsMap[c].title
+                String choice = config["${c}_choice"]
+                String all = config["${c}_all"] ? '<i>(All)</i>' : null
+                return ([ title, choice, all ] - null).join(' ')
+            }
         sb << "\n<b>Activation${conditions.size() > 1 ? 's' : ''}:</b> ${conditions.join(allMode)}"
         if (config.autostop != false) {
-            sb << ' (Autostop)'
+            sb << ' (auto clear)'
         }
     }
     if (config.delay) {
@@ -1099,7 +1123,7 @@ private void updatePauseLabel() {
     ],
     'customAttribute': [
         name: 'Custom attribute',
-        title: 'Custom attribute is set',
+        title: 'Custom attribute is set to',
         inputs: [
             device: [
                 type: 'capability.*',
