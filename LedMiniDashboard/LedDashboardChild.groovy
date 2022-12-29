@@ -35,6 +35,7 @@
  *  0.8  - Add location mode condition
  *  0.9  - Add delayed activation option per dashboard and variable level
  *  0.91 - Increase number of priorities, fix driver titles, allow 0 for delay time
+ *  0.92 - Add test/clear buttons for testing indications
  *
 */
 
@@ -209,19 +210,14 @@ Map mainPage() {
             }
         }
 
-        section {
-            input name: 'logEnable',
-                title: 'Enable debug logging',
-                type: 'bool',
-                required: false,
-                defaultValue: false,
-                width: 4
+        if (state.message) {
+            section { paragraph state.message }
+            state.remove('message')
+        }
 
-            input name: 'periodicRefresh',
-                title: 'Enable periodic refresh',
-                type: 'bool',
-                required: false,
-                width: 4
+        section {
+            input name: 'logEnable', title: 'Enable debug logging', type: 'bool', defaultValue: false, width: 4
+            input name: 'periodicRefresh', title: 'Enable periodic refresh', type: 'bool', width: 4
         }
     }
 }
@@ -234,15 +230,15 @@ Map editPage(Map params = [:]) {
     if (!prefix) { return mainPage() }
     String name = settings["${prefix}_name"] ?: 'New'
 
-    return dynamicPage(name: 'editPage', title: "<h3 style=\'color: #1A77C9; font-weight: bold\'>${name} activation condition:</h3><br>") {
-        renderIndicationSection(prefix, '<b>Select LED mini-dashboard indication options:</b>')
+    return dynamicPage(name: 'editPage', title: "<h3 style=\'color: #1A77C9; font-weight: bold\'>${name}</h3><br>") {
+        renderIndicationSection(prefix)
         if (settings["${prefix}_lednumber"]) {
             renderConditionSection(prefix, '<span style=\'color: green; font-weight: bold\'>Select means to activate LED mini-dashboard effect:</span><span class="required-indicator">*</span>')
 
             if (settings["${prefix}_conditions"]) {
                 section {
                     input name: "${prefix}_delay", title: '<i>For number of minutes:</i>', description: '1..60', type: 'number', width: 3, range: '0..60', required: false
-                    paragraph '', width: 2
+                    paragraph '', width: 1
                     String title = 'When conditions stop matching '
                     title += settings["${prefix}_autostop"] == false ? '<i>leave effect running</i>' : '<b>clear the effect</b>'
                     input name: "${prefix}_autostop", title: title, type: 'bool', defaultValue: true, width: 4, submitOnChange: true
@@ -252,6 +248,8 @@ Map editPage(Map params = [:]) {
                     input name: "${prefix}_name", title: '<b>Activation Condition Name:</b>', type: 'text', defaultValue: getSuggestedConditionName(prefix), width: 7, required: true, submitOnChange: true
                     input name: "${prefix}_priority", title: '<b>Priority:</b>', type: 'enum', options: getAvailablePriorities(prefix), width: 2, required: true
                     paragraph '<i>Higher value condition priorities take LED precedence.</i>'
+                    input name: "test_${prefix}", title: 'Test', type: 'button', width: 2
+                    input name: 'reset', title: 'Reset', type: 'button', width: 2
                 }
             }
         }
@@ -261,14 +259,14 @@ Map editPage(Map params = [:]) {
 /*
  * Dashboard Edit Page LED Indication Section
  */
-Map renderIndicationSection(String prefix, String title) {
+Map renderIndicationSection(String prefix, String title = null) {
     Map deviceType = getDeviceType()
     String ledNumber = settings["${prefix}_lednumber"]
     String ledName = deviceType.leds[settings[ledNumber]] ?: 'LED'
 
     return section(title) {
         // LED Number
-        input name: "${prefix}_lednumber", title: '<span style=\'color: blue;\'>LED Number</span>', type: 'enum', options: deviceType.leds, width: 2, required: true, submitOnChange: true
+        input name: "${prefix}_lednumber", title: '<span style=\'color: blue;\'>LED Number</span>', type: 'enum', options: deviceType.leds, width: 3, required: true, submitOnChange: true
         if (settings["${prefix}_lednumber"] == 'var') {
             input name: "${prefix}_lednumber_var", title: "<span style=\'color: blue;\'>LED Number Variable</span>", type: 'enum', options: getGlobalVarsByType('integer').keySet(), width: 3, required: true
         } else {
@@ -331,7 +329,7 @@ Map renderIndicationSection(String prefix, String title) {
  *  @param ruleDefinitions The rule definitions to use (see ConditionsMap)
  *  @returns page section
  */
-Map renderConditionSection(String prefix, String sectionTitle, Map<String, Map> ruleDefinitions = ConditionsMap) {
+Map renderConditionSection(String prefix, String sectionTitle = null, Map<String, Map> ruleDefinitions = ConditionsMap) {
     return section(sectionTitle) {
         Map<String, String> conditionTitles = ruleDefinitions.collectEntries { String k, Map v -> [ k, v.title ] }
         List<String> selectedConditions = settings["${prefix}_conditions"] ?: []
@@ -452,6 +450,7 @@ void appButtonHandler(String buttonName) {
     switch (buttonName) {
         case 'duplicate':
             parent.duplicate(app.id)
+            state.message = '<span style=\'color: green\'>Duplication complete</span>'
         case 'pause':
             state.paused = true
             updated()
@@ -463,6 +462,15 @@ void appButtonHandler(String buttonName) {
         case ~/^remove_(.+)/:
             String prefix = Matcher.lastMatcher[0][1]
             removeSettings(prefix)
+            break
+        case 'reset':
+            runInMillis(200, 'notificationDispatcher')
+            break
+        case ~/^test_(.+)/:
+            String prefix = Matcher.lastMatcher[0][1]
+            Map<String, String> config = getDashboardConfig(prefix)
+            replaceVariables(config)
+            updateDeviceLedState(config)
             break
         default:
             logWarn "unknown app button ${buttonName}"
