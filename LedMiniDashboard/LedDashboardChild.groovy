@@ -228,7 +228,7 @@ Map mainPage() {
 Map editPage(Map params = [:]) {
     String prefix = params.prefix
     if (!prefix) { return mainPage() }
-    String name = settings["${prefix}_name"] ?: 'New'
+    String name = settings["${prefix}_name"] ?: 'New Activation Condition'
 
     return dynamicPage(name: 'editPage', title: "<h3 style=\'color: #1A77C9; font-weight: bold\'>${name}</h3><br>") {
         renderIndicationSection(prefix)
