@@ -35,7 +35,8 @@
  *  0.8  - Add location mode condition
  *  0.9  - Add delayed activation option per dashboard and variable level
  *  0.91 - Increase number of priorities, fix driver titles, allow 0 for delay time
- *  0.92 - Add test/clear buttons for testing indications
+ *  0.92 - Add test/clear buttons for testing indications and duplicate dashboard
+ *  0.93 - Change sorting to include condition title as second key
  *
 */
 
