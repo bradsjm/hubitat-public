@@ -80,6 +80,14 @@ import java.util.regex.Matcher
             '12': 'Slow Rising', '13': 'Medium Rising', '14': 'Fast Rising', '15': 'Medium Blink', '16': 'Slow Chase', '17': 'Fast Chase', '18': 'Fast Siren', '19': 'Slow Siren', '255': 'Stop', 'var': 'Variable Effect' ],
         stopEffect: 255
     ],
+    'Inovelli Red Dimmer': [
+        title: 'Inovelli Dimmer Red Series LZW31-SN',
+        type: 'device.InovelliDimmerRedSeriesLZW31-SN',
+        leds: [ 'All': 'Notification' ],
+        effects: [:],
+        effectsAll: [ '0': 'Off', '1': 'Solid', '2': 'Chase', '3': 'Fast Blink', '4': 'Slow Blink', '5': 'Pulse', 'var': 'Variable Effect' ],
+        stopEffect: 0
+    ],
     'Inovelli Blue Fan Switch': [
         title: 'Inovelli Fan Switch Blue Series VZM35-SN',
         type: 'device.InovelliVZM35-SNZigbeeFanSwitch',
@@ -89,14 +97,6 @@ import java.util.regex.Matcher
             '12': 'Slow Rising', '13': 'Medium Rising', '14': 'Fast Rising', '15': 'Medium Blink', '16': 'Slow Chase', '17': 'Fast Chase', '18': 'Fast Siren', '19': 'Slow Siren', '255': 'Stop', 'var': 'Variable Effect' ],
         stopEffect: 255
     ],
-    'Inovelli Red Switch': [
-        title: 'Inovelli Switch Red Series LZW30-SN',
-        type: 'device.InovelliSwitchRedSeriesLZW30-SN',
-        leds: [ 'All': 'Notification' ],
-        effects: [:],
-        effectsAll: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', 'var': 'Variable Effect' ],
-        stopEffect: 0
-    ],
     'Inovelli Red Fan Light': [
         title: 'Inovelli Fan + Light Red Series LZW36',
         type: 'device.InovelliFan+LightLZW36',
@@ -105,12 +105,12 @@ import java.util.regex.Matcher
         effectsAll: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', 'var': 'Variable Effect' ],
         stopEffect: 0
     ],
-    'Inovelli Red Dimmer': [
-        title: 'Inovelli Dimmer Red Series LZW31-SN',
-        type: 'device.InovelliDimmerRedSeriesLZW31-SN',
+    'Inovelli Red Switch': [
+        title: 'Inovelli Switch Red Series LZW30-SN',
+        type: 'device.InovelliSwitchRedSeriesLZW30-SN',
         leds: [ 'All': 'Notification' ],
         effects: [:],
-        effectsAll: [ '0': 'Off', '1': 'Solid', '2': 'Chase', '3': 'Fast Blink', '4': 'Slow Blink', '5': 'Pulse', 'var': 'Variable Effect' ],
+        effectsAll: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', 'var': 'Variable Effect' ],
         stopEffect: 0
     ],
     // 'RGB': [
