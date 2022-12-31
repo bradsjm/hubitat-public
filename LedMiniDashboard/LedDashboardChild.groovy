@@ -71,18 +71,18 @@ import java.util.regex.Matcher
     'Inovelli Blue Switch': [
         title: 'Inovelli Dimmer 2-in-1 Blue Series VZM31-SN',
         type: 'device.InovelliDimmer2-in-1BlueSeriesVZM31-SN',
-        leds: [ '1': 'LED 1 (Bottom)', '2': 'LED 2', '3': 'LED 3', '4': 'LED 4', '5': 'LED 5', '6': 'LED 6', '7': 'LED 7 (Top)', 'All': 'All LEDs', 'var': 'Variable LED' ],
+        leds: [ 'All': 'All LEDs', '7': 'LED 7 (Top)', '6': 'LED 6', '5': 'LED 5', '4': 'LED 4', '3': 'LED 3', '2': 'LED 2', '1': 'LED 1 (Bottom)', 'var': 'Variable LED' ],
         effects: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Falling', '7': 'Rising', '8': 'Aurora', '255': 'Stop', 'var': 'Variable Effect' ],
-        effectsAll: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Falling', '7': 'Rising', '8': 'Aurora', '9': 'Slow Falling', '10': 'Medium Falling', '11': 'Fast Falling',
+        effectsAll: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Open/Close', '7': 'Small-to-Big', '8': 'Aurora', '9': 'Slow Falling', '10': 'Medium Falling', '11': 'Fast Falling',
             '12': 'Slow Rising', '13': 'Medium Rising', '14': 'Fast Rising', '15': 'Medium Blink', '16': 'Slow Chase', '17': 'Fast Chase', '18': 'Fast Siren', '19': 'Slow Siren', '255': 'Stop', 'var': 'Variable Effect' ],
         stopEffect: 255
     ],
     'Inovelli Blue Fan Switch': [
         title: 'Inovelli Fan Switch Blue Series VZM35-SN',
         type: 'device.InovelliVZM35-SNZigbeeFanSwitch',
-        leds: [ '1': 'LED 1 (Bottom)', '2': 'LED 2', '3': 'LED 3', '4': 'LED 4', '5': 'LED 5', '6': 'LED 6', '7': 'LED 7 (Top)', 'All': 'All LEDs', 'var': 'Variable LED' ],
+        leds: [ 'All': 'All LEDs', '7': 'LED 7 (Top)', '6': 'LED 6', '5': 'LED 5', '4': 'LED 4', '3': 'LED 3', '2': 'LED 2', '1': 'LED 1 (Bottom)', 'var': 'Variable LED' ],
         effects: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Falling', '7': 'Rising', '8': 'Aurora', '255': 'Stop', 'var': 'Variable Effect' ],
-        effectsAll: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Falling', '7': 'Rising', '8': 'Aurora', '9': 'Slow Falling', '10': 'Medium Falling', '11': 'Fast Falling',
+        effectsAll: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Open/Close', '7': 'Small-to-Big', '8': 'Aurora', '9': 'Slow Falling', '10': 'Medium Falling', '11': 'Fast Falling',
             '12': 'Slow Rising', '13': 'Medium Rising', '14': 'Fast Rising', '15': 'Medium Blink', '16': 'Slow Chase', '17': 'Fast Chase', '18': 'Fast Siren', '19': 'Slow Siren', '255': 'Stop', 'var': 'Variable Effect' ],
         stopEffect: 255
     ],
@@ -1037,7 +1037,8 @@ private void updateDeviceLedStateInovelliBlue(DeviceWrapper dw, Map config) {
 }
 
 /**
- *  updateDeviceLedStateInovelliRed is a wrapper around the Inovelli device driver method of the same name
+ *  updateDeviceLedStateInovelliRed is a wrapper around the Inovelli device driver
+ *  startnotification method. Reference https://nathanfiscus.github.io/inovelli-notification-calc/
  */
 private void updateDeviceLedStateInovelliRed(DeviceWrapper dw, Map config) {
     byte color, duration, effect, level
