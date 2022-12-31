@@ -126,7 +126,7 @@ import java.util.regex.Matcher
 @Field static final Map<String, String> ColorMap = [ '0': 'Red', '10': 'Orange', '40': 'Lemon', '91': 'Lime', '120': 'Green', '150': 'Teal', '180': 'Cyan', '210': 'Aqua',
     '241': 'Blue', '269': 'Violet', '300': 'Magenta', '332': 'Pink', '360': 'White', 'var': 'Variable Color' ].asImmutable()
 
-@Field static final Set<Integer> Priorities = 1..20 // can be increased if desired
+@Field static final Set<Integer> Priorities = 20..1 // can be increased if desired
 
 @Field static final Map<String, String> LevelMap = [ '10': '10', '20': '20', '30': '30', '40': '40', '50': '50',
     '60': '60', '70': '70', '80': '80', '90': '90', '100': '100', 'var': 'Variable' ].asImmutable()
