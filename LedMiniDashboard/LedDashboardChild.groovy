@@ -37,6 +37,7 @@
  *  0.91 - Increase number of priorities, fix driver titles, allow 0 for delay time
  *  0.92 - Add test/clear buttons for testing indications and duplicate dashboard
  *  0.93 - Change sorting to include condition title as second key
+ *  0.94 - Fix LED display order and effect names and add Red Series Fan + Switch support
  *
 */
 
@@ -64,6 +65,8 @@ import groovy.transform.Field
 import java.util.concurrent.ConcurrentHashMap
 import java.util.regex.Matcher
 
+@Field static final String Version = '0.94'
+
 /*
  * Define the supported notification device types
  */
@@ -89,6 +92,14 @@ import java.util.regex.Matcher
     'Inovelli Red Switch': [
         title: 'Inovelli Switch Red Series LZW30-SN',
         type: 'device.InovelliSwitchRedSeriesLZW30-SN',
+        leds: [ 'All': 'Notification' ],
+        effects: [:],
+        effectsAll: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', 'var': 'Variable Effect' ],
+        stopEffect: 0
+    ],
+    'Inovelli Red Fan Light': [
+        title: 'Inovelli Fan + Light Red Series LZW36',
+        type: 'device.InovelliFan+LightLZW36',
         leds: [ 'All': 'Notification' ],
         effects: [:],
         effectsAll: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', 'var': 'Variable Effect' ],
@@ -219,6 +230,8 @@ Map mainPage() {
         section {
             input name: 'logEnable', title: 'Enable debug logging', type: 'bool', defaultValue: false, width: 4
             input name: 'periodicRefresh', title: 'Enable periodic refresh', type: 'bool', width: 4
+
+            paragraph "<span style='font-size: x-small; font-style: italic;'>Version ${Version}</span>"
         }
     }
 }
