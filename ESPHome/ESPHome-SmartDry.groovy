@@ -28,7 +28,6 @@ metadata {
         singleThreaded: true,
         importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-SmartDry.groovy') {
 
-        capability 'Actuator'
         capability 'Battery'
         capability 'Refresh'
         capability 'Initialize'
@@ -115,50 +114,49 @@ public void parse(Map message) {
 
         case 'entity':
             // Entity information
-            state[message.key] == message
             break
 
         case 'state':
             // Lookup entity in state
-            Map entity = state[message.key] ?: [:]
-            switch (entity.name) {
-                case 'SmartDry Temperature':
-                    String unit = entity.unitOfMeasurement ?: ''
+            switch (message.key) {
+                case 532231000:
+                    String unit = '°C'
                     Float value = round(message.state as Float, 1)
-                    if (entity.hasState && device.currentValue('temperature') != value) {
+                    if (message.hasState && device.currentValue('temperature') != value) {
                         descriptionText = "${device} temperature is ${value}${unit}"
                         sendEvent(name: 'temperature', value: value, unit: unit, descriptionText: descriptionText)
                         if (logTextEnable) { log.info descriptionText }
                     }
                     break
-                case 'SmartDry Humidity':
-                    String unit = entity.unitOfMeasurement ?: ''
+                case 4092638869:
+                    String unit = '%'
                     Float value = round(message.state as Float, 1)
-                    if (entity.hasState && device.currentValue('humidity') != value) {
+                    if (message.hasState && device.currentValue('humidity') != value) {
                         descriptionText = "${device} humidity is ${value}${unit}"
                         sendEvent(name: 'humidity', value: value, unit: unit, descriptionText: descriptionText)
                         if (logTextEnable) { log.info descriptionText }
                     }
                     break
-                case 'SmartDry Shake':
+                case 3122363332:
                     Float value = round(message.state as Float, 1)
-                    if (entity.hasState && device.currentValue('shake') != value) {
+                    if (message.hasState && device.currentValue('shake') != value) {
                         descriptionText = "${device} shake is ${value}"
                         sendEvent(name: 'shake', value: value, descriptionText: descriptionText)
                         if (logTextEnable) { log.info descriptionText }
                     }
                     break
-                case 'SmartDry Battery':
+                case 243219225:
+                    String unit = '%'
                     Float value = round(message.state as Float, 1)
-                    if (entity.hasState && device.currentValue('battery') != value) {
-                        descriptionText = "${device} battery is ${value}%"
-                        sendEvent(name: 'battery', value: value, unit: '%', descriptionText: descriptionText)
+                    if (message.hasState && device.currentValue('battery') != value) {
+                        descriptionText = "${device} battery is ${value}${unit}"
+                        sendEvent(name: 'battery', value: value, unit: unit, descriptionText: descriptionText)
                         if (logTextEnable) { log.info descriptionText }
                     }
                     break
-                case 'SmartDry Awake':
+                case 2946701995:
                     Float value = round(message.state as Float, 1)
-                    if (entity.hasState && device.currentValue('awake') != value) {
+                    if (message.hasState && device.currentValue('awake') != value) {
                         descriptionText = "${device} awake is ${value}"
                         sendEvent(name: 'awake', value: value, descriptionText: descriptionText)
                         if (logTextEnable) { log.info descriptionText }
