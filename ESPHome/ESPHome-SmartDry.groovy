@@ -1,6 +1,6 @@
 /**
  *  MIT License
- *  Copyright 2022 Jonathan Bradshaw (jb@nrgup.net)
+ *  Copyright 2023 Jonathan Bradshaw (jb@nrgup.net)
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy
  *  of this software and associated documentation files (the "Software"), to deal
@@ -30,6 +30,7 @@ metadata {
 
         capability 'Battery'
         capability 'Refresh'
+        capability 'ShockSensor'
         capability 'Initialize'
         capability 'RelativeHumidityMeasurement'
         capability 'Sensor'
@@ -53,6 +54,12 @@ metadata {
                 title: 'Device Password <i>(if required)</i>',
                 required: false
 
+        input name: 'shockThreshold',
+                type: 'number',
+                title: 'Shock Threshold',
+                description: 'level',
+                required: false
+
         input name: 'logEnable',    // if enabled the library will log debug details
                 type: 'bool',
                 title: 'Enable Debug Logging',
@@ -67,8 +74,16 @@ metadata {
     }
 }
 
+import groovy.transform.Field
+
+@Field static final long AWAKE_KEY       = 2946701995
+@Field static final long BATTERY_KEY     = 243219225
+@Field static final long HUMIDITY_KEY    = 4092638869
+@Field static final long SHAKE_KEY       = 3122363332
+@Field static final long TEMPERATURE_KEY = 532231000
+
 public void initialize() {
-    // API library command to open socket to device, it will automatically reconnect if needed 
+    // API library command to open socket to device, it will automatically reconnect if needed
     openSocket()
 
     if (logEnable) {
@@ -119,7 +134,7 @@ public void parse(Map message) {
         case 'state':
             // Lookup entity in state
             switch (message.key) {
-                case 532231000:
+                case TEMPERATURE_KEY:
                     String unit = '°C'
                     Float value = round(message.state as Float, 1)
                     if (message.hasState && device.currentValue('temperature') != value) {
@@ -128,7 +143,7 @@ public void parse(Map message) {
                         if (logTextEnable) { log.info descriptionText }
                     }
                     break
-                case 4092638869:
+                case HUMIDITY_KEY:
                     String unit = '%'
                     Float value = round(message.state as Float, 1)
                     if (message.hasState && device.currentValue('humidity') != value) {
@@ -137,15 +152,24 @@ public void parse(Map message) {
                         if (logTextEnable) { log.info descriptionText }
                     }
                     break
-                case 3122363332:
+                case SHAKE_KEY:
                     Float value = round(message.state as Float, 1)
                     if (message.hasState && device.currentValue('shake') != value) {
                         descriptionText = "${device} shake is ${value}"
                         sendEvent(name: 'shake', value: value, descriptionText: descriptionText)
                         if (logTextEnable) { log.info descriptionText }
                     }
+                    if (settings.shockThreshold) {
+                        int minValue = settings.shockThreshold
+                        String shock = value >= minValue ? 'detected' : 'clear'
+                        if (message.hasState && device.currentValue('shock') != shock) {
+                            descriptionText = "${device} shock is ${shock}"
+                            sendEvent(name: 'shock', value: shock, descriptionText: descriptionText)
+                            if (logTextEnable) { log.info descriptionText }
+                        }
+                    }
                     break
-                case 243219225:
+                case BATTERY_KEY:
                     String unit = '%'
                     Float value = round(message.state as Float, 1)
                     if (message.hasState && device.currentValue('battery') != value) {
@@ -154,7 +178,7 @@ public void parse(Map message) {
                         if (logTextEnable) { log.info descriptionText }
                     }
                     break
-                case 2946701995:
+                case AWAKE_KEY:
                     Float value = round(message.state as Float, 1)
                     if (message.hasState && device.currentValue('awake') != value) {
                         descriptionText = "${device} awake is ${value}"
@@ -171,7 +195,7 @@ public void parse(Map message) {
 }
 
 private static float round(float f, int decimals = 0) {
-    return new BigDecimal(f).setScale(decimals, java.math.RoundingMode.HALF_UP).floatValue();
+    return new BigDecimal(f).setScale(decimals, java.math.RoundingMode.HALF_UP).floatValue()
 }
 
 // Put this line at the end of the driver to include the ESPHome API library helper
