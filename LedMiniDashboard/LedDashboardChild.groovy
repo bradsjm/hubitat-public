@@ -37,7 +37,8 @@
  *  0.91 - Increase number of priorities, fix driver titles, allow 0 for delay time
  *  0.92 - Add test/clear buttons for testing indications and duplicate dashboard
  *  0.93 - Change sorting to include condition title as second key
- *  0.94 - Fix LED display order and effect names and add Red Series Fan + Switch support
+ *  0.94 - Fix LED display order and effect names and add Red Series Fan + Switch LZW36 support
+ *  0.95 - Fix broken pause and update LZW36 support
  *
 */
 
@@ -65,7 +66,7 @@ import groovy.transform.Field
 import java.util.concurrent.ConcurrentHashMap
 import java.util.regex.Matcher
 
-@Field static final String Version = '0.94'
+@Field static final String Version = '0.95'
 
 /*
  * Define the supported notification device types
@@ -89,7 +90,7 @@ import java.util.regex.Matcher
         stopEffect: 0
     ],
     'Inovelli Blue Fan Switch': [
-        title: 'Inovelli Fan Switch Blue Series VZM35-SN',
+        title: 'Inovelli VZM35-SN Zigbee Fan Switch',
         type: 'device.InovelliVZM35-SNZigbeeFanSwitch',
         leds: [ 'All': 'All LEDs', '7': 'LED 7 (Top)', '6': 'LED 6', '5': 'LED 5', '4': 'LED 4', '3': 'LED 3', '2': 'LED 2', '1': 'LED 1 (Bottom)', 'var': 'Variable LED' ],
         effects: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Falling', '7': 'Rising', '8': 'Aurora', '255': 'Stop', 'var': 'Variable Effect' ],
@@ -99,10 +100,10 @@ import java.util.regex.Matcher
     ],
     'Inovelli Red Fan Light': [
         title: 'Inovelli Fan + Light Red Series LZW36',
-        type: 'device.InovelliFan+LightLZW36',
-        leds: [ 'All': 'Notification' ],
-        effects: [:],
-        effectsAll: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', 'var': 'Variable Effect' ],
+        type: 'device.InovelliFanLightLZW36',
+        leds: [ '1': 'Light', '2': 'Fan' ],
+        effects: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', 'var': 'Variable Effect' ],
+        effectsAll: [:],
         stopEffect: 0
     ],
     'Inovelli Red Switch': [
@@ -144,9 +145,10 @@ import java.util.regex.Matcher
  */
 Map mainPage() {
     if (app.label == null) {
-        app.updateLabel('New Mini-Dashboard')
+        app.updateLabel('New LED Mini-Dashboard')
     }
     updatePauseLabel()
+
     if (settings.removeSettings) {
         removeSettings(settings.removeSettings)
         app.removeSetting('removeSettings')
@@ -466,10 +468,12 @@ void appButtonHandler(String buttonName) {
             parent.duplicate(app.id)
             state.message = '<span style=\'color: green\'>Duplication complete</span>'
         case 'pause':
+            logInfo 'pausing dashboard'
             state.paused = true
             updated()
             break
         case 'resume':
+            logInfo 'resuming dashboard'
             state.paused = false
             updated()
             break
@@ -547,9 +551,6 @@ void updated() {
     // Clear tracked devices
     DeviceStateTracker.clear()
 
-    // Clear state (used mostly for tracking delayed conditions)
-    state.clear()
-
     // Clean out unused settings
     cleanSettings()
 
@@ -568,6 +569,9 @@ void updated() {
     if (state.paused) {
         return
     }
+
+    // Clear state (used mostly for tracking delayed conditions)
+    state.clear()
 
     // Subscribe to events from switches
     subscribeAllSwitches()
@@ -1070,7 +1074,11 @@ private void updateDeviceLedStateInovelliRed(DeviceWrapper dw, Map config) {
     byte[] bytes = [ effect, duration, level, color ]
     int value = new BigInteger(bytes).intValue()
     logDebug "startNotification(${value}) [${bytes[0] & 0xff}, ${bytes[1] & 0xff}, ${bytes[2] & 0xff}, ${bytes[3] & 0xff}]"
-    dw.startNotification(value)
+    if (config.lednumber == 'All') {
+        dw.startNotification(value)
+    } else {
+        dw.startNotification(value, config.lednumber as Integer)
+    }
 }
 
 /**

@@ -5,9 +5,9 @@
   "communityLink": "https://community.hubitat.com/t/switch-dashboard-and-switch-notifications/104986",
   "documentationLink": "https://github.com/bradsjm/hubitat-drivers/blob/main/SwitchLedDashboard/README.md",
   "licenseFile": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/LICENSE",
-  "version": "0.94",
+  "version": "0.95",
   "dateReleased": "2022-12-31",
-  "releaseNotes": "v0.94 - Beta Testing (Fix LED display order and effect names and add Red Series Fan + Switch support)",
+  "releaseNotes": "Fix broken pause functionality and update LZW36 support",
   "apps": [
     {
       "id": "a5578fb7-3eb6-46f2-9eec-cb25fa4a6fdb",
