@@ -21,13 +21,13 @@
  *  SOFTWARE.
 */
 
+import com.hubitat.app.DeviceWrapper
 import com.hubitat.hub.domain.Event
 import hubitat.helper.ColorUtils
 import hubitat.scheduling.AsyncResponse
 import java.math.RoundingMode
-import com.hubitat.app.DeviceWrapper
 
-definition (
+definition(
     name: 'Color Magic Lighting',
     namespace: 'nrgup',
     author: 'Jonathan Bradshaw',
@@ -420,7 +420,7 @@ private void getColorSchemeHandler(AsyncResponse response, Map data) {
             Map colorMap = [
                 hue: (color.hsv.h / 3.6 as BigDecimal).setScale(1, RoundingMode.HALF_UP),
                 saturation: color.hsv.s,
-                level: color.hsv.v
+                level: lamp.currentValue('level') ?: color.hsv.v
             ]
             if (colorMap.level < settings.minBright) { colorMap.level = settings.minBright }
             if (colorMap.level > settings.maxBright) { colorMap.level = settings.maxBright }
