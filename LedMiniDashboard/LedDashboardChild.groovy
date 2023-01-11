@@ -39,8 +39,11 @@
  *  0.93 - Change sorting to include condition title as second key
  *  0.94 - Fix LED display order and effect names and add Red Series Fan + Switch LZW36 support
  *  0.95 - Fix broken pause and update LZW36 support
+ *  0.96 - Allow force refresh interval to be specified and fixes device tracking issue
  *
 */
+
+@Field static final String Version = '0.96'
 
 definition(
     name: 'LED Mini-Dashboard Topic',
@@ -65,8 +68,6 @@ import groovy.transform.CompileStatic
 import groovy.transform.Field
 import java.util.concurrent.ConcurrentHashMap
 import java.util.regex.Matcher
-
-@Field static final String Version = '0.95'
 
 /*
  * Define the supported notification device types
@@ -231,7 +232,12 @@ Map mainPage() {
 
         section {
             input name: 'logEnable', title: 'Enable debug logging', type: 'bool', defaultValue: false, width: 4
-            input name: 'periodicRefresh', title: 'Enable periodic refresh', type: 'bool', width: 4
+            input name: 'periodicRefresh', title: 'Enable periodic forced refresh', type: 'bool', defaultValue: false, width: 8, submitOnChange: true
+            if (settings.periodicRefresh) {
+                input name: 'periodicRefreshInterval', title: 'Forced refresh interval:', descriptionText: 'minutes', type: 'number', width: 3, range: '1..60', defaultValue: 60
+            } else {
+                app.removeSetting('periodicRefreshInterval')
+            }
 
             paragraph "<span style='font-size: x-small; font-style: italic;'>Version ${Version}</span>"
         }
@@ -515,7 +521,7 @@ void eventHandler(Event event) {
         unixTime: event.unixTime,
         value: event.value
     ]
-    logInfo "<b>eventHandler:</b> ${lastEvent}"
+    logDebug "<b>eventHandler:</b> ${lastEvent}"
     state.lastEvent = lastEvent
 
     // Debounce multiple events hitting at the same time by using timer job
@@ -524,7 +530,7 @@ void eventHandler(Event event) {
 
 // Invoked when the app is first created.
 void installed() {
-    logInfo 'child created'
+    logInfo 'mini-dashboard child created'
 }
 
 // Invoked by the hub when a global variable is renamed
@@ -541,12 +547,12 @@ void uninstalled() {
     unschedule()
     removeAllInUseGlobalVar()
     resetNotifications()
-    logInfo "${app.name} uninstalled"
+    logInfo 'uninstalled'
 }
 
 // Invoked when the settings are updated.
 void updated() {
-    logInfo "${app.name} configuration updated"
+    logInfo 'configuration updated'
 
     // Clear tracked devices
     DeviceStateTracker.clear()
@@ -586,9 +592,9 @@ void updated() {
     runInMillis(200, 'notificationDispatcher')
 
     if (settings.periodicRefresh) {
-        logInfo 'Enabling periodic refresh schedule'
-        int rnd = new Random().nextInt(59)
-        schedule("0 ${rnd} * ? * * *", 'notificationDispatcher')
+        logInfo "enabling periodic forced refresh every ${settings.periodicRefreshInterval} minutes"
+        int seconds = 60 * (settings.periodicRefreshInterval ?: 60)
+        runIn(seconds, 'forceRefresh')
     }
 }
 
@@ -618,6 +624,23 @@ void deviceStateTracker(Event event) {
                 logInfo "cleared LED tracking for ${event.device} LED${led}"
             }
             break
+    }
+}
+
+/**
+ * If forced refresh is enabled then this is called every specified
+ * interval to flush the cache and push updates out. This can be
+ * helpful for devices that may not reliably receive commands but
+ * should not be used unless required.
+ */
+void forceRefresh() {
+    if (settings.periodicRefresh) {
+        logInfo 'executing periodic forced refresh'
+        DeviceStateTracker.clear()
+        notificationDispatcher()
+
+        int seconds = 60 * (settings.periodicRefreshInterval ?: 60)
+        runIn(seconds, 'forceRefresh')
     }
 }
 
@@ -671,7 +694,7 @@ Map<String, Map> evaluateDashboardConditions() {
 
     if (nextEvaluationTime) {
         long delay = nextEvaluationTime - now()
-        logInfo "[evaluateDashboardConditions] scheduling evaluation in ${delay}ms"
+        logDebug "[evaluateDashboardConditions] scheduling evaluation in ${delay}ms"
         runInMillis(delay, 'notificationDispatcher')
     }
 
@@ -702,7 +725,8 @@ Map<String, Map> calculateLedState(Map<String, Boolean> results) {
                 name: config.name,
                 lednumber: config.lednumber,
                 priority: 0, // lowest priority
-                effect: deviceType.stopEffect
+                effect: deviceType.stopEffect,
+                unit: 255 // infinite
             ]
         }
     }
@@ -920,17 +944,17 @@ private void logDebug(String s) {
 
 // Logs Error
 private void logError(String s) {
-    log.error s
+    log.error app.label + ' ' + s
 }
 
 // Logs information
 private void logWarn(String s) {
-    log.warn s
+    log.warn app.label + ' ' + s
 }
 
 // Logs information
 private void logInfo(String s) {
-    log.info s
+    log.info app.label + ' ' + s
 }
 
 // Looks up a variable in the given lookup table and returns the key if found
@@ -966,7 +990,14 @@ private void resetNotifications() {
     if (deviceType) {
         logInfo 'resetting all device notifications'
         deviceType.leds.keySet().findAll { s -> s != 'var' }.each { led ->
-            updateDeviceLedState([ lednumber: led, effect: deviceType.stopEffect ?: 0 ])
+            updateDeviceLedState(
+                [
+                    name: 'reset notification',
+                    priority: 0,
+                    lednumber: led,
+                    effect: deviceType.stopEffect ?: 0
+                ]
+            )
         }
     }
 }
@@ -1001,10 +1032,10 @@ private void subscribeAllSwitches() {
  */
 private void updateDeviceLedState(Map config) {
     for (DeviceWrapper device in settings['switches']) {
-        logInfo "setting ${device} LED #${config.lednumber} (" +
-            "id=${config.prefix}, name=${config.name}, priority=${config.priority}, " +
-            "effect=${config.effect}, color=${config.color}, level=${config.level}, " +
-            "duration=${config.duration} ${TimePeriodsMap[config.unit]})"
+        logDebug "setting ${device} LED #${config.lednumber} (" +
+            "id=${config.prefix ?: ''}, name=${config.name ?: ''}, priority=${config.priority ?: ''}, " +
+            "effect=${config.effect ?: ''}, color=${config.color ?: ''}, level=${config.level ?: ''}, " +
+            "duration=${config.duration ?: ''} ${TimePeriodsMap[config.unit] ?: ''})"
 
         if (device.hasCommand('ledEffectOne')) {
             updateDeviceLedStateInovelliBlue(device, config)
@@ -1030,7 +1061,7 @@ private void updateDeviceLedStateInovelliBlue(DeviceWrapper dw, Map config) {
         || tracker[key].color != config.color
         || tracker[key].level != config.level
         || tracker[key].duration != config.duration
-        || tracker[key].expires <= now()
+        || tracker[key]?.expires <= now()
     ) {
         Integer color, duration
         if (config.unit != null) {
