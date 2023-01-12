@@ -253,7 +253,7 @@ void initialize() {
 
     int interval = settings.updateInterval as int
     log.info "Scheduling periodic updates every ${interval} minute(s)"
-    schedule("30 */${interval} * * * ?", 'getModelColors')
+    schedule("30 3/${interval} * ? * * *", 'getModelColors')
 
     getModelList()
 }
