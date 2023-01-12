@@ -102,7 +102,7 @@ import java.util.regex.Matcher
         title: 'Inovelli Fan + Light Red Series LZW36',
         type: 'device.InovelliFanLightLZW36',
         leds: [ '1': 'Light', '2': 'Fan' ],
-        effects: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', 'var': 'Variable Effect' ],
+        effects: [ '0': 'Off', '1': 'Solid', '2': 'Slow Blink', '3': 'Fast Blink', '4': 'Chase', '5': 'Pulse', 'var': 'Variable Effect' ],
         effectsAll: [:],
         stopEffect: 0
     ],
