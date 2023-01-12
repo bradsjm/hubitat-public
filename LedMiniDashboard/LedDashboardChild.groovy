@@ -307,7 +307,7 @@ Map renderIndicationSection(String prefix, String title = null) {
             }
 
             // Color
-            if (settings["${prefix}_effect"] == deviceType.stopEffect as String) {
+            if (settings["${prefix}_effect"] in ['0', '255']) {
                 ["${prefix}_color", "${prefix}_color_var", "${prefix}_unit", "${prefix}_duration", "${prefix}_level"].each { s -> app.removeSetting(s) }
             } else {
                 input name: "${prefix}_color", title: "<span style=\'color: blue;\'>${ledName} Color</span>", type: 'enum', options: ColorMap, width: 3, required: true, submitOnChange: true
