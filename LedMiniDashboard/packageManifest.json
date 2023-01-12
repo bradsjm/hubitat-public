@@ -5,9 +5,9 @@
   "communityLink": "https://community.hubitat.com/t/switch-dashboard-and-switch-notifications/104986",
   "documentationLink": "https://github.com/bradsjm/hubitat-drivers/blob/main/SwitchLedDashboard/README.md",
   "licenseFile": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/LICENSE",
-  "version": "0.96",
-  "dateReleased": "2023-01-11",
-  "releaseNotes": "Allow force refresh interval to be specified and fixes device tracking issue",
+  "version": "0.97",
+  "dateReleased": "2023-01-12",
+  "releaseNotes": "Fixes for Red Series Fan + Switch LZW36 support",
   "apps": [
     {
       "id": "a5578fb7-3eb6-46f2-9eec-cb25fa4a6fdb",

@@ -40,10 +40,11 @@
  *  0.94 - Fix LED display order and effect names and add Red Series Fan + Switch LZW36 support
  *  0.95 - Fix broken pause and update LZW36 support
  *  0.96 - Allow force refresh interval to be specified and fixes device tracking issue
+ *  0.97 - Fixes for Red Series Fan + Switch LZW36 support
  *
 */
 
-@Field static final String Version = '0.96'
+@Field static final String Version = '0.97'
 
 definition(
     name: 'LED Mini-Dashboard Topic',
@@ -306,7 +307,7 @@ Map renderIndicationSection(String prefix, String title = null) {
             }
 
             // Color
-            if (settings["${prefix}_effect"] in ['0', '255']) {
+            if (settings["${prefix}_effect"] == deviceType.stopEffect as String) {
                 ["${prefix}_color", "${prefix}_color_var", "${prefix}_unit", "${prefix}_duration", "${prefix}_level"].each { s -> app.removeSetting(s) }
             } else {
                 input name: "${prefix}_color", title: "<span style=\'color: blue;\'>${ledName} Color</span>", type: 'enum', options: ColorMap, width: 3, required: true, submitOnChange: true
@@ -725,8 +726,7 @@ Map<String, Map> calculateLedState(Map<String, Boolean> results) {
                 name: config.name,
                 lednumber: config.lednumber,
                 priority: 0, // lowest priority
-                effect: deviceType.stopEffect,
-                unit: 255 // infinite
+                effect: deviceType.stopEffect
             ]
         }
     }
@@ -995,7 +995,7 @@ private void resetNotifications() {
                     name: 'reset notification',
                     priority: 0,
                     lednumber: led,
-                    effect: deviceType.stopEffect ?: 0
+                    effect: deviceType.stopEffect
                 ]
             )
         }
