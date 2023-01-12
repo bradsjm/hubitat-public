@@ -1,6 +1,6 @@
 /**
  *  MIT License
- *  Copyright 2021 Jonathan Bradshaw (jb@nrgup.net)
+ *  Copyright 2023 Jonathan Bradshaw (jb@nrgup.net)
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy
  *  of this software and associated documentation files (the "Software"), to deal
@@ -22,14 +22,13 @@
 */
 import com.hubitat.app.DeviceWrapper
 import com.hubitat.hub.domain.Event
-import hubitat.helper.ColorUtils
 
-definition (
+definition(
     name: 'Circadian Lighting Manager',
     namespace: 'nrgup',
     author: 'Jonathan Bradshaw',
     category: 'Lighting',
-    description: 'Sync your color temperature and/or color changing lights to natural daylight hues',
+    description: 'Sync your color temperature lights to natural daylight hues',
     iconUrl: '',
     iconX2Url: '',
     installOnOpen: true,
@@ -49,20 +48,10 @@ preferences {
                   title: 'Application enabled',
                   required: false,
                   defaultValue: true
-        }
 
-        section('Color Temperature Managed Lights', hideable: true, hidden: true) {
             input name: 'colorTemperatureOnDevices',
                   type: 'capability.colorTemperature',
                   title: 'Select lights to adjust color temperature when on',
-                  multiple: true,
-                  required: false
-        }
-
-        section('RGB Color Managed Lights', hideable: true, hidden: true) {
-            input name: 'colorOnDevices',
-                  type: 'capability.colorControl',
-                  title: 'Select lights to adjust RGB color when on',
                   multiple: true,
                   required: false
         }
@@ -71,16 +60,16 @@ preferences {
             input name: 'coldCT',
                   type: 'number',
                   title: 'Cold White Temperature',
-                  range: '2000..6000',
+                  range: '2000..6500',
                   required: false,
                   defaultValue: 6500
 
             input name: 'warmCT',
                   type: 'number',
                   title: 'Warm White Temperature',
-                  range: '2000..6000',
+                  range: '2000..6500',
                   required: false,
-                  defaultValue: 2000
+                  defaultValue: 2200
 
             input name: 'sunriseOffset',
                   type: 'number',
@@ -96,35 +85,10 @@ preferences {
                   required: false,
                   defaultValue: 0
 
-            input name: 'reenableDelay',
-                  type: 'number',
-                  title: 'Automatically re-enable lights after specified minutes (0 for never)',
-                  range: '0..600',
-                  required: false,
-                  defaultValue: 60
-        }
-
-        section('Overrides', hideable: true, hidden: true) {
-            input name: 'disabledSwitchWhenOn',
-                  type: 'capability.switch',
-                  title: 'Select switch(s) to disable manager when ON',
-                  multiple: true
-
-            input name: 'disabledSwitchWhenOff',
-                  type: 'capability.switch',
-                  title: 'Select switch(s) to disable manager when OFF',
-                  multiple: true
-
-            input name: 'disabledModes',
+            input name: 'enabledModes',
                   type: 'mode',
-                  title: 'Select mode(s) where lighting manager should be disabled',
+                  title: 'Select mode(s) where lighting manager should be enabled',
                   multiple: true
-
-            input name: 'disabledVariable',
-                  title: 'Select variable to enable or disable:',
-                  type: 'enum',
-                  options: getGlobalVarsByType('boolean').collectEntries { v -> [(v.key): "${v.key} (currently ${v.value.value})"] },
-                  multiple: false
         }
 
         section {
@@ -144,7 +108,7 @@ preferences {
                   type: 'bool',
                   title: 'Enable Debug logging',
                   required: false,
-                  defaultValue: true
+                  defaultValue: false
         }
     }
 }
@@ -163,7 +127,7 @@ void uninstalled() {
 // Called when the settings are updated.
 void updated() {
     log.info "${app.name} configuration updated"
-    log.debug settings
+    if (settings.logEnable) { log.debug settings }
     initialize()
 }
 
@@ -173,110 +137,43 @@ void initialize() {
     unschedule()
     unsubscribe()
     atomicState.current = [:]
-    state.disabledDevices = [:]
 
     if (settings.masterEnable) {
         log.info 'Subscribing to device events'
-        if (colorTemperatureOnDevices) { subscribe(colorTemperatureOnDevices, 'deviceEvent', [ filtered: true ]) }
-        if (colorOnDevices) { subscribe(colorOnDevices, 'deviceEvent', [ filtered: true ]) }
-
-        // Update circadian calculation and update lamps on defined schedule
-        int interval = settings.updateInterval as int
-        log.info "Scheduling periodic updates every ${interval} minute(s)"
-        schedule("20 */${interval} * * * ?", 'circadianUpdate')
-        circadianUpdate()
+        if (colorTemperatureOnDevices) {
+            subscribe(colorTemperatureOnDevices, 'switch', 'deviceSwitchHandler', null)
+        }
 
         // Subscribe to mode changes and trigger an update
-        subscribe(settings.disabledSwitchWhenOn, 'switch', 'eventHandler')
-        subscribe(settings.disabledSwitchWhenOff, 'switch', 'eventHandler')
-        subscribe(location, 'mode', 'eventHandler')
+        subscribe(location, 'mode', 'modeChangeHandler')
+
+        modeChangeHandler()
     }
 }
 
-void eventHandler(Event evt) {
-    circadianUpdate()
+// Called when the switch value on device changes
+void deviceSwitchHandler(Event event) {
+    if (event.value == 'on' && location.mode in settings.enabledModes) {
+        updateLamp(event.device)
+    }
 }
 
-private static List<Integer> ctToRGB(int colorTemp) {
-    int ct = colorTemp
-    if (ct < 1000) { ct = 1000 }
-    if (ct > 40000) { ct = 40000 }
-    ct /= 100
-
-    //red
-    BigDecimal r
-    if (ct <= 66) { r = 255 } else { r = 329.698727446 * ((ct - 60) ** -0.1332047592) }
-    if (r < 0) { r = 0 }
-    if (r > 255) { r = 255 }
-
-    //green
-    BigDecimal g
-    if (ct <= 66) {
-        g = 99.4708025861 * Math.log(ct) - 161.1195681661
+// Called when the mode changes
+void modeChangeHandler(Event event = null) {
+    if (location.mode in settings.enabledModes) {
+        scheduleUpdates()
+        circadianUpdate(event)
     } else {
-        g = 288.1221695283 * ((ct - 60) ** -0.0755148492)
+        unschedule('circadianUpdate')
     }
-    if (g < 0) { g = 0 }
-    if (g > 255) { g = 255 }
-
-    //blue
-    BigDecimal b
-    if (ct >= 66) {
-        b = 255
-    } else if (ct <= 19) {
-        b = 0
-    } else {
-        b = 138.5177312231 * Math.log(ct - 10) - 305.0447927307
-    }
-    if (b < 0) { b = 0 }
-    if (b > 255) { b = 255 }
-
-    return [ r as int, g as int, b as int ]
 }
 
-private static int diff(BigDecimal value1, BigDecimal value2) {
-    return Math.abs(value1 - value2)
-}
-
-private boolean checkEnabled() {
-    if (!settings.masterEnable) {
-        log.info "${app.name} is disabled"
-        return false
-    }
-
-    if (logEnable) { log.debug "Checking ${location.mode} is in ${settings.disabledModes}" }
-    if (location.mode in settings.disabledModes) {
-        log.info "${app.name} is disabled due to mode ${location.mode}"
-        return false
-    }
-
-    if (settings.disabledSwitchWhenOn &&
-        settings.disabledSwitchWhenOn.any { device -> device.currentValue('switch') == 'on' }
-    ) {
-        log.info "${app.name} is disabled due to a switch set to ON"
-        return false
-    }
-
-    if (settings.disabledSwitchWhenOff &&
-        settings.disabledSwitchWhenOff.any { device -> device.currentValue('switch') == 'off' }
-    ) {
-        log.info "${app.name} is disabled due to a switch set to OFF"
-        return false
-    }
-
-    if (settings.disabledVariable && getGlobalVar(settings.disabledVariable)?.value == false) {
-        log.info "${app.name} is disabled (${settings.disabledVariable} is false)"
-        return false
-    }
-
-    return true
-}
-
-/* groovylint-disable-next-line UnusedPrivateMethod */
 private void circadianUpdate(Event event = null) {
-    atomicState.current = currentCircadianValues()
-    log.info "Circadian State now: ${atomicState.current} ${event}"
-    updateLamps()
+    if (location.mode in settings.enabledModes) {
+        atomicState.current = currentCircadianValues()
+        log.info "Circadian State now: ${atomicState.current} ${event}"
+        settings.colorTemperatureOnDevices?.each { device -> updateLamp(device) }
+    }
 }
 
 /*
@@ -300,111 +197,28 @@ private Map currentCircadianValues() {
         }
     }
 
-    List<Integer> rgb = ctToRGB(colorTemp)
-    List hsv = ColorUtils.rgbToHSV(rgb)
-
     return [
         sunrise: after.sunrise.time,
         sunset: after.sunset.time,
-        colorTemperature: colorTemp,
-        hsv: hsv
+        colorTemperature: colorTemp
     ]
 }
 
-/* groovylint-disable-next-line UnusedPrivateMethod */
-private void deviceEvent(Event evt) {
-    DeviceWrapper device = evt.device
-    if (logEnable) { log.debug "${device} event: ${evt.name} = ${evt.value}" }
-
-    switch (evt.name) {
-        case 'switch':
-            if (evt.value == 'off' && device.id in state.disabledDevices) {
-                log.info "Re-enabling ${device} for circadian management (light turned off)"
-                state.disabledDevices.remove(device.id)
-                if (checkEnabled()) { updateLamp(device) }
-                return
-            }
-            if (evt.value == 'on' && !(device.id in state.disabledDevices)) {
-                log.info "Updating ${device} for circadian management (light turned on)"
-                if (checkEnabled()) { updateLamp(device) }
-                return
-            }
-            break
-        case 'colorTemperature':
-            int value = evt.value as int
-            int ct = atomicState.current.colorTemperature as int
-            if (diff(value, ct) > 100 && !state.disabledDevices.containsKey(device.id)) {
-                log.info "Disabling ${device} for circadian management due to manual CT change"
-                state.disabledDevices.put(device.id, now())
-            } else if (diff(value, ct) <= 100 && device.id in state.disabledDevices) {
-                log.info "Re-enabling ${device} for circadian management"
-                state.disabledDevices.remove(device.id)
-                if (checkEnabled()) { updateLamp(device) }
-            }
-            break
-        case 'hue':
-            BigDecimal value = evt.value as BigDecimal
-            int hue = atomicState.current.hsv[0] as int
-            if (diff(value, hue) > 10 && !state.disabledDevices.containsKey(device.id)) {
-                log.info "Disabling ${device} for circadian management due to manual hue change"
-                state.disabledDevices.put(device.id, now())
-            } else if (diff(value, hue) <= 10 && device.id in state.disabledDevices) {
-                log.info "Re-enabling ${device} for circadian management"
-                state.disabledDevices.remove(device.id)
-                if (checkEnabled()) { updateLamp(device) }
-            }
-            break
-        case 'saturation':
-            BigDecimal value = evt.value as BigDecimal
-            BigDecimal saturation = atomicState.current.hsv[1] as BigDecimal
-            if (diff(value, saturation) > 10 && !state.disabledDevices.containsKey(device.id)) {
-                log.info "Disabling ${device} for circadian management due to manual hue change"
-                state.disabledDevices.put(device.id, now())
-            } else if (diff(value, saturation) <= 10 && device.id in state.disabledDevices) {
-                log.info "Re-enabling ${device} for circadian management"
-                state.disabledDevices.remove(device.id)
-                if (checkEnabled()) { updateLamp(device) }
-            }
-            break
-    }
+private void scheduleUpdates() {
+    // Update circadian calculation and update lamps on defined schedule
+    int interval = settings.updateInterval as int
+    log.info "Scheduling periodic updates every ${interval} minute(s)"
+    schedule("30 2/${interval} * ? * * *", 'circadianUpdate')
 }
 
 private void updateLamp(DeviceWrapper device) {
-    if (!device || (state.reenableDelay && device.id in state.disabledDevices)) { return }
-
     Map current = atomicState.current
 
-    if (device.id in settings.colorOnDevices*.id &&
-        device.currentValue('switch') == 'on' && (
-        device.currentValue('hue') != current.hsv[0] ||
-        device.currentValue('saturation') != current.hsv[1] ||
-        device.currentValue('level') != current.hsv[2]) ) {
-        log.info "Setting ${device} color to ${current.hsv}"
-        device.setColor(current.hsv)
-    }
-
-    if (device.id in settings.colorTemperatureOnDevices*.id &&
-        device.currentValue('switch', true) == 'on' &&
-        device.currentValue('colorTemperature', true) != null &&
+    if (device.currentValue('switch', true) == 'on' &&
+        device.currentValue('colorTemperature') != null &&
         Math.abs(device.currentValue('colorTemperature') - current.colorTemperature) > 100) {
         log.info "Setting ${device} color temperature from ${device.currentValue('colorTemperature')}K " +
                  "to ${current.colorTemperature}K"
         device.setColorTemperature(current.colorTemperature)
     }
-}
-
-/* groovylint-disable-next-line UnusedPrivateMethod */
-private void updateLamps() {
-    // Remove disabled devices that have timed out
-    if (settings.reenableDelay) {
-        long expire = now() - (settings.reenableDelay * 60000)
-        state.disabledDevices.values().removeIf { v -> v <= expire }
-    }
-
-    if (!checkEnabled()) { return }
-
-    log.info 'Starting circadian updates to lights'
-
-    settings.colorOnDevices?.each { device -> updateLamp(device) }
-    settings.colorTemperatureOnDevices?.each { device -> updateLamp(device) }
 }
