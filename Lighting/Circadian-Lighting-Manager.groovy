@@ -212,13 +212,15 @@ private void scheduleUpdates() {
 }
 
 private void updateLamp(DeviceWrapper device) {
-    Map current = atomicState.current
-
-    if (device.currentValue('switch', true) == 'on' &&
-        device.currentValue('colorTemperature') != null &&
-        Math.abs(device.currentValue('colorTemperature') - current.colorTemperature) > 100) {
-        log.info "Setting ${device} color temperature from ${device.currentValue('colorTemperature')}K " +
-                 "to ${current.colorTemperature}K"
-        device.setColorTemperature(current.colorTemperature)
+    if (device.currentValue('switch', true) == 'on') {
+        Map current = atomicState.current
+        boolean isCT = device.currentValue('colorMode') == 'CT'
+        int colorTemp = device.currentValue('colorTemperature') ?: 0
+        int colorTempDiff = Math.abs(colorTemp - current.colorTemperature)
+        if (isCT == false || colorTempDiff > 100) {
+            log.info "Setting ${device} color temperature from ${colorTemp}K " +
+                    "to ${current.colorTemperature}K"
+            device.setColorTemperature(current.colorTemperature)
+        }
     }
 }
