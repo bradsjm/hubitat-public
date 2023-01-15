@@ -41,10 +41,11 @@
  *  0.95 - Fix broken pause and update LZW36 support
  *  0.96 - Allow force refresh interval to be specified and fixes device tracking issue
  *  0.97 - Fixes for Red Series Fan + Switch LZW36 support
+ *  0.98 - Update driver name for Blue Fan Switch and updated effect order and consistency of options
  *
 */
 
-@Field static final String Version = '0.97'
+@Field static final String Version = '0.98'
 
 definition(
     name: 'LED Mini-Dashboard Topic',
@@ -78,43 +79,38 @@ import java.util.regex.Matcher
         title: 'Inovelli Dimmer 2-in-1 Blue Series VZM31-SN',
         type: 'device.InovelliDimmer2-in-1BlueSeriesVZM31-SN',
         leds: [ 'All': 'All LEDs', '7': 'LED 7 (Top)', '6': 'LED 6', '5': 'LED 5', '4': 'LED 4', '3': 'LED 3', '2': 'LED 2', '1': 'LED 1 (Bottom)', 'var': 'Variable LED' ],
-        effects: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Falling', '7': 'Rising', '8': 'Aurora', '255': 'Stop', 'var': 'Variable Effect' ],
-        effectsAll: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Open/Close', '7': 'Small-to-Big', '8': 'Aurora', '9': 'Slow Falling', '10': 'Medium Falling', '11': 'Fast Falling',
-            '12': 'Slow Rising', '13': 'Medium Rising', '14': 'Fast Rising', '15': 'Medium Blink', '16': 'Slow Chase', '17': 'Fast Chase', '18': 'Fast Siren', '19': 'Slow Siren', '255': 'Stop', 'var': 'Variable Effect' ],
-        stopEffect: 255
+        effects: [ '255': 'Stop', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Falling', '7': 'Rising', '8': 'Aurora', '0': 'Off', 'var': 'Variable Effect' ],
+        effectsAll: [ '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Open/Close', '7': 'Small-to-Big', '8': 'Aurora', '9': 'Slow Falling', '10': 'Medium Falling', '11': 'Fast Falling',
+            '12': 'Slow Rising', '13': 'Medium Rising', '14': 'Fast Rising', '15': 'Medium Blink', '16': 'Slow Chase', '17': 'Fast Chase', '18': 'Fast Siren', '19': 'Slow Siren', '0': 'Off', 'var': 'Variable Effect' ]
     ],
     'Inovelli Red Dimmer': [
         title: 'Inovelli Dimmer Red Series LZW31-SN',
         type: 'device.InovelliDimmerRedSeriesLZW31-SN',
         leds: [ 'All': 'Notification' ],
         effects: [:],
-        effectsAll: [ '0': 'Off', '1': 'Solid', '2': 'Chase', '3': 'Fast Blink', '4': 'Slow Blink', '5': 'Pulse', 'var': 'Variable Effect' ],
-        stopEffect: 0
+        effectsAll: [ '255': 'Stop', '1': 'Solid', '2': 'Chase', '3': 'Fast Blink', '4': 'Slow Blink', '5': 'Pulse', 'var': 'Variable Effect' ]
     ],
     'Inovelli Blue Fan Switch': [
-        title: 'Inovelli VZM35-SN Zigbee Fan Switch',
-        type: 'device.InovelliVZM35-SNZigbeeFanSwitch',
+        title: 'Inovelli Fan Switch Blue Series VZM35-SN',
+        type: 'device.InovelliFanSwitchBlueSeriesVZM35-SN',
         leds: [ 'All': 'All LEDs', '7': 'LED 7 (Top)', '6': 'LED 6', '5': 'LED 5', '4': 'LED 4', '3': 'LED 3', '2': 'LED 2', '1': 'LED 1 (Bottom)', 'var': 'Variable LED' ],
-        effects: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Falling', '7': 'Rising', '8': 'Aurora', '255': 'Stop', 'var': 'Variable Effect' ],
-        effectsAll: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Open/Close', '7': 'Small-to-Big', '8': 'Aurora', '9': 'Slow Falling', '10': 'Medium Falling', '11': 'Fast Falling',
-            '12': 'Slow Rising', '13': 'Medium Rising', '14': 'Fast Rising', '15': 'Medium Blink', '16': 'Slow Chase', '17': 'Fast Chase', '18': 'Fast Siren', '19': 'Slow Siren', '255': 'Stop', 'var': 'Variable Effect' ],
-        stopEffect: 255
+        effects: [ '255': 'Stop', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Falling', '7': 'Rising', '8': 'Aurora', '0': 'Off', 'var': 'Variable Effect' ],
+        effectsAll: [ '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Open/Close', '7': 'Small-to-Big', '8': 'Aurora', '9': 'Slow Falling', '10': 'Medium Falling', '11': 'Fast Falling',
+            '12': 'Slow Rising', '13': 'Medium Rising', '14': 'Fast Rising', '15': 'Medium Blink', '16': 'Slow Chase', '17': 'Fast Chase', '18': 'Fast Siren', '19': 'Slow Siren', '0': 'Off', 'var': 'Variable Effect' ]
     ],
     'Inovelli Red Fan Light': [
         title: 'Inovelli Fan + Light Red Series LZW36',
         type: 'device.InovelliFan%2BLightLZW36',
         leds: [ '1': 'Light', '2': 'Fan' ],
-        effects: [ '0': 'Off', '1': 'Solid', '2': 'Slow Blink', '3': 'Fast Blink', '4': 'Chase', '5': 'Pulse', 'var': 'Variable Effect' ],
-        effectsAll: [:],
-        stopEffect: 0
+        effects: [ '255': 'Stop', '1': 'Solid', '2': 'Slow Blink', '3': 'Fast Blink', '4': 'Chase', '5': 'Pulse', 'var': 'Variable Effect' ],
+        effectsAll: [:]
     ],
     'Inovelli Red Switch': [
         title: 'Inovelli Switch Red Series LZW30-SN',
         type: 'device.InovelliSwitchRedSeriesLZW30-SN',
         leds: [ 'All': 'Notification' ],
         effects: [:],
-        effectsAll: [ '0': 'Off', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', 'var': 'Variable Effect' ],
-        stopEffect: 0
+        effectsAll: [ '255': 'Stop', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', 'var': 'Variable Effect' ]
     ],
     // 'RGB': [
     //     title: 'Color Devices (Single Color)',
@@ -123,16 +119,16 @@ import java.util.regex.Matcher
     //     effectsAll: [ '0': 'Off', '1': 'Solid', 'var': 'Variable Effect' ],
     //     stopEffect: 0
     // ]
-].asImmutable()
+]
 
 // Definitions for condition options
-@Field static final Map<String, String> ColorMap = [ '0': 'Red', '10': 'Orange', '40': 'Lemon', '91': 'Lime', '120': 'Green', '150': 'Teal', '180': 'Cyan', '210': 'Aqua',
-    '241': 'Blue', '269': 'Violet', '300': 'Magenta', '332': 'Pink', '360': 'White', 'var': 'Variable Color' ].asImmutable()
+@Field static final Map<String, String> ColorMap = [ '210': 'Aqua', '241': 'Blue', '180': 'Cyan', '120': 'Green', '40': 'Lemon', '91': 'Lime',
+    '300': 'Magenta', '10': 'Orange', '332': 'Pink', '0': 'Red', '150': 'Teal', '269': 'Violet', '360': 'White', 'var': 'Variable' ]
 
 @Field static final Set<Integer> Priorities = 20..1 // can be increased if desired
 
 @Field static final Map<String, String> LevelMap = [ '10': '10', '20': '20', '30': '30', '40': '40', '50': '50',
-    '60': '60', '70': '70', '80': '80', '90': '90', '100': '100', 'var': 'Variable' ].asImmutable()
+    '60': '60', '70': '70', '80': '80', '90': '90', '100': '100', 'var': 'Variable' ]
 
 @Field static final Map<String, String> TimePeriodsMap = [ '0': 'Seconds', '60': 'Minutes', '120': 'Hours', '255': 'Infinite' ].asImmutable()
 
@@ -235,7 +231,7 @@ Map mainPage() {
             input name: 'logEnable', title: 'Enable debug logging', type: 'bool', defaultValue: false, width: 4
             input name: 'periodicRefresh', title: 'Enable periodic forced refresh', type: 'bool', defaultValue: false, width: 8, submitOnChange: true
             if (settings.periodicRefresh) {
-                input name: 'periodicRefreshInterval', title: 'Forced refresh interval:', descriptionText: 'minutes', type: 'number', width: 3, range: '1..60', defaultValue: 60
+                input name: 'periodicRefreshInterval', title: 'Refresh interval (minutes):', type: 'number', width: 3, range: '1..1440', defaultValue: 60
             } else {
                 app.removeSetting('periodicRefreshInterval')
             }
@@ -260,11 +256,16 @@ Map editPage(Map params = [:]) {
 
             if (settings["${prefix}_conditions"]) {
                 section {
-                    input name: "${prefix}_delay", title: '<i>For number of minutes:</i>', description: '1..60', type: 'number', width: 3, range: '0..60', required: false
+                    input name: "${prefix}_delay", title: '<i>For number of minute(s):</i>', description: '1..60', type: 'number', width: 3, range: '0..60', required: false
                     paragraph '', width: 1
                     String title = 'When conditions stop matching '
-                    title += settings["${prefix}_autostop"] == false ? '<i>leave effect running</i>' : '<b>clear the effect</b>'
+                    title += settings["${prefix}_autostop"] == false ? '<i>leave effect running</i>' : '<b>stop the effect</b>'
                     input name: "${prefix}_autostop", title: title, type: 'bool', defaultValue: true, width: 4, submitOnChange: true
+                    // if (settings["${prefix}_autostop"]) {
+                    //     input name: "${prefix}_autostop_delay", title: 'Stop effect after minute(s):', description: '1..60', type: 'number', width: 3, range: '0..60', defaultValue: 0
+                    // } else {
+                    //     app.removeSetting("${prefix}_autostop_delay")
+                    // }
                 }
 
                 section {
@@ -299,6 +300,7 @@ Map renderIndicationSection(String prefix, String title = null) {
         // Effect
         if (ledNumber) {
             Map<String, String> fxOptions = ledNumber == 'All' ? deviceType.effectsAll : deviceType.effects
+            String effect = settings["${prefix}_effect"]
             input name: "${prefix}_effect", title: "<span style=\'color: blue;\'>${ledName} Effect</span>", type: 'enum', options: fxOptions, width: 2, required: true, submitOnChange: true
             if (settings["${prefix}_effect"] == 'var') {
                 input name: "${prefix}_effect_var", title: "<span style=\'color: blue;\'>Effect Variable</span>", type: 'enum', options: getGlobalVarsByType('string').keySet(), width: 3, required: true
@@ -307,16 +309,19 @@ Map renderIndicationSection(String prefix, String title = null) {
             }
 
             // Color
-            if (settings["${prefix}_effect"] in ['0', '255']) {
-                ["${prefix}_color", "${prefix}_color_var", "${prefix}_unit", "${prefix}_duration", "${prefix}_level"].each { s -> app.removeSetting(s) }
-            } else {
+            if (effect != '0' && effect != '255') {
                 input name: "${prefix}_color", title: "<span style=\'color: blue;\'>${ledName} Color</span>", type: 'enum', options: ColorMap, width: 3, required: true, submitOnChange: true
                 if (settings["${prefix}_color"] == 'var') {
                     input name: "${prefix}_color_var", title: "<span style=\'color: blue;\'>Color Variable</span>", type: 'enum', options: getGlobalVarsByType('string').keySet(), width: 3, required: true
                 } else {
                     app.removeSetting("${prefix}_color_var")
                 }
+            } else {
+                app.removeSetting("${prefix}_color")
+                app.removeSetting("${prefix}_color_var")
+            }
 
+            if (effect != '255') {
                 // Time Unit
                 input name: "${prefix}_unit", title: '<span style=\'color: blue;\'>Duration</span>', description: 'Select', type: 'enum', options: TimePeriodsMap, width: 2, defaultValue: 'Infinite', required: true, submitOnChange: true
                 if (settings["${prefix}_unit"] in ['0', '60', '120']) {
@@ -327,7 +332,12 @@ Map renderIndicationSection(String prefix, String title = null) {
                 } else {
                     app.removeSetting("${prefix}_duration")
                 }
+            } else {
+                app.removeSetting("${prefix}_unit")
+                app.removeSetting("${prefix}_duration")
+            }
 
+            if (effect != '0' && effect != '255') {
                 // Level
                 input name: "${prefix}_level", title: "<span style=\'color: blue;\'>Level&nbsp;</span>", type: 'enum', width: 2,
                     defaultValue: 100, options: LevelMap, required: true, submitOnChange: true
@@ -336,6 +346,9 @@ Map renderIndicationSection(String prefix, String title = null) {
                 } else {
                     app.removeSetting("${prefix}_level_var")
                 }
+            } else {
+                app.removeSetting("${prefix}_level")
+                app.removeSetting("${prefix}_level_var")
             }
             paragraph ''
         }
@@ -461,6 +474,8 @@ Map getSettings() {
 
 void putSettings(Map newSettings) {
     newSettings.each { k, v -> app.updateSetting(k, v) }
+    state.paused = true
+    updatePauseLabel()
 }
 
 /*
@@ -474,6 +489,7 @@ void appButtonHandler(String buttonName) {
         case 'duplicate':
             parent.duplicate(app.id)
             state.message = '<span style=\'color: green\'>Duplication complete</span>'
+            break
         case 'pause':
             logInfo 'pausing dashboard'
             state.paused = true
@@ -671,14 +687,14 @@ Map<String, Map> evaluateDashboardConditions() {
     Map<String, Map> evaluationResults = [:]
     // Iterate each dashboard
     for (String prefix in getSortedDashboardPrefixes()) {
-        String key = "${prefix}_delay"
         // Evaluate the dashboard conditions
         boolean active = evaluateConditions(prefix)
         // Check if dashboard delay configured
-        int delayMs = (settings[key] ?: 0) * 60000
-        if (active && delayMs) {
+        String delayKey = "${prefix}_delay"
+        if (active && settings[delayKey]) {
+            int delayMs = (settings[delayKey] ?: 0) * 60000
             // Determine if delay has expired yet
-            long targetTime = state.computeIfAbsent(key) { k -> getOffsetMs(delayMs) }
+            long targetTime = state.computeIfAbsent(delayKey) { k -> getOffsetMs(delayMs) }
             if (now() < targetTime) {
                 logDebug "[evaluateDashboardConditions] ${prefix} has delayed evaluation (${delayMs}ms)"
                 active = false
@@ -687,8 +703,8 @@ Map<String, Map> evaluateDashboardConditions() {
                     nextEvaluationTime = targetTime
                 }
             }
-        } else if (state[key]) {
-            state.remove(key)
+        } else {
+            state.remove(delayKey)
         }
         evaluationResults[prefix] = active
     }
@@ -720,13 +736,12 @@ Map<String, Map> calculateLedState(Map<String, Boolean> results) {
             }
         } else if (config.autostop != false && !oldPriority) {
             // Auto stop effect
-            Map deviceType = getDeviceType()
             ledStates[config.lednumber as String] = [
                 prefix: config.prefix,
                 name: config.name,
                 lednumber: config.lednumber,
                 priority: 0, // lowest priority
-                effect: deviceType.stopEffect
+                effect: 255
             ]
         }
     }
@@ -864,7 +879,7 @@ private String getDashboardDescription(String prefix) {
             }
         sb << "\n<b>Activation${conditions.size() > 1 ? 's' : ''}:</b> ${conditions.join(allMode)}"
         if (config.autostop != false) {
-            sb << ' (auto clear)'
+            sb << ' (auto stop)'
         }
     }
     if (config.delay) {
@@ -995,7 +1010,7 @@ private void resetNotifications() {
                     name: 'reset notification',
                     priority: 0,
                     lednumber: led,
-                    effect: deviceType.stopEffect
+                    effect: 255
                 ]
             )
         }
@@ -1080,29 +1095,33 @@ private void updateDeviceLedStateInovelliBlue(DeviceWrapper dw, Map config) {
         config.expires = getOffsetMs(getDurationMs(duration))
         tracker[key] = config
     } else {
-        logInfo 'skipping update (no change to leds detected)'
+        logDebug "skipping update to ${dw} (no change detected)"
     }
 }
 
 /**
- *  updateDeviceLedStateInovelliRed is a wrapper around the Inovelli device driver
- *  startnotification method. Reference https://nathanfiscus.github.io/inovelli-notification-calc/
+ *  updateDeviceLedStateInovelliRed is a wrapper around the
+ *  Inovelli device driver startnotification method.
+ *  Reference https://nathanfiscus.github.io/inovelli-notification-calc/
  */
 private void updateDeviceLedStateInovelliRed(DeviceWrapper dw, Map config) {
-    byte color, duration, effect, level
+    int color, duration, effect, level
     if (config.unit != null) {
-        duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255) as byte
+        duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255) as int
     }
     if (config.color != null) {
-        color = Math.min(Math.round(((config.color as Integer) / 360.0) * 255), 255) as byte
+        color = Math.min(Math.round(((config.color as Integer) / 360.0) * 255), 255) as int
     }
     if (config.level != null) {
-        level = Math.round((config.level as int) / 10) as byte
+        level = Math.round((config.level as int) / 10) as int
     }
     if (config.effect != null) {
-        effect = config.effect as byte
+        effect = config.effect as int
     }
-    byte[] bytes = [ effect, duration, level, color ]
+    if (effect == 255) { // Stop notification option is mapped to 0
+        effect = duration = level = color = 0
+    }
+    byte[] bytes = [effect as byte, duration as byte, level  as byte, color as byte]
     int value = new BigInteger(bytes).intValue()
     logDebug "startNotification(${value}) [${bytes[0] & 0xff}, ${bytes[1] & 0xff}, ${bytes[2] & 0xff}, ${bytes[3] & 0xff}]"
     if (config.lednumber == 'All') {
