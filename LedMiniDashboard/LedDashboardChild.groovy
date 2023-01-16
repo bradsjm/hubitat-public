@@ -252,20 +252,22 @@ Map editPage(Map params = [:]) {
     return dynamicPage(name: 'editPage', title: "<h3 style=\'color: #1A77C9; font-weight: bold\'>${name}</h3><br>") {
         renderIndicationSection(prefix)
         if (settings["${prefix}_lednumber"]) {
-            renderConditionSection(prefix, '<span style=\'color: green; font-weight: bold\'>Select means to activate LED mini-dashboard effect:</span><span class="required-indicator">*</span>')
+            Map deviceType = getDeviceType()
+            Map<String, String> fxOptions = deviceType.effectsAll + deviceType.effects
+            String effectName = fxOptions[settings["${prefix}_effect"]] ?: 'mini-dashboard'
+            renderConditionSection(prefix, "<span style=\'color: green; font-weight: bold\'>Select means to activate LED ${effectName} effect:</span><span class=\"required-indicator\">*</span>")
 
             if (settings["${prefix}_conditions"]) {
                 section {
                     input name: "${prefix}_delay", title: '<i>For number of minute(s):</i>', description: '1..60', type: 'number', width: 3, range: '0..60', required: false
                     paragraph '', width: 1
-                    String title = 'When conditions stop matching '
-                    title += settings["${prefix}_autostop"] == false ? '<i>leave effect running</i>' : '<b>stop the effect</b>'
-                    input name: "${prefix}_autostop", title: title, type: 'bool', defaultValue: true, width: 4, submitOnChange: true
-                    // if (settings["${prefix}_autostop"]) {
-                    //     input name: "${prefix}_autostop_delay", title: 'Stop effect after minute(s):', description: '1..60', type: 'number', width: 3, range: '0..60', defaultValue: 0
-                    // } else {
-                    //     app.removeSetting("${prefix}_autostop_delay")
-                    // }
+                    if (settings["${prefix}_effect"] != '255') {
+                        String title = 'When conditions stop matching '
+                        title += settings["${prefix}_autostop"] == false ? '<i>leave effect running</i>' : '<b>stop the effect</b>'
+                        input name: "${prefix}_autostop", title: title, type: 'bool', defaultValue: true, width: 4, submitOnChange: true
+                    } else {
+                        app.removeSetting("${prefix}_autostop")
+                    }
                 }
 
                 section {
@@ -812,6 +814,7 @@ private Map<String, String> getDashboardConfig(String prefix) {
 private String getSuggestedConditionName(String prefix) {
     Map config = getDashboardConfig(prefix)
     Map deviceType = getDeviceType()
+    Map<String, String> fxOptions = deviceType.effectsAll + deviceType.effects
     StringBuilder sb = new StringBuilder('Set ')
 
     if (config.lednumber && config.lednumber != 'var') {
@@ -820,7 +823,11 @@ private String getSuggestedConditionName(String prefix) {
         sb << 'LED'
     }
     if (config.color && config.color != 'var') {
-        sb << " to ${ColorMap[config.color]}"
+        sb << ' to '
+        if (fxOptions[config.effect]) {
+            sb << "${fxOptions[config.effect]} "
+        }
+        sb << ColorMap[config.color]
     }
 
     List<String> conditions = config.conditions
