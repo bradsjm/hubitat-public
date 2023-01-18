@@ -1,10 +1,10 @@
 {
   "packageName": "Tuya IoT Platform (Cloud)",
   "author": "Jonathan Bradshaw",
-  "version": "0.3.3",
+  "version": "0.3.6",
   "minimumHEVersion": "2.1.9",
   "communityLink": "https://community.hubitat.com/t/beta-tuya-cloud-driver-limited-device-support/80627",
-  "dateReleased": "2021-12-26",
+  "dateReleased": "2023-01-18",
   "drivers": [
     {
       "id": "4983d2b6-1b2f-4002-94de-f3dd27d55a7b",
