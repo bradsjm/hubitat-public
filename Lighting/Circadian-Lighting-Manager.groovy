@@ -171,7 +171,7 @@ void modeChangeHandler(Event event = null) {
 private void circadianUpdate(Event event = null) {
     if (location.mode in settings.enabledModes) {
         atomicState.current = currentCircadianValues()
-        log.info "Circadian State now: ${atomicState.current} ${event}"
+        log.info "Circadian State now: ${atomicState.current} ${event ?: ''}"
         settings.colorTemperatureOnDevices?.each { device -> updateLamp(device) }
     }
 }

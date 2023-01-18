@@ -62,6 +62,7 @@ import hubitat.scheduling.AsyncResponse
  *  08/04/22 - 0.3.4 - Fix for set color when level is not set
  *                     Remove ciphercache so encryption key is not cached
  *  09/28/22 - 0.3.5 - Make setColor and setColorTemperature turn on light
+ *  01/18/23 - 0.3.6 - Fix error in scene triggering
  *  Custom component drivers located at https://github.com/bradsjm/hubitat-drivers/tree/master/Component
  */
 
@@ -409,7 +410,7 @@ void componentOn(DeviceWrapper dw) {
         if (txtEnable) { LOG.info "Turning ${dw} on" }
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': true ])
     } else {
-        String homeId = dw.getDataValue('homeId')
+        Integer homeId = dw.getDataValue('homeId')
         String sceneId = dw.getDataValue('sceneId')
         if (sceneId && homeId) {
             if (txtEnable) { LOG.info "Triggering ${dw} automation" }
@@ -458,7 +459,7 @@ void componentPush(DeviceWrapper dw, BigDecimal button) {
         if (txtEnable) { LOG.info "Pushing ${dw} button ${button}" }
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': button ])
     } else {
-        String homeId = dw.getDataValue('homeId')
+        Integer homeId = dw.getDataValue('homeId')
         String sceneId = dw.getDataValue('sceneId')
         if (sceneId && homeId) {
             tuyaTriggerScene(homeId, sceneId)

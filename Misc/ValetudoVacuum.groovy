@@ -426,7 +426,7 @@ void setWaterGrade(String grade) {
 // ========================================================
 void mqttConnect() {
     try {
-        state.clientId = state.clientId ?: new BigDecimal(119, new Random()).toString(36)
+        state.clientId = state.clientId ?: new BigInteger(119, random).toString(36)
         String uri = getBrokerUri()
         log.info "Connecting to MQTT broker at ${uri}"
         sendEvent([ name: 'networkStatus', value: 'connecting', descriptionText: "connecting to ${uri}" ])
