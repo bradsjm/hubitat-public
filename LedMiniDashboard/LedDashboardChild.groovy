@@ -874,7 +874,7 @@ private String getDashboardDescription(String prefix) {
     if (config.color == 'var') {
         sb << ", <b>Color Variable:</b> <i>${config.color_var}</i>"
     } else if (config.color == 'val') {
-        sb << ', <b>Color</b>: ' + getColorSpan(config.color_val as Integer, "#${config.color_val}")
+        sb << ', <b>Color Hue</b>: ' + getColorSpan(config.color_val as Integer, "#${config.color_val}")
     } else if (config.color) {
         sb << ', <b>Color</b>: ' + getColorSpan(config.color as Integer, ColorMap[config.color])
     }
