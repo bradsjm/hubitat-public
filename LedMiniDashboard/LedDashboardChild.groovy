@@ -122,8 +122,8 @@ import java.util.regex.Matcher
 ]
 
 // Definitions for condition options
-@Field static final Map<String, String> ColorMap = [ '210': 'Aqua', '241': 'Blue', '180': 'Cyan', '120': 'Green', '40': 'Lemon', '91': 'Lime',
-    '300': 'Magenta', '10': 'Orange', '332': 'Pink', '0': 'Red', '150': 'Teal', '269': 'Violet', '360': 'White', 'var': 'Variable' ]
+@Field static final Map<String, String> ColorMap = [ '0': 'Red', '10': 'Orange', '40': 'Lemon', '91': 'Lime', '120': 'Green', '150': 'Teal', '180': 'Cyan', '210': 'Aqua',
+    '241': 'Blue', '269': 'Violet', '300': 'Magenta', '332': 'Pink', '360': 'White', 'val': 'Custom Color', 'var': 'Variable Color' ]
 
 @Field static final Set<Integer> Priorities = 20..1 // can be increased if desired
 
@@ -312,8 +312,15 @@ Map renderIndicationSection(String prefix, String title = null) {
 
             // Color
             if (effect != '0' && effect != '255') {
+                String color = settings["${prefix}_color"]
                 input name: "${prefix}_color", title: "<span style=\'color: blue;\'>${ledName} Color</span>", type: 'enum', options: ColorMap, width: 3, required: true, submitOnChange: true
-                if (settings["${prefix}_color"] == 'var') {
+                if (color == 'val') {
+                    String url = '''<a href="https://community-assets.home-assistant.io/original/3X/6/c/6c0d1ea7c96b382087b6a34dee6578ac4324edeb.png" target="_blank">'''
+                    input name: "${prefix}_color_val", title: url + "<span style=\'color: blue; text-decoration: underline;\'>Hue Value</span></a>", type: 'number', range: '0..360', width: 2, required: true, submitOnChange: true
+                } else {
+                    app.removeSetting("${prefix}_color_val")
+                }
+                if (color == 'var') {
                     input name: "${prefix}_color_var", title: "<span style=\'color: blue;\'>Color Variable</span>", type: 'enum', options: getGlobalVarsByType('string').keySet(), width: 3, required: true
                 } else {
                     app.removeSetting("${prefix}_color_var")
@@ -321,6 +328,7 @@ Map renderIndicationSection(String prefix, String title = null) {
             } else {
                 app.removeSetting("${prefix}_color")
                 app.removeSetting("${prefix}_color_var")
+                app.removeSetting("${prefix}_color_val")
             }
 
             if (effect != '255') {
@@ -822,7 +830,7 @@ private String getSuggestedConditionName(String prefix) {
     } else {
         sb << 'LED'
     }
-    if (config.color && config.color != 'var') {
+    if (config.color && config.color != 'var' && config.color != 'val') {
         sb << ' to '
         if (fxOptions[config.effect]) {
             sb << "${fxOptions[config.effect]} "
@@ -849,31 +857,38 @@ private String getDashboardDescription(String prefix) {
     Map config = getDashboardConfig(prefix)
     Map deviceType = getDeviceType()
     StringBuilder sb = new StringBuilder()
-    if (config.lednumber && config.lednumber != 'var') {
-        sb << "<b>${deviceType?.leds[config.lednumber] ?: 'n/a'}</b>"
-    } else if (config.lednumber == 'var') {
+    if (config.lednumber == 'var') {
         sb << "<b>LED Variable:</b> <i>${config.lednumber_var}</i>"
+    } else if (config.lednumber) {
+        sb << "<b>${deviceType.leds[config.lednumber] ?: 'n/a'}</b>"
     }
     sb << ", <b>Priority</b>: ${config.priority}"
-    if (config.effect && config.effect != 'var') {
+
+    if (config.effect == 'var') {
+        sb << ", <b>Effect Variable</b>: <i>${config.effect_var}</i>"
+    } else if (config.effect) {
         Map<String, String> fxOptions = deviceType.effectsAll + deviceType.effects
         sb << ", <b>Effect:</b> ${fxOptions[config.effect] ?: 'n/a' }"
-    } else if (config.effect == 'var') {
-        sb << ", <b>Effect Variable</b>: <i>${config.effect_var}</i>"
     }
-    if (config.color && config.color != 'var') {
-        sb << ", <b>Color</b>: ${getColorSpan(config.color as Integer, ColorMap[config.color])}"
-    } else if (config.color == 'var') {
+
+    if (config.color == 'var') {
         sb << ", <b>Color Variable:</b> <i>${config.color_var}</i>"
+    } else if (config.color == 'val') {
+        sb << ', <b>Color</b>: ' + getColorSpan(config.color_val as Integer, "#${config.color_val}")
+    } else if (config.color) {
+        sb << ', <b>Color</b>: ' + getColorSpan(config.color as Integer, ColorMap[config.color])
     }
-    if (config.level && config.level != 'var') {
-        sb << ", <b>Level:</b> ${config.level}%"
-    } else if (config.level == 'var') {
+
+    if (config.level == 'var') {
         sb << ", <b>Level Variable:</b> <i>${config.level_var}</i>"
+    } else if (config.level) {
+        sb << ", <b>Level:</b> ${config.level}%"
     }
+
     if (config.duration && config.unit) {
         sb << ", <b>Duration:</b> ${config.duration} ${TimePeriodsMap[config.unit]?.toLowerCase()}"
     }
+
     if (config.conditions) {
         String allMode = config.conditions_all ? ' and ' : ' or '
         List<String> conditions = config.conditions
@@ -889,7 +904,8 @@ private String getDashboardDescription(String prefix) {
             sb << ' (auto stop)'
         }
     }
-    if (config.delay) {
+
+    if (config.delay as Integer) {
         sb << " for ${config.delay} minute"
         if (config.delay > 1) {
             sb << 's'
@@ -1089,7 +1105,9 @@ private void updateDeviceLedStateInovelliBlue(DeviceWrapper dw, Map config) {
         if (config.unit != null) {
             duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255)
         }
-        if (config.color != null) {
+        if (config.color == 'val') {
+            color = Math.min(Math.round(((config.color_val as Integer) / 360.0) * 255), 255)
+        } else if (config.color != null) {
             color = Math.min(Math.round(((config.color as Integer) / 360.0) * 255), 255)
         }
         if (config.lednumber == 'All') {
@@ -1116,7 +1134,9 @@ private void updateDeviceLedStateInovelliRed(DeviceWrapper dw, Map config) {
     if (config.unit != null) {
         duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255) as int
     }
-    if (config.color != null) {
+    if (config.color == 'val') {
+        color = Math.min(Math.round(((config.color_val as Integer) / 360.0) * 255), 255) as int
+    } else if (config.color != null) {
         color = Math.min(Math.round(((config.color as Integer) / 360.0) * 255), 255) as int
     }
     if (config.level != null) {
@@ -1142,14 +1162,20 @@ private void updateDeviceLedStateInovelliRed(DeviceWrapper dw, Map config) {
  *  updateDeviceLedStateColor is a wrapper around the color device driver methods
  */
 private void updateDeviceLedStateColor(DeviceWrapper dw, Map config) {
-    if (config.color < 360) {
-        int huePercent = Math.round(((config.color as int) / 360.0) * 100)
+    Integer color
+    if (config.color == 'val') {
+        color = config.color_val as Integer
+    } else {
+        color = config.color as Integer
+    }
+    if (color < 360) {
+        int huePercent = Math.round(((color as int) / 360.0) * 100)
         dw.setColor([
             hue: huePercent,
             saturation: 100,
             level: config.level as Integer
         ])
-    } else if (config.color == 360) { // white
+    } else if (color == 360) { // white
         dw.setColor([
             hue: 0,
             saturation: 0,
