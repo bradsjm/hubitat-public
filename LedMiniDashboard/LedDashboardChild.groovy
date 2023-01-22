@@ -749,7 +749,7 @@ Map<String, Map> calculateLedState(Map<String, Boolean> results) {
             // Auto stop effect
             ledStates[config.lednumber as String] = [
                 prefix: config.prefix,
-                name: config.name,
+                name: "[auto stop] ${config.name}",
                 lednumber: config.lednumber,
                 priority: 0,  // lowest priority
                 effect: 255,  // stop effect code
@@ -1047,7 +1047,7 @@ private void resetNotifications() {
     Map deviceType = getDeviceType()
     if (deviceType) {
         logInfo 'resetting all device notifications'
-        deviceType.leds.keySet().findAll { s -> s != 'var' }.each { led ->
+        deviceType.leds.keySet().findAll { s -> s != 'var' }.each { String led ->
             updateDeviceLedState(
                 [
                     name: 'reset notification',
