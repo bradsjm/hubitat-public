@@ -42,6 +42,7 @@
  *  0.96 - Allow force refresh interval to be specified and fixes device tracking issue
  *  0.97 - Fixes for Red Series Fan + Switch LZW36 support
  *  0.98 - Update driver name for Blue Fan Switch and updated effect order and consistency of options
+ *  0.99 - Add initial support for RGB child devices used by older Red switches
  *
 */
 
@@ -112,13 +113,13 @@ import java.util.regex.Matcher
         effects: [:],
         effectsAll: [ '255': 'Stop', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', 'var': 'Variable Effect' ]
     ],
-    // 'RGB': [
-    //     title: 'Color Devices (Single Color)',
-    //     type: 'capability.colorControl',
-    //     leds: [ 'All': 'All LEDs' ],
-    //     effectsAll: [ '0': 'Off', '1': 'Solid', 'var': 'Variable Effect' ],
-    //     stopEffect: 0
-    // ]
+    'RGB': [
+        title: 'RGB Device',
+        type: 'capability.colorControl',
+        leds: [ 'All': 'Color' ],
+        effects: [:],
+        effectsAll: [ '255': 'None', '0': 'Off', '1': 'On', 'var': 'Variable Effect' ]
+    ]
 ]
 
 // Definitions for condition options
@@ -130,7 +131,7 @@ import java.util.regex.Matcher
 @Field static final Map<String, String> LevelMap = [ '10': '10', '20': '20', '30': '30', '40': '40', '50': '50',
     '60': '60', '70': '70', '80': '80', '90': '90', '100': '100', 'var': 'Variable' ]
 
-@Field static final Map<String, String> TimePeriodsMap = [ '0': 'Seconds', '60': 'Minutes', '120': 'Hours', '255': 'Infinite' ].asImmutable()
+@Field static final Map<String, String> TimePeriodsMap = [ '0': 'Seconds', '60': 'Minutes', '120': 'Hours', '255': 'Infinite' ]
 
 // Tracker for device LED state to optimize traffic by only sending changes
 @Field static final Map<String, Map> DeviceStateTracker = new ConcurrentHashMap<>()
@@ -253,7 +254,7 @@ Map editPage(Map params = [:]) {
         renderIndicationSection(prefix)
         if (settings["${prefix}_lednumber"]) {
             Map deviceType = getDeviceType()
-            Map<String, String> fxOptions = deviceType.effectsAll + deviceType.effects
+            Map<String, String> fxOptions = settings["${prefix}_lednumber"] == 'All' ? deviceType.effectsAll : deviceType.effects
             String effectName = fxOptions[settings["${prefix}_effect"]] ?: 'mini-dashboard'
             renderConditionSection(prefix, "<span style=\'color: green; font-weight: bold\'>Select means to activate LED ${effectName} effect:</span><span class=\"required-indicator\">*</span>")
 
@@ -750,17 +751,36 @@ Map<String, Map> calculateLedState(Map<String, Boolean> results) {
                 prefix: config.prefix,
                 name: config.name,
                 lednumber: config.lednumber,
-                priority: 0, // lowest priority
-                effect: 255
+                priority: 0,  // lowest priority
+                effect: 255,  // stop effect code
+                color: 0,     // default color
+                level: 100,   // default level
+                unit: '255'   // Infinite
             ]
         }
     }
     return ledStates
 }
 
+// Scheduled stop for RGB device color
+void updateDeviceColorStop() {
+    logDebug 'updateDeviceColorStop called'
+    for (DeviceWrapper device in settings['switches']) {
+        Map<String, Map> tracker = getDeviceTracker(device)
+        if (now() >= tracker['All']?.expires) {
+            logDebug "${device}.off()"
+            device.off()
+            DeviceStateTracker.remove(device.id)
+        }
+    }
+}
+
 /*
  *  Private Implementation Helper Methods
  */
+private static Map<String, Map> getDeviceTracker(DeviceWrapper dw) {
+    return DeviceStateTracker.computeIfAbsent(dw.id) { k -> [:].withDefault { [:] } }
+}
 
 // Cleans settings removing entries no longer in use
 private void cleanSettings() {
@@ -822,11 +842,11 @@ private Map<String, String> getDashboardConfig(String prefix) {
 private String getSuggestedConditionName(String prefix) {
     Map config = getDashboardConfig(prefix)
     Map deviceType = getDeviceType()
-    Map<String, String> fxOptions = deviceType.effectsAll + deviceType.effects
+    Map<String, String> fxOptions = config.lednumber == 'All' ? deviceType.effectsAll : deviceType.effects
     StringBuilder sb = new StringBuilder('Set ')
 
     if (config.lednumber && config.lednumber != 'var') {
-        sb << deviceType?.leds[config.lednumber] ?: 'n/a'
+        sb << deviceType.leds[config.lednumber] ?: 'n/a'
     } else {
         sb << 'LED'
     }
@@ -1033,7 +1053,10 @@ private void resetNotifications() {
                     name: 'reset notification',
                     priority: 0,
                     lednumber: led,
-                    effect: 255
+                    effect: 255,    // stop effect code
+                    color: 0,       // default color
+                    level: 100,     // default level
+                    unit: '255'     // infinite
                 ]
             )
         }
@@ -1075,14 +1098,30 @@ private void updateDeviceLedState(Map config) {
             "effect=${config.effect ?: ''}, color=${config.color ?: ''}, level=${config.level ?: ''}, " +
             "duration=${config.duration ?: ''} ${TimePeriodsMap[config.unit] ?: ''})"
 
-        if (device.hasCommand('ledEffectOne')) {
-            updateDeviceLedStateInovelliBlue(device, config)
-        } else if (device.hasCommand('startNotification')) {
-            updateDeviceLedStateInovelliRed(device, config)
-        } else if (device.hasCommand('setColor')) {
-            updateDeviceLedStateColor(device, config)
+        Map<String, Map> tracker = getDeviceTracker(device)
+        String key = config.lednumber
+        if (tracker[key] == null
+            || tracker[key].effect != config.effect
+            || tracker[key].color != config.color
+            || tracker[key].level != config.level
+            || tracker[key].duration != config.duration
+            || tracker[key]?.expires <= now()
+        ) {
+            if (device.hasCommand('ledEffectOne')) {
+                updateDeviceLedStateInovelliBlue(device, config)
+            } else if (device.hasCommand('startNotification')) {
+                updateDeviceLedStateInovelliRed(device, config)
+            } else if (device.hasCommand('setColor')) {
+                updateDeviceColor(device, config)
+            } else {
+                logWarn "unable to determine notification command for ${device}"
+                continue
+            }
+            long duration = getDurationMs(Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255))
+            config.expires = getOffsetMs(duration)
+            tracker[key] = config
         } else {
-            logWarn "unable to determine notification command for ${device}"
+            logDebug "skipping update to ${device} (no change detected)"
         }
     }
 }
@@ -1093,34 +1132,21 @@ private void updateDeviceLedState(Map config) {
  *  assumed LED state before sending changes.
  */
 private void updateDeviceLedStateInovelliBlue(DeviceWrapper dw, Map config) {
-    Map<String, Map> tracker = DeviceStateTracker.computeIfAbsent(dw.id) { k -> [:].withDefault { [:] } }
-    String key = config.lednumber
-    if (tracker[key].effect != config.effect
-        || tracker[key].color != config.color
-        || tracker[key].level != config.level
-        || tracker[key].duration != config.duration
-        || tracker[key]?.expires <= now()
-    ) {
-        Integer color, duration
-        if (config.unit != null) {
-            duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255)
-        }
-        if (config.color == 'val') {
-            color = Math.min(Math.round(((config.color_val as Integer) / 360.0) * 255), 255)
-        } else if (config.color != null) {
-            color = Math.min(Math.round(((config.color as Integer) / 360.0) * 255), 255)
-        }
-        if (config.lednumber == 'All') {
-            logDebug "${dw}.ledEffectALL(${config.effect},${color},${config.level},${duration})"
-            dw.ledEffectAll(config.effect, color, config.level, duration)
-        } else {
-            logDebug "${dw}.ledEffectONE(${config.lednumber},${config.effect},${color},${config.level},${duration})"
-            dw.ledEffectOne(config.lednumber, config.effect, color, config.level, duration)
-        }
-        config.expires = getOffsetMs(getDurationMs(duration))
-        tracker[key] = config
+    Integer color, duration
+    if (config.unit != null) {
+        duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255)
+    }
+    if (config.color == 'val') {
+        color = Math.min(Math.round(((config.color_val as Integer) / 360.0) * 255), 255)
+    } else if (config.color != null) {
+        color = Math.min(Math.round(((config.color as Integer) / 360.0) * 255), 255)
+    }
+    if (config.lednumber == 'All') {
+        logDebug "${dw}.ledEffectALL(${config.effect},${color},${config.level},${duration})"
+        dw.ledEffectAll(config.effect, color, config.level, duration)
     } else {
-        logDebug "skipping update to ${dw} (no change detected)"
+        logDebug "${dw}.ledEffectONE(${config.lednumber},${config.effect},${color},${config.level},${duration})"
+        dw.ledEffectOne(config.lednumber, config.effect, color, config.level, duration)
     }
 }
 
@@ -1150,7 +1176,7 @@ private void updateDeviceLedStateInovelliRed(DeviceWrapper dw, Map config) {
     }
     byte[] bytes = [effect as byte, duration as byte, level  as byte, color as byte]
     int value = new BigInteger(bytes).intValue()
-    logDebug "startNotification(${value}) [${bytes[0] & 0xff}, ${bytes[1] & 0xff}, ${bytes[2] & 0xff}, ${bytes[3] & 0xff}]"
+    logDebug "${dw}.startNotification(${value}) [${bytes[0] & 0xff}, ${bytes[1] & 0xff}, ${bytes[2] & 0xff}, ${bytes[3] & 0xff}]"
     if (config.lednumber == 'All') {
         dw.startNotification(value)
     } else {
@@ -1159,30 +1185,39 @@ private void updateDeviceLedStateInovelliRed(DeviceWrapper dw, Map config) {
 }
 
 /**
- *  updateDeviceLedStateColor is a wrapper around the color device driver methods
+ *  updateDeviceColor is a wrapper around the color device driver methods
  */
-private void updateDeviceLedStateColor(DeviceWrapper dw, Map config) {
-    Integer color
+private void updateDeviceColor(DeviceWrapper dw, Map config) {
+    Integer color = 0
     if (config.color == 'val') {
         color = config.color_val as Integer
     } else {
         color = config.color as Integer
     }
-    if (color < 360) {
-        int huePercent = Math.round(((color as int) / 360.0) * 100)
-        dw.setColor([
-            hue: huePercent,
-            saturation: 100,
-            level: config.level as Integer
-        ])
-    } else if (color == 360) { // white
-        dw.setColor([
-            hue: 0,
-            saturation: 0,
-            level: config.level as Integer
-        ])
+    switch (config.effect) {
+        case '0': // Off
+        case '255':
+            logDebug "${dw}.off()"
+            dw.off()
+            break
+        case '1': // On
+            int huePercent = Math.round((color / 360.0) * 100)
+            logDebug "${dw}.setColor(${huePercent})"
+            dw.setColor([
+                hue: color == 360 ? 0 : huePercent,
+                saturation: color == 360 ? 0 : 100,
+                level: config.level as Integer
+            ])
+            break
     }
-    // TODO: Duration and effect support
+    if (config.unit && config.unit != '255') {
+        logDebug 'scheduling updateDeviceColorStop'
+        long duration = getDurationMs(Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255))
+        runInMillis(duration + 1000, 'updateDeviceColorStop')
+    } else {
+        logDebug 'unschedule updateDeviceColorStop'
+        unschedule('updateDeviceColorStop')
+    }
 }
 
 // Updates the app label based on pause state
