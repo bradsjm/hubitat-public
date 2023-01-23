@@ -1094,8 +1094,8 @@ private void subscribeAllSwitches() {
 private void updateDeviceLedState(Map config) {
     for (DeviceWrapper device in settings['switches']) {
         logDebug "setting ${device} LED #${config.lednumber} (" +
-            "id=${config.prefix ?: ''}, name=${config.name ?: ''}, priority=${config.priority ?: ''}, " +
-            "effect=${config.effect ?: ''}, color=${config.color ?: ''}, level=${config.level ?: ''}, " +
+            "id=${config.prefix}, name=${config.name}, priority=${config.priority}, " +
+            "effect=${config.effect ?: ''}, color=${config.color}, level=${config.level}, " +
             "duration=${config.duration ?: ''} ${TimePeriodsMap[config.unit] ?: ''})"
 
         Map<String, Map> tracker = getDeviceTracker(device)
@@ -1104,6 +1104,7 @@ private void updateDeviceLedState(Map config) {
             || tracker[key].effect != config.effect
             || tracker[key].color != config.color
             || tracker[key].level != config.level
+            || tracker[key].unit != config.unit
             || tracker[key].duration != config.duration
             || tracker[key]?.expires <= now()
         ) {
