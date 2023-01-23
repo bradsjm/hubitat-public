@@ -1132,7 +1132,7 @@ private void updateDeviceLedState(Map config) {
  *  assumed LED state before sending changes.
  */
 private void updateDeviceLedStateInovelliBlue(DeviceWrapper dw, Map config) {
-    Integer color, duration
+    int color, duration, effect, level
     if (config.unit != null) {
         duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255)
     }
@@ -1141,12 +1141,18 @@ private void updateDeviceLedStateInovelliBlue(DeviceWrapper dw, Map config) {
     } else if (config.color != null) {
         color = Math.min(Math.round(((config.color as Integer) / 360.0) * 255), 255)
     }
+    if (config.effect != null) {
+        effect = config.effect as int
+    }
+    if (config.level != null) {
+        level = config.level as int
+    }
     if (config.lednumber == 'All') {
-        logDebug "${dw}.ledEffectALL(${config.effect},${color},${config.level},${duration})"
-        dw.ledEffectAll(config.effect, color, config.level, duration)
+        logDebug "${dw}.ledEffectALL(${effect},${color},${level},${duration})"
+        dw.ledEffectAll(effect, color, level, duration)
     } else {
-        logDebug "${dw}.ledEffectONE(${config.lednumber},${config.effect},${color},${config.level},${duration})"
-        dw.ledEffectOne(config.lednumber, config.effect, color, config.level, duration)
+        logDebug "${dw}.ledEffectONE(${config.lednumber},${effect},${color},${level},${duration})"
+        dw.ledEffectOne(config.lednumber, effect, color, level, duration)
     }
 }
 
