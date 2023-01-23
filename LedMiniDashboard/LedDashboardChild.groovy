@@ -46,7 +46,7 @@
  *
 */
 
-@Field static final String Version = '0.98'
+@Field static final String Version = '0.99'
 
 definition(
     name: 'LED Mini-Dashboard Topic',
