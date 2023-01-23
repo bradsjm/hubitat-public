@@ -751,11 +751,11 @@ Map<String, Map> calculateLedState(Map<String, Boolean> results) {
                 prefix: config.prefix,
                 name: "[auto stop] ${config.name}",
                 lednumber: config.lednumber,
-                priority: 0,  // lowest priority
-                effect: 255,  // stop effect code
-                color: 0,     // default color
-                level: 100,   // default level
-                unit: '255'   // Infinite
+                priority: 0,    // lowest priority
+                effect: '255',  // stop effect code
+                color: '0',     // default color
+                level: '100',   // default level
+                unit: '255'     // Infinite
             ]
         }
     }
@@ -1050,13 +1050,13 @@ private void resetNotifications() {
         deviceType.leds.keySet().findAll { s -> s != 'var' }.each { String led ->
             updateDeviceLedState(
                 [
-                    name: 'reset notification',
+                    name: 'clear notification',
                     priority: 0,
                     lednumber: led,
-                    effect: 255,    // stop effect code
-                    color: 0,       // default color
-                    level: 100,     // default level
-                    unit: '255'     // infinite
+                    effect: '255',    // stop effect code
+                    color: '0',       // default color
+                    level: '100',     // default level
+                    unit: '255'       // infinite
                 ]
             )
         }
