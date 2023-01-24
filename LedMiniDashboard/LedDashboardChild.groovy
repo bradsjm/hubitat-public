@@ -84,6 +84,24 @@ import java.util.regex.Matcher
         effectsAll: [ '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Open/Close', '7': 'Small-to-Big', '8': 'Aurora', '9': 'Slow Falling', '10': 'Medium Falling', '11': 'Fast Falling',
             '12': 'Slow Rising', '13': 'Medium Rising', '14': 'Fast Rising', '15': 'Medium Blink', '16': 'Slow Chase', '17': 'Fast Chase', '18': 'Fast Siren', '19': 'Slow Siren', '0': 'Off', 'var': 'Variable Effect' ]
     ],
+    'Inovelli Dimmer': [
+        title: 'Inovelli Dimmer LZW31',
+        type: 'device.InovelliDimmerLZW31',
+        leds: [ 'All': 'Notification' ],
+        ledLevelParam: 14,
+        ledColorParam: 13,
+        effects: [:],
+        effectsAll: [ '255': 'Stop', '1': 'Solid', 'var': 'Variable Effect' ]
+    ],
+    'Inovelli Switch': [
+        title: 'Inovelli Switch LZW30',
+        type: 'device.InovelliSwitchLZW30',
+        leds: [ 'All': 'Notification' ],
+        ledLevelParam: 6,
+        ledColorParam: 5,
+        effects: [:],
+        effectsAll: [ '255': 'Stop', '1': 'Solid', 'var': 'Variable Effect' ]
+    ],
     'Inovelli Red Dimmer': [
         title: 'Inovelli Dimmer Red Series LZW31-SN',
         type: 'device.InovelliDimmerRedSeriesLZW31-SN',
@@ -114,7 +132,7 @@ import java.util.regex.Matcher
         effectsAll: [ '255': 'Stop', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', 'var': 'Variable Effect' ]
     ],
     'RGB': [
-        title: 'RGB Device',
+        title: 'Generic RGB Device',
         type: 'capability.colorControl',
         leds: [ 'All': 'Color' ],
         effects: [:],
@@ -769,13 +787,27 @@ Map<String, Map> calculateLedState(Map<String, Boolean> results) {
 }
 
 // Scheduled stop for RGB device color
-void updateDeviceColorStop() {
-    logDebug 'updateDeviceColorStop called'
+void setDeviceOff() {
+    logDebug 'setDeviceOff called'
     for (DeviceWrapper device in settings['switches']) {
         Map<String, Map> tracker = getDeviceTracker(device)
         if (now() >= tracker['All']?.expires) {
             logDebug "${device}.off()"
             device.off()
+            DeviceStateTracker.remove(device.id)
+        }
+    }
+}
+
+// Scheduled stop for Inovelli Red Gen1
+void setConfigParameter() {
+    logDebug 'setConfigParameter called'
+    Map deviceType = getDeviceType()
+    for (DeviceWrapper device in settings['switches']) {
+        Map<String, Map> tracker = getDeviceTracker(device)
+        if (now() >= tracker['All']?.expires) {
+            logDebug "${device}.setConfigParameter(${deviceType.ledLevelParam},0,'1')"
+            device.setConfigParameter(deviceType.ledLevelParam as int, 0, '1')
             DeviceStateTracker.remove(device.id)
         }
     }
@@ -1125,7 +1157,9 @@ private void updateDeviceLedState(Map config) {
             if (device.hasCommand('ledEffectOne')) {
                 updateDeviceLedStateInovelliBlue(device, config)
             } else if (device.hasCommand('startNotification')) {
-                updateDeviceLedStateInovelliRed(device, config)
+                updateDeviceLedStateInovelliRedGen2(device, config)
+            } else if (device.hasCommand('setConfigParameter')) {
+                updateDeviceLedStateInovelliRedGen1(device, config)
             } else if (device.hasCommand('setColor')) {
                 updateDeviceColor(device, config)
             } else {
@@ -1169,12 +1203,47 @@ private void updateDeviceLedStateInovelliBlue(DeviceWrapper dw, Map config) {
     }
 }
 
+private void updateDeviceLedStateInovelliRedGen1(DeviceWrapper dw, Map config) {
+    int color, effect, level
+    if (config.unit != null) {
+        duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255) as int
+    }
+    if (config.color != null) {
+        color = Math.min(Math.round(((config.color as Integer) / 360.0) * 255), 255) as int
+        color = color <= 2 ? 0 : (color >= 98 ? 254 : color / 100 * 255)
+    }
+    if (config.level != null) {
+        level = Math.round((config.level as int) / 10) as int
+    }
+    if (config.effect != null) {
+        effect = config.effect as int
+    }
+    if (effect == 255) { // Stop notification option is mapped to 0
+        effect = level = color = 0
+    }
+    Map deviceType = getDeviceType()
+    logDebug "${dw}.setConfigParameter(${deviceType.ledLevelParam},${level},'1')"
+    dw.setConfigParameter(deviceType.ledLevelParam as int, level, '1')
+    if (level > 0) {
+        logDebug "${dw}.setConfigParameter(${deviceType.ledColorParam},${color},'2')"
+        dw.setConfigParameter(deviceType.ledColorParam as int, color, '2')
+    }
+    if (config.unit && config.unit != '255') {
+        long duration = getDurationMs(Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255))
+        logDebug 'scheduling setConfigParameter for ' + duration + 'ms'
+        runInMillis(duration + 1000, 'setConfigParameter')
+    } else {
+        logDebug 'unschedule setConfigParameter'
+        unschedule('setConfigParameter')
+    }
+}
+
 /**
- *  updateDeviceLedStateInovelliRed is a wrapper around the
+ *  updateDeviceLedStateInovelliRedGen2 is a wrapper around the
  *  Inovelli device driver startnotification method.
  *  Reference https://nathanfiscus.github.io/inovelli-notification-calc/
  */
-private void updateDeviceLedStateInovelliRed(DeviceWrapper dw, Map config) {
+private void updateDeviceLedStateInovelliRedGen2(DeviceWrapper dw, Map config) {
     int color, duration, effect, level
     if (config.unit != null) {
         duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255) as int
@@ -1205,7 +1274,7 @@ private void updateDeviceLedStateInovelliRed(DeviceWrapper dw, Map config) {
  *  updateDeviceColor is a wrapper around the color device driver methods
  */
 private void updateDeviceColor(DeviceWrapper dw, Map config) {
-    Integer color = config.color
+    Integer color = config.color as Integer
     switch (config.effect) {
         case '0': // Off
         case '255':
@@ -1223,12 +1292,12 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
             break
     }
     if (config.unit && config.unit != '255') {
-        logDebug 'scheduling updateDeviceColorStop'
         long duration = getDurationMs(Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255))
-        runInMillis(duration + 1000, 'updateDeviceColorStop')
+        logDebug 'scheduling setDeviceOff in ' + duration + 'ms'
+        runInMillis(duration + 1000, 'setDeviceOff')
     } else {
-        logDebug 'unschedule updateDeviceColorStop'
-        unschedule('updateDeviceColorStop')
+        logDebug 'unschedule setDeviceOff'
+        unschedule('setDeviceOff')
     }
 }
 
