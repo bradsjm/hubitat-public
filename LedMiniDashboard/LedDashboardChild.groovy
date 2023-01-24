@@ -42,7 +42,7 @@
  *  0.96 - Allow force refresh interval to be specified and fixes device tracking issue
  *  0.97 - Fixes for Red Series Fan + Switch LZW36 support
  *  0.98 - Update driver name for Blue Fan Switch and updated effect order and consistency of options
- *  0.99 - Add initial support for RGB child devices used by older Red switches
+ *  0.99 - Add initial support for RGB child devices used by older Red switches and custom levels
  *
 */
 
@@ -129,7 +129,7 @@ import java.util.regex.Matcher
 @Field static final Set<Integer> Priorities = 20..1 // can be increased if desired
 
 @Field static final Map<String, String> LevelMap = [ '10': '10', '20': '20', '30': '30', '40': '40', '50': '50',
-    '60': '60', '70': '70', '80': '80', '90': '90', '100': '100', 'var': 'Variable' ]
+    '60': '60', '70': '70', '80': '80', '90': '90', '100': '100', 'val': 'Custom', 'var': 'Variable' ]
 
 @Field static final Map<String, String> TimePeriodsMap = [ '0': 'Seconds', '60': 'Minutes', '120': 'Hours', '255': 'Infinite' ]
 
@@ -352,6 +352,11 @@ Map renderIndicationSection(String prefix, String title = null) {
                 // Level
                 input name: "${prefix}_level", title: "<span style=\'color: blue;\'>Level&nbsp;</span>", type: 'enum', width: 2,
                     defaultValue: 100, options: LevelMap, required: true, submitOnChange: true
+                if (settings["${prefix}_level"] == 'val') {
+                    input name: "${prefix}_level_val", title: "<span style=\'color: blue;\'>Level Value&nbsp;</span>", type: 'number', range: '1..100', width: 2, required: true, submitOnChange: true
+                } else {
+                    app.removeSetting("${prefix}_level_val")
+                }
                 if (settings["${prefix}_level"] == 'var') {
                     input name: "${prefix}_level_var", title: "<span style=\'color: blue;\'>Level Variable</span>", type: 'enum', options: getGlobalVarsByType('integer').keySet(), width: 3, required: true
                 } else {
@@ -360,6 +365,7 @@ Map renderIndicationSection(String prefix, String title = null) {
             } else {
                 app.removeSetting("${prefix}_level")
                 app.removeSetting("${prefix}_level_var")
+                app.removeSetting("${prefix}_level_val")
             }
             paragraph ''
         }
@@ -901,6 +907,8 @@ private String getDashboardDescription(String prefix) {
 
     if (config.level == 'var') {
         sb << ", <b>Level Variable:</b> <i>${config.level_var}</i>"
+    } else if (config.level == 'val') {
+        sb << ", <b>Level:</b> ${config.level_val}%"
     } else if (config.level) {
         sb << ", <b>Level:</b> ${config.level}%"
     }
@@ -1031,13 +1039,19 @@ private void replaceVariables(Map<String, String> config) {
         }
         if (config.effect == 'var') {
             Map<String, String> fxOptions = deviceType.effectsAll + deviceType.effects
-            config.effect = lookupVariable(config.effect_var, fxOptions) ?: '1'
+            config.effect = lookupVariable(config.effect_var, fxOptions) as String
         }
         if (config.color == 'var') {
-            config.color = lookupVariable(config.color_var, ColorMap) ?: '170'
+            config.color = lookupVariable(config.color_var, ColorMap) as String
+        }
+        if (config.color == 'val') {
+            config.color = config.color_val as String
         }
         if (config.level == 'var') {
-            config.level = lookupVariable(config.level_var, LevelMap) ?: '100'
+            config.level = getGlobalVar(config.level_var)?.value as String
+        }
+        if (config.level == 'val') {
+            config.level = config.level_val as String
         }
     }
 }
@@ -1137,9 +1151,7 @@ private void updateDeviceLedStateInovelliBlue(DeviceWrapper dw, Map config) {
     if (config.unit != null) {
         duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255)
     }
-    if (config.color == 'val') {
-        color = Math.min(Math.round(((config.color_val as Integer) / 360.0) * 255), 255)
-    } else if (config.color != null) {
+    if (config.color != null) {
         color = Math.min(Math.round(((config.color as Integer) / 360.0) * 255), 255)
     }
     if (config.effect != null) {
@@ -1167,9 +1179,7 @@ private void updateDeviceLedStateInovelliRed(DeviceWrapper dw, Map config) {
     if (config.unit != null) {
         duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255) as int
     }
-    if (config.color == 'val') {
-        color = Math.min(Math.round(((config.color_val as Integer) / 360.0) * 255), 255) as int
-    } else if (config.color != null) {
+    if (config.color != null) {
         color = Math.min(Math.round(((config.color as Integer) / 360.0) * 255), 255) as int
     }
     if (config.level != null) {
@@ -1195,12 +1205,7 @@ private void updateDeviceLedStateInovelliRed(DeviceWrapper dw, Map config) {
  *  updateDeviceColor is a wrapper around the color device driver methods
  */
 private void updateDeviceColor(DeviceWrapper dw, Map config) {
-    Integer color = 0
-    if (config.color == 'val') {
-        color = config.color_val as Integer
-    } else {
-        color = config.color as Integer
-    }
+    Integer color = config.color
     switch (config.effect) {
         case '0': // Off
         case '255':
