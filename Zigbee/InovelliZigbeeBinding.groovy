@@ -55,7 +55,7 @@ Map mainPage() {
 
         section {
             input name: 'controller',
-                type: 'capability.switch',
+                type: 'device.InovelliDimmer2-in-1BlueSeriesVZM31-SN',
                 title: 'Select Inovelli Blue controller',
                 multiple: false,
                 required: true,
@@ -78,20 +78,27 @@ Map mainPage() {
                         (validReplicas ? validReplicas.collect { d -> "${d} (0x${d.endpointId})" }.join(', ') : 'None')
             }
 
+            if (state.message) {
+                section {
+                    paragraph state.message
+                }
+                state.remove('message')
+            }
+
             if (validReplicas) {
                 section {
                     paragraph 'Enable desired bindings and click the <b>bind</b> button:'
 
                     if (controller.hasCapability('Switch')) {
                         String title = bindPower ? 'Bind power to replicas' : 'Do not bind power to replicas'
-                        input name: 'bindPower', type: 'bool', title: title, defaultValue: true, width: 2, submitOnChange: true
+                        input name: 'bindPower', type: 'bool', title: title, defaultValue: false, width: 2, submitOnChange: true
                     }
                     if (controller.hasCapability('SwitchLevel')) {
-                        String title = bindPower ? 'Bind level to replicas' : 'Do not bind level to replicas'
+                        String title = bindLevel ? 'Bind level to replicas' : 'Do not bind level to replicas'
                         input name: 'bindLevel', type: 'bool', title: title, defaultValue: true, width: 2, submitOnChange: true
                     }
                     if (controller.hasCapability('ColorControl')) {
-                        String title = bindPower ? 'Bind color control to replicas' : 'Do not bind color control to replicas'
+                        String title = bindColor ? 'Bind color control to replicas' : 'Do not bind color control to replicas'
                         input name: 'bindColor', type: 'bool', title: title, defaultValue: true, width: 2, submitOnChange: true
                     }
 
@@ -139,6 +146,7 @@ private void bind(String bindAction) {
         controller.bind(cmds)
         pauseExecution(1000)
         controller.refresh()
+        state.message = "${bindAction} completed"
     }
 }
 
