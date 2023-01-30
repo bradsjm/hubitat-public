@@ -386,9 +386,11 @@ List<String> refresh() {
 }
 
 List<String> presetLevel(Object value) {
+    Integer level = value.toInteger()
+    if (level == 0) { return [] }
     if (settings.txtEnable) { log.info "presetLevel (${value})" }
     String rate = device.currentValue('switch') == 'off' ? '0000' : settings.transitionTime
-    return setLevelPrivate(value.toInteger(), rate, 0, true)
+    return setLevelPrivate(level, rate, 0, true)
 }
 
 List<String> resetToFactoryDefaults() {
@@ -400,10 +402,13 @@ List<String> setColor(Map value) {
     List<String> cmds = []
     if (settings.txtEnable) { log.info "setColor (${value})" }
     String rateHex = settings.transitionTime
-    //if (device.currentValue('colorMode') != 'RGB') { rateHex = '0000' }
     if (value.level != null) {
-        cmds += setLevelPrivate(value.level.toInteger(), rateHex, DELAY_MS)
+        cmds += setLevelPrivate(value.level, rateHex, DELAY_MS)
     }
+    if (value.hue == null || value.hue < 0) { value.hue = 0 }
+    if (value.hue > 100) { value.hue = 100 }
+    if (value.saturation == null || value.saturation < 0) { value.saturation = 0 }
+    if (value.saturation > 100) { value.saturation = 100 }
     String scaledHueValue = intToHexStr(Math.round(value.hue * 0xfe / 100.0))
     String scaledSatValue = intToHexStr(Math.round(value.saturation * 0xfe / 100.0))
     cmds += zigbee.command(COLOR_CLUSTER_ID, COLOR_CMD_ID, [:], 0, "${scaledHueValue} ${scaledSatValue} ${rateHex} 01 01")
@@ -414,7 +419,6 @@ List<String> setColorTemperature(Object colorTemperature, Object level = null, O
     List<String> cmds = []
     if (settings.txtEnable) { log.info "setColorTemperature (${colorTemperature}, ${level}, ${rate})" }
     String rateHex = transitionTime != null ? zigbee.swapOctets(intToHexStr((transitionTime.toBigDecimal() * 10).toInteger(), 2)) : settings.transitionTime
-    //if (device.currentValue('colorMode') != 'CT') { rateHex = '0000' }
     if (level != null) {
         cmds += setLevelPrivate(level.toInteger(), rateHex, DELAY_MS)
     }
@@ -444,9 +448,11 @@ List<String> setEffect(Object number) {
 
 List<String> setHue(Object value) {
     if (settings.txtEnable) { log.info "setHue (${value})" }
+    Integer hue = value.toInteger()
     String rateHex = settings.transitionTime
-    if (device.currentValue('colorMode') != 'RGB') { rateHex = '0000' }
-    String scaledHueValue = intToHexStr(Math.round(value.hue * 0xfe / 100.0), 2)
+    if (hue == null || hue < 0) { hue = 0 }
+    if (hue > 100) { hue = 100 }
+    String scaledHueValue = intToHexStr(Math.round(hue * 0xfe / 100.0), 2)
     return zigbee.command(COLOR_CLUSTER_ID, COLOR_CMD_HUE_ID, [:], 0, "${scaledHueValue} ${rateHex}")
 }
 
@@ -472,9 +478,11 @@ List<String> setPreviousEffect() {
 
 List<String> setSaturation(Object value) {
     if (settings.txtEnable) { log.info "setSaturation (${value})" }
+    Integer saturation = value.toInteger()
     String rateHex = settings.transitionTime
-    if (device.currentValue('colorMode') != 'RGB') { rateHex = '0000' }
-    String scaledSatValue = intToHexStr(Math.round(value.saturation * 0xfe / 100.0))
+    if (saturation == null || saturation < 0) { saturation = 0 }
+    if (saturation > 100) { saturation = 100 }
+    String scaledSatValue = intToHexStr(Math.round(saturation * 0xfe / 100.0))
     return zigbee.command(COLOR_CLUSTER_ID, COLOR_CMD_SAT_ID, [:], 0, "${scaledSatValue} ${rateHex}")
 }
 
