@@ -47,8 +47,14 @@ metadata {
 
         attribute 'effectName', 'string'
 
-        command 'identify', [ [ name: 'effectType*', type: 'ENUM', description: 'Effect Type', constraints: IdentifyEffectNames.values() ] ]
+        command 'bind', ['string']
+        command 'identify', [ [ name: 'Effect type*', type: 'ENUM', description: 'Effect Type', constraints: IdentifyEffectNames.values()*.toLowerCase() ] ]
         command 'resetToFactoryDefaults'
+        command 'stepLevelChange', [
+            [ name: 'Direction*', type: 'ENUM', description: 'Direction for step change request', constraints: [ 'up', 'down' ] ],
+            [ name: 'Step Size*', type: 'NUMBER', description: 'Level change step size' ],
+            [ name: 'Duration', type: 'NUMBER', description: 'Transition duration in seconds' ]
+        ]
         command 'toggle'
         command 'updateFirmware'
 
@@ -59,10 +65,11 @@ metadata {
 
     preferences {
         input name: 'transitionTime', type: 'enum', title: 'Level transition duration', options: TransitionOpts.options, defaultValue: TransitionOpts.defaultValue, required: true
-        input name: 'levelChangeRate', type: 'enum', title: 'Level Change (Up/Down) rate', options: LevelRateOpts.options, defaultValue: LevelRateOpts.defaultValue, required: true
+        input name: 'levelChangeRate', type: 'enum', title: 'Level change (up/down) rate', options: LevelRateOpts.options, defaultValue: LevelRateOpts.defaultValue, required: true
+        input name: 'flashEffect', type: 'enum', title: 'Flash effect', options: IdentifyEffectNames.values(), defaultValue: 'Blink', required: true
         input name: 'powerRestore', type: 'enum', title: 'Power restore state', options: PowerRestoreOpts.options, defaultValue: PowerRestoreOpts.defaultValue
 
-        input name: 'logEnable', type: 'bool', title: 'Enable debug logging', defaultValue: true
+        input name: 'logEnable', type: 'bool', title: 'Enable debug logging', defaultValue: false
         input name: 'txtEnable', type: 'bool', title: 'Enable descriptionText logging', defaultValue: true
     }
 }
@@ -70,7 +77,7 @@ metadata {
 // Zigbee Cluster IDs
 @Field static final int BASIC_CLUSTER_ID = 0x0000
 @Field static final int COLOR_CLUSTER_ID = 0x0300
-@Field static final int COLOR_TEMP_CLUSTER = 0x0300
+@Field static final int GROUPS_CLUSTER_ID = 0x0004
 @Field static final int HUE_EFFECTS_CLUSTER_ID = 0xFC03
 @Field static final int IDENTIFY_CLUSTER_ID = 0x0003
 @Field static final int LEVEL_CLUSTER_ID = 0x0008
@@ -84,6 +91,7 @@ metadata {
 @Field static final int LEVEL_CMD_ID = 0x00
 @Field static final int LEVEL_CMD_ON_OFF_ID = 0x04
 @Field static final int MOVE_CMD_ON_OFF_ID = 0x05
+@Field static final int MOVE_CMD_STEP_ID = 0x06
 @Field static final int MOVE_CMD_STOP_ID = 0x03
 @Field static final int TRIGGER_EFFECT_CMD_ID = 0x40
 
@@ -131,15 +139,16 @@ metadata {
 ]
 
 @Field static final Map<Integer, String> IdentifyEffectNames = [
-    0x00: 'blink',
-    0x01: 'breathe',
-    0x02: 'okay'
+    0x00: 'Blink',
+    0x02: 'Green (1s)',
+    0x0b: 'Orange (8s)',
+    0x01: 'Pulse (15s)'
 ]
 
 @Field static Map PowerRestoreOpts = [
-    defaultValue: 'on',
     defaultText: 'On',
-    options: [ '01': 'On', '00': 'Off', 'ff': 'Last state' ]
+    defaultValue: '01',
+    options: [ '00': 'Off', '01': 'On', 'FF': 'Last State' ]
 ]
 
 @Field static final Map TransitionOpts = [
@@ -175,16 +184,17 @@ List<String> configure() {
     // Enable Hue specific cluster reporting
     cmds += zigbee.configureReporting(HUE_EFFECTS_CLUSTER_ID, HUE_STATE_ID, DataType.STRING_OCTET, 1, 300)
 
-    return cmds
+    return cmds + refresh()
 }
 
 List<String> flash(Object rate = null) {
-    if (settings.txtEnable) { log.info "flash (${rate})" }
-    return identify('Blink')
+    String effect = settings.flashEffect
+    if (settings.txtEnable) { log.info "flash ${effect} (${rate})" }
+    return identify(effect)
 }
 
 List<String> identify(String name) {
-    Integer effect = IdentifyEffectNames.find { k, v -> v == name }?.key
+    Integer effect = IdentifyEffectNames.find { k, v -> v.equalsIgnoreCase(name) }?.key
     if (effect == null) { return [] }
     if (settings.txtEnable) { log.info "identify (${name})" }
     return zigbee.command(IDENTIFY_CLUSTER_ID, TRIGGER_EFFECT_CMD_ID, [:], 0, "${intToHexStr(effect)} 00")
@@ -210,13 +220,13 @@ void logsOff() {
 List<String> off() {
     if (settings.txtEnable) { log.info 'turn off' }
     sendSwitchEvent(false) // assume success
-    return zigbee.off(0)
+    return zigbee.command(ON_OFF_CLUSTER_ID, 0x40, [:], 0, '00 00')
 }
 
 List<String> on() {
     if (settings.txtEnable) { log.info 'turn on' }
     sendSwitchEvent(true) // assume success
-    return zigbee.on(0)
+    return zigbee.command(ON_OFF_CLUSTER_ID, 0x01)
 }
 
 /**
@@ -224,30 +234,39 @@ List<String> on() {
  */
 void parse(String description) {
     state.lastCheckinTime = new Date().toLocaleString()
-    if (description.startsWith('catchall')) { return }
+    if (description.startsWith('catchall')) {
+        if (settings.logEnable) { log.debug zigbee.parseDescriptionAsMap(description) }
+        return
+    }
     Map descMap = zigbee.parseDescriptionAsMap(description)
     if (settings.logEnable) {
-        log.debug "zigbee map: ${descMap}"
+        log.trace "zigbee: ${descMap}"
     }
 
     switch (descMap.clusterInt as Integer) {
         case BASIC_CLUSTER_ID:
             parseBasicCluster(descMap)
+            descMap.additionalAttrs?.each { m -> parseBasicCluster(m) }
             break
         case COLOR_CLUSTER_ID:
             parseColorCluster(descMap)
+            descMap.additionalAttrs?.each { m -> parseColorCluster(m) }
             break
-        case COLOR_TEMP_CLUSTER:
-            parseColorTempCluster(descMap)
+        case GROUPS_CLUSTER_ID:
+            parseGroupsCluster(descMap)
+            descMap.additionalAttrs?.each { m -> parseGroupsCluster(m) }
             break
         case HUE_EFFECTS_CLUSTER_ID:
-            parseHueCluster(descMap)
+            parsePhilipsHueCluster(descMap)
+            descMap.additionalAttrs?.each { m -> parsePhilipsHueCluster(m) }
             break
         case LEVEL_CLUSTER_ID:
             parseLevelCluster(descMap)
+            descMap.additionalAttrs?.each { m -> parseLevelCluster(m) }
             break
         case ON_OFF_CLUSTER_ID:
             parseOnOffCluster(descMap)
+            descMap.additionalAttrs?.each { m -> parseOnOffCluster(m) }
             break
         default:
             log.debug "DID NOT PARSE MESSAGE: ${descMap}"
@@ -259,9 +278,12 @@ void parse(String description) {
  * Zigbee Basic Cluster Parsing
  */
 void parseBasicCluster(Map descMap) {
+    if (settings.logEnable) { log.trace 'parsing basic cluster' }
     switch (descMap.attrInt as Integer) {
         case FIRMWARE_VERSION_ID:
-            updateDataValue('softwareBuild', descMap.value ?: 'unknown')
+            String version = descMap.value ?: 'unknown'
+            log.info "device firmware version is ${version}"
+            updateDataValue('softwareBuild', version)
             break
     }
 }
@@ -270,6 +292,7 @@ void parseBasicCluster(Map descMap) {
  * Zigbee Color Cluster Parsing
  */
 void parseColorCluster(Map descMap) {
+    if (settings.logEnable) { log.trace 'parsing color cluster' }
     switch (descMap.attrInt as Integer) {
         case 0x00: // hue
             sendHueEvent(descMap.value)
@@ -284,21 +307,34 @@ void parseColorCluster(Map descMap) {
             String mode = descMap.value == '02' ? 'CT' : 'RGB'
             sendColorModeEvent(mode)
             break
-    }
-}
-
-/*
- * Zigbee Color Temperature Cluster Parsing
- */
-void parseColorTempCluster(Map descMap) {
-    switch (descMap.attrInt as Integer) {
         case 0x400B:
             state.ct = state.ct ?: [:]
             state.ct.high = Math.round(1000000 / hexStrToUnsignedInt(descMap.value))
+            log.info "color temperature high set to ${state.ct.high}"
             break
         case 0x400C:
             state.ct = state.ct ?: [:]
             state.ct.low = Math.round(1000000 / hexStrToUnsignedInt(descMap.value))
+            log.info "color temperature low set to ${state.ct.low}"
+            break
+    }
+}
+
+/*
+ * Zigbee Groups Cluster Parsing
+ */
+void parseGroupsCluster(Map descMap) {
+    if (settings.logEnable) { log.trace 'parsing groups cluster' }
+    switch (descMap.attrInt as Integer) {
+        case 0x02: // Group membership response
+            int groupCount = hexStrToUnsignedInt(descMap.data[1])
+            Set<String> groups = []
+            for (int i = 0; i < groupCount; i++) {
+                int pos = (i * 2) + 2
+                int group = descMap.data[pos] + descMap.data[pos + 1]
+                groups.add(intToHexStr(group))
+            }
+            state.groups = groups
             break
     }
 }
@@ -306,10 +342,11 @@ void parseColorTempCluster(Map descMap) {
 /*
  * Zigbee Hue Specific Cluster Parsing
  */
-void parseHueCluster(Map descMap) {
+void parsePhilipsHueCluster(Map descMap) {
+    if (settings.logEnable) { log.trace 'parsing hue custom cluster' }
     switch (descMap.attrInt as Integer) {
         case HUE_STATE_ID:
-            runInMillis(200, parseHueClusterStateAttr, [ data: descMap ])
+            parsePhilipsHueClusterState(descMap)
     }
 }
 
@@ -319,12 +356,12 @@ void parseHueCluster(Map descMap) {
  * Current Level, and the following bytes the mode-specific state.
  * from https://github.com/dresden-elektronik/deconz-rest-plugin/issues/5891
  */
-void parseHueClusterStateAttr(Map descMap) {
+void parsePhilipsHueClusterState(Map descMap) {
     int mode = hexStrToUnsignedInt(zigbee.swapOctets(descMap.value[0..3]))
     boolean isOn = hexStrToUnsignedInt(descMap.value[4..5]) == 1
     int level = hexStrToUnsignedInt(descMap.value[6..7])
     if (settings.logEnable) {
-        log.debug "hue [power: ${isOn}, level: ${level}, mode: 0x${intToHexStr(mode, 2)}]"
+        log.debug "hue cluster report [power: ${isOn}, level: ${level}, mode: 0x${intToHexStr(mode, 2)}]"
     }
 
     sendSwitchEvent(isOn)
@@ -380,16 +417,16 @@ List<String> refresh() {
     cmds += zigbee.readAttribute(BASIC_CLUSTER_ID, FIRMWARE_VERSION_ID, [:], DELAY_MS)
 
     // Get Minimum/Maximum Color Temperature
-    cmds += zigbee.readAttribute(COLOR_TEMP_CLUSTER, 0x400B, [:], DELAY_MS)
-    cmds += zigbee.readAttribute(COLOR_TEMP_CLUSTER, 0x400C, [:], DELAY_MS)
+    state.ct = state.ct ?: [ high: 6536, low: 2000 ] // default values
+    cmds += zigbee.readAttribute(COLOR_CLUSTER_ID, [0x400B, 0x400C], [:], DELAY_MS)
 
-    // Refresh attributes
+    // Refresh other attributes
     cmds += zigbee.onOffRefresh(DELAY_MS)
     cmds += zigbee.levelRefresh(DELAY_MS)
-    cmds += zigbee.readAttribute(COLOR_CLUSTER_ID, 0, [:], DELAY_MS)
-    cmds += zigbee.readAttribute(COLOR_CLUSTER_ID, 1, [:], DELAY_MS)
-    cmds += zigbee.readAttribute(COLOR_CLUSTER_ID, 7, [:], DELAY_MS)
-    cmds += zigbee.readAttribute(COLOR_CLUSTER_ID, 8, [:])
+    cmds += zigbee.readAttribute(COLOR_CLUSTER_ID, [0x00, 0x01, 0x07, 0x08], [:], 0)
+
+    // Get groups
+    cmds += zigbee.command(GROUPS_CLUSTER_ID, 0x02, [:], DELAY_MS, '00')
 
     return cmds
 }
@@ -410,16 +447,18 @@ List<String> resetToFactoryDefaults() {
 List<String> setColor(Map value) {
     List<String> cmds = []
     if (settings.txtEnable) { log.info "setColor (${value})" }
+    Integer hue = value.hue.toInteger()
+    Integer saturation = value.saturation.toInteger()
     String rateHex = settings.transitionTime
     if (value.level != null) {
         cmds += setLevelPrivate(value.level, rateHex, DELAY_MS)
     }
-    if (value.hue == null || value.hue < 0) { value.hue = 0 }
-    if (value.hue > 100) { value.hue = 100 }
-    if (value.saturation == null || value.saturation < 0) { value.saturation = 0 }
-    if (value.saturation > 100) { value.saturation = 100 }
-    String scaledHueValue = intToHexStr(Math.round(value.hue * 0xfe / 100.0))
-    String scaledSatValue = intToHexStr(Math.round(value.saturation * 0xfe / 100.0))
+    if (hue < 0) { hue = 0 }
+    if (hue > 100) { hue = 100 }
+    if (saturation < 0) { saturation = 0 }
+    if (saturation > 100) { saturation = 100 }
+    String scaledHueValue = intToHexStr(Math.round(hue * 0xfe / 100.0))
+    String scaledSatValue = intToHexStr(Math.round(saturation * 0xfe / 100.0))
     cmds += zigbee.command(COLOR_CLUSTER_ID, COLOR_CMD_ID, [:], 0, "${scaledHueValue} ${scaledSatValue} ${rateHex} 01 01")
     return cmds
 }
@@ -435,7 +474,7 @@ List<String> setColorTemperature(Object colorTemperature, Object level = null, O
     if (state.ct?.high && ct > state.ct.high) { ct = state.ct.high as Integer }
     if (state.ct?.low && ct < state.ct.low) { ct = state.ct.low as Integer }
     String miredHex = ctToMiredHex(ct)
-    cmds += zigbee.command(COLOR_TEMP_CLUSTER, COLOR_CMD_CT_ID, [:], 0, "${miredHex} ${rateHex}")
+    cmds += zigbee.command(COLOR_CLUSTER_ID, COLOR_CMD_CT_ID, [:], 0, "${miredHex} ${rateHex}")
     return cmds
 }
 
@@ -502,6 +541,17 @@ List<String> startLevelChange(String direction) {
     return zigbee.command(LEVEL_CLUSTER_ID, MOVE_CMD_ON_OFF_ID, [:], 0, "${upDown} ${rate}")
 }
 
+List<String> stepLevelChange(String direction, Object stepSize, Object transitionTime = null) {
+    if (settings.txtEnable) { log.info "stepLevelChange (${direction}, ${stepSize}, ${transitionTime})" }
+    String rateHex = transitionTime != null ? zigbee.swapOctets(intToHexStr((transitionTime.toBigDecimal() * 10).toInteger(), 2)) : settings.transitionTime
+    Integer level = stepSize.toInteger()
+    if (level < 1) { level = 1 }
+    if (level > 99) { level = 99 }
+    String stepHex = intToHexStr((level * 2.55).toInteger())
+    String upDown = direction == 'down' ? '01' : '00'
+    return zigbee.command(LEVEL_CLUSTER_ID, MOVE_CMD_STEP_ID, [:], 0, "${upDown} ${stepHex} ${rateHex}")
+}
+
 List<String> stopLevelChange() {
     if (settings.txtEnable) { log.info 'stopLevelChange' }
     return zigbee.command(LEVEL_CLUSTER_ID, MOVE_CMD_STOP_ID, [:], 0)
@@ -561,8 +611,8 @@ private void sendHueEvent(String rawValue) {
         String descriptionText = "${device.displayName} hue was set to ${hue}"
         sendEvent(name: 'hue', value: hue, descriptionText: descriptionText)
         if (settings.txtEnable) { log.info descriptionText }
-        sendColorNameEvent(hue)
     }
+    sendColorNameEvent(hue)
 }
 
 private void sendSaturationEvent(String rawValue) {
@@ -576,8 +626,8 @@ private void sendSaturationEvent(String rawValue) {
 
 private void sendHueColorEvent(String rawValue) {
     BigDecimal bri = hexStrToUnsignedInt(rawValue[0..1]) / 256
-    BigDecimal x = hexStrToUnsignedInt(zigbee.swapOctets(rawValue[2..5])) / 65536
-    BigDecimal y = hexStrToUnsignedInt(zigbee.swapOctets(rawValue[6..9])) / 65536
+    BigDecimal x = hexStrToUnsignedInt(zigbee.swapOctets(rawValue[2..5])) / 0xFFFF
+    BigDecimal y = hexStrToUnsignedInt(zigbee.swapOctets(rawValue[6..9])) / 0xFFFF
     List<BigDecimal> hsv = ColorUtils.rgbToHSV(convertXYBtoRGB(x, y, bri))
     int hue = Math.round(hsv[0])
     int saturation = Math.round(hsv[1])
@@ -586,7 +636,6 @@ private void sendHueColorEvent(String rawValue) {
         String descriptionText = "${device.displayName} hue was set to ${hue}"
         sendEvent(name: 'hue', value: hue, descriptionText: descriptionText)
         if (settings.txtEnable) { log.info descriptionText }
-        sendColorNameEvent(hue)
     }
     if (device.currentValue('saturation') as Integer != saturation) {
         String descriptionText = "${device.displayName} saturation was set to ${saturation}%"
@@ -598,6 +647,7 @@ private void sendHueColorEvent(String rawValue) {
         sendEvent(name: 'level', value: level, descriptionText: descriptionText, unit: '%')
         if (settings.txtEnable) { log.info descriptionText }
     }
+    sendColorNameEvent(hue)
 }
 
 private void sendColorModeEvent(String mode) {
@@ -607,9 +657,9 @@ private void sendColorModeEvent(String mode) {
     }
 }
 
-private void sendColorNameEvent(int hue) {
+private void sendColorNameEvent(Integer hue) {
     String colorName = ColorNameMap.find { k, v -> hue * 3.6 <= k }?.value
-    if (device.currentValue('colorName') != colorName) {
+    if (colorName && device.currentValue('colorName') != colorName) {
         descriptionText = "${device.displayName} color name was set to ${colorName}"
         sendEvent name: 'colorName', value: colorName, descriptionText: descriptionText
         if (settings.txtEnable) { log.info descriptionText }
@@ -621,11 +671,11 @@ private void sendColorTempEvent(String rawValue) {
     if (state.ct?.high && value > state.ct.high) { return }
     if (state.ct?.low && value < state.ct.low) { return }
     if (device.currentValue('colorTemperature') as Integer != value) {
-        sendColorTempNameEvent(value)
         String descriptionText = "${device.displayName} color temperature was set to ${value}°K"
         sendEvent(name: 'colorTemperature', value: value, descriptionText: descriptionText, unit: '°K')
         if (settings.txtEnable) { log.info descriptionText }
     }
+    sendColorTempNameEvent(value)
 }
 
 private void sendColorTempNameEvent(Integer ct) {
@@ -667,14 +717,15 @@ private void sendSwitchEvent(Boolean isOn) {
     }
 }
 
-private List<String> setLevelPrivate(Object value, String hexRate = '0000', Integer delay = 0, Boolean levelPreset = false) {
+private List<String> setLevelPrivate(Object value, String hexTime = '0000', Integer delay = 0, Boolean levelPreset = false) {
     Integer level = value.toInteger()
     if (level < 0) { level = 0 }
     if (level > 100) { level = 100 }
+    if (level > 0) { sendSwitchEvent(true) } // assume success
     String hexLevel = intToHexStr((level * 2.55).toInteger())
     if (hexLevel == 'FF') { hexLevel = 'FE' }
     int levelCommand = levelPreset ? LEVEL_CMD_ID : LEVEL_CMD_ON_OFF_ID
     // Payload: Level | Transition Time | Options Mask | Options Override
     // Options: Bit 0x01 enables prestaging level
-    return zigbee.command(LEVEL_CLUSTER_ID, levelCommand, [:], delay, "${hexLevel} ${hexRate} 01 01")
+    return zigbee.command(LEVEL_CLUSTER_ID, levelCommand, [:], delay, "${hexLevel} ${hexTime} 01 01")
 }
