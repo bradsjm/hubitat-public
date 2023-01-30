@@ -29,7 +29,7 @@ import hubitat.helper.ColorUtils
 import hubitat.zigbee.zcl.DataType
 
 metadata {
-    definition(name: 'Philips Hue RGBW Bulb (Gen3)', importUrl: '',
+    definition(name: 'Philips Hue RGBW Bulb (Gen4)', importUrl: '',
         namespace: 'philips-hue', author: 'Jonathan Bradshaw') {
         capability 'Actuator'
         capability 'Change Level'
@@ -58,7 +58,8 @@ metadata {
     }
 
     preferences {
-        input name: 'transitionTime', type: 'enum', title: 'Level transition time', options: TransitionOpts.options, defaultValue: TransitionOpts.defaultValue
+        input name: 'transitionTime', type: 'enum', title: 'Level transition duration', options: TransitionOpts.options, defaultValue: TransitionOpts.defaultValue, required: true
+        input name: 'levelChangeRate', type: 'enum', title: 'Level Change (Up/Down) rate', options: LevelRateOpts.options, defaultValue: LevelRateOpts.defaultValue, required: true
         input name: 'powerRestore', type: 'enum', title: 'Power restore state', options: PowerRestoreOpts.options, defaultValue: PowerRestoreOpts.defaultValue
 
         input name: 'logEnable', type: 'bool', title: 'Enable debug logging', defaultValue: true
@@ -69,26 +70,28 @@ metadata {
 // Zigbee Cluster IDs
 @Field static final int BASIC_CLUSTER_ID = 0x0000
 @Field static final int COLOR_CLUSTER_ID = 0x0300
-@Field static final int ON_OFF_CLUSTER_ID = 0x0006
 @Field static final int COLOR_TEMP_CLUSTER = 0x0300
 @Field static final int HUE_EFFECTS_CLUSTER_ID = 0xFC03
 @Field static final int IDENTIFY_CLUSTER_ID = 0x0003
 @Field static final int LEVEL_CLUSTER_ID = 0x0008
+@Field static final int ON_OFF_CLUSTER_ID = 0x0006
 
 // Zigbee Command IDs
-@Field static final int COLOR_CMD_ID = 0x06
 @Field static final int COLOR_CMD_CT_ID = 0x0A
 @Field static final int COLOR_CMD_HUE_ID = 0x00
+@Field static final int COLOR_CMD_ID = 0x06
 @Field static final int COLOR_CMD_SAT_ID = 0x03
 @Field static final int LEVEL_CMD_ID = 0x00
 @Field static final int LEVEL_CMD_ON_OFF_ID = 0x04
+@Field static final int MOVE_CMD_ON_OFF_ID = 0x05
+@Field static final int MOVE_CMD_STOP_ID = 0x03
 @Field static final int TRIGGER_EFFECT_CMD_ID = 0x40
 
 // Zigbee Attribute IDs
-@Field static final int HUE_STATE_ID = 0x02
-@Field static final int FIRMWARE_VERSION_ID = 0x4000
-@Field static final int VENDOR_PHILIPS_ID = 0x100B // Philips vendor code
 @Field static final int DELAY_MS = 200 // Delay between zigbee commands
+@Field static final int FIRMWARE_VERSION_ID = 0x4000
+@Field static final int HUE_STATE_ID = 0x02
+@Field static final int VENDOR_PHILIPS_ID = 0x100B // Philips vendor code
 
 @Field static final Map<Integer, String> ColorNameMap = [
     15: 'Red',
@@ -143,6 +146,12 @@ metadata {
     defaultText: 'Device Default',
     defaultValue: 'FFFF',
     options: [ 'FFFF': 'Device Default', '0000': 'No Delay', '0500': '500ms', '0A00': '1s', '0F00': '1.5s', '1400': '2s', '3200': '5s' ]
+]
+
+@Field static final Map LevelRateOpts = [
+    defaultText: 'Device Default',
+    defaultValue: 'FF',
+    options: [ 'FF': 'Device Default', '16': 'Very Slow', '32': 'Slow', '64': 'Medium', '96': 'Medium Fast', 'C8': 'Fast' ]
 ]
 
 List<String> bind(List<String> cmds=[]) {
@@ -488,14 +497,14 @@ List<String> setSaturation(Object value) {
 
 List<String> startLevelChange(String direction) {
     if (settings.txtEnable) { log.info "startLevelChange (${direction})" }
+    String rate = settings.levelChangeRate
     String upDown = direction == 'down' ? '01' : '00'
-    String unitsPerSecond = intToHexStr(100, 2)
-    return zigbee.command(LEVEL_CLUSTER_ID, 0x01, [:], 0, "${upDown} ${unitsPerSecond}")
+    return zigbee.command(LEVEL_CLUSTER_ID, MOVE_CMD_ON_OFF_ID, [:], 0, "${upDown} ${rate}")
 }
 
 List<String> stopLevelChange() {
     if (settings.txtEnable) { log.info 'stopLevelChange' }
-    return zigbee.command(LEVEL_CLUSTER_ID, 0x03, [:], 0, "${upDown} ${unitsPerSecond}")
+    return zigbee.command(LEVEL_CLUSTER_ID, MOVE_CMD_STOP_ID, [:], 0)
 }
 
 List<String> toggle() {
