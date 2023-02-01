@@ -84,7 +84,7 @@ List<String> configure() {
 
     // Power Restore Behavior
     if (settings.powerRestore != null) {
-        log.info "configure: setting power restore state to 0x${intToHexStr(settings.powerRestore)}"
+        log.info "configure: setting power restore state to 0x${intToHexStr(settings.powerRestore as Integer)}"
         cmds += zigbee.writeAttribute(zigbee.ON_OFF_CLUSTER, 0x4003, DataType.ENUM8, settings.powerRestore as Integer, [:], DELAY_MS)
     }
 
@@ -158,6 +158,9 @@ List<String> refresh() {
 
     // Get Firmware Version
     cmds += zigbee.readAttribute(zigbee.BASIC_CLUSTER, FIRMWARE_VERSION_ID, [:], DELAY_MS)
+
+    // Get Power Restore state
+    cmds += zigbee.readAttribute(zigbee.ON_OFF_CLUSTER, 0x4003, [:], DELAY_MS)
 
     // Get Minimum/Maximum Color Temperature
     state.ct = state.ct ?: [ high: 6536, low: 2000 ] // default values
@@ -306,7 +309,7 @@ void parse(String description) {
     }
 
     if (settings.logEnable) {
-        log.trace "zigbee received ${clusterLookup(descMap.clusterInt)}"
+        log.trace "zigbee received ${clusterLookup(descMap.clusterInt)} attribute"
     }
     switch (descMap.clusterInt as Integer) {
         case zigbee.BASIC_CLUSTER:
@@ -335,7 +338,7 @@ void parse(String description) {
             break
         default:
             if (settings.logEnable) {
-                log.debug "Unknown message cluster: ${descMap}"
+                log.debug "zigbee received unknown message cluster: ${descMap}"
             }
             break
     }
@@ -358,7 +361,7 @@ void parseBasicCluster(Map descMap) {
             break
         default:
             if (settings.logEnable) {
-                log.debug "Unknown basic cluster: ${descMap}"
+                log.debug "zigbee received unknown basic cluster: ${descMap}"
             }
             break
     }
@@ -376,10 +379,10 @@ void parseColorCluster(Map descMap) {
             sendSaturationEvent(descMap.value)
             break
         case 0x03: // current X
-            if (settings.logEnable) { log.debug 'ignoring current X attribute' }
+            if (settings.logEnable) { log.debug 'ignoring X color attribute' }
             break
         case 0x04: // current Y
-            if (settings.logEnable) { log.debug 'ignoring current Y attribute' }
+            if (settings.logEnable) { log.debug 'ignoring Y color attribute' }
             break
         case 0x07: // ct
             sendColorTempEvent(descMap.value)
@@ -400,7 +403,7 @@ void parseColorCluster(Map descMap) {
             break
         default:
             if (settings.logEnable) {
-                log.debug "Unknown color cluster: ${descMap}"
+                log.debug "zigbee received color cluster: ${descMap}"
             }
             break
     }
@@ -412,13 +415,13 @@ void parseColorCluster(Map descMap) {
 void parseGlobalCommands(Map descMap) {
     switch (hexStrToUnsignedInt(descMap.command)) {
         case 0x00: // read attribute
-            //if (settings.logEnable) { log.debug "zigbee readAttribute ${clusterLookup(descMap.clusterInt)}: ${descMap}" }
+            if (settings.logEnable) { log.trace "zigbee read attribute request ${clusterLookup(descMap.clusterInt)}: ${descMap}" }
             break
         case 0x01: // read attribute response
-            if (settings.logEnable) { log.debug "zigbee readAttributeResponse: ${descMap}" }
+            if (settings.logEnable) { log.trace "zigbee read attribute response ${clusterLookup(descMap.clusterInt)}: ${descMap}" }
             break
         case 0x02: // write attribute (with response)
-            if (settings.logEnable) { log.debug "zigbee writeAttribute ${descMap}" }
+            if (settings.logEnable) { log.trace "zigbee write attribute request ${clusterLookup(descMap.clusterInt)}: ${descMap}" }
             break
         case 0x04: // write attribute response
             int statusCode = hexStrToUnsignedInt(descMap.data)
@@ -431,25 +434,22 @@ void parseGlobalCommands(Map descMap) {
             break
         case 0x07: // configure reporting response
             if (settings.logEnable) {
-                log.trace "zigbee configure reporting ${clusterLookup(descMap.clusterInt)} response: ${descMap.data}"
+                log.trace "zigbee attribute reporting enabled for ${clusterLookup(descMap.clusterInt)}"
             }
-            break
-        case 0x09: // read reporting configuration response
-            if (settings.logEnable) { log.debug "zigbee readReportingResponse: ${descMap.data}" }
             break
         case 0x0B: // default command response
             String commandId = descMap.data[0]
             int statusCode = hexStrToUnsignedInt(descMap.data[1])
             String status = ZigbeeStatusEnum[statusCode] ?: "0x${descMap.data[1]}"
             if (settings.logEnable) {
-                log.trace "zigbee command status (${clusterLookup(descMap.clusterInt)}, command: 0x${commandId}) ${status}"
+                log.trace "zigbee command status ${clusterLookup(descMap.clusterInt)} command 0x${commandId}): ${status}"
             } else if (statusCode != 0x00) {
                 log.warn "zigbee command error (${clusterLookup(descMap.clusterInt)}, command: 0x${commandId}) ${status}"
             }
             break
         default:
             if (settings.logEnable) {
-                log.debug "Unknown zigbee global command: ${descMap}"
+                log.debug "zigbee received unknown global command: ${descMap}"
             }
             break
     }
@@ -461,8 +461,8 @@ void parseGlobalCommands(Map descMap) {
 void parseGroupsCluster(Map descMap) {
     switch (descMap.command as Integer) {
         case 0x02: // Group membership response
+            int capacity = hexStrToUnsignedInt(descMap.data[0])
             int groupCount = hexStrToUnsignedInt(descMap.data[1])
-            log.info "zigbee group memberships: ${groupCount}"
             Set<String> groups = []
             for (int i = 0; i < groupCount; i++) {
                 int pos = (i * 2) + 2
@@ -470,10 +470,11 @@ void parseGroupsCluster(Map descMap) {
                 groups.add(group)
             }
             state.groups = groups
+            log.info "zigbee group memberships: ${groups} (capacity available: ${capacity})"
             break
         default:
             if (settings.logEnable) {
-                log.debug "Unknown zigbee groups cluster: ${descMap}"
+                log.debug "zigbee received unknown groups cluster: ${descMap}"
             }
             break
     }
@@ -489,7 +490,7 @@ void parsePhilipsHueCluster(Map descMap) {
             break
         default:
             if (settings.logEnable) {
-                log.debug "Unknown zigbee philips hue cluster: ${descMap}"
+                log.debug "zigbee received unknown philips hue cluster: ${descMap}"
             }
             break
     }
@@ -506,7 +507,7 @@ void parsePhilipsHueClusterState(Map descMap) {
     boolean isOn = hexStrToUnsignedInt(descMap.value[4..5]) == 1
     int level = hexStrToUnsignedInt(descMap.value[6..7])
     if (settings.logEnable) {
-        log.debug "hue cluster report [power: ${isOn}, level: ${level}, mode: 0x${intToHexStr(mode, 2)}]"
+        log.debug "zigbee received hue cluster report [power: ${isOn}, level: ${level}, mode: 0x${intToHexStr(mode, 2)}]"
     }
 
     sendSwitchEvent(isOn)
@@ -529,7 +530,7 @@ void parsePhilipsHueClusterState(Map descMap) {
             break
         default:
             if (settings.logEnable) {
-                log.debug "Unknown mode: ${intToHexStr(mode)}"
+                log.debug "Unknown mode received: ${intToHexStr(mode)}"
             }
             break
     }
@@ -545,7 +546,7 @@ void parseLevelCluster(Map descMap) {
             break
         default:
             if (settings.logEnable) {
-                log.debug "Unknown zigbee level cluster: ${descMap}"
+                log.debug "zigbee received level cluster: ${descMap}"
             }
             break
     }
@@ -559,9 +560,14 @@ void parseOnOffCluster(Map descMap) {
         case 0x00:
             sendSwitchEvent(descMap.value == '01')
             break
+        case 0x4003:
+            Integer value = hexStrToUnsignedInt(descMap.value)
+            log.info "power restore mode is '${PowerRestoreOpts.options[value]}' (0x${descMap.value})"
+            device.updateSetting('powerRestore', [value: value, type: 'enum' ])
+            break
         default:
             if (settings.logEnable) {
-                log.debug "Unknown zigbee on/off cluster: ${descMap}"
+                log.debug "zigbee received unknown on/off cluster: ${descMap}"
             }
             break
     }
