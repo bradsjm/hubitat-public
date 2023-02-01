@@ -74,6 +74,8 @@ metadata {
     }
 }
 
+@Field static final String Version = '0.1'
+
 List<String> configure() {
     List<String> cmds = []
     log.info 'configure...'
