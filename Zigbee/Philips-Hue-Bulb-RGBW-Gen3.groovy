@@ -266,14 +266,15 @@ List<String> setSaturation(Object value) {
 
 List<String> startLevelChange(String direction) {
     if (settings.txtEnable) { log.info "startLevelChange (${direction})" }
-    String rate = intToHexStr(settings.levelChangeRate)
+    String rate = intToHexStr(settings.levelChangeRate.toInteger())
     String upDown = direction == 'down' ? '01' : '00'
     return zigbee.command(zigbee.LEVEL_CONTROL_CLUSTER, MOVE_CMD_ON_OFF_ID, [:], 0, "${upDown} ${rate}")
 }
 
 List<String> stepLevelChange(String direction, Object stepSize, Object transitionTime = null) {
     if (settings.txtEnable) { log.info "stepLevelChange (${direction}, ${stepSize}, ${transitionTime})" }
-    String rateHex = transitionTime != null ? zigbee.swapOctets(intToHexStr((transitionTime.toBigDecimal() * 10).toInteger(), 2)) : settings.transitionTime
+    Integer rate = transitionTime != null ? (transitionTime.toBigDecimal() * 10).toInteger() : settings.colorTransitionTime.toInteger()
+    String rateHex = isOn ? intToSwapHexStr(rate) : '0000'
     Integer level = constrain(stepSize, 1, 99)
     String stepHex = intToHexStr((level * 2.55).toInteger())
     String upDown = direction == 'down' ? '01' : '00'
