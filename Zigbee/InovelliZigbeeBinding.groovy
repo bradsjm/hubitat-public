@@ -91,7 +91,7 @@ Map mainPage() {
 
                     if (controller.hasCapability('Switch')) {
                         String title = bindPower ? 'Bind power to replicas' : 'Do not bind power to replicas'
-                        input name: 'bindPower', type: 'bool', title: title, defaultValue: false, width: 2, submitOnChange: true
+                        input name: 'bindPower', type: 'bool', title: title, defaultValue: true, width: 2, submitOnChange: true
                     }
                     if (controller.hasCapability('SwitchLevel')) {
                         String title = bindLevel ? 'Bind level to replicas' : 'Do not bind level to replicas'
@@ -146,7 +146,7 @@ private void bind(String bindAction) {
         controller.bind(cmds)
         pauseExecution(1000)
         controller.refresh()
-        state.message = "${bindAction} completed"
+        state.message = "<h3 style='color: green;'>Completed ${bindAction}</h3>"
     }
 }
 
