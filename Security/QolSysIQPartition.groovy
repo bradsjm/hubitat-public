@@ -138,7 +138,7 @@ void unlock() {
 void parse(List<Map> description) {
     if (logEnable) { log.debug description }
     description.each { d ->
-        if (device.currentValue(d.name) != d.value) {
+        if (device.currentValue(d.name) as String != d.value as String) {
             if (d.descriptionText && txtEnable) { log.info "${device} ${d.descriptionText}" }
             sendEvent(d)
         }

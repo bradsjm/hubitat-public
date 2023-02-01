@@ -135,7 +135,7 @@ void parse(String data) {
         BigDecimal dewPoint = dewPointC(json['tempc'] as BigDecimal, json['hum'] as BigDecimal)
         updateValue('dewPoint', celsiusToFahrenheit(dewPoint).toDouble().round(1), 'F')
         updateValue('battery', json['batt'], '%')
-        updateValue('humidity', json['hum'], 'F')
+        updateValue('humidity', json['hum'], '%')
         updateValue('rssi', json['rssi'], 'dBm')
         updateValue('temperature', json['tempf'], 'F')
     }
