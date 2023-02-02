@@ -267,7 +267,8 @@ void lampSwitchHandler(Event evt) {
         Map colorMap = state.lamps[evt.device.id]
         if (colorMap) {
             log.info "Set ${evt.device} to ${colorMap}"
-            evt.device.setColor(colorMap)
+            evt.device.setHue(colorMap.hue)
+            evt.device.setSaturation(colorMap.saturation)
         }
     }
 }
@@ -426,9 +427,10 @@ private void getColorSchemeHandler(AsyncResponse response, Map data) {
             if (colorMap.level > settings.maxBright) { colorMap.level = settings.maxBright }
             if (state.lamps == null) { state.lamps = [:] }
             state.lamps[lamp.id] = colorMap
-            if (lamp && lamp.currentValue('switch', true) == 'on') {
+            if (lamp && lamp.currentValue('switch', true) == 'on' || device.hasCommand('presetLevel')) {
                 log.info "Set ${lamp} (Group ${data.group + 1}) to ${colorMap}"
-                lamp.setColor(colorMap)
+                lamp.setHue(colorMap.hue)
+                lamp.setSaturation(colorMap.saturation)
             }
         }
     }
