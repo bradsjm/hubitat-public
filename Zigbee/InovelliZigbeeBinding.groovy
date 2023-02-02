@@ -36,7 +36,8 @@ definition(
     singleThreaded: true
 )
 
-@Field static final String controllerEndpoint = '02'
+@Field static final String ControllerDeviceType = 'device.InovelliDimmer2-in-1BlueSeriesVZM31-SN'
+@Field static final String ControllerEndpoint = '02'
 
 preferences {
     page name: 'mainPage', title: '', install: true, uninstall: true
@@ -55,7 +56,7 @@ Map mainPage() {
 
         section {
             input name: 'controller',
-                type: 'device.InovelliDimmer2-in-1BlueSeriesVZM31-SN',
+                type: ControllerDeviceType,
                 title: 'Select Inovelli Blue controller',
                 multiple: false,
                 required: true,
@@ -83,9 +84,7 @@ Map mainPage() {
                     paragraph state.message
                 }
                 state.remove('message')
-            }
-
-            if (validReplicas) {
+            } else if (validReplicas) {
                 section {
                     paragraph 'Enable desired bindings and click the <b>bind</b> button:'
 
@@ -130,21 +129,18 @@ private void bind(String bindAction) {
     for (DeviceWrapper replica in getValidReplicas()) {
         List<String> cmds = []
         if (bindPower) {
-            cmds << "zdo ${bindAction} 0x${controller.deviceNetworkId} 0x${controllerEndpoint} 0x${replica.endpointId} 0x0006 {${controller.zigbeeId}} {${replica.zigbeeId}}"
-            cmds << 'delay 200'
+            cmds << "zdo ${bindAction} 0x${controller.deviceNetworkId} 0x${ControllerEndpoint} 0x${replica.endpointId} 0x0006 {${controller.zigbeeId}} {${replica.zigbeeId}}"
         }
         if (bindLevel) {
-            cmds << "zdo ${bindAction} 0x${controller.deviceNetworkId} 0x${controllerEndpoint} 0x${replica.endpointId} 0x0008 {${controller.zigbeeId}} {${replica.zigbeeId}}"
-            cmds << 'delay 200'
+            cmds << "zdo ${bindAction} 0x${controller.deviceNetworkId} 0x${ControllerEndpoint} 0x${replica.endpointId} 0x0008 {${controller.zigbeeId}} {${replica.zigbeeId}}"
         }
         if (bindColor) {
-            cmds << "zdo ${bindAction} 0x${controller.deviceNetworkId} 0x${controllerEndpoint} 0x${replica.endpointId} 0x0300 {${controller.zigbeeId}} {${replica.zigbeeId}}"
-            cmds << 'delay 200'
+            cmds << "zdo ${bindAction} 0x${controller.deviceNetworkId} 0x${ControllerEndpoint} 0x${replica.endpointId} 0x0300 {${controller.zigbeeId}} {${replica.zigbeeId}}"
         }
 
         log.debug "Zigbee ${bindAction} commands: ${cmds}"
-        controller.bind(cmds)
-        pauseExecution(1000)
+        controller.bind(zigbee.delayBetween(cmds, 200))
+        pauseExecution(200 * cmds.size())
         controller.refresh()
         state.message = "<h3 style='color: green;'>Completed ${bindAction}</h3>"
     }

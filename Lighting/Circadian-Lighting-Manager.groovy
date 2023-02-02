@@ -212,7 +212,7 @@ private void scheduleUpdates() {
 }
 
 private void updateLamp(DeviceWrapper device) {
-    if (device.currentValue('switch', true) == 'on') {
+    if (device.currentValue('switch', true) == 'on' || device.hasCommand('presetLevel')) {
         Map current = atomicState.current
         boolean isCT = device.currentValue('colorMode') == 'CT'
         int colorTemp = device.currentValue('colorTemperature') ?: 0
