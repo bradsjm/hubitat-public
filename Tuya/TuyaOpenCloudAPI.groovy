@@ -63,6 +63,7 @@ import hubitat.scheduling.AsyncResponse
  *                     Remove ciphercache so encryption key is not cached
  *  09/28/22 - 0.3.5 - Make setColor and setColorTemperature turn on light
  *  01/18/23 - 0.3.6 - Fix error in scene triggering
+ *  01/24/23 - 0.3.7 - Support fan_speed_percent level
  *  Custom component drivers located at https://github.com/bradsjm/hubitat-drivers/tree/master/Component
  */
 
@@ -587,28 +588,42 @@ void componentSetHue(DeviceWrapper dw, BigDecimal hue) {
 // Component command to set level
 /* groovylint-disable-next-line UnusedMethodParameter */
 void componentSetLevel(DeviceWrapper dw, BigDecimal level, BigDecimal duration = 0) {
-    String colorMode = dw.currentValue('colorMode') ?: 'CT'
-    if (colorMode == 'CT') {
-        Map<String, Map> functions = getFunctions(dw)
-        String code = getFunctionCode(functions, tuyaFunctions.brightness)
-        String power = getFunctionCode(functions, tuyaFunctions.light + tuyaFunctions.power)
-        if (code != null) {
-            Map bright = functions[code] ?: defaults[code]
-            int value = Math.ceil(remap((int)level, 0, 100, (int)bright.min, (int)bright.max))
-            if (txtEnable) { LOG.info "Setting ${dw} level to ${level}%" }
-            tuyaSendDeviceCommandsAsync(dw.getDataValue('id'),
-                ['code': power, 'value': true ],
-                ['code': code, 'value': value ]
-            )
+    Map<String, Map> functions = getFunctions(dw)
+    String id = dw.getDataValue('id')
+    String code = getFunctionCode(functions, tuyaFunctions.percentControl)
+    if (code == 'fan_speed_percent') {
+        if (level > 0) {
+            Map speed = functions[code] ?: defaults[code]
+            int min = (speed.min == null) ? 1 : Integer.valueOf(speed.min)
+            int max = (speed.max == null) ? 100 : Integer.valueOf(speed.max)
+            int speedLevel = remap(level, 0, 100, min, max)
+            tuyaSendDeviceCommandsAsync(id, [ 'code': code, 'value': speedLevel ], [ 'code': 'switch', 'value': true ])
         } else {
-            LOG.error "Unable to determine set level function code in ${functions}"
+            tuyaSendDeviceCommandsAsync(id, [ 'code': 'switch', 'value': false ])
         }
     } else {
-        componentSetColor(dw, [
-            hue: dw.currentValue('hue'),
-            saturation: dw.currentValue('saturation'),
-            level: level
-        ])
+        String colorMode = dw.currentValue('colorMode') ?: 'CT'
+        if (colorMode == 'CT') {
+            code = getFunctionCode(functions, tuyaFunctions.brightness)
+            String power = getFunctionCode(functions, tuyaFunctions.light + tuyaFunctions.power)
+            if (code != null) {
+                Map bright = functions[code] ?: defaults[code]
+                int value = Math.ceil(remap((int)level, 0, 100, (int)bright.min, (int)bright.max))
+                if (txtEnable) { LOG.info "Setting ${dw} level to ${level}%" }
+                tuyaSendDeviceCommandsAsync(dw.getDataValue('id'),
+                    ['code': power, 'value': true ],
+                    ['code': code, 'value': value ]
+                )
+            } else {
+                LOG.error "Unable to determine set level function code in ${functions}"
+            }
+        } else {
+            componentSetColor(dw, [
+                hue: dw.currentValue('hue'),
+                saturation: dw.currentValue('saturation'),
+                level: level
+            ])
+        }
     }
 }
 
@@ -649,19 +664,19 @@ void componentSetSpeed(DeviceWrapper dw, String speed) {
     String fanSpeedPercent = getFunctionCode(functions, tuyaFunctions.percentControl)
     String fanSwitchCode = getFunctionCode(functions, tuyaFunctions.fanSwitch)
     String id = dw.getDataValue('id')
-    if (fanSpeedCode != null) {
-        if (txtEnable) { LOG.info "Setting speed to ${speed}" }
-        switch (speed) {
-            case 'on':
-                tuyaSendDeviceCommandsAsync(id, [ 'code': fanSwitchCode, 'value': true ])
-                break
-            case 'off':
-                tuyaSendDeviceCommandsAsync(id, [ 'code': fanSwitchCode, 'value': false ])
-                break
-            case 'auto':
-                LOG.warn 'Speed level auto is not supported'
-                break
-            default:
+    if (txtEnable) { LOG.info "Setting speed to ${speed}" }
+    switch (speed) {
+        case 'on':
+            tuyaSendDeviceCommandsAsync(id, [ 'code': fanSwitchCode, 'value': true ])
+            break
+        case 'off':
+            tuyaSendDeviceCommandsAsync(id, [ 'code': fanSwitchCode, 'value': false ])
+            break
+        case 'auto':
+            LOG.warn 'Speed level auto is not supported'
+            break
+        default:
+            if (fanSpeedCode != null) {
                 Map speedFunc = functions[fanSpeedCode] ?: defaults[fanSpeedCode]
                 int speedVal = ['low', 'medium-low', 'medium', 'medium-high', 'high'].indexOf(speed)
                 String value
@@ -677,15 +692,15 @@ void componentSetSpeed(DeviceWrapper dw, String speed) {
                         return
                 }
                 tuyaSendDeviceCommandsAsync(id, [ 'code': fanSpeedCode, 'value': value ])
-                break
-        }
-    } else if (fanSpeedPercent) {
-        Map speedFunc = functions[fanSpeedPercent] ?: defaults[fanSpeedPercent]
-        int speedVal = ['low', 'medium-low', 'medium', 'medium-high', 'high'].indexOf(speed)
-        int value = remap(speedVal, 0, 4, (int)speedFunc.min, (int)speedFunc.max)
-        tuyaSendDeviceCommandsAsync(id, [ 'code': fanSpeedPercent, 'value': value ])
-    } else {
-        LOG.error "Unable to determine set speed function code in ${functions}"
+            } else if (fanSpeedPercent) {
+                Map speedFunc = functions[fanSpeedPercent] ?: defaults[fanSpeedPercent]
+                int speedVal = ['low', 'medium-low', 'medium', 'medium-high', 'high'].indexOf(speed)
+                int value = remap(speedVal, 0, 4, Integer.valueOf(speedFunc.min), Integer.valueOf(speedFunc.max))
+                tuyaSendDeviceCommandsAsync(id, [ 'code': fanSpeedPercent, 'value': value ], [ 'code': 'switch', 'value': true ])
+            } else {
+                LOG.error "Unable to determine set speed function code in ${functions}"
+            }
+            break
     }
 }
 
@@ -1513,8 +1528,22 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
         }
 
         if (status.code in tuyaFunctions.percentControl) {
-            if (txtEnable) { LOG.info "${dw} position is ${status.value}%" }
-            return [ [ name: 'position', value: status.value, descriptionText: "position is ${status.value}%", unit: '%' ] ]
+            if (statusList['code'] == ['fan_speed_percent']) {
+                Map speed = deviceStatusSet[status.code] ?: defaults[status.code]
+                int min = (speed.min == null) ? 1 : Integer.valueOf(speed.min)
+                int max = (speed.max == null) ? 100 : Integer.valueOf(speed.max)
+                int value = Math.round(remap(status.value, min, max, 0, 4))
+                String speedName = ['low', 'medium-low', 'medium', 'medium-high', 'high'].get(value)
+                int level = remap(status.value, min, max, 1, 100)
+                if (txtEnable) { LOG.info "${dw} speed is ${level}" }
+                return [
+                    [ name: 'speed', value: speedName, descriptionText: "speed is ${speedName}" ],
+                    [ name: 'level', value: level ]
+                ]
+            } else {
+                if (txtEnable) { LOG.info "${dw} position is ${status.value}%" }
+                return [ [ name: 'position', value: status.value, descriptionText: "position is ${status.value}%", unit: '%' ] ]
+            }
         }
 
         if (status.code in tuyaFunctions.sceneSwitch) {
@@ -1630,7 +1659,7 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
                     break
                 case 'mode':
                     name = 'mode'
-                    value = (status.value?.toInteger() == 0 ? 'auto' : 'continuous')
+                    value = String.valueOf(status.value).isInteger() ? (Integer.valueOf(status.value) == 0 ? 'auto' : 'continuous') : status.value
                     unit = ''
                     break
                 case 'anion':
