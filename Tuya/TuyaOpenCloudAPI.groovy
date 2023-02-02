@@ -144,7 +144,7 @@ metadata {
 // Tuya Function Categories
 @Field static final Map<String, List<String>> tuyaFunctions = [
     'battery'        : [ 'battery_percentage', 'va_battery' ],
-    'brightness'     : [ 'bright_value', 'bright_value_v2', 'bright_value_1' ],
+    'brightness'     : [ 'bright_value', 'bright_value_v2', 'bright_value_1', 'bright_value_2' ],
     'co'             : [ 'co_state' ],
     'co2'            : [ 'co2_value' ],
     'colour'         : [ 'colour_data', 'colour_data_v2' ],
@@ -153,7 +153,7 @@ metadata {
     'control'        : [ 'control', 'mach_operate' ],
     'fanSpeed'       : [ 'fan_speed_enum', 'fan_speed' ],
     'fanSwitch'      : [ 'switch_fan', 'switch' ],
-    'light'          : [ 'switch_led', 'switch_led_1', 'light' ],
+    'light'          : [ 'switch_led', 'switch_led_1', 'switch_led_2', 'light' ],
     'humiditySet'    : [ 'dehumidify_set_value' ],                                                                                       /* Inserted by SJB */
     'humiditySpeed'  : [ 'fan_speed_enum' ],
     'humidity'       : [ 'temp_indoor', 'swing', 'shake', 'child_lock', 'lock', 'fan_speed_enum', 'dehumidify_set_value', 'humidity_indoor', 'humidity', 'envhumid', 'switch', 'mode', 'anion', 'pump', 'dry', 'windspeed', 'countdown', 'countdown_left', 'fault' ],
@@ -370,7 +370,7 @@ void componentClose(DeviceWrapper dw) {
 
     if (code == 'mach_operate') {
         if (txtEnable) { LOG.info "Closing ${dw}" }
-        tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': 'ZZ' ])
+        tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': 'FZ' ])
     } else if (code != null) {
         if (txtEnable) { LOG.info "Closing ${dw}" }
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': 'close' ])
@@ -441,7 +441,7 @@ void componentOpen(DeviceWrapper dw) {
 
     if (code == 'mach_operate') {
         if (txtEnable) { LOG.info "Opening ${dw}" }
-        tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': 'FZ' ])
+        tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': 'ZZ' ])
     } else if (code != null) {
         if (txtEnable) { LOG.info "Opening ${dw}" }
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': code, 'value': 'open' ])
@@ -475,6 +475,7 @@ void componentRefresh(DeviceWrapper dw) {
     if (id != null && dw.getDataValue('functions')) {
         LOG.info "Refreshing ${dw} (${id})"
         tuyaGetStateAsync(id)
+        tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), [ 'code': 'opposite', 'value': true ]) // this is for Quoya Smart Curtain, unsure if it affects other devices negatively
     }
 }
 
@@ -1318,7 +1319,7 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
             if (bright != null) {
                 Integer value = Math.floor(remap((int)status.value, (int)bright.min, (int)bright.max, 0, 100))
                 if (txtEnable) { LOG.info "${dw} level is ${value}%" }
-                return [ [ name: 'level', value: value, unit: '%', descriptionText: "level is ${value}%" ] ]
+                return [ [ name: 'level', value: value, unit: '%', descriptionText: "level is ${value}%", statusCode: status.code ] ]
             }
         }
 
@@ -1342,8 +1343,8 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
                 case 'opening': value = 'opening'; break
                 case 'close': value = 'closed'; break
                 case 'closing': value = 'closing'; break
-                case 'ZZ': value = 'closed'; break
-                case 'FZ': value = 'open'; break
+                case 'FZ': value = 'closed'; break
+                case 'ZZ': value = 'open'; break
                 case 'stop': value = 'unknown'; break
                 case 'fully_open': value = 'open'; break
                 case 'fully_close': value = 'closed'; break
@@ -1428,7 +1429,7 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
         if (status.code in tuyaFunctions.light || status.code in tuyaFunctions.power) {
             String value = status.value ? 'on' : 'off'
             if (txtEnable) { LOG.info "${dw} switch is ${value}" }
-            return [ [ name: 'switch', value: value, descriptionText: "switch is ${value}" ] ]
+            return [ [ name: 'switch', value: value, descriptionText: "switch is ${value}", statusCode: status.code ] ]
         }
 
         if (status.code in tuyaFunctions.meteringSwitch) {
