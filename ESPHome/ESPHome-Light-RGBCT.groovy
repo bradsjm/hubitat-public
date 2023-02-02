@@ -259,8 +259,8 @@ void parse(Map message) {
             String type = message.isDigital ? 'digital' : 'physical'
 
             // Check if the entity key matches the message entity key received to update device state
-            if (settings.light as Long == message.key) {
-                boolean isRgb = message.colorMode & COLOR_CAP_RGB
+            if (settings.light && settings.light as Long == message.key) {
+                boolean isRgb = (message.colorMode ?: 0) & COLOR_CAP_RGB
                 String descriptionText
 
                 String state = message.state ? 'on' : 'off'
@@ -333,7 +333,7 @@ void parse(Map message) {
                 return
             }
 
-            if (state.signalStrength as Long == message.key && message.hasState) {
+            if (state.signalStrength && state.signalStrength as Long == message.key && message.hasState) {
                 Integer rssi = Math.round(message.state as Float)
                 String unit = 'dBm'
                 if (device.currentValue('rssi') != rssi) {
