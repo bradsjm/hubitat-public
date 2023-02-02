@@ -135,6 +135,7 @@ public void refresh() {
     log.info "${device} refresh"
     state.clear()
     espHomeDeviceInfoRequest()
+    espHomeListEntitiesRequest()
 }
 
 public void setSpeed(String speed) {
