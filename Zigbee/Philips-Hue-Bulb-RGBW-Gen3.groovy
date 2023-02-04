@@ -88,16 +88,13 @@ metadata {
     }
 }
 
-@Field static final String Version = '0.2'
+@Field static final String Version = '0.3'
 
 List<String> configure() {
     List<String> cmds = []
     log.info 'configure...'
     state.clear()
     state.reportingEnabled = false
-
-    log.info 'configure: setting light effects'
-    sendEvent(name: 'lightEffects', value: JsonOutput.toJson(HueEffectNames.values()))
 
     // Power Restore Behavior
     if (settings.powerRestore != null) {
@@ -176,7 +173,7 @@ List<String> ping() {
     if (settings.txtEnable) { log.info 'ping...' }
     // Using attribute 0x00 as a simple ping/pong mechanism
     scheduleCommandTimeoutCheck()
-    return zigbee.readAttribute(zigbee.BASIC_CLUSTER, 0x00, [:], 0)
+    return zigbee.readAttribute(zigbee.BASIC_CLUSTER, 0x01, [:], 0)
 }
 
 List<String> presetLevel(Object value) {
@@ -200,6 +197,12 @@ List<String> refresh() {
     // Get Minimum/Maximum Color Temperature
     state.ct = state.ct ?: [ high: 6536, low: 2000 ] // default values
     cmds += zigbee.readAttribute(zigbee.COLOR_CONTROL_CLUSTER, [0x400B, 0x400C], [:], DELAY_MS)
+
+    // Get device type and supported effects
+    cmds += zigbee.readAttribute(HUE_PRIVATE_CLUSTER, [ 0x01, 0x11 ], [ mfgCode: VENDOR_PHILIPS_ID ], DELAY_MS)
+
+    // Get minimum dim level
+    cmds += zigbee.readAttribute(zigbee.LEVEL_CONTROL_CLUSTER, 0x03, [:], DELAY_MS)
 
     // Refresh other attributes
     cmds += hueStateRefresh(DELAY_MS)
@@ -390,8 +393,8 @@ void parse(String description) {
             descMap.additionalAttrs?.each { m -> parseGroupsCluster(m) }
             break
         case HUE_PRIVATE_CLUSTER:
-            parsePhilipsHueCluster(descMap)
-            descMap.additionalAttrs?.each { m -> parsePhilipsHueCluster(m) }
+            parsePrivateCluster(descMap)
+            descMap.additionalAttrs?.each { m -> parsePrivateCluster(m) }
             break
         case zigbee.LEVEL_CONTROL_CLUSTER:
             parseLevelCluster(descMap)
@@ -414,7 +417,7 @@ void parse(String description) {
  */
 void parseBasicCluster(Map descMap) {
     switch (descMap.attrInt as Integer) {
-        case 0x00: // Using 0x00 as a simple ping/pong mechanism
+        case 0x01: // Using 0x01 read as a simple ping/pong mechanism
             if (settings.txtEnable) { log.info 'pong..' }
             break
         case FIRMWARE_VERSION_ID:
@@ -552,10 +555,16 @@ void parseGroupsCluster(Map descMap) {
 /*
  * Zigbee Hue Specific Cluster Parsing
  */
-void parsePhilipsHueCluster(Map descMap) {
+void parsePrivateCluster(Map descMap) {
     switch (descMap.attrInt as Integer) {
-        case HUE_PRIVATE_STATE_ID:
-            parsePhilipsHueClusterState(descMap)
+        case 0x01: // device type
+            parsePrivateClusterDeviceType(descMap)
+            break
+        case HUE_PRIVATE_STATE_ID: // current state
+            parsePrivateClusterState(descMap)
+            break
+        case 0x11: // available effects
+            parsePrivateClusterEffects(descMap)
             break
         default:
             if (settings.logEnable) {
@@ -566,21 +575,52 @@ void parsePhilipsHueCluster(Map descMap) {
 }
 
 /*
- * Attribute 0x0002 seems to encode the light state, where the first
+ * Known Device type values
+ *  0x03 - ZLL
+ *  0x05 - White Only ZB3
+ *  0x07 - White and Color ZB3
+ */
+void parsePrivateClusterDeviceType(Map descMap) {
+    BigInteger deviceTypeValue = new BigInteger(descMap.value, 16)
+    String deviceType = '0x' + deviceTypeValue.toString(16)
+    log.info "detected light type: ${deviceType}"
+    updateDataValue('type', deviceType)
+}
+
+/*
+ * ENUM64 bitmap position corresponds to the effect number
+ */
+void parsePrivateClusterEffects(Map descMap) {
+    BigInteger effectsMap = new BigInteger(descMap.value, 16)
+    Map<Integer, String> effects = HueEffectNames.findAll { k, v -> effectsMap.testBit(k) }
+    log.info "supported light effects: ${effects.values()}"
+    sendEvent(name: 'lightEffects', value: JsonOutput.toJson(effects.values()))
+}
+
+/*
+ * Attribute 0x0002 encodes the light state, where the first
  * two bytes indicate the mode, the next byte OnOff, the next byte
  * Current Level, and the following bytes the mode-specific state.
  * from https://github.com/dresden-elektronik/deconz-rest-plugin/issues/5891
  */
-void parsePhilipsHueClusterState(Map descMap) {
+void parsePrivateClusterState(Map descMap) {
     int mode = hexStrToUnsignedInt(zigbee.swapOctets(descMap.value[0..3]))
     boolean isOn = hexStrToUnsignedInt(descMap.value[4..5]) == 1
     int level = hexStrToUnsignedInt(descMap.value[6..7])
     if (settings.logEnable) {
-        log.debug "zigbee received hue cluster report [power: ${isOn}, level: ${level}, mode: 0x${intToHexStr(mode, 2)}]"
+        log.debug "zigbee received hue cluster report (length ${descMap.value.size()}) [power: ${isOn}, level: ${level}, mode: 0x${intToHexStr(mode, 2)}]"
     }
 
     sendSwitchEvent(isOn)
     switch (mode) {
+        case 0x0003: // Brightness mode
+            sendLevelEvent(level)
+            sendEffectNameEvent()
+            break
+        case 0x00A3: // Brightness with Effect
+            sendLevelEvent(level)
+            sendEffectNameEvent(descMap.value[8..9])
+            break
         case 0x000F: // CT mode
             sendColorTempEvent(descMap.value[8..11])
             sendColorModeEvent('CT')
@@ -599,7 +639,7 @@ void parsePhilipsHueClusterState(Map descMap) {
             break
         default:
             if (settings.logEnable) {
-                log.debug "Unknown mode received: ${intToHexStr(mode)}"
+                log.debug "Unknown mode received: 0x${intToHexStr(mode)}"
             }
             break
     }
@@ -664,7 +704,7 @@ private String ctToMiredHex(int ct) {
 }
 
 private List<String> hueStateRefresh(int delayMs = 2000) {
-    return zigbee.readAttribute(HUE_PRIVATE_CLUSTER, HUE_PRIVATE_STATE_ID, [:], delayMs)
+    return zigbee.readAttribute(HUE_PRIVATE_CLUSTER, HUE_PRIVATE_STATE_ID, [ mfgCode: VENDOR_PHILIPS_ID ], delayMs)
 }
 
 private List<String> ifPolling(int delayMs = 0, Closure commands) {
@@ -808,7 +848,7 @@ private List<String> setLevelPrivate(Object value, Integer rate = 0, Integer del
 // Configuration
 @Field static final int COMMAND_TIMEOUT_SECS = 10 // Command timeout before setting offline
 @Field static final int DELAY_MS = 200 // Delay between zigbee commands
-@Field static final int REPORTING_MAX = 3600 // Maximum reporting interval
+@Field static final int REPORTING_MAX = 600 // Hue hub uses 5 minute reporting
 @Field static final int POLL_DELAY_MS = 1000 // Delay when polling results
 @Field static final String PRESTAGING_OPTION = '01 01' // Enable changes when off
 @Field static final int VENDOR_PHILIPS_ID = 0x100B // Philips vendor code
@@ -866,7 +906,9 @@ private List<String> setLevelPrivate(Object value, Integer rate = 0, Integer del
 @Field static final Map<Integer, String> HueEffectNames = [
     0x01: 'candle',
     0x02: 'fireplace',
-    0x03: 'color loop'
+    0x03: 'color loop',
+    0x09: 'sunrise',
+    0x0a: 'sparkle'
 ]
 
 @Field static final Map<Integer, String> IdentifyEffectNames = [
