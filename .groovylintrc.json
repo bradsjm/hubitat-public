@@ -31,13 +31,16 @@
         "MethodCount": {
             "enabled": false
         },
+        "NoJavaUtilDate": {
+            "enabled": false
+        },
         "UnnecessaryGetter": {
             "enabled": false
         },
-        "UnnecessarySetter": {
+        "UnnecessaryReturnKeyword": {
             "enabled": false
         },
-        "UnnecessaryReturnKeyword": {
+        "UnnecessarySetter": {
             "enabled": false
         },
         "comments.ClassJavadoc": "off",
