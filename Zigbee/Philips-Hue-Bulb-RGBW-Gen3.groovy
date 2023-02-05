@@ -253,14 +253,16 @@ List<String> setColorTemperature(Object colorTemperature, Object level = null, O
 }
 
 List<String> setEffect(Object number) {
-    Integer effectNumber = constrain(number, 0, HueEffectNames.size())
+    List<String> effectNames = parseJson(device.currentValue('lightEffects') ?: '[]')
+    Integer effectNumber = constrain(number, 0, effectNames.size())
     if (settings.txtEnable) { log.info "setEffect (${number})" }
     if (effectNumber == 0) {
         state.remove('effect')
         return zigbee.command(PHILIPS_PRIVATE_CLUSTER, 0x00, [ mfgCode: PHILIPS_VENDOR ], 0, '2000 00')
     }
+    String effectName = effectNames[effectNumber - 1]
     state.effect = number
-    int effect = HueEffectNames.keySet()[effectNumber - 1]
+    int effect = HueEffectNames.find { k, v -> v == effectName }?.key
     scheduleCommandTimeoutCheck()
     return zigbee.command(PHILIPS_PRIVATE_CLUSTER, 0x00, [ mfgCode: PHILIPS_VENDOR ], 0, "2100 01 ${intToHexStr(effect)}") +
         ifPolling { hueStateRefresh(0) }
