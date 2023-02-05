@@ -43,10 +43,11 @@
  *  0.97 - Fixes for Red Series Fan + Switch LZW36 support
  *  0.98 - Update driver name for Blue Fan Switch and updated effect order and consistency of options
  *  0.99 - Add initial support for RGB child devices used by older Red switches and custom levels
+ *  1.00 - Add support for illuminence value comparison conditions
  *
 */
 
-@Field static final String Version = '0.99'
+@Field static final String Version = '1.00'
 
 definition(
     name: 'LED Mini-Dashboard Topic',
@@ -471,7 +472,7 @@ Map renderIndicationSection(String prefix, String title = null) {
 
 Map renderConditionSection(String prefix, String sectionTitle = null, Map<String, Map> ruleDefinitions = ConditionsMap) {
     return section(sectionTitle) {
-        Map<String, String> conditionTitles = ruleDefinitions.collectEntries { String k, Map v -> [ k, v.title ] }
+        Map<String, String> conditionTitles = ruleDefinitions.collectEntries { String k, Map v -> [ k, v.title ] }.sort { kv -> kv.value }
         List<String> selectedConditions = settings["${prefix}_conditions"] ?: []
         input name: "${prefix}_conditions", title: '', type: 'enum', options: conditionTitles, multiple: true, required: true, submitOnChange: true, width: 9
 
@@ -640,12 +641,13 @@ String getDashboardDescription(String prefix) {
     Map config = getDashboardConfig(prefix)
     Map deviceType = getDeviceType()
     StringBuilder sb = new StringBuilder()
+    sb << "<b>Priority</b>: ${config.priority}, "
+
     if (config.lednumber == 'var') {
         sb << "<b>LED Variable:</b> <i>${config.lednumber_var}</i>"
     } else if (config.lednumber) {
         sb << "<b>${deviceType.leds[config.lednumber] ?: 'n/a'}</b>"
     }
-    sb << ", <b>Priority</b>: ${config.priority}"
 
     if (config.effect == 'var') {
         sb << ", <b>Effect Variable</b>: <i>${config.effect_var}</i>"
@@ -681,8 +683,10 @@ String getDashboardDescription(String prefix) {
             .collect { c ->
                 String title = ConditionsMap[c].title
                 String choice = config["${c}_choice"]
+                String comparison = config["${c}_comparison"]
+                String value = config["${c}_value"]
                 String all = config["${c}_all"] ? '<i>(All)</i>' : null
-                return ([ title, choice, all ] - null).join(' ')
+                return ([ title, choice, comparison, value, all ] - null).join(' ')
             }
         sb << "\n<b>Activation${conditions.size() > 1 ? 's' : ''}:</b> ${conditions.join(allMode)}"
         if (config.autostop != false) {
@@ -972,7 +976,7 @@ private List<String> getSortedDashboardPrefixes() {
             name: settings["${prefix}_name"] as String,
             priority: settings["${prefix}_priority"] as Integer
         ]
-    }.sort { a, b -> a.priority <=> b.priority ?: a.name <=> b.name }*.prefix
+    }.sort { a, b -> b.priority <=> a.priority ?: a.name <=> b.name }*.prefix
 }
 
 // Returns the active device type configuration map
@@ -1321,7 +1325,7 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
             ]
         ],
         subscribe: 'contact',
-        test: { ctx -> deviceAttributeHasValue(ctx.device, 'contact', 'closed', ctx.all) }
+        test: { ctx -> deviceAttributeTest(ctx.device, 'contact', '=', 'closed', ctx.all) }
     ],
     'contactOpen': [
         name: 'Contact sensor',
@@ -1333,7 +1337,7 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
             ]
         ],
         subscribe: 'contact',
-        test: { ctx -> deviceAttributeHasValue(ctx.device, 'contact', 'open', ctx.all) }
+        test: { ctx -> deviceAttributeTest(ctx.device, 'contact', '=', 'open', ctx.all) }
     ],
     'customAttribute': [
         name: 'Custom attribute',
@@ -1348,16 +1352,16 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
                 options: { ctx -> ctx.device ? getAttributeChoices(ctx.device) : null },
                 multiple: false
             ],
-            // comparison: [
-            //     options: { ctx -> ctx.device && ctx.choice ? getAttributeComparisons(ctx.device, ctx.choice) : null }
-            // ],
+            comparison: [
+                options: { ctx -> getComparisonsByType('number') }
+            ],
             value: [
                 title: 'Enter Value',
                 options: { ctx -> ctx.device && ctx.choice ? getAttributeOptions(ctx.device, ctx.choice) : null }
             ]
         ],
         subscribe: { ctx -> ctx.choice },
-        test: { ctx -> deviceAttributeHasValue(ctx.device, ctx.choice, ctx.value, ctx.all) }
+        test: { ctx -> deviceAttributeTest(ctx.device, ctx.choice, ctx.comparison, ctx.value, ctx.all) }
     ],
     'hsmAlert': [
         name: 'HSM Alert',
@@ -1414,7 +1418,37 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
             ]
         ],
         subscribe: 'lock',
-        test: { ctx -> deviceAttributeHasValue(ctx.device, 'lock', 'locked', ctx.all) }
+        test: { ctx -> deviceAttributeTest(ctx.device, 'lock', '=', 'locked', ctx.all) }
+    ],
+    'luminosityAbove': [
+        name: 'Illuminance sensor',
+        title: 'Illuminance is above',
+        inputs: [
+            device: [
+                type: 'capability.illuminanceMeasurement',
+                multiple: true
+            ],
+            value: [
+                title: 'Enter Illuminance Value'
+            ]
+        ],
+        subscribe: { 'illuminance' },
+        test: { ctx -> deviceAttributeTest(ctx.device, 'illuminance', '>', ctx.value, ctx.all) }
+    ],
+    'luminosityBelow': [
+        name: 'Illuminance sensor',
+        title: 'Illuminance is below',
+        inputs: [
+            device: [
+                type: 'capability.illuminanceMeasurement',
+                multiple: true
+            ],
+            value: [
+                title: 'Enter Illuminance Value'
+            ]
+        ],
+        subscribe: { 'illuminance' },
+        test: { ctx -> deviceAttributeTest(ctx.device, 'illuminance', '<', ctx.value, ctx.all) }
     ],
     'motionActive': [
         name: 'Motion sensor',
@@ -1426,7 +1460,7 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
             ]
         ],
         subscribe: 'motion',
-        test: { ctx -> deviceAttributeHasValue(ctx.device, 'motion', 'active', ctx.all) }
+        test: { ctx -> deviceAttributeTest(ctx.device, 'motion', '=', 'active', ctx.all) }
     ],
     'motionInactive': [
         name: 'Motion sensor',
@@ -1438,7 +1472,7 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
             ]
         ],
         subscribe: 'motion',
-        test: { ctx -> deviceAttributeHasValue(ctx.device, 'motion', 'inactive', ctx.all) }
+        test: { ctx -> deviceAttributeTest(ctx.device, 'motion', '=', 'inactive', ctx.all) }
     ],
     'notpresent': [
         name: 'Presence sensor',
@@ -1450,7 +1484,7 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
             ]
         ],
         subscribe: 'presence',
-        test: { ctx -> deviceAttributeHasValue(ctx.device, 'presence', 'not present', ctx.all) }
+        test: { ctx -> deviceAttributeTest(ctx.device, 'presence', '=', 'not present', ctx.all) }
     ],
     'present': [
         name: 'Presence sensor',
@@ -1462,7 +1496,7 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
             ]
         ],
         subscribe: 'presence',
-        test: { ctx -> deviceAttributeHasValue(ctx.device, 'presence', 'present', ctx.all) }
+        test: { ctx -> deviceAttributeTest(ctx.device, 'presence', '=', 'present', ctx.all) }
     ],
     'smoke': [
         name: 'Smoke detector',
@@ -1474,7 +1508,7 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
             ]
         ],
         subscribe: 'smoke',
-        test: { ctx -> deviceAttributeHasValue(ctx.device, 'smoke', 'detected', ctx.all) }
+        test: { ctx -> deviceAttributeTest(ctx.device, 'smoke', '=', 'detected', ctx.all) }
     ],
     'switchOff': [
         name: 'Switch',
@@ -1488,7 +1522,7 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
             ]
         ],
         subscribe: 'switch',
-        test: { ctx -> deviceAttributeHasValue(ctx.device, 'switch', 'off', ctx.all) }
+        test: { ctx -> deviceAttributeTest(ctx.device, 'switch', '=', 'off', ctx.all) }
     ],
     'switchOn': [
         name: 'Switch',
@@ -1502,7 +1536,7 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
             ]
         ],
         subscribe: 'switch',
-        test: { ctx -> deviceAttributeHasValue(ctx.device, 'switch', 'on', ctx.all) }
+        test: { ctx -> deviceAttributeTest(ctx.device, 'switch', '=', 'on', ctx.all) }
     ],
     'unlocked': [
         name: 'Lock',
@@ -1516,7 +1550,7 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
             ]
         ],
         subscribe: 'lock',
-        test: { ctx -> deviceAttributeHasValue(ctx.device, 'lock', 'unlocked', ctx.all) }
+        test: { ctx -> deviceAttributeTest(ctx.device, 'lock', '=', 'unlocked', ctx.all) }
     ],
     'variable': [
         name: 'Hub variable',
@@ -1546,7 +1580,7 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
             ]
         ],
         subscribe: 'water',
-        test: { ctx -> deviceAttributeHasValue(ctx.device, 'water', 'dry', ctx.all) }
+        test: { ctx -> deviceAttributeTest(ctx.device, 'water', '=', 'dry', ctx.all) }
     ],
     'waterWet': [
         name: 'Water sensor',
@@ -1558,7 +1592,7 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
             ]
         ],
         subscribe: 'water',
-        test: { ctx -> deviceAttributeHasValue(ctx.device, 'water', 'wet', ctx.all) }
+        test: { ctx -> deviceAttributeTest(ctx.device, 'water', '=', 'wet', ctx.all) }
     ],
 ].asImmutable()
 
@@ -1666,10 +1700,9 @@ private void subscribeVariables() {
 }
 
 // Given a set of devices, returns if the attribute has the specified value (any or all as specified)
-// TODO: Support comparisons
 @CompileStatic
-private boolean deviceAttributeHasValue(List<DeviceWrapper> devices, String attribute, String value, Boolean all) {
-    Closure test = { DeviceWrapper d -> d.currentValue(attribute) as String == value }
+private boolean deviceAttributeTest(List<DeviceWrapper> devices, String attribute, String operator, String value, Boolean all) {
+    Closure test = { DeviceWrapper d -> evaluateComparison(d.currentValue(attribute) as String, value, operator) }
     return all ? devices?.every(test) : devices?.any(test)
 }
 
