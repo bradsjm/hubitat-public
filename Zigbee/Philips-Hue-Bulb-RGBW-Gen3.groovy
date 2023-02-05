@@ -53,9 +53,14 @@ metadata {
 
         command 'identify', [ [ name: 'Effect type*', type: 'ENUM', description: 'Effect Type', constraints: IdentifyEffectNames.values()*.toLowerCase() ] ]
         command 'setEnhancedHue', [ [ name: 'Hue*', type: 'NUMBER', description: 'Color Hue (0-360)' ] ]
+        command 'stepHueChange', [
+            [ name: 'Direction*', type: 'ENUM', description: 'Direction for step change request', constraints: [ 'up', 'down' ] ],
+            [ name: 'Step Size*', type: 'NUMBER', description: 'Hue change step size (1-99)' ],
+            [ name: 'Duration', type: 'NUMBER', description: 'Transition duration in seconds' ]
+        ]
         command 'stepLevelChange', [
             [ name: 'Direction*', type: 'ENUM', description: 'Direction for step change request', constraints: [ 'up', 'down' ] ],
-            [ name: 'Step Size*', type: 'NUMBER', description: 'Level change step size' ],
+            [ name: 'Step Size*', type: 'NUMBER', description: 'Level change step size (1-99)' ],
             [ name: 'Duration', type: 'NUMBER', description: 'Transition duration in seconds' ]
         ]
         command 'toggle'
@@ -333,8 +338,22 @@ List<String> startLevelChange(String direction) {
     return zigbee.command(zigbee.LEVEL_CONTROL_CLUSTER, 0x05, [:], 0, "${upDown} ${rate}")
 }
 
+List<String> stepHueChange(String direction, Object stepSize, Object transitionTime = null) {
+    if (settings.txtEnable) { log.info "stepHueChange (${direction}, ${stepSize}, ${transitionTime})" }
+    Boolean isOn = device.currentValue('switch') == 'on'
+    Integer rate = transitionTime != null ? (transitionTime.toBigDecimal() * 10).toInteger() : settings.colorTransitionTime.toInteger()
+    String rateHex = isOn ? intToSwapHexStr(rate) : '0000'
+    Integer level = constrain(stepSize, 1, 99)
+    String stepHex = intToHexStr((level * 2.55).toInteger())
+    String upDown = direction == 'down' ? '03' : '01'
+    scheduleCommandTimeoutCheck()
+    return zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, 0x02, [:], 0, "${upDown} ${stepHex} ${rateHex}") +
+        ifPolling { zigbee.colorRefresh(0) }
+}
+
 List<String> stepLevelChange(String direction, Object stepSize, Object transitionTime = null) {
     if (settings.txtEnable) { log.info "stepLevelChange (${direction}, ${stepSize}, ${transitionTime})" }
+    Boolean isOn = device.currentValue('switch') == 'on'
     Integer rate = transitionTime != null ? (transitionTime.toBigDecimal() * 10).toInteger() : settings.colorTransitionTime.toInteger()
     String rateHex = isOn ? intToSwapHexStr(rate) : '0000'
     Integer level = constrain(stepSize, 1, 99)
