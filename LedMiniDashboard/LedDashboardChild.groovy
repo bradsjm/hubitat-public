@@ -474,12 +474,14 @@ Map renderConditionSection(String prefix, String sectionTitle = null, Map<String
     return section(sectionTitle) {
         Map<String, String> conditionTitles = ruleDefinitions.collectEntries { String k, Map v -> [ k, v.title ] }.sort { kv -> kv.value }
         List<String> selectedConditions = settings["${prefix}_conditions"] ?: []
-        input name: "${prefix}_conditions", title: '', type: 'enum', options: conditionTitles, multiple: true, required: true, submitOnChange: true, width: 9
+        input name: "${prefix}_conditions", title: '', type: 'enum', options: conditionTitles, multiple: true, required: true, width: 9, submitOnChange: true
 
         Boolean allConditionsMode = settings["${prefix}_conditions_all"] ?: false
         if (settings["${prefix}_conditions"]?.size() > 1) {
             String title = "${allConditionsMode ? '<b>All</b> conditions' : '<b>Any</b> condition'}"
             input name: "${prefix}_conditions_all", title: title, type: 'bool', width: 3, submitOnChange: true
+        } else {
+            paragraph ''
         }
 
         boolean isFirst = true
@@ -504,9 +506,7 @@ Map renderConditionSection(String prefix, String sectionTitle = null, Map<String
                     String name = inputs.device.name ?: condition.value.name
                     input name: "${id}_device_all",
                         title: settings["${id}_device_all"] ? "<b>All</b> ${name} devices" : "<b>Any</b> ${name} device",
-                        type: 'bool',
-                        submitOnChange: true,
-                        width: 4
+                        type: 'bool', submitOnChange: true, width: 4
                 }
             }
 
@@ -526,8 +526,7 @@ Map renderConditionSection(String prefix, String sectionTitle = null, Map<String
                         width: inputs.choice.width ?: 7,
                         multiple: inputs.choice.multiple,
                         type: 'enum',
-                        submitOnChange: true,
-                        required: true
+                        submitOnChange: true, required: true
                 }
             }
 
@@ -545,7 +544,7 @@ Map renderConditionSection(String prefix, String sectionTitle = null, Map<String
                     type: 'enum',
                     options: options,
                     defaultValue: inputs.comparison.defaultValue,
-                    required: true
+                    submitOnChange: true, required: true
             }
 
             if (inputs.value) {
@@ -561,8 +560,8 @@ Map renderConditionSection(String prefix, String sectionTitle = null, Map<String
                     width: inputs.value.width ?: 3,
                     defaultValue: inputs.value.defaultValue,
                     options: options,
-                    type: options ? 'enum' : 'text',
-                    required: true
+                    type: inputs.value.type ? inputs.value.type : (options ? 'enum' : 'text'),
+                    submitOnChange: true, required: true
             }
         }
     }
@@ -682,10 +681,14 @@ String getDashboardDescription(String prefix) {
             .findAll { c -> ConditionsMap.containsKey(c) }
             .collect { c ->
                 String title = ConditionsMap[c].title
-                String choice = config["${c}_choice"]
-                String comparison = getComparisonsByType('number').get(config["${c}_comparison"])?.toLowerCase()
+                String choice = config["${c}_choice"] in List ? config["${c}_choice"].join(', ') : config["${c}_choice"]
+                String comparison = getComparisonsByType('number').get(config["${c}_comparison"])
                 String value = config["${c}_value"]
                 String all = config["${c}_all"] ? '<i>(All)</i>' : null
+                if (comparison) { comparison = 'is ' + comparison.toLowerCase() }
+                if (value =~ /^([0-9]{4})-/) { // special case for time format
+                    value = new Date(timeToday(value).time).format('hh:mm a')
+                }
                 return ([ title, choice, comparison, value, all ] - null).join(' ')
             }
         sb << "\n<b>Activation${conditions.size() > 1 ? 's' : ''}:</b> ${conditions.join(allMode)}"
@@ -812,6 +815,24 @@ void forceRefresh() {
         int seconds = 60 * (settings.periodicRefreshInterval ?: 60)
         runIn(seconds, 'forceRefresh')
     }
+}
+
+void sunsetTrigger() {
+    logInfo 'executing sunset trigger'
+    notificationDispatcher()
+    subscribeAllConditions()
+}
+
+void sunriseTrigger() {
+    logInfo 'executing sunrise trigger'
+    notificationDispatcher()
+    subscribeAllConditions()
+}
+
+void timeAfterTrigger() {
+    logInfo 'executing time after trigger'
+    notificationDispatcher()
+    subscribeAllConditions()
 }
 
 // Scheduled stop used for devices that don't have built-in timers
@@ -1353,11 +1374,10 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
     ],
     'customAttribute': [
         name: 'Custom Attribute',
-        title: 'Custom attribute becomes',
+        title: 'Custom attribute',
         inputs: [
             device: [
                 type: 'capability.*',
-                title: 'Custom attribute',
                 multiple: true
             ],
             choice: [
@@ -1523,6 +1543,46 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
         subscribe: 'smoke',
         test: { ctx -> deviceAttributeTest(ctx.device, 'smoke', '=', 'detected', ctx.all) }
     ],
+    'sunset': [
+        name: 'Time is before/after sunset',
+        title: 'Sunset with offset',
+        inputs: [
+            choice: [
+                title: 'Select before or after sunset',
+                options: [ before: 'Before sunset', after: 'After sunset' ],
+                multiple: false,
+                width: 5
+            ],
+            value: [
+                title: 'Offset minutes',
+                type: 'decimal',
+                defaultValue: 0,
+                width: 2
+            ]
+        ],
+        execute: { ctx -> if (ctx.choice == 'after') { runOnce(getNextSunset(ctx.value as Integer), 'sunsetTrigger') } },
+        test: { ctx -> sunset = getNextSunset(ctx.value as Integer); return ctx.choice == 'after' ? new Date() >= sunset :  new Date() < sunset }
+    ],
+    'sunrise': [
+        name: 'Time is before/after sunrise',
+        title: 'Sunrise with offset',
+        inputs: [
+            choice: [
+                title: 'Select before or after sunset',
+                options: [ before: 'Before sunrise', after: 'After sunrise' ],
+                multiple: false,
+                width: 5
+            ],
+            value: [
+                title: 'Offset minutes',
+                type: 'decimal',
+                defaultValue: 0,
+                width: 2
+            ]
+        ],
+        execute: { ctx -> if (ctx.choice == 'after') { runOnce(getNextSunrise(ctx.value as Integer), 'sunriseTrigger') } },
+        test: { ctx -> sunrise = getNextSunrise(ctx.value as Integer); return ctx.choice == 'after' ? new Date() >= sunrise : new Date() < sunrise }
+    ],
     'switchOff': [
         name: 'Switches that turn off',
         title: 'Switch turns off',
@@ -1550,6 +1610,31 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
         ],
         subscribe: 'switch',
         test: { ctx -> deviceAttributeTest(ctx.device, 'switch', '=', 'on', ctx.all) }
+    ],
+    'timeBefore': [
+        name: 'Time is before',
+        title: 'Time is before',
+        inputs: [
+            value: [
+                title: 'Before Time',
+                type: 'time',
+                width: 2
+            ]
+        ],
+        test: { ctx -> new Date() < timeToday(ctx.value) }
+    ],
+    'timeAfter': [
+        name: 'Time is after',
+        title: 'Time is after',
+        inputs: [
+            value: [
+                title: 'After Time',
+                type: 'time',
+                width: 2
+            ]
+        ],
+        execute: { ctx -> runOnce(getNextTime(ctx.value), 'timeAfterTrigger') },
+        test: { ctx -> new Date() >= timeToday(ctx.value) }
     ],
     'unlocked': [
         name: 'Locks that unlock',
@@ -1682,6 +1767,15 @@ private void subscribeCondition(String prefix, Map<String, Map> ruleDefinitions 
     List<String> selectedConditions = settings["${prefix}_conditions"] ?: []
     for (String conditionKey in selectedConditions) {
         Map<String, Map> condition = ruleDefinitions[conditionKey]
+        if (condition.execute in Closure) {
+            String id = "${prefix}_${conditionKey}"
+            Map ctx = [
+                device: settings["${id}_device"],
+                choice: settings["${id}_choice"],
+                value: settings["${id}_value"]
+            ].asImmutable()
+            runClosure(condition.execute as Closure, ctx)
+        }
         if (condition.subscribe) {
             String id = "${prefix}_${conditionKey}"
             Map ctx = [
@@ -1770,6 +1864,37 @@ private Map<String, String> getComparisonsByType(String type) {
     }
     return result
 }
+
+private Date getNextSunset(int offset = 0) {
+    Date now = new Date()
+    Date sunset = getSunriseAndSunset([ sunsetOffset: offset ]).sunset
+    if (now >= sunset) {
+        sunset = getSunriseAndSunset([ sunsetOffset: offset, date: now + 1 ]).sunset
+    }
+    if (logEnable) { log.debug "next sunset is at ${sunset}" }
+    return sunset
+}
+
+private Date getNextSunrise(int offset = 0) {
+    Date now = new Date()
+    Date sunrise = getSunriseAndSunset([ sunriseOffset: offset ]).sunrise
+    if (now >= sunrise) {
+        sunrise = getSunriseAndSunset([ sunriseOffset: offset, date: now + 1 ]).sunrise
+    }
+    if (logEnable) { log.debug "next sunrise is at ${sunrise}" }
+    return sunrise
+}
+
+private Date getNextTime(String datetime) {
+    Date now = new Date()
+    Date target = timeToday(datetime)
+    if (now >= target) {
+        target += 1
+    }
+    if (logEnable) { log.debug "next time is at ${target}" }
+    return target
+}
+
 
 // Internal method to call closure (with this as delegate) passing the context parameter
 @CompileStatic
