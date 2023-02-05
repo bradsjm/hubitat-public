@@ -52,6 +52,7 @@ metadata {
         attribute 'healthStatus', 'enum', [ 'unknown', 'offline', 'online' ]
 
         command 'identify', [ [ name: 'Effect type*', type: 'ENUM', description: 'Effect Type', constraints: IdentifyEffectNames.values()*.toLowerCase() ] ]
+        command 'setEnhancedHue', [ [ name: 'Hue*', type: 'NUMBER', description: 'Color Hue (0-360)' ] ]
         command 'stepLevelChange', [
             [ name: 'Direction*', type: 'ENUM', description: 'Direction for step change request', constraints: [ 'up', 'down' ] ],
             [ name: 'Step Size*', type: 'NUMBER', description: 'Level change step size' ],
@@ -99,12 +100,12 @@ List<String> configure() {
     // Power Restore Behavior
     if (settings.powerRestore != null) {
         log.info "configure: setting power restore state to 0x${intToHexStr(settings.powerRestore as Integer)}"
-        cmds += zigbee.writeAttribute(zigbee.ON_OFF_CLUSTER, 0x4003, DataType.ENUM8, settings.powerRestore as Integer, [:], 0)
+        cmds += zigbee.writeAttribute(zigbee.ON_OFF_CLUSTER, POWER_RESTORE_ID, DataType.ENUM8, settings.powerRestore as Integer, [:], 0)
     }
 
     // Attempt to enable cluster reporting, if it fails we fall back to polling after commands
     log.info 'configure: attempting to enable state reporting'
-    cmds += zigbee.configureReporting(HUE_PRIVATE_CLUSTER, HUE_PRIVATE_STATE_ID, DataType.STRING_OCTET, 1, REPORTING_MAX, null, [:], DELAY_MS)
+    cmds += zigbee.configureReporting(PHILIPS_PRIVATE_CLUSTER, HUE_PRIVATE_STATE_ID, DataType.STRING_OCTET, 1, REPORTING_MAX, null, [:], DELAY_MS)
 
     // Private cluster only reports XY colors so enable Hue and Saturation reporting
     cmds += zigbee.configureReporting(zigbee.COLOR_CONTROL_CLUSTER, 0x00, DataType.UINT8, 1, REPORTING_MAX, 1, [:], DELAY_MS)
@@ -134,7 +135,7 @@ List<String> identify(String name) {
     Integer effect = IdentifyEffectNames.find { k, v -> v.equalsIgnoreCase(name) }?.key
     if (effect == null) { return [] }
     if (settings.txtEnable) { log.info "identify (${name})" }
-    return zigbee.command(zigbee.IDENTIFY_CLUSTER, TRIGGER_EFFECT_CMD_ID, [:], 0, "${intToHexStr(effect)} 00")
+    return zigbee.command(zigbee.IDENTIFY_CLUSTER, 0x40, [:], 0, "${intToHexStr(effect)} 00")
 }
 
 void installed() {
@@ -173,7 +174,7 @@ List<String> ping() {
     if (settings.txtEnable) { log.info 'ping...' }
     // Using attribute 0x00 as a simple ping/pong mechanism
     scheduleCommandTimeoutCheck()
-    return zigbee.readAttribute(zigbee.BASIC_CLUSTER, 0x01, [:], 0)
+    return zigbee.readAttribute(zigbee.BASIC_CLUSTER, PING_ATTR_ID, [:], 0)
 }
 
 List<String> presetLevel(Object value) {
@@ -192,14 +193,14 @@ List<String> refresh() {
     cmds += zigbee.readAttribute(zigbee.BASIC_CLUSTER, FIRMWARE_VERSION_ID, [:], DELAY_MS)
 
     // Get Power Restore state
-    cmds += zigbee.readAttribute(zigbee.ON_OFF_CLUSTER, 0x4003, [:], DELAY_MS)
+    cmds += zigbee.readAttribute(zigbee.ON_OFF_CLUSTER, POWER_RESTORE_ID, [:], DELAY_MS)
 
     // Get Minimum/Maximum Color Temperature
     state.ct = state.ct ?: [ high: 6536, low: 2000 ] // default values
     cmds += zigbee.readAttribute(zigbee.COLOR_CONTROL_CLUSTER, [0x400B, 0x400C], [:], DELAY_MS)
 
     // Get device type and supported effects
-    cmds += zigbee.readAttribute(HUE_PRIVATE_CLUSTER, [ 0x01, 0x11 ], [ mfgCode: VENDOR_PHILIPS_ID ], DELAY_MS)
+    cmds += zigbee.readAttribute(PHILIPS_PRIVATE_CLUSTER, [ 0x01, 0x11 ], [ mfgCode: PHILIPS_VENDOR ], DELAY_MS)
 
     // Get minimum dim level
     cmds += zigbee.readAttribute(zigbee.LEVEL_CONTROL_CLUSTER, 0x03, [:], DELAY_MS)
@@ -225,7 +226,7 @@ List<String> setColor(Map value) {
     String rateHex = intToSwapHexStr(rate)
     String scaledHueValue = intToHexStr(Math.round(hue * 0xfe / 100.0))
     String scaledSatValue = intToHexStr(Math.round(saturation * 0xfe / 100.0))
-    cmds += zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, COLOR_CMD_ID, [:], DELAY_MS, "${scaledHueValue} ${scaledSatValue} ${isOn ? rateHex : '0000'} ${PRESTAGING_OPTION}")
+    cmds += zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, 0x06, [:], DELAY_MS, "${scaledHueValue} ${scaledSatValue} ${isOn ? rateHex : '0000'} ${PRESTAGING_OPTION}")
     if (value.level != null) {
         // This will turn on the device if it is off and set level
         cmds += setLevelPrivate(value.level, rate)
@@ -242,7 +243,7 @@ List<String> setColorTemperature(Object colorTemperature, Object level = null, O
     String rateHex = isOn ? intToSwapHexStr(rate) : '0000'
     Integer ct = constrain(colorTemperature, state.ct.low, state.ct.high)
     String miredHex = ctToMiredHex(ct)
-    cmds += zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, COLOR_CMD_CT_ID, [:], DELAY_MS, "${miredHex} ${rateHex} ${PRESTAGING_OPTION}")
+    cmds += zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, 0x0A, [:], DELAY_MS, "${miredHex} ${rateHex} ${PRESTAGING_OPTION}")
     if (level != null) {
         // This will turn on the device if it is off and set level
         cmds += setLevelPrivate(level, rate)
@@ -256,13 +257,25 @@ List<String> setEffect(Object number) {
     if (settings.txtEnable) { log.info "setEffect (${number})" }
     if (effectNumber == 0) {
         state.remove('effect')
-        return zigbee.command(HUE_PRIVATE_CLUSTER, 0x00, [ mfgCode: VENDOR_PHILIPS_ID ], 0, '2000 00')
+        return zigbee.command(PHILIPS_PRIVATE_CLUSTER, 0x00, [ mfgCode: PHILIPS_VENDOR ], 0, '2000 00')
     }
     state.effect = number
     int effect = HueEffectNames.keySet()[effectNumber - 1]
     scheduleCommandTimeoutCheck()
-    return zigbee.command(HUE_PRIVATE_CLUSTER, 0x00, [ mfgCode: VENDOR_PHILIPS_ID ], 0, "2100 01 ${intToHexStr(effect)}") +
+    return zigbee.command(PHILIPS_PRIVATE_CLUSTER, 0x00, [ mfgCode: PHILIPS_VENDOR ], 0, "2100 01 ${intToHexStr(effect)}") +
         ifPolling { hueStateRefresh(0) }
+}
+
+List<String> setEnhancedHue(Object value) {
+    if (settings.txtEnable) { log.info "setEnhancedHue (${value})" }
+    Boolean isOn = device.currentValue('switch') == 'on'
+    Integer hue = constrain(value, 0, 360)
+    Integer rate = isOn ? settings.colorTransitionTime.toInteger() : 0
+    String rateHex = intToSwapHexStr(rate)
+    String scaledHueValue = intToSwapHexStr(Math.round(hue * 182.04444) as Integer)
+    scheduleCommandTimeoutCheck()
+    return zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, 0x40, [:], 0, "${scaledHueValue} 00 ${rateHex} ${PRESTAGING_OPTION}") +
+        ifPolling(DELAY_MS + (rate * 100)) { colorRefresh(0) }
 }
 
 List<String> setHue(Object value) {
@@ -271,9 +284,9 @@ List<String> setHue(Object value) {
     Integer hue = constrain(value)
     Integer rate = isOn ? settings.colorTransitionTime.toInteger() : 0
     String rateHex = intToSwapHexStr(rate)
-    String scaledHueValue = intToHexStr(Math.round(hue * 0xfe / 100.0))
+    String scaledHueValue = intToHexStr(Math.round(hue * 0xfe / 100.0) as Integer)
     scheduleCommandTimeoutCheck()
-    return zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, COLOR_CMD_HUE_ID, [:], 0, "${scaledHueValue} 00 ${rateHex} ${PRESTAGING_OPTION}") +
+    return zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, 0x00, [:], 0, "${scaledHueValue} 00 ${rateHex} ${PRESTAGING_OPTION}") +
         ifPolling(DELAY_MS + (rate * 100)) { colorRefresh(0) }
 }
 
@@ -306,7 +319,7 @@ List<String> setSaturation(Object value) {
     String rateHex = intToSwapHexStr(rate)
     String scaledSatValue = intToHexStr(Math.round(saturation * 0xfe / 100.0))
     scheduleCommandTimeoutCheck()
-    return zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, COLOR_CMD_SAT_ID, [:], 0, "${scaledSatValue} 00 ${rateHex} ${PRESTAGING_OPTION}") +
+    return zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, 0x03, [:], 0, "${scaledSatValue} 00 ${rateHex} ${PRESTAGING_OPTION}") +
         ifPolling(DELAY_MS + (rate * 100)) { colorRefresh(0) }
 }
 
@@ -315,7 +328,7 @@ List<String> startLevelChange(String direction) {
     String rate = intToHexStr(settings.levelChangeRate.toInteger())
     String upDown = direction == 'down' ? '01' : '00'
     scheduleCommandTimeoutCheck()
-    return zigbee.command(zigbee.LEVEL_CONTROL_CLUSTER, MOVE_CMD_ON_OFF_ID, [:], 0, "${upDown} ${rate}")
+    return zigbee.command(zigbee.LEVEL_CONTROL_CLUSTER, 0x05, [:], 0, "${upDown} ${rate}")
 }
 
 List<String> stepLevelChange(String direction, Object stepSize, Object transitionTime = null) {
@@ -326,14 +339,14 @@ List<String> stepLevelChange(String direction, Object stepSize, Object transitio
     String stepHex = intToHexStr((level * 2.55).toInteger())
     String upDown = direction == 'down' ? '01' : '00'
     scheduleCommandTimeoutCheck()
-    return zigbee.command(zigbee.LEVEL_CONTROL_CLUSTER, MOVE_CMD_STEP_ID, [:], 0, "${upDown} ${stepHex} ${rateHex}") +
+    return zigbee.command(zigbee.LEVEL_CONTROL_CLUSTER, 0x06, [:], 0, "${upDown} ${stepHex} ${rateHex}") +
         ifPolling { zigbee.levelRefresh(0) + zigbee.onOffRefresh(0) }
 }
 
 List<String> stopLevelChange() {
     if (settings.txtEnable) { log.info 'stopLevelChange' }
     scheduleCommandTimeoutCheck()
-    return zigbee.command(zigbee.LEVEL_CONTROL_CLUSTER, MOVE_CMD_STOP_ID, [:], 0) +
+    return zigbee.command(zigbee.LEVEL_CONTROL_CLUSTER, 0x03, [:], 0) +
         ifPolling { zigbee.levelRefresh(0) + zigbee.onOffRefresh(0) }
 }
 
@@ -392,7 +405,7 @@ void parse(String description) {
             parseGroupsCluster(descMap)
             descMap.additionalAttrs?.each { m -> parseGroupsCluster(m) }
             break
-        case HUE_PRIVATE_CLUSTER:
+        case PHILIPS_PRIVATE_CLUSTER:
             parsePrivateCluster(descMap)
             descMap.additionalAttrs?.each { m -> parsePrivateCluster(m) }
             break
@@ -417,7 +430,7 @@ void parse(String description) {
  */
 void parseBasicCluster(Map descMap) {
     switch (descMap.attrInt as Integer) {
-        case 0x01: // Using 0x01 read as a simple ping/pong mechanism
+        case PING_ATTR_ID: // Using 0x01 read as a simple ping/pong mechanism
             if (settings.txtEnable) { log.info 'pong..' }
             break
         case FIRMWARE_VERSION_ID:
@@ -582,7 +595,7 @@ void parsePrivateCluster(Map descMap) {
  */
 void parsePrivateClusterDeviceType(Map descMap) {
     BigInteger deviceTypeValue = new BigInteger(descMap.value, 16)
-    String deviceType = '0x' + deviceTypeValue.toString(16)
+    String deviceType = deviceTypeValue.toString(16).toUpperCase()
     log.info "detected light type: ${deviceType}"
     updateDataValue('type', deviceType)
 }
@@ -669,7 +682,7 @@ void parseOnOffCluster(Map descMap) {
         case 0x00:
             sendSwitchEvent(descMap.value == '01')
             break
-        case 0x4003:
+        case POWER_RESTORE_ID:
             Integer value = hexStrToUnsignedInt(descMap.value)
             log.info "power restore mode is '${PowerRestoreOpts.options[value]}' (0x${descMap.value})"
             device.updateSetting('powerRestore', [value: value, type: 'number' ])
@@ -704,7 +717,7 @@ private String ctToMiredHex(int ct) {
 }
 
 private List<String> hueStateRefresh(int delayMs = 2000) {
-    return zigbee.readAttribute(HUE_PRIVATE_CLUSTER, HUE_PRIVATE_STATE_ID, [ mfgCode: VENDOR_PHILIPS_ID ], delayMs)
+    return zigbee.readAttribute(PHILIPS_PRIVATE_CLUSTER, HUE_PRIVATE_STATE_ID, [ mfgCode: PHILIPS_VENDOR ], delayMs)
 }
 
 private List<String> ifPolling(int delayMs = 0, Closure commands) {
@@ -723,7 +736,7 @@ private int miredHexToCt(String mired) {
     return (1000000 / hexStrToUnsignedInt(zigbee.swapOctets(mired))) as int
 }
 
-private void scheduleCommandTimeoutCheck(int delay = COMMAND_TIMEOUT_SECS) {
+private void scheduleCommandTimeoutCheck(int delay = COMMAND_TIMEOUT) {
     runIn(delay, 'deviceCommandTimeout')
 }
 
@@ -838,7 +851,7 @@ private List<String> setLevelPrivate(Object value, Integer rate = 0, Integer del
     if (level > 0 && levelPreset == false) { sendSwitchEvent(true) } // assume success
     String hexLevel = intToHexStr(Math.round(level * 0xfe / 100.0).toInteger())
     String hexRate = intToSwapHexStr(rate)
-    int levelCommand = levelPreset ? LEVEL_CMD_ID : LEVEL_CMD_ON_OFF_ID
+    int levelCommand = levelPreset ? 0x00 : 0x04
     // Payload: Level | Transition Time | Options Mask | Options Override
     // Options: Bit 0x01 enables prestaging level
     return zigbee.command(zigbee.LEVEL_CONTROL_CLUSTER, levelCommand, [:], delay, "${hexLevel} ${hexRate} ${PRESTAGING_OPTION}") +
@@ -846,31 +859,33 @@ private List<String> setLevelPrivate(Object value, Integer rate = 0, Integer del
 }
 
 // Configuration
-@Field static final int COMMAND_TIMEOUT_SECS = 10 // Command timeout before setting offline
-@Field static final int DELAY_MS = 200 // Delay between zigbee commands
-@Field static final int REPORTING_MAX = 600 // Hue hub uses 5 minute reporting
-@Field static final int POLL_DELAY_MS = 1000 // Delay when polling results
-@Field static final String PRESTAGING_OPTION = '01 01' // Enable changes when off
-@Field static final int VENDOR_PHILIPS_ID = 0x100B // Philips vendor code
 
-// Zigbee Cluster IDs
-@Field static final int HUE_PRIVATE_CLUSTER = 0xFC03
+// Command timeout before setting healthState to offline
+@Field static final int COMMAND_TIMEOUT = 10
 
-// Zigbee Command IDs
-@Field static final int COLOR_CMD_CT_ID = 0x0A
-@Field static final int COLOR_CMD_HUE_ID = 0x00
-@Field static final int COLOR_CMD_ID = 0x06
-@Field static final int COLOR_CMD_SAT_ID = 0x03
-@Field static final int LEVEL_CMD_ID = 0x00
-@Field static final int LEVEL_CMD_ON_OFF_ID = 0x04
-@Field static final int MOVE_CMD_ON_OFF_ID = 0x05
-@Field static final int MOVE_CMD_STEP_ID = 0x06
-@Field static final int MOVE_CMD_STOP_ID = 0x03
-@Field static final int TRIGGER_EFFECT_CMD_ID = 0x40
+// Delay inbetween zigbee commands
+@Field static final int DELAY_MS = 200
+
+// Hue hub uses five minute attribute reporting
+@Field static final int REPORTING_MAX = 600
+
+// Delay before reading attribute (when using polling)
+@Field static final int POLL_DELAY_MS = 1000
+
+// Command option that enable changes when off
+@Field static final String PRESTAGING_OPTION = '01 01'
+
+// Philips Hue private cluster vendor code
+@Field static final int PHILIPS_VENDOR = 0x100B
+
+// Philips Hue private cluster
+@Field static final int PHILIPS_PRIVATE_CLUSTER = 0xFC03
 
 // Zigbee Attribute IDs
 @Field static final int FIRMWARE_VERSION_ID = 0x4000
 @Field static final int HUE_PRIVATE_STATE_ID = 0x02
+@Field static final int PING_ATTR_ID = 0x01
+@Field static final int POWER_RESTORE_ID = 0x4003
 
 @Field static final Map<Integer, String> ColorNameMap = [
     15: 'Red',
