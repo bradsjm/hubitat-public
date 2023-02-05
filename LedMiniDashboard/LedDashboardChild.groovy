@@ -157,8 +157,93 @@ import java.util.regex.Matcher
 // Defines the text used to show the application is paused
 @Field static final String pauseText = '<span style=\'color: red;\'> (Paused)</span>'
 
+// Invoked when the app is first created.
+void installed() {
+    logInfo 'mini-dashboard child created'
+}
+
+// Invoked by the hub when a global variable is renamed
+void renameVariable(String oldName, String newName) {
+    settings.findAll { s -> s.value == oldName }.each { s ->
+        logInfo "updating variable name ${oldName} to ${newName} for ${s.key}"
+        s.value = newName
+    }
+}
+
+// Invoked when the app is removed.
+void uninstalled() {
+    unsubscribe()
+    unschedule()
+    removeAllInUseGlobalVar()
+    resetNotifications()
+    logInfo 'uninstalled'
+}
+
+// Invoked when the settings are updated.
+void updated() {
+    logInfo 'configuration updated'
+
+    // Clear tracked devices
+    DeviceStateTracker.clear()
+
+    // Clean out unused settings
+    cleanSettings()
+
+    // Remove any scheduled tasks
+    unschedule()
+
+    // Unsubscribe from any events
+    unsubscribe()
+
+    // Remove global variable registrations
+    removeAllInUseGlobalVar()
+
+    // Reset all notifications
+    resetNotifications()
+
+    if (state.paused) {
+        return
+    }
+
+    // Clear state (used mostly for tracking delayed conditions)
+    state.clear()
+
+    // Subscribe to events from switches
+    subscribeAllSwitches()
+
+    // Subscribe to events from conditions
+    subscribeAllConditions()
+
+    // Subscribe to global variables
+    subscribeVariables()
+
+    // Dispatch the current notifications
+    runInMillis(200, 'notificationDispatcher')
+
+    if (settings.periodicRefresh) {
+        logInfo "enabling periodic forced refresh every ${settings.periodicRefreshInterval} minutes"
+        int seconds = 60 * (settings.periodicRefreshInterval ?: 60)
+        runIn(seconds, 'forceRefresh')
+    }
+}
+
 /*
- * Application Main Page
+ * Used by parent to create duplicate dashboards
+ */
+Map getSettings() {
+    return settings.findAll { k, v ->
+        k != 'switches' && !k.endsWith('_device')
+    }
+}
+
+void putSettings(Map newSettings) {
+    newSettings.each { k, v -> app.updateSetting(k, v) }
+    state.paused = true
+    updatePauseLabel()
+}
+
+/********************************************************************
+ * START USER INTERFACE
  */
 Map mainPage() {
     if (app.label == null) {
@@ -260,9 +345,6 @@ Map mainPage() {
     }
 }
 
-/*
- * Dashboard Edit Page
- */
 Map editPage(Map params = [:]) {
     String prefix = params.prefix
     if (!prefix) { return mainPage() }
@@ -301,9 +383,6 @@ Map editPage(Map params = [:]) {
     }
 }
 
-/*
- * Dashboard Edit Page LED Indication Section
- */
 Map renderIndicationSection(String prefix, String title = null) {
     Map deviceType = getDeviceType()
     String ledNumber = settings["${prefix}_lednumber"]
@@ -390,16 +469,6 @@ Map renderIndicationSection(String prefix, String title = null) {
     }
 }
 
-/*
- *  Dashboard Edit Page Conditions Section
- *  Called from the application page, renders to the user interface a section to view and edit
- *  conditions and events defined in the ConditionsMap above.
- *
- *  @param prefix          The settings prefix to use (e.g. conditions_1) for persistence
- *  @param sectionTitle    The section title to use
- *  @param ruleDefinitions The rule definitions to use (see ConditionsMap)
- *  @returns page section
- */
 Map renderConditionSection(String prefix, String sectionTitle = null, Map<String, Map> ruleDefinitions = ConditionsMap) {
     return section(sectionTitle) {
         Map<String, String> conditionTitles = ruleDefinitions.collectEntries { String k, Map v -> [ k, v.title ] }
@@ -498,26 +567,6 @@ Map renderConditionSection(String prefix, String sectionTitle = null, Map<String
     }
 }
 
-/*
- * Used by parent to create duplicate dashboards
- */
-Map getSettings() {
-    return settings.findAll { k, v ->
-        k != 'switches' && !k.endsWith('_device')
-    }
-}
-
-void putSettings(Map newSettings) {
-    newSettings.each { k, v -> app.updateSetting(k, v) }
-    state.paused = true
-    updatePauseLabel()
-}
-
-/*
- * Event Handlers (methods invoked by the Hub)
- */
-
-// Invoked when a button input in the UI is pressed
 void appButtonHandler(String buttonName) {
     logDebug "button ${buttonName} pushed"
     switch (buttonName) {
@@ -554,291 +603,8 @@ void appButtonHandler(String buttonName) {
     }
 }
 
-/*
- *  Main event handler receives device and location events and runs through
- *  all the conditions to determine if LED states need to be updated on switches.
- *
- *  Maintains priorities per LED to ensure that higher priority conditions take
- *  precedence over lower priorities.
- */
-void eventHandler(Event event) {
-    Map lastEvent = [
-        descriptionText: event.descriptionText,
-        deviceId: event.deviceId,
-        isStateChange: event.isStateChange,
-        name: event.name,
-        source: event.source,
-        type: event.type,
-        unit: event.unit,
-        unixTime: event.unixTime,
-        value: event.value
-    ]
-    logDebug "<b>eventHandler:</b> ${lastEvent}"
-    state.lastEvent = lastEvent
-
-    // Debounce multiple events hitting at the same time by using timer job
-    runInMillis(200, 'notificationDispatcher')
-}
-
-// Invoked when the app is first created.
-void installed() {
-    logInfo 'mini-dashboard child created'
-}
-
-// Invoked by the hub when a global variable is renamed
-void renameVariable(String oldName, String newName) {
-    settings.findAll { s -> s.value == oldName }.each { s ->
-        logInfo "updating variable name ${oldName} to ${newName} for ${s.key}"
-        s.value = newName
-    }
-}
-
-// Invoked when the app is removed.
-void uninstalled() {
-    unsubscribe()
-    unschedule()
-    removeAllInUseGlobalVar()
-    resetNotifications()
-    logInfo 'uninstalled'
-}
-
-// Invoked when the settings are updated.
-void updated() {
-    logInfo 'configuration updated'
-
-    // Clear tracked devices
-    DeviceStateTracker.clear()
-
-    // Clean out unused settings
-    cleanSettings()
-
-    // Remove any scheduled tasks
-    unschedule()
-
-    // Unsubscribe from any events
-    unsubscribe()
-
-    // Remove global variable registrations
-    removeAllInUseGlobalVar()
-
-    // Reset all notifications
-    resetNotifications()
-
-    if (state.paused) {
-        return
-    }
-
-    // Clear state (used mostly for tracking delayed conditions)
-    state.clear()
-
-    // Subscribe to events from switches
-    subscribeAllSwitches()
-
-    // Subscribe to events from conditions
-    subscribeAllConditions()
-
-    // Subscribe to global variables
-    subscribeVariables()
-
-    // Dispatch the current notifications
-    runInMillis(200, 'notificationDispatcher')
-
-    if (settings.periodicRefresh) {
-        logInfo "enabling periodic forced refresh every ${settings.periodicRefreshInterval} minutes"
-        int seconds = 60 * (settings.periodicRefreshInterval ?: 60)
-        runIn(seconds, 'forceRefresh')
-    }
-}
-
-/*
- *  Track the led state changes and update the device tracker object
- *  Only supported for the Inovelli Blue LED driver
- */
-@CompileStatic
-void deviceStateTracker(Event event) {
-    switch (event.value) {
-        case 'User Cleared':
-            DeviceStateTracker.remove(event.device.id)
-            logInfo "clearing all LED tracking for ${event.device}"
-            break
-        case 'Stop All':
-            Map<String, Map> tracker = DeviceStateTracker[event.device.id]
-            if (tracker) {
-                tracker.remove('All')
-                logInfo "cleared LED tracking for ${event.device} All LED"
-            }
-            break
-        case ~/^Stop LED(\d)$/:
-            Map<String, Map> tracker = DeviceStateTracker[event.device.id]
-            if (tracker) {
-                String led = (Matcher.lastMatcher[0] as List)[1]
-                tracker.remove(led)
-                logInfo "cleared LED tracking for ${event.device} LED${led}"
-            }
-            break
-    }
-}
-
-/**
- * If forced refresh is enabled then this is called every specified
- * interval to flush the cache and push updates out. This can be
- * helpful for devices that may not reliably receive commands but
- * should not be used unless required.
- */
-void forceRefresh() {
-    if (settings.periodicRefresh) {
-        logInfo 'executing periodic forced refresh'
-        DeviceStateTracker.clear()
-        notificationDispatcher()
-
-        int seconds = 60 * (settings.periodicRefreshInterval ?: 60)
-        runIn(seconds, 'forceRefresh')
-    }
-}
-
-/**
- *  Main entry point for updating LED notifications on devices
- */
-void notificationDispatcher() {
-    Map<String, Boolean> dashboardResults = evaluateDashboardConditions()
-    Map<String, Map> ledStates = calculateLedState(dashboardResults)
-
-    if (ledStates) {
-        ledStates.values().each { config ->
-            updateDeviceLedState(config)
-            pauseExecution(200)
-        }
-    }
-}
-
-/*
- *  Dashboard evaluation function responsible for iterating each condition over
- *  the dashboards and returning a map with true/false result for each dashboard prefix.
- *
- *  Includes logic for delayed activiation by scheduling an update job
- */
-Map<String, Map> evaluateDashboardConditions() {
-    long nextEvaluationTime = 0
-    Map<String, Map> evaluationResults = [:]
-    // Iterate each dashboard
-    for (String prefix in getSortedDashboardPrefixes()) {
-        // Evaluate the dashboard conditions
-        boolean active = evaluateConditions(prefix)
-        // Check if dashboard delay configured
-        String delayKey = "${prefix}_delay"
-        if (active && settings[delayKey]) {
-            int delayMs = (settings[delayKey] ?: 0) * 60000
-            // Determine if delay has expired yet
-            long targetTime = state.computeIfAbsent(delayKey) { k -> getOffsetMs(delayMs) }
-            if (now() < targetTime) {
-                logDebug "[evaluateDashboardConditions] ${prefix} has delayed evaluation (${delayMs}ms)"
-                active = false
-                // calculate when we need to check again
-                if (!nextEvaluationTime || nextEvaluationTime > targetTime) {
-                    nextEvaluationTime = targetTime
-                }
-            }
-        } else {
-            state.remove(delayKey)
-        }
-        evaluationResults[prefix] = active
-    }
-
-    if (nextEvaluationTime) {
-        long delay = nextEvaluationTime - now()
-        logDebug "[evaluateDashboardConditions] scheduling evaluation in ${delay}ms"
-        runInMillis(delay, 'notificationDispatcher')
-    }
-
-    return evaluationResults
-}
-
-/*
- *  Calculate Notification LED States from condition results
- *  Returns a map of each LED number and the state config associated with it for actioning
- */
-Map<String, Map> calculateLedState(Map<String, Boolean> results) {
-    Map<String, Map> ledStates = [:]
-    for (String prefix in getSortedDashboardPrefixes()) {
-        Map<String, String> config = getDashboardConfig(prefix)
-        Map<String, Map> oldState = ledStates[config.lednumber as String] ?: [:]
-        int oldPriority = oldState.priority as Integer ?: 0
-        if (results[prefix]) {
-            replaceVariables(config)
-            int newPriority = config.priority as Integer ?: 0
-            if (newPriority >= oldPriority) {
-                ledStates[config.lednumber as String] = config
-            }
-        } else if (config.autostop != false && !oldPriority) {
-            // Auto stop effect
-            ledStates[config.lednumber as String] = [
-                prefix: config.prefix,
-                name: "[auto stop] ${config.name}",
-                lednumber: config.lednumber,
-                priority: 0,    // lowest priority
-                effect: '255',  // stop effect code
-                color: '0',     // default color
-                level: '100',   // default level
-                unit: '255'     // Infinite
-            ]
-        }
-    }
-    return ledStates
-}
-
-// Scheduled stop for RGB device color
-void setDeviceOff() {
-    logDebug 'setDeviceOff called'
-    for (DeviceWrapper device in settings['switches']) {
-        Map<String, Map> tracker = getDeviceTracker(device)
-        if (now() >= tracker['All']?.expires) {
-            logDebug "${device}.off()"
-            device.off()
-            DeviceStateTracker.remove(device.id)
-        }
-    }
-}
-
-// Scheduled stop for Inovelli Red Gen1
-void setConfigParameter() {
-    logDebug 'setConfigParameter called'
-    Map deviceType = getDeviceType()
-    for (DeviceWrapper device in settings['switches']) {
-        Map<String, Map> tracker = getDeviceTracker(device)
-        if (now() >= tracker['All']?.expires) {
-            logDebug "${device}.setConfigParameter(${deviceType.ledLevelParam},0,'1')"
-            device.setConfigParameter(deviceType.ledLevelParam as int, 0, '1')
-            DeviceStateTracker.remove(device.id)
-        }
-    }
-}
-
-/*
- *  Private Implementation Helper Methods
- */
-private static Map<String, Map> getDeviceTracker(DeviceWrapper dw) {
-    return DeviceStateTracker.computeIfAbsent(dw.id) { k -> [:].withDefault { [:] } }
-}
-
-// Cleans settings removing entries no longer in use
-private void cleanSettings() {
-    // Clean unused dashboard settings
-    for (String prefix in getDashboardPrefixes()) {
-        ConditionsMap.keySet()
-            .findAll { key -> !(key in settings["${prefix}_conditions"]) }
-            .each { key -> removeSettings("${prefix}_${key}") }
-
-        // Clean unused variable settings
-        [ 'lednumber', 'effect', 'color' ].each { var ->
-            if (settings["${prefix}_${var}"] != 'var') {
-                app.removeSetting("${prefix}_${var}_var")
-            }
-        }
-    }
-}
-
-// Returns available priorities based on lednumber
-private Map<String, String> getAvailablePriorities(String prefix) {
+// Returns available priorities based on lednumber for display in dropdown
+Map<String, String> getAvailablePriorities(String prefix) {
     String ledNumber = settings["${prefix}_lednumber"]
     if (ledNumber == 'var') {
         Map deviceType = getDeviceType()
@@ -860,8 +626,8 @@ private Map<String, String> getAvailablePriorities(String prefix) {
     }
 }
 
-// Utility method for CSS colored text
-private String getColorSpan(Integer hue, String text) {
+// Utility method for displaying CSS colored text
+String getColorSpan(Integer hue, String text) {
     if (hue != null && text) {
         String css = (hue == 360) ? 'white' : "hsl(${hue}, 50%, 50%)"
         return "<span style=\'color: ${css}\'>${text}</span>"
@@ -869,49 +635,8 @@ private String getColorSpan(Integer hue, String text) {
     return 'n/a'
 }
 
-// Returns key value map of specified dashboard settings
-private Map<String, String> getDashboardConfig(String prefix) {
-    int startPos = prefix.size() + 1
-    return [ 'prefix': prefix ] + settings
-        .findAll { s -> s.key.startsWith(prefix + '_') }
-        .collectEntries { s -> [ s.key.substring(startPos), s.value ] }
-}
-
-private String getSuggestedConditionName(String prefix) {
-    Map config = getDashboardConfig(prefix)
-    Map deviceType = getDeviceType()
-    Map<String, String> fxOptions = config.lednumber == 'All' ? deviceType.effectsAll : deviceType.effects
-    StringBuilder sb = new StringBuilder('Set ')
-
-    if (config.lednumber && config.lednumber != 'var') {
-        sb << deviceType.leds[config.lednumber] ?: 'n/a'
-    } else {
-        sb << 'LED'
-    }
-    if (config.color && config.color != 'var' && config.color != 'val') {
-        sb << ' to '
-        if (fxOptions[config.effect]) {
-            sb << "${fxOptions[config.effect]} "
-        }
-        sb << ColorMap[config.color]
-    }
-
-    List<String> conditions = config.conditions
-        .findAll { c -> ConditionsMap.containsKey(c) }
-        .collect { c -> ConditionsMap[c].title + (config["${c}_all"] ? ' <i>(All)</i>' : '') }
-    if (conditions) {
-        sb << " when ${conditions[0]}"
-    }
-
-    if (config.delay) {
-        sb << " for ${config.delay}"
-    }
-
-    return sb.toString()
-}
-
 // Creates a description string for the dashboard configuration for display
-private String getDashboardDescription(String prefix) {
+String getDashboardDescription(String prefix) {
     Map config = getDashboardConfig(prefix)
     Map deviceType = getDeviceType()
     StringBuilder sb = new StringBuilder()
@@ -974,6 +699,264 @@ private String getDashboardDescription(String prefix) {
     return sb.toString()
 }
 
+String getSuggestedConditionName(String prefix) {
+    Map config = getDashboardConfig(prefix)
+    Map deviceType = getDeviceType()
+    Map<String, String> fxOptions = config.lednumber == 'All' ? deviceType.effectsAll : deviceType.effects
+    StringBuilder sb = new StringBuilder('Set ')
+
+    if (config.lednumber && config.lednumber != 'var') {
+        sb << deviceType.leds[config.lednumber] ?: 'n/a'
+    } else {
+        sb << 'LED'
+    }
+    if (config.color && config.color != 'var' && config.color != 'val') {
+        sb << ' to '
+        if (fxOptions[config.effect]) {
+            sb << "${fxOptions[config.effect]} "
+        }
+        sb << ColorMap[config.color]
+    }
+
+    List<String> conditions = config.conditions
+        .findAll { c -> ConditionsMap.containsKey(c) }
+        .collect { c -> ConditionsMap[c].title + (config["${c}_all"] ? ' <i>(All)</i>' : '') }
+    if (conditions) {
+        sb << " when ${conditions[0]}"
+    }
+
+    if (config.delay) {
+        sb << " for ${config.delay}"
+    }
+
+    return sb.toString()
+}
+
+// Updates the app label based on pause state
+void updatePauseLabel() {
+    if (state.paused && !app.label?.endsWith(pauseText)) {
+        app.updateLabel(app.label + pauseText)
+    } else if (app.label?.endsWith(pauseText)) {
+        app.updateLabel(app.label - pauseText)
+    }
+}
+
+/**** END USER INTERFACE *********************************************************************/
+
+/*
+ * Common event handler used by all rule conditions
+ */
+void eventHandler(Event event) {
+    Map lastEvent = [
+        descriptionText: event.descriptionText,
+        deviceId: event.deviceId,
+        isStateChange: event.isStateChange,
+        name: event.name,
+        source: event.source,
+        type: event.type,
+        unit: event.unit,
+        unixTime: event.unixTime,
+        value: event.value
+    ]
+    logDebug "<b>eventHandler:</b> ${lastEvent}"
+    state.lastEvent = lastEvent
+
+    // Debounce multiple events hitting at the same time by using timer job
+    runInMillis(200, 'notificationDispatcher')
+}
+
+/*
+ *  Track the led state changes and update the device tracker object
+ *  Only supported for the Inovelli Blue LED driver
+ */
+void deviceStateTracker(Event event) {
+    switch (event.value) {
+        case 'User Cleared':
+            DeviceStateTracker.remove(event.device.id)
+            logInfo "clearing all LED tracking for ${event.device}"
+            break
+        case 'Stop All':
+            Map<String, Map> tracker = DeviceStateTracker[event.device.id]
+            if (tracker) {
+                tracker.remove('All')
+                logInfo "cleared LED tracking for ${event.device} All LED"
+            }
+            break
+        case ~/^Stop LED(\d)$/:
+            Map<String, Map> tracker = DeviceStateTracker[event.device.id]
+            if (tracker) {
+                String led = (Matcher.lastMatcher[0] as List)[1]
+                tracker.remove(led)
+                logInfo "cleared LED tracking for ${event.device} LED${led}"
+            }
+            break
+    }
+}
+
+/**
+ * If forced refresh is enabled then this is called every specified
+ * interval to flush the cache and push updates out. This can be
+ * helpful for devices that may not reliably receive commands but
+ * should not be used unless required.
+ */
+void forceRefresh() {
+    if (settings.periodicRefresh) {
+        logInfo 'executing periodic forced refresh'
+        DeviceStateTracker.clear()
+        notificationDispatcher()
+
+        int seconds = 60 * (settings.periodicRefreshInterval ?: 60)
+        runIn(seconds, 'forceRefresh')
+    }
+}
+
+// Scheduled stop used for devices that don't have built-in timers
+void stopNotification() {
+    logDebug 'stopNotification called'
+    Map deviceType = getDeviceType()
+    for (DeviceWrapper device in settings['switches']) {
+        Map<String, Map> tracker = getDeviceTracker(device)
+        if (now() >= tracker['All']?.expires) {
+            if (device.hasCommand('setConfigParameter')) {
+                Integer param = deviceType.ledLevelParam
+                logDebug "${device}.setConfigParameter(${param}, 0, '1')"
+                device.setConfigParameter(param, 0, '1')
+            } else if (device.hasCommand('off')) {
+                logDebug "${device}.off()"
+                device.off()
+            }
+            DeviceStateTracker.remove(device.id)
+        }
+    }
+}
+
+/*************************************************************************/
+
+/**
+ *  Main dispatcher for setting device LED notifications
+ */
+void notificationDispatcher() {
+    // Evaluate current dashboard condition rules
+    Map<String, Boolean> dashboardResults = evaluateDashboardConditions()
+
+    // Calculate desired LED states
+    Map<String, Map> ledStates = calculateLedState(dashboardResults)
+
+    // Dispatch each LED state to devices
+    ledStates.values().each { config ->
+        updateDeviceLedState(config)
+        pauseExecution(200)
+    }
+}
+
+/*
+ *  Dashboard evaluation function responsible for iterating each condition over
+ *  the dashboards and returning a map with true/false result for each dashboard prefix.
+ *
+ *  Includes logic for delayed activiation by scheduling an update job
+ */
+Map<String, Map> evaluateDashboardConditions() {
+    long nextEvaluationTime = 0
+    Map<String, Map> evaluationResults = [:]
+    // Iterate each dashboard
+    for (String prefix in getSortedDashboardPrefixes()) {
+        // Evaluate the dashboard conditions
+        boolean active = evaluateConditions(prefix)
+        // Check if dashboard delay configured
+        String delayKey = "${prefix}_delay"
+        if (active && settings[delayKey]) {
+            int delayMs = (settings[delayKey] ?: 0) * 60000
+            // Determine if delay has expired yet
+            long targetTime = state.computeIfAbsent(delayKey) { k -> getOffsetMs(delayMs) }
+            if (now() < targetTime) {
+                logDebug "[evaluateDashboardConditions] ${prefix} has delayed evaluation (${delayMs}ms)"
+                active = false
+                // calculate when we need to check again
+                if (!nextEvaluationTime || nextEvaluationTime > targetTime) {
+                    nextEvaluationTime = targetTime
+                }
+            }
+        } else {
+            state.remove(delayKey)
+        }
+        evaluationResults[prefix] = active
+    }
+
+    if (nextEvaluationTime) {
+        long delay = nextEvaluationTime - now()
+        logDebug "[evaluateDashboardConditions] scheduling evaluation in ${delay}ms"
+        runInMillis(delay, 'notificationDispatcher')
+    }
+
+    return evaluationResults
+}
+
+/*
+ *  Calculate Notification LED States from condition results
+ *  Returns a map of each LED number and the state config associated with it for actioning
+ */
+@CompileStatic
+Map<String, Map> calculateLedState(Map<String, Boolean> results) {
+    Map<String, Map> ledStates = [:]
+    for (String prefix in getSortedDashboardPrefixes()) {
+        Map<String, String> config = getDashboardConfig(prefix)
+        Map<String, Map> oldState = ledStates[config.lednumber as String] ?: [:]
+        int oldPriority = oldState.priority as Integer ?: 0
+        if (results[prefix]) {
+            replaceVariables(config)
+            int newPriority = config.priority as Integer ?: 0
+            if (newPriority >= oldPriority) {
+                ledStates[config.lednumber as String] = config
+            }
+        } else if (config.autostop != false && !oldPriority) {
+            // Auto stop effect
+            ledStates[config.lednumber as String] = [
+                prefix: config.prefix,
+                name: "[auto stop] ${config.name}",
+                lednumber: config.lednumber,
+                priority: 0,    // lowest priority
+                effect: '255',  // stop effect code
+                color: '0',     // default color
+                level: '100',   // default level
+                unit: '255'     // Infinite
+            ]
+        }
+    }
+    return ledStates
+}
+
+/*
+ *  Private Implementation Helper Methods
+ */
+private static Map<String, Map> getDeviceTracker(DeviceWrapper dw) {
+    return DeviceStateTracker.computeIfAbsent(dw.id) { k -> [:].withDefault { [:] } }
+}
+
+// Cleans settings removing entries no longer in use
+private void cleanSettings() {
+    for (String prefix in getDashboardPrefixes()) {
+        // Clean unused dashboard settings
+        ConditionsMap.keySet()
+            .findAll { key -> !(key in settings["${prefix}_conditions"]) }
+            .each { key -> removeSettings("${prefix}_${key}") }
+
+        // Clean unused variable settings
+        [ 'lednumber', 'effect', 'color' ].each { var ->
+            if (settings["${prefix}_${var}"] != 'var') {
+                app.removeSetting("${prefix}_${var}_var")
+            }
+        }
+    }
+}
+
+// Returns key value map of specified dashboard settings
+private Map<String, String> getDashboardConfig(String prefix) {
+    int startPos = prefix.size() + 1
+    return [ 'prefix': prefix ] + settings
+        .findAll { s -> s.key.startsWith(prefix + '_') }
+        .collectEntries { s -> [ s.key.substring(startPos), s.value ] }
+}
+
 // Returns a set of dashboard prefixes
 private Set<String> getDashboardPrefixes() {
     return settings.keySet().findAll { s ->
@@ -981,7 +964,7 @@ private Set<String> getDashboardPrefixes() {
     }.collect { s -> s - '_priority' }
 }
 
-// Returns dashboard setting prefix sorted by priority (descending) then name (ascending)
+// Returns dashboard setting prefix sorted by priority then name
 private List<String> getSortedDashboardPrefixes() {
     return getDashboardPrefixes().collect { String prefix ->
         [
@@ -1135,7 +1118,8 @@ private void subscribeAllSwitches() {
 }
 
 /**
- *  updateDeviceLedState is a wrapper around driver specific commands for setting specific LED notifications
+ *  updateDeviceLedState provides a wrapper around driver specific commands
+ *  for setting specific LED notifications
  */
 private void updateDeviceLedState(Map config) {
     for (DeviceWrapper device in settings['switches']) {
@@ -1230,11 +1214,11 @@ private void updateDeviceLedStateInovelliRedGen1(DeviceWrapper dw, Map config) {
     }
     if (config.unit && config.unit != '255') {
         long duration = getDurationMs(Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255))
-        logDebug 'scheduling setConfigParameter for ' + duration + 'ms'
-        runInMillis(duration + 1000, 'setConfigParameter')
+        logDebug 'scheduling stopNotification for ' + duration + 'ms'
+        runInMillis(duration + 1000, 'stopNotification')
     } else {
-        logDebug 'unschedule setConfigParameter'
-        unschedule('setConfigParameter')
+        logDebug 'unschedule stopNotification'
+        unschedule('stopNotification')
     }
 }
 
@@ -1293,20 +1277,11 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
     }
     if (config.unit && config.unit != '255') {
         long duration = getDurationMs(Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255))
-        logDebug 'scheduling setDeviceOff in ' + duration + 'ms'
-        runInMillis(duration + 1000, 'setDeviceOff')
+        logDebug 'scheduling stopNotification in ' + duration + 'ms'
+        runInMillis(duration + 1000, 'stopNotification')
     } else {
-        logDebug 'unschedule setDeviceOff'
-        unschedule('setDeviceOff')
-    }
-}
-
-// Updates the app label based on pause state
-private void updatePauseLabel() {
-    if (state.paused && !app.label?.endsWith(pauseText)) {
-        app.updateLabel(app.label + pauseText)
-    } else if (app.label?.endsWith(pauseText)) {
-        app.updateLabel(app.label - pauseText)
+        logDebug 'unschedule stopNotification'
+        unschedule('stopNotification')
     }
 }
 
