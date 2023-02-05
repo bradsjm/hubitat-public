@@ -53,6 +53,11 @@ metadata {
 
         command 'identify', [ [ name: 'Effect type*', type: 'ENUM', description: 'Effect Type', constraints: IdentifyEffectNames.values()*.toLowerCase() ] ]
         command 'setEnhancedHue', [ [ name: 'Hue*', type: 'NUMBER', description: 'Color Hue (0-360)' ] ]
+        command 'stepColorTemperature', [
+            [ name: 'Direction*', type: 'ENUM', description: 'Direction for step change request', constraints: [ 'up', 'down' ] ],
+            [ name: 'Step Size (Mireds)*', type: 'NUMBER', description: 'Mireds step size (1-300)' ],
+            [ name: 'Duration', type: 'NUMBER', description: 'Transition duration in seconds' ]
+        ]
         command 'stepHueChange', [
             [ name: 'Direction*', type: 'ENUM', description: 'Direction for step change request', constraints: [ 'up', 'down' ] ],
             [ name: 'Step Size*', type: 'NUMBER', description: 'Hue change step size (1-99)' ],
@@ -207,9 +212,6 @@ List<String> refresh() {
     // Get device type and supported effects
     cmds += zigbee.readAttribute(PHILIPS_PRIVATE_CLUSTER, [ 0x01, 0x11 ], [ mfgCode: PHILIPS_VENDOR ], DELAY_MS)
 
-    // Get minimum dim level
-    cmds += zigbee.readAttribute(zigbee.LEVEL_CONTROL_CLUSTER, 0x03, [:], DELAY_MS)
-
     // Refresh other attributes
     cmds += hueStateRefresh(DELAY_MS)
     cmds += colorRefresh(DELAY_MS)
@@ -338,11 +340,21 @@ List<String> startLevelChange(String direction) {
     return zigbee.command(zigbee.LEVEL_CONTROL_CLUSTER, 0x05, [:], 0, "${upDown} ${rate}")
 }
 
+List<String> stepColorTemperature(String direction, Object stepSize, Object transitionTime = null) {
+    if (settings.txtEnable) { log.info "stepColorTemperatureChange (${direction}, ${stepSize}, ${transitionTime})" }
+    Integer rate = transitionTime != null ? (transitionTime.toBigDecimal() * 10).toInteger() : settings.colorTransitionTime.toInteger()
+    String rateHex = intToSwapHexStr(rate)
+    String stepHex = intToSwapHexStr(constrain(stepSize.toInteger(), 1, 300))
+    String upDown = direction == 'down' ? '01' : '03'
+    scheduleCommandTimeoutCheck()
+    return zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, 0x4C, [:], 0, "${upDown} ${stepHex} ${rateHex} 0000 0000") +
+        ifPolling { zigbee.colorRefresh(0) }
+}
+
 List<String> stepHueChange(String direction, Object stepSize, Object transitionTime = null) {
     if (settings.txtEnable) { log.info "stepHueChange (${direction}, ${stepSize}, ${transitionTime})" }
-    Boolean isOn = device.currentValue('switch') == 'on'
     Integer rate = transitionTime != null ? (transitionTime.toBigDecimal() * 10).toInteger() : settings.colorTransitionTime.toInteger()
-    String rateHex = isOn ? intToSwapHexStr(rate) : '0000'
+    String rateHex = intToSwapHexStr(rate)
     Integer level = constrain(stepSize, 1, 99)
     String stepHex = intToHexStr((level * 2.55).toInteger())
     String upDown = direction == 'down' ? '03' : '01'
@@ -353,9 +365,8 @@ List<String> stepHueChange(String direction, Object stepSize, Object transitionT
 
 List<String> stepLevelChange(String direction, Object stepSize, Object transitionTime = null) {
     if (settings.txtEnable) { log.info "stepLevelChange (${direction}, ${stepSize}, ${transitionTime})" }
-    Boolean isOn = device.currentValue('switch') == 'on'
     Integer rate = transitionTime != null ? (transitionTime.toBigDecimal() * 10).toInteger() : settings.colorTransitionTime.toInteger()
-    String rateHex = isOn ? intToSwapHexStr(rate) : '0000'
+    String rateHex = intToSwapHexStr(rate)
     Integer level = constrain(stepSize, 1, 99)
     String stepHex = intToHexStr((level * 2.55).toInteger())
     String upDown = direction == 'down' ? '01' : '00'
@@ -524,6 +535,14 @@ void parseGlobalCommands(Map descMap) {
             break
         case 0x01: // read attribute response
             if (settings.logEnable) { log.trace "zigbee read attribute response ${clusterLookup(descMap.clusterInt)}: ${descMap}" }
+            String attribute = descMap.data[1] + descMap.data[0]
+            int statusCode = hexStrToUnsignedInt(descMap.data[2])
+            String status = ZigbeeStatusEnum[statusCode] ?: "0x${descMap.data}"
+            if (settings.logEnable) {
+                log.trace "zigbee read ${clusterLookup(descMap.clusterInt)} attribute 0x${attribute} response: ${status} ${descMap.data}"
+            } else if (statusCode != 0x00) {
+                log.warn "zigbee read ${clusterLookup(descMap.clusterInt)} attribute 0x${attribute} error: ${status}"
+            }
             break
         case 0x02: // write attribute (with response)
             if (settings.logEnable) { log.trace "zigbee write attribute request ${clusterLookup(descMap.clusterInt)}: ${descMap}" }
