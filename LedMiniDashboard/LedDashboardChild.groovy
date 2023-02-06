@@ -44,6 +44,7 @@
  *  0.98 - Update driver name for Blue Fan Switch and updated effect order and consistency of options
  *  0.99 - Add initial support for RGB child devices used by older Red switches and custom levels
  *  1.00 - Add support for illuminence value comparison conditions
+ *  1.01 - Bug fix for sunrise/sunset
  *
 */
 
@@ -1561,14 +1562,14 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
             ]
         ],
         execute: { ctx -> if (ctx.choice == 'after') { runOnce(getNextSunset(ctx.value as Integer), 'sunsetTrigger') } },
-        test: { ctx -> sunset = getNextSunset(ctx.value as Integer); return ctx.choice == 'after' ? new Date() >= sunset :  new Date() < sunset }
+        test: { ctx -> sunset = getSunriseAndSunset([ sunsetOffset: ctx.value as Integer ]).sunset; return ctx.choice == 'after' ? new Date() >= sunset :  new Date() < sunset }
     ],
     'sunrise': [
         name: 'Time is before/after sunrise',
         title: 'Sunrise with offset',
         inputs: [
             choice: [
-                title: 'Select before or after sunset',
+                title: 'Select before or after sunrise',
                 options: [ before: 'Before sunrise', after: 'After sunrise' ],
                 multiple: false,
                 width: 5
@@ -1581,7 +1582,7 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
             ]
         ],
         execute: { ctx -> if (ctx.choice == 'after') { runOnce(getNextSunrise(ctx.value as Integer), 'sunriseTrigger') } },
-        test: { ctx -> sunrise = getNextSunrise(ctx.value as Integer); return ctx.choice == 'after' ? new Date() >= sunrise : new Date() < sunrise }
+        test: { ctx -> sunrise = getSunriseAndSunset([ sunriseOffset: ctx.value as Integer ]).sunrise; return ctx.choice == 'after' ? new Date() >= sunrise : new Date() < sunrise }
     ],
     'switchOff': [
         name: 'Switches that turn off',

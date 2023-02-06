@@ -5,7 +5,7 @@
   "communityLink": "https://community.hubitat.com/t/switch-dashboard-and-switch-notifications/104986",
   "documentationLink": "https://github.com/bradsjm/hubitat-drivers/blob/main/SwitchLedDashboard/README.md",
   "licenseFile": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/LICENSE",
-  "version": "1.00",
+  "version": "1.01",
   "dateReleased": "2023-02-05",
   "releaseNotes": "Added support for time conditions (sunrise/sunset/specific time)",
   "apps": [
