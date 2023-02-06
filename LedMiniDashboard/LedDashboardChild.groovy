@@ -45,10 +45,11 @@
  *  0.99 - Add initial support for RGB child devices used by older Red switches and custom levels
  *  1.00 - Add support for illuminence value comparison conditions
  *  1.01 - Bug fix for sunrise/sunset
+ *  1.02 - Replaced sunrise/sunset conditions with new single option
  *
 */
 
-@Field static final String Version = '1.00'
+@Field static final String Version = '1.02'
 
 definition(
     name: 'LED Mini-Dashboard Topic',
@@ -1319,6 +1320,35 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
 
 // TODO: Consider explicit event vs. condition (e.g. door has opened in last x seconds vs. door is open)
 @Field static final Map<String, Map> ConditionsMap = [
+    'almanac': [
+        title: 'Time period is between',
+        inputs: [
+            choice: [
+                title: 'Select time period',
+                options: [
+                    sunriseToSunset: 'Day (Sunrise to Sunset)',
+                    sunsetToSunrise: 'Night (Sunset to Sunrise)'
+                ],
+                multiple: false,
+                width: 5
+            ],
+            value: [
+                title: 'Offset minutes',
+                type: 'decimal',
+                defaultValue: 0,
+                width: 2
+            ]
+        ],
+        execute: { ctx ->
+            Map almanac = getAlmanac(new Date(), (ctx.value as Integer) ?: 0)
+            runOnce(almanac.next.sunset, 'sunsetTrigger')
+            runOnce(almanac.next.sunrise, 'sunriseTrigger')
+        },
+        test: { ctx ->
+            Map almanac = getAlmanac(new Date(), (ctx.value as Integer) ?: 0)
+            return ctx.choice == 'sunsetToSunrise' ? almanac.isNight : !almanac.isNight
+        }
+    ],
     'accelerationActive': [
         name: 'Acceleration sensors that become active',
         title: 'Acceleration becomes active',
@@ -1544,46 +1574,6 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
         subscribe: 'smoke',
         test: { ctx -> deviceAttributeTest(ctx.device, 'smoke', '=', 'detected', ctx.all) }
     ],
-    'sunset': [
-        name: 'Time is before/after sunset',
-        title: 'Sunset with offset',
-        inputs: [
-            choice: [
-                title: 'Select before or after sunset',
-                options: [ before: 'Before sunset', after: 'After sunset' ],
-                multiple: false,
-                width: 5
-            ],
-            value: [
-                title: 'Offset minutes',
-                type: 'decimal',
-                defaultValue: 0,
-                width: 2
-            ]
-        ],
-        execute: { ctx -> if (ctx.choice == 'after') { runOnce(getNextSunset(ctx.value as Integer), 'sunsetTrigger') } },
-        test: { ctx -> sunset = getSunriseAndSunset([ sunsetOffset: ctx.value as Integer ]).sunset; return ctx.choice == 'after' ? new Date() >= sunset :  new Date() < sunset }
-    ],
-    'sunrise': [
-        name: 'Time is before/after sunrise',
-        title: 'Sunrise with offset',
-        inputs: [
-            choice: [
-                title: 'Select before or after sunrise',
-                options: [ before: 'Before sunrise', after: 'After sunrise' ],
-                multiple: false,
-                width: 5
-            ],
-            value: [
-                title: 'Offset minutes',
-                type: 'decimal',
-                defaultValue: 0,
-                width: 2
-            ]
-        ],
-        execute: { ctx -> if (ctx.choice == 'after') { runOnce(getNextSunrise(ctx.value as Integer), 'sunriseTrigger') } },
-        test: { ctx -> sunrise = getSunriseAndSunset([ sunriseOffset: ctx.value as Integer ]).sunrise; return ctx.choice == 'after' ? new Date() >= sunrise : new Date() < sunrise }
-    ],
     'switchOff': [
         name: 'Switches that turn off',
         title: 'Switch turns off',
@@ -1634,7 +1624,7 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
                 width: 2
             ]
         ],
-        execute: { ctx -> runOnce(getNextTime(ctx.value), 'timeAfterTrigger') },
+        execute: { ctx -> runOnce(getNextTime(new Date(), ctx.value), 'timeAfterTrigger') },
         test: { ctx -> new Date() >= timeToday(ctx.value) }
     ],
     'unlocked': [
@@ -1866,36 +1856,21 @@ private Map<String, String> getComparisonsByType(String type) {
     return result
 }
 
-private Date getNextSunset(int offset = 0) {
-    Date now = new Date()
-    Date sunset = getSunriseAndSunset([ sunsetOffset: offset ]).sunset
-    if (now >= sunset) {
-        sunset = getSunriseAndSunset([ sunsetOffset: offset, date: now + 1 ]).sunset
-    }
-    if (logEnable) { log.debug "next sunset is at ${sunset}" }
-    return sunset
+private Map getAlmanac(Date now, int offset = 0) {
+    Map today = getSunriseAndSunset([ sunsetOffset: offset, date: now ])
+    Map tomorrow = getSunriseAndSunset([ sunsetOffset: offset, date: now + 1 ])
+    Map next = [ sunrise: now < today.sunrise ? today.sunrise : tomorrow.sunrise, sunset: now < today.sunset ? today.sunset : tomorrow.sunset ]
+    Date midnight = new Date(now.getTime() - (now.getTime() % 86400000))
+    boolean isNight = (now > today.sunset && now < midnight) || (now < today.sunrise && now > midnight)
+    Map almanac = [ today: today, tomorrow: tomorrow, next: next, midnight: midnight, isNight: isNight, offset: offset ]
+    if (settings.logEnable) { log.debug "almanac: ${almanac}" }
+    return almanac
 }
 
-private Date getNextSunrise(int offset = 0) {
-    Date now = new Date()
-    Date sunrise = getSunriseAndSunset([ sunriseOffset: offset ]).sunrise
-    if (now >= sunrise) {
-        sunrise = getSunriseAndSunset([ sunriseOffset: offset, date: now + 1 ]).sunrise
-    }
-    if (logEnable) { log.debug "next sunrise is at ${sunrise}" }
-    return sunrise
-}
-
-private Date getNextTime(String datetime) {
-    Date now = new Date()
+private Date getNextTime(Date now, String datetime) {
     Date target = timeToday(datetime)
-    if (now >= target) {
-        target += 1
-    }
-    if (logEnable) { log.debug "next time is at ${target}" }
-    return target
+    return (now >= target) ? target + 1 : target
 }
-
 
 // Internal method to call closure (with this as delegate) passing the context parameter
 @CompileStatic
