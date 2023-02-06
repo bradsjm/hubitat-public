@@ -132,15 +132,17 @@ private void bind(String bindAction) {
             cmds << "zdo ${bindAction} 0x${controller.deviceNetworkId} 0x${ControllerEndpoint} 0x${replica.endpointId} 0x0006 {${controller.zigbeeId}} {${replica.zigbeeId}}"
         }
         if (bindLevel) {
+            cmds << 'delay 200'
             cmds << "zdo ${bindAction} 0x${controller.deviceNetworkId} 0x${ControllerEndpoint} 0x${replica.endpointId} 0x0008 {${controller.zigbeeId}} {${replica.zigbeeId}}"
         }
         if (bindColor) {
+            cmds << 'delay 200'
             cmds << "zdo ${bindAction} 0x${controller.deviceNetworkId} 0x${ControllerEndpoint} 0x${replica.endpointId} 0x0300 {${controller.zigbeeId}} {${replica.zigbeeId}}"
         }
 
         log.debug "Zigbee ${bindAction} commands: ${cmds}"
-        controller.bind(zigbee.delayBetween(cmds, 200))
-        pauseExecution(200 * cmds.size())
+        controller.bind(cmds)
+        pauseExecution(100 * cmds.size())
         controller.refresh()
         state.message = "<h3 style='color: green;'>Completed ${bindAction}</h3>"
     }
