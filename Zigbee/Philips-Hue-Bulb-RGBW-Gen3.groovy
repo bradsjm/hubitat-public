@@ -101,13 +101,14 @@ metadata {
     }
 }
 
-@Field static final String Version = '0.4'
+@Field static final String Version = '0.5'
 
 List<String> configure() {
     List<String> cmds = []
     log.info 'configure...'
     state.clear()
     state.reportingEnabled = false
+    device.deleteCurrentState('color') // attribute not used
 
     // Power Restore Behavior
     if (settings.powerRestore != null) {
@@ -232,7 +233,7 @@ List<String> setColor(Map value) {
     Boolean isOn = device.currentValue('switch') == 'on'
     Integer hue = constrain(value.hue)
     Integer saturation = constrain(value.saturation)
-    Integer rate = settings.colorTransitionTime.toInteger()
+    Integer rate = isOn ? getColorTransitionRate() : 0
     String rateHex = intToSwapHexStr(rate)
     String scaledHueValue = intToHexStr(Math.round(hue * 0xfe / 100.0))
     String scaledSatValue = intToHexStr(Math.round(saturation * 0xfe / 100.0))
@@ -249,14 +250,14 @@ List<String> setColorTemperature(Object colorTemperature, Object level = null, O
     List<String> cmds = []
     if (settings.txtEnable) { log.info "setColorTemperature (${colorTemperature}, ${level}, ${transitionTime})" }
     Boolean isOn = device.currentValue('switch') == 'on'
-    Integer rate = transitionTime != null ? (transitionTime.toBigDecimal() * 10).toInteger() : settings.colorTransitionTime.toInteger()
-    String rateHex = isOn ? intToSwapHexStr(rate) : '0000'
+    Integer rate = isOn ? getColorTransitionRate(transitionTime) : 0
+    String rateHex = intToSwapHexStr(rate)
     Integer ct = constrain(colorTemperature, state.ct.low, state.ct.high)
     String miredHex = ctToMiredHex(ct)
     cmds += zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, 0x0A, [:], DELAY_MS, "${miredHex} ${rateHex} ${PRESTAGING_OPTION}")
     if (level != null) {
         // This will turn on the device if it is off and set level
-        cmds += setLevelPrivate(level, getLevelTransitionRate(rate))
+        cmds += setLevelPrivate(level, getLevelTransitionRate(level, transitionTime))
     }
     scheduleCommandTimeoutCheck()
     return cmds + ifPolling(DELAY_MS + (rate * 100)) { colorRefresh(0) }
@@ -282,7 +283,7 @@ List<String> setEnhancedHue(Object value) {
     if (settings.txtEnable) { log.info "setEnhancedHue (${value})" }
     Boolean isOn = device.currentValue('switch') == 'on'
     Integer hue = constrain(value, 0, 360)
-    Integer rate = isOn ? settings.colorTransitionTime.toInteger() : 0
+    Integer rate = isOn ? getColorTransitionRate() : 0
     String rateHex = intToSwapHexStr(rate)
     String scaledHueValue = intToSwapHexStr(Math.round(hue * 182.04444) as Integer)
     scheduleCommandTimeoutCheck()
@@ -294,7 +295,7 @@ List<String> setHue(Object value) {
     if (settings.txtEnable) { log.info "setHue (${value})" }
     Boolean isOn = device.currentValue('switch') == 'on'
     Integer hue = constrain(value)
-    Integer rate = isOn ? settings.colorTransitionTime.toInteger() : 0
+    Integer rate = isOn ? getColorTransitionRate() : 0
     String rateHex = intToSwapHexStr(rate)
     String scaledHueValue = intToHexStr(Math.round(hue * 0xfe / 100.0) as Integer)
     scheduleCommandTimeoutCheck()
@@ -304,7 +305,7 @@ List<String> setHue(Object value) {
 
 List<String> setLevel(Object value, Object transitionTime = null) {
     if (settings.txtEnable) { log.info "setLevel (${value}, ${transitionTime})" }
-    Integer rate = transitionTime != null ? (transitionTime.toBigDecimal() * 10).toInteger() : getLevelTransitionRate(value)
+    Integer rate = getLevelTransitionRate(value, transitionTime)
     scheduleCommandTimeoutCheck()
     return setLevelPrivate(value, rate)
 }
@@ -327,7 +328,7 @@ List<String> setSaturation(Object value) {
     if (settings.txtEnable) { log.info "setSaturation (${value})" }
     Boolean isOn = device.currentValue('switch') == 'on'
     Integer saturation = constrain(value)
-    Integer rate = isOn ? settings.colorTransitionTime.toInteger() : 0
+    Integer rate = isOn ? getColorTransitionRate() : 0
     String rateHex = intToSwapHexStr(rate)
     String scaledSatValue = intToHexStr(Math.round(saturation * 0xfe / 100.0))
     scheduleCommandTimeoutCheck()
@@ -345,7 +346,7 @@ List<String> startLevelChange(String direction) {
 
 List<String> stepColorTemperature(String direction, Object stepSize, Object transitionTime = null) {
     if (settings.txtEnable) { log.info "stepColorTemperatureChange (${direction}, ${stepSize}, ${transitionTime})" }
-    Integer rate = transitionTime != null ? (transitionTime.toBigDecimal() * 10).toInteger() : settings.colorTransitionTime.toInteger()
+    Integer rate = getColorTransitionRate(transitionTime)
     String rateHex = intToSwapHexStr(rate)
     String stepHex = intToSwapHexStr(constrain(stepSize.toInteger(), 1, 300))
     String upDown = direction == 'down' ? '01' : '03'
@@ -356,7 +357,7 @@ List<String> stepColorTemperature(String direction, Object stepSize, Object tran
 
 List<String> stepHueChange(String direction, Object stepSize, Object transitionTime = null) {
     if (settings.txtEnable) { log.info "stepHueChange (${direction}, ${stepSize}, ${transitionTime})" }
-    Integer rate = transitionTime != null ? (transitionTime.toBigDecimal() * 10).toInteger() : settings.colorTransitionTime.toInteger()
+    Integer rate = getColorTransitionRate(transitionTime)
     String rateHex = intToSwapHexStr(rate)
     Integer level = constrain(stepSize, 1, 99)
     String stepHex = intToHexStr((level * 2.55).toInteger())
@@ -368,7 +369,7 @@ List<String> stepHueChange(String direction, Object stepSize, Object transitionT
 
 List<String> stepLevelChange(String direction, Object stepSize, Object transitionTime = null) {
     if (settings.txtEnable) { log.info "stepLevelChange (${direction}, ${stepSize}, ${transitionTime})" }
-    Integer rate = transitionTime != null ? (transitionTime.toBigDecimal() * 10).toInteger() : getLevelTransitionRate(direction == 'down' ? 0 : 100)
+    Integer rate = getLevelTransitionRate(direction == 'down' ? 0 : 100, transitionTime)
     String rateHex = intToSwapHexStr(rate)
     Integer level = constrain(stepSize, 1, 99)
     String stepHex = intToHexStr((level * 2.55).toInteger())
@@ -746,14 +747,26 @@ private String ctToMiredHex(int ct) {
     return zigbee.swapOctets(intToHexStr((1000000 / ct).toInteger(), 2))
 }
 
-private Integer getLevelTransitionRate(Object value) {
-    Integer desiredLevel = value.toInteger()
+private Integer getColorTransitionRate(Object transitionTime = null) {
+    Integer rate = 0
+    if (transitionTime != null) {
+        rate = (transitionTime.toBigDecimal() * 10).toInteger()
+    } else if (settings.colorTransitionTime != null) {
+        rate = settings.colorTransitionTime.toInteger()
+    } else if (settings.transitionTime != null) {
+        rate = settings.transitionTime.toInteger()
+    }
+    if (settings.logEnable) { log.debug "using color transition rate ${rate}" }
+    return rate
+}
+
+private Integer getLevelTransitionRate(Object level, Object transitionTime = null) {
+    Integer desiredLevel = level.toInteger()
+    Integer defaultTransition = (transitionTime != null ? (transitionTime.toBigDecimal() * 10) : (settings.transitionTime ?: 0)).toInteger()
     Integer currentLevel = (device.currentValue('level') as Integer) ?: 0
-    Integer defaultTransition = settings.transitionTime as Integer ?: 0xFFFF
-    Integer upTransition = settings.levelUpTransition as Integer ?: 0xFFFF
-    Integer downTransition = settings.levelDownTransition as Integer ?: 0xFFFF
+    Integer upTransition = (settings.levelUpTransition ?: defaultTransition).toInteger()
+    Integer downTransition = (settings.levelDownTransition ?: defaultTransition).toInteger()
     Integer rate = (currentLevel < desiredLevel) ? upTransition : downTransition
-    if (rate == 0xFFFF) { rate = defaultTransition }
     if (settings.logEnable) { log.debug "using level transition rate ${rate}" }
     return rate
 }
@@ -992,8 +1005,7 @@ private List<String> setLevelPrivate(Object value, Integer rate = 0, Integer del
         0x001E: '3s',
         0x0028: '4s',
         0x0032: '5s',
-        0x0064: '10s',
-        0xFFFF: 'Default'
+        0x0064: '10s'
     ]
 ]
 
