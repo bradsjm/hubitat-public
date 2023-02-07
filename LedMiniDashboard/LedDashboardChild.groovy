@@ -72,6 +72,7 @@ import com.hubitat.app.DeviceWrapper
 import com.hubitat.hub.domain.Event
 import groovy.transform.CompileStatic
 import groovy.transform.Field
+import java.time.LocalTime
 import java.util.concurrent.ConcurrentHashMap
 import java.util.regex.Matcher
 
@@ -1857,15 +1858,14 @@ private Map<String, String> getComparisonsByType(String type) {
 }
 
 private Map getAlmanac(Date now, int offset = 0) {
-    Map today = getSunriseAndSunset([ sunsetOffset: offset, date: now ])
-    Map tomorrow = getSunriseAndSunset([ sunsetOffset: offset, date: now + 1 ])
+    Map today = getSunriseAndSunset([ sunriseOffset: offset, sunsetOffset: offset, date: now ])
+    Map tomorrow = getSunriseAndSunset([ sunriseOffset: offset, sunsetOffset: offset, date: now + 1 ])
     Map next = [ sunrise: now < today.sunrise ? today.sunrise : tomorrow.sunrise, sunset: now < today.sunset ? today.sunset : tomorrow.sunset ]
-    Date midnight = now.clone()
-    midnight.setHours(23)
-    midnight.setMinutes(59)
-    midnight.setSeconds(59)
-    boolean isNight = (now > today.sunset && now < midnight) || (now < today.sunrise && now > midnight)
-    Map almanac = [ today: today, tomorrow: tomorrow, next: next, midnight: midnight, isNight: isNight, offset: offset ]
+    LocalTime sunsetTime = LocalTime.of(today.sunset.getHours(), today.sunset.getMinutes())
+    LocalTime sunriseTime = LocalTime.of(next.sunrise.getHours(), next.sunrise.getMinutes())
+    LocalTime nowTime = LocalTime.of(now.getHours(), now.getMinutes())
+    boolean isNight = nowTime > sunsetTime || nowTime < sunriseTime
+    Map almanac = [ today: today, tomorrow: tomorrow, next: next, isNight: isNight, offset: offset ]
     if (settings.logEnable) { log.debug "almanac: ${almanac}" }
     return almanac
 }
