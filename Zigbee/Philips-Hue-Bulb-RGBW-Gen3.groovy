@@ -124,10 +124,9 @@ List<String> configure() {
     cmds += zigbee.configureReporting(zigbee.COLOR_CONTROL_CLUSTER, 0x01, DataType.UINT8, 0, REPORTING_MAX, 1, [:], DELAY_MS)
 
     // Disable unused cluster reporting (on/off, level, color temp and color mode are reported via private cluster)
-    cmds += zigbee.configureReporting(zigbee.ON_OFF_CLUSTER, 0x00, DataType.BOOLEAN, 0, 0xFFFF, null, [:], DELAY_MS)
-    cmds += zigbee.configureReporting(zigbee.LEVEL_CONTROL_CLUSTER, 0x00, DataType.UINT8, 0, 0xFFFF, 1, [:], DELAY_MS)
-    cmds += zigbee.configureReporting(zigbee.COLOR_CONTROL_CLUSTER, 0x07, DataType.UINT16, 0, 0xFFFF, 1, [:], DELAY_MS)
-    cmds += zigbee.configureReporting(zigbee.COLOR_CONTROL_CLUSTER, 0x08, DataType.ENUM8, 0, 0xFFFF, null, [:], DELAY_MS)
+    cmds += [ "zdo unbind unicast ${device.deviceNetworkId} {${device.device.zigbeeId}} ${device.endpointId} ${zigbee.ON_OFF_CLUSTER} ${location.hub.zigbeeEui}", "delay ${DELAY_MS}" ]
+    cmds += [ "zdo unbind unicast ${device.deviceNetworkId} {${device.device.zigbeeId}} ${device.endpointId} ${zigbee.LEVEL_CONTROL_CLUSTER} ${location.hub.zigbeeEui}", "delay ${DELAY_MS}" ]
+    cmds += [ "zdo unbind unicast ${device.deviceNetworkId} {${device.device.zigbeeId}} ${device.endpointId} ${zigbee.COLOR_CONTROL_CLUSTER} ${location.hub.zigbeeEui}" ]
 
     if (settings.logEnable) { log.debug "zigbee configure cmds: ${cmds}" }
 
@@ -755,7 +754,7 @@ private Integer getLevelTransitionRate(Object value) {
     Integer downTransition = settings.levelDownTransition as Integer ?: 0xFFFF
     Integer rate = (currentLevel < desiredLevel) ? upTransition : downTransition
     if (rate == 0xFFFF) { rate = defaultTransition }
-    if (settings.logEnable || true) { log.debug "using level transition rate ${rate}" }
+    if (settings.logEnable) { log.debug "using level transition rate ${rate}" }
     return rate
 }
 
