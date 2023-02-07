@@ -561,6 +561,7 @@ Map renderConditionSection(String prefix, String sectionTitle = null, Map<String
                     title: (inputs.value.title ?: 'Value') + ' ',
                     width: inputs.value.width ?: 3,
                     defaultValue: inputs.value.defaultValue,
+                    range: inputs.value.range,
                     options: options,
                     type: inputs.value.type ? inputs.value.type : (options ? 'enum' : 'text'),
                     submitOnChange: true, required: true
@@ -682,16 +683,36 @@ String getDashboardDescription(String prefix) {
         List<String> conditions = config.conditions
             .findAll { c -> ConditionsMap.containsKey(c) }
             .collect { c ->
-                String title = ConditionsMap[c].title
-                String choice = config["${c}_choice"] in List ? config["${c}_choice"].join(', ') : config["${c}_choice"]
-                String comparison = getComparisonsByType('number').get(config["${c}_comparison"])
-                String value = config["${c}_value"]
                 String all = config["${c}_all"] ? '<i>(All)</i>' : null
-                if (comparison) { comparison = 'is ' + comparison.toLowerCase() }
+                String title = ConditionsMap[c].title
+                String comparison = getComparisonsByType('number').get(config["${c}_comparison"])
+                if (comparison) { comparison = 'is ' + comparison }
+                String choice
+                if (config["${c}_choice"] != null) {
+                    title += ':'
+                    Map options = [:]
+                    Map choiceInput = ConditionsMap[c].inputs.choice
+                    if (choiceInput.options in Closure) {
+                        options = runClosure(choiceInput.options as Closure, [ device: config["${c}_device"] ]) ?: [:]
+                    } else if (choiceInput.options in Map) {
+                        options = choiceInput.options ?: [:]
+                    }
+                    if (options && config["${c}_choice"] in List) {
+                        choice = config["${c}_choice"].collect { key -> options[key] ?: key }.join(' or ')
+                    } else if (options) {
+                        choice = options[config["${c}_choice"]]
+                    } else {
+                        choice = config["${c}_choice"]
+                    }
+                }
+                String value = config["${c}_value"]
+                if (value != null) {
+                    value = ConditionsMap[c].inputs.value.title + ': ' + value
+                }
                 if (value =~ /^([0-9]{4})-/) { // special case for time format
                     value = new Date(timeToday(value).time).format('hh:mm a')
                 }
-                return ([ title, choice, comparison, value, all ] - null).join(' ')
+                return ([ title, choice?.toLowerCase(), comparison?.toLowerCase(), value?.toLowerCase(), all ] - null).join(' ')
             }
         sb << "\n<b>Activation${conditions.size() > 1 ? 's' : ''}:</b> ${conditions.join(allMode)}"
         if (config.autostop != false) {
@@ -1326,15 +1347,16 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
             choice: [
                 title: 'Select time period',
                 options: [
-                    sunriseToSunset: 'Day (Sunrise to Sunset)',
-                    sunsetToSunrise: 'Night (Sunset to Sunrise)'
+                    sunriseToSunset: 'Sunrise to Sunset (Day)',
+                    sunsetToSunrise: 'Sunset to Sunrise (Night)'
                 ],
                 multiple: false,
                 width: 5
             ],
             value: [
                 title: 'Offset minutes',
-                type: 'decimal',
+                type: 'number',
+                range: '-300..300',
                 defaultValue: 0,
                 width: 2
             ]
@@ -1346,7 +1368,11 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
         },
         test: { ctx ->
             Map almanac = getAlmanac(new Date(), (ctx.value as Integer) ?: 0)
-            return ctx.choice == 'sunsetToSunrise' ? almanac.isNight : !almanac.isNight
+            switch (ctx.choice) {
+                case 'sunsetToSunrise': return almanac.isNight
+                case 'sunriseToSunset': return !almanac.isNight
+                default: return false
+            }
         }
     ],
     'accelerationActive': [
@@ -1404,7 +1430,7 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
         test: { ctx -> deviceAttributeTest(ctx.device, 'contact', '=', 'open', ctx.all) }
     ],
     'customAttribute': [
-        name: 'Custom Attribute',
+        name: 'Custom attribute',
         title: 'Custom attribute',
         inputs: [
             device: [
@@ -1420,7 +1446,7 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
                 options: { ctx -> getComparisonsByType('number') }
             ],
             value: [
-                title: 'Enter Value',
+                title: 'Attribute Value',
                 options: { ctx -> ctx.device && ctx.choice ? getAttributeOptions(ctx.device, ctx.choice) : null }
             ]
         ],
@@ -1821,14 +1847,14 @@ private boolean evaluateComparison(String a, String b, String operator) {
 
 // Given a set of devices, provides the distinct set of attribute names
 @CompileStatic
-private List<String> getAttributeChoices(List<DeviceWrapper> devices) {
-    return devices?.collectMany { d -> d.getSupportedAttributes()*.name }.unique()
+private Map getAttributeChoices(List<DeviceWrapper> devices) {
+    return devices?.collectMany { d -> d.getSupportedAttributes()*.name }.collectEntries { name -> [name, name] }
 }
 
 // Given a set of devices, provides the distinct set of attribute names
 @CompileStatic
-private List<String> getAttributeOptions(List<DeviceWrapper> devices, String attribute) {
-    return devices?.collectMany { d -> d.getSupportedAttributes().find { a -> a.name == attribute }.getValues() }.unique()
+private Map getAttributeOptions(List<DeviceWrapper> devices, String attribute) {
+    return devices?.collectMany { d -> d.getSupportedAttributes().find { a -> a.name == attribute }.getValues() }.collectEntries { name -> [name, name] }
 }
 
 // Given a set of button devices, provides the list of buttons to choose from
@@ -1860,7 +1886,10 @@ private Map getAlmanac(Date now, int offset = 0) {
     Map today = getSunriseAndSunset([ sunsetOffset: offset, date: now ])
     Map tomorrow = getSunriseAndSunset([ sunsetOffset: offset, date: now + 1 ])
     Map next = [ sunrise: now < today.sunrise ? today.sunrise : tomorrow.sunrise, sunset: now < today.sunset ? today.sunset : tomorrow.sunset ]
-    Date midnight = new Date(now.getTime() - (now.getTime() % 86400000))
+    Date midnight = now.clone()
+    midnight.setHours(23)
+    midnight.setMinutes(59)
+    midnight.setSeconds(59)
     boolean isNight = (now > today.sunset && now < midnight) || (now < today.sunrise && now > midnight)
     Map almanac = [ today: today, tomorrow: tomorrow, next: next, midnight: midnight, isNight: isNight, offset: offset ]
     if (settings.logEnable) { log.debug "almanac: ${almanac}" }
