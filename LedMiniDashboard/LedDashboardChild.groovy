@@ -1860,7 +1860,10 @@ private Map getAlmanac(Date now, int offset = 0) {
     Map today = getSunriseAndSunset([ sunsetOffset: offset, date: now ])
     Map tomorrow = getSunriseAndSunset([ sunsetOffset: offset, date: now + 1 ])
     Map next = [ sunrise: now < today.sunrise ? today.sunrise : tomorrow.sunrise, sunset: now < today.sunset ? today.sunset : tomorrow.sunset ]
-    Date midnight = new Date(now.getTime() - (now.getTime() % 86400000))
+    Date midnight = now.clone()
+    midnight.setHours(23)
+    midnight.setMinutes(59)
+    midnight.setSeconds(59)
     boolean isNight = (now > today.sunset && now < midnight) || (now < today.sunrise && now > midnight)
     Map almanac = [ today: today, tomorrow: tomorrow, next: next, midnight: midnight, isNight: isNight, offset: offset ]
     if (settings.logEnable) { log.debug "almanac: ${almanac}" }
