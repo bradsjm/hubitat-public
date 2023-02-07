@@ -108,6 +108,7 @@ List<String> configure() {
     log.info 'configure...'
     state.clear()
     state.reportingEnabled = false
+    device.deleteCurrentState('color') // attribute not used
 
     // Power Restore Behavior
     if (settings.powerRestore != null) {
