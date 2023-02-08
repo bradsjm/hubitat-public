@@ -29,7 +29,7 @@ import groovy.transform.Field
 import hubitat.zigbee.zcl.DataType
 
 metadata {
-    definition(name: 'Philips Hue RGBW Bulb',
+    definition(name: 'Philips Hue Zigbee RGBW Bulb',
             importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/Zigbee/Philips-Hue-Bulb-RGBW-Gen3.groovy',
             namespace: 'philips-hue', author: 'Jonathan Bradshaw') {
         capability 'Actuator'
@@ -99,6 +99,8 @@ metadata {
 
         input name: 'enableDimOnOffMode', type: 'bool', title: '<b>Dim to zero instead of off</b>', defaultValue: false, description:\
             '<i>Changes the <b>Off</b> command to instead dim down to zero and <b>On</b> to dim up to the previous level.</i>'
+        input name: 'enableReporting', type: 'bool', title: '<b>Enable state reporting</b>', defaultValue: true, description:\
+            '<i>Enables the use of reporting to push updates instead of polling bulb. Only available from Generation 3 bulbs.</i>'
 
         input name: 'flashEffect', type: 'enum', title: '<b>Flash effect</b>', options: IdentifyEffectNames.values(), defaultValue: 'Blink', required: true, description:\
             '<i>Changes the effect used when the <b>flash</b> command is used.</i>'
@@ -115,33 +117,46 @@ metadata {
     }
 }
 
-@Field static final String VERSION = '0.6'
+@Field static final String VERSION = '0.7'
 
 List<String> configure() {
     List<String> cmds = []
     log.info 'configure...'
+
     state.clear()
+    state.ct = [ high: 6536, low: 2000 ] // default values
     state.reportingEnabled = false
     device.deleteCurrentState('color') // attribute not used
 
     // Power Restore Behavior
     if (settings.powerRestore != null) {
         log.info "configure: setting power restore state to 0x${intToHexStr(settings.powerRestore as Integer)}"
-        cmds += zigbee.writeAttribute(zigbee.ON_OFF_CLUSTER, POWER_RESTORE_ID, DataType.ENUM8, settings.powerRestore as Integer, [:], 0)
+        cmds += zigbee.writeAttribute(zigbee.ON_OFF_CLUSTER, POWER_RESTORE_ID, DataType.ENUM8, settings.powerRestore as Integer, [:], DELAY_MS)
     }
 
     // Attempt to enable cluster reporting, if it fails we fall back to polling after commands
-    log.info 'configure: attempting to enable state reporting'
-    cmds += zigbee.configureReporting(PHILIPS_PRIVATE_CLUSTER, HUE_PRIVATE_STATE_ID, DataType.STRING_OCTET, 0, REPORTING_MAX, null, [:], DELAY_MS)
+    if (settings.enableReporting != false) {
+        log.info 'configure: attempting to enable state reporting'
+        cmds += zigbee.configureReporting(PHILIPS_PRIVATE_CLUSTER, HUE_PRIVATE_STATE_ID, DataType.STRING_OCTET, 1, REPORTING_MAX, null, [ mfgCode: PHILIPS_VENDOR ], DELAY_MS)
 
-    // Private cluster only reports XY colors so enable Hue and Saturation reporting
-    cmds += zigbee.configureReporting(zigbee.COLOR_CONTROL_CLUSTER, 0x00, DataType.UINT8, 0, REPORTING_MAX, 1, [:], DELAY_MS)
-    cmds += zigbee.configureReporting(zigbee.COLOR_CONTROL_CLUSTER, 0x01, DataType.UINT8, 0, REPORTING_MAX, 1, [:], DELAY_MS)
+        // Private cluster only reports XY colors so enable Hue and Saturation reporting
+        cmds += zigbee.configureReporting(zigbee.COLOR_CONTROL_CLUSTER, 0x00, DataType.UINT8, 1, REPORTING_MAX, 1, [:], DELAY_MS)
+        cmds += zigbee.configureReporting(zigbee.COLOR_CONTROL_CLUSTER, 0x01, DataType.UINT8, 1, REPORTING_MAX, 1, [:], DELAY_MS)
+    } else {
+        cmds += zigbee.configureReporting(PHILIPS_PRIVATE_CLUSTER, HUE_PRIVATE_STATE_ID, DataType.STRING_OCTET, 0, 0xFFFF, null, [ mfgCode: PHILIPS_VENDOR ], DELAY_MS)
+        cmds += zigbee.configureReporting(zigbee.COLOR_CONTROL_CLUSTER, 0x00, DataType.UINT8, 0, 0xFFFF, 1, [:], DELAY_MS)
+        cmds += zigbee.configureReporting(zigbee.COLOR_CONTROL_CLUSTER, 0x01, DataType.UINT8, 0, 0xFFFF, 1, [:], DELAY_MS)
 
-    // Disable unused cluster reporting (on/off, level, color temp and color mode are reported via private cluster)
+        cmds += [ "zdo unbind unicast ${device.deviceNetworkId} {${device.device.zigbeeId}} ${device.endpointId} ${PHILIPS_PRIVATE_CLUSTER} ${location.hub.zigbeeEui}", "delay ${DELAY_MS}" ]
+        cmds += [ "zdo unbind unicast ${device.deviceNetworkId} {${device.device.zigbeeId}} ${device.endpointId} ${zigbee.COLOR_CONTROL_CLUSTER} ${location.hub.zigbeeEui}" ]
+    }
+
+    // Unbind unused cluster reporting (on/off, level are reported via private cluster)
+    cmds += zigbee.configureReporting(zigbee.ON_OFF_CLUSTER, 0x00, DataType.UINT8, 0, 0xFFFF, 1, [:], DELAY_MS)
+    cmds += zigbee.configureReporting(zigbee.LEVEL_CONTROL_CLUSTER, 0x00, DataType.UINT8, 0, 0xFFFF, 1, [:], DELAY_MS)
+
     cmds += [ "zdo unbind unicast ${device.deviceNetworkId} {${device.device.zigbeeId}} ${device.endpointId} ${zigbee.ON_OFF_CLUSTER} ${location.hub.zigbeeEui}", "delay ${DELAY_MS}" ]
     cmds += [ "zdo unbind unicast ${device.deviceNetworkId} {${device.device.zigbeeId}} ${device.endpointId} ${zigbee.LEVEL_CONTROL_CLUSTER} ${location.hub.zigbeeEui}", "delay ${DELAY_MS}" ]
-    cmds += [ "zdo unbind unicast ${device.deviceNetworkId} {${device.device.zigbeeId}} ${device.endpointId} ${zigbee.COLOR_CONTROL_CLUSTER} ${location.hub.zigbeeEui}" ]
 
     if (settings.logEnable) { log.debug "zigbee configure cmds: ${cmds}" }
 
@@ -450,8 +465,10 @@ void parse(String description) {
 
     if (settings.logEnable) {
         String clusterName = clusterLookup(descMap.clusterInt) ?: "PRIVATE_CLUSTER (0x${descMap.cluster})"
-        log.trace "zigbee received ${clusterName} message"
+        String attribute = descMap.attrId ? " attribute 0x${descMap.attrId} (value 0x${descMap.value})" : ''
+        log.trace "zigbee received ${clusterName} message" + attribute
     }
+
     switch (descMap.clusterInt as Integer) {
         case zigbee.BASIC_CLUSTER:
             parseBasicCluster(descMap)
@@ -555,10 +572,10 @@ void parseColorCluster(Map descMap) {
 void parseGlobalCommands(Map descMap) {
     switch (hexStrToUnsignedInt(descMap.command)) {
         case 0x00: // read attribute
-            if (settings.logEnable) { log.trace "zigbee read attribute request ${clusterLookup(descMap.clusterInt)}: ${descMap}" }
+            if (settings.logEnable) { log.trace "zigbee read attribute request ${clusterLookup(descMap.clusterInt)}: ${descMap.data}" }
             break
         case 0x01: // read attribute response
-            if (settings.logEnable) { log.trace "zigbee read attribute response ${clusterLookup(descMap.clusterInt)}: ${descMap}" }
+            if (settings.logEnable) { log.trace "zigbee read attribute response ${clusterLookup(descMap.clusterInt)}: ${descMap.data}" }
             String attribute = descMap.data[1] + descMap.data[0]
             int statusCode = hexStrToUnsignedInt(descMap.data[2])
             String status = ZigbeeStatusEnum[statusCode] ?: "0x${descMap.data}"
@@ -569,21 +586,23 @@ void parseGlobalCommands(Map descMap) {
             }
             break
         case 0x02: // write attribute (with response)
-            if (settings.logEnable) { log.trace "zigbee write attribute request ${clusterLookup(descMap.clusterInt)}: ${descMap}" }
+            if (settings.logEnable) { log.trace "zigbee response write attribute request ${clusterLookup(descMap.clusterInt)}: ${descMap.data}" }
             break
         case 0x04: // write attribute response
             int statusCode = hexStrToUnsignedInt(descMap.data in List ? descMap.data[0] : descMap.data)
             String status = ZigbeeStatusEnum[statusCode] ?: "0x${intToHexStr(statusCode)}"
             if (settings.logEnable) {
-                log.trace "zigbee write ${clusterLookup(descMap.clusterInt)} attribute response: ${status}"
+                log.trace "zigbee response write ${clusterLookup(descMap.clusterInt)} attribute response: ${status}"
             } else if (statusCode != 0x00) {
-                log.warn "zigbee write ${clusterLookup(descMap.clusterInt)} attribute error: ${status}"
+                log.warn "zigbee response write ${clusterLookup(descMap.clusterInt)} attribute error: ${status}"
             }
             break
         case 0x07: // configure reporting response
-            state.reportingEnabled = true
-            if (settings.logEnable) {
-                log.trace "zigbee attribute reporting enabled for ${clusterLookup(descMap.clusterInt)}"
+            if (settings.enableReporting != false) {
+                state.reportingEnabled = true
+                if (settings.logEnable) {
+                    log.trace "zigbee attribute reporting enabled for ${clusterLookup(descMap.clusterInt)}"
+                }
             }
             break
         case 0x0B: // default command response
@@ -591,9 +610,9 @@ void parseGlobalCommands(Map descMap) {
             int statusCode = hexStrToUnsignedInt(descMap.data[1])
             String status = ZigbeeStatusEnum[statusCode] ?: "0x${descMap.data[1]}"
             if (settings.logEnable) {
-                log.trace "zigbee command status ${clusterLookup(descMap.clusterInt)} command 0x${commandId}: ${status}"
+                log.trace "zigbee response status ${clusterLookup(descMap.clusterInt)} command 0x${commandId}: ${status}"
             } else if (statusCode != 0x00) {
-                log.warn "zigbee command error (${clusterLookup(descMap.clusterInt)}, command: 0x${commandId}) ${status}"
+                log.warn "zigbee response error (${clusterLookup(descMap.clusterInt)}, command: 0x${commandId}) ${status}"
             }
             break
         default:
@@ -681,7 +700,7 @@ void parsePrivateClusterState(Map descMap) {
     boolean isOn = hexStrToUnsignedInt(descMap.value[4..5]) == 1
     int level = hexStrToUnsignedInt(descMap.value[6..7])
     if (settings.logEnable) {
-        log.debug "zigbee received hue cluster report (length ${descMap.value.size()}) [power: ${isOn}, level: ${level}, mode: 0x${intToHexStr(mode, 2)}]"
+        log.debug "zigbee received private cluster report (length ${descMap.value.size()}) [power: ${isOn}, level: ${level}, mode: 0x${intToHexStr(mode, 2)}]"
     }
 
     sendSwitchEvent(isOn)
@@ -869,8 +888,8 @@ private void sendColorNameEvent(Integer hue) {
 
 private void sendColorTempEvent(String rawValue) {
     Integer value = miredHexToCt(rawValue)
-    if (state.ct?.high && value > state.ct.high) { return }
-    if (state.ct?.low && value < state.ct.low) { return }
+    if (state.ct.high && value > state.ct.high) { return }
+    if (state.ct.low && value < state.ct.low) { return }
     String descriptionText = "color temperature was set to ${value}°K"
     if (device.currentValue('colorTemperature') as Integer != value && settings.txtEnable) {
         log.info descriptionText
