@@ -30,7 +30,7 @@ import hubitat.zigbee.zcl.DataType
 
 metadata {
     definition(name: 'Philips Hue Zigbee RGBW Bulb',
-            importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/Zigbee/Philips-Hue-Bulb-RGBW-Gen3.groovy',
+            importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/PhilipsHue/Philips-Hue-Zigbee-Bulb-RGBW.groovy',
             namespace: 'philips-hue', author: 'Jonathan Bradshaw') {
         capability 'Actuator'
         capability 'Bulb'
