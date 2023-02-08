@@ -87,21 +87,35 @@ metadata {
     }
 
     preferences {
-        input name: 'transitionTime', type: 'enum', title: 'Default dimming duration', options: TransitionOpts.options, defaultValue: TransitionOpts.defaultValue, required: true
-        input name: 'levelUpTransition', type: 'enum', title: 'Dim up transition duration', options: TransitionOpts.options, defaultValue: TransitionOpts.defaultValue, required: false
-        input name: 'levelDownTransition', type: 'enum', title: 'Dim down transition duration', options: TransitionOpts.options, defaultValue: TransitionOpts.defaultValue, required: false
-        input name: 'levelChangeRate', type: 'enum', title: 'Level change speed', options: LevelRateOpts.options, defaultValue: LevelRateOpts.defaultValue, required: true
-        input name: 'colorTransitionTime', type: 'enum', title: 'Color transition duration', options: TransitionOpts.options, defaultValue: TransitionOpts.defaultValue, required: true
-        input name: 'flashEffect', type: 'enum', title: 'Flash effect', options: IdentifyEffectNames.values(), defaultValue: 'Blink', required: true
-        input name: 'powerRestore', type: 'enum', title: 'Power restore state', options: PowerRestoreOpts.options, defaultValue: PowerRestoreOpts.defaultValue
-        input name: 'healthCheckInterval', type: 'enum', title: 'Healthcheck Interval', options: HealthcheckIntervalOpts.options, defaultValue: HealthcheckIntervalOpts.defaultValue, required: true
+        input name: 'levelUpTransition', type: 'enum', title: '<b>Dim up transition length</b>', options: TransitionOpts.options, defaultValue: TransitionOpts.defaultValue, required: true, description:\
+            '<i>Changes the speed the light dims up. Increasing the value slows down the transition.</i>'
+        input name: 'levelDownTransition', type: 'enum', title: '<b>Dim down transition length</b>', options: TransitionOpts.options, defaultValue: TransitionOpts.defaultValue, required: true, description:\
+            '<i>Changes the speed the light dims down. Increasing the value slows down the transition.</i>'
+        input name: 'colorTransitionTime', type: 'enum', title: '<b>Color transition length</b>', options: TransitionOpts.options, defaultValue: TransitionOpts.defaultValue, required: true, description:\
+            '<i>Changes the speed the light changes color/temperature. Increasing the value slows down the transition.</i>'
 
-        input name: 'logEnable', type: 'bool', title: 'Enable debug logging', defaultValue: false
-        input name: 'txtEnable', type: 'bool', title: 'Enable descriptionText logging', defaultValue: true
+        input name: 'levelChangeRate', type: 'enum', title: '<b>Level change rate</b>', options: LevelRateOpts.options, defaultValue: LevelRateOpts.defaultValue, required: true, description:\
+            '<i>Changes the speed that the light changes when using <b>start level change</b> until <b>stop level change</b> is sent.</i>'
+
+        input name: 'enableDimOnOffMode', type: 'bool', title: '<b>Dim to zero instead of off</b>', defaultValue: false, description:\
+            '<i>Changes the <b>Off</b> command to instead dim down to zero and <b>On</b> to dim up to the previous level.</i>'
+
+        input name: 'flashEffect', type: 'enum', title: '<b>Flash effect</b>', options: IdentifyEffectNames.values(), defaultValue: 'Blink', required: true, description:\
+            '<i>Changes the effect used when the <b>flash</b> command is used.</i>'
+        input name: 'powerRestore', type: 'enum', title: '<b>Power restore mode</b>', options: PowerRestoreOpts.options, defaultValue: PowerRestoreOpts.defaultValue, description:\
+            '<i>Changes what happens when power to the bulb is restored.</i>'
+
+        input name: 'healthCheckInterval', type: 'enum', title: '<b>Healthcheck Interval</b>', options: HealthcheckIntervalOpts.options, defaultValue: HealthcheckIntervalOpts.defaultValue, required: true, description:\
+            '<i>Changes how often the hub pings the bulb to check health.</i>'
+
+        input name: 'txtEnable', type: 'bool', title: '<b>Enable descriptionText logging</b>', defaultValue: true, description:\
+            '<i>Enables command logging.</i>'
+        input name: 'logEnable', type: 'bool', title: '<b>Enable debug logging</b>', defaultValue: false, description:\
+            '<i>Turns on debug logging for 30 minutes.</i>'
     }
 }
 
-@Field static final String Version = '0.5'
+@Field static final String VERSION = '0.6'
 
 List<String> configure() {
     List<String> cmds = []
@@ -171,6 +185,10 @@ void logsOff() {
 }
 
 List<String> off() {
+    if (settings.enableDimOnOffMode == true) {
+        state.previousLevel = device.currentValue('level') as Integer
+        return setLevel(0)
+    }
     if (settings.txtEnable) { log.info 'turn off' }
     scheduleCommandTimeoutCheck()
     return zigbee.command(zigbee.ON_OFF_CLUSTER, 0x40, [:], 0, '00 00') +
@@ -178,6 +196,11 @@ List<String> off() {
 }
 
 List<String> on() {
+    if (state.previousLevel && settings.enableDimOnOffMode == true) {
+        Integer level = state.previousLevel as Integer
+        state.remove('previousLevel')
+        return setLevel(level)
+    }
     if (settings.txtEnable) { log.info 'turn on' }
     scheduleCommandTimeoutCheck()
     return zigbee.command(zigbee.ON_OFF_CLUSTER, 0x01, [:], 0) +
@@ -395,6 +418,7 @@ List<String> toggle() {
 
 void updated() {
     log.info 'updated...'
+    log.info "driver version ${VERSION}"
     unschedule()
 
     if (settings.logEnable) {
@@ -753,20 +777,22 @@ private Integer getColorTransitionRate(Object transitionTime = null) {
         rate = (transitionTime.toBigDecimal() * 10).toInteger()
     } else if (settings.colorTransitionTime != null) {
         rate = settings.colorTransitionTime.toInteger()
-    } else if (settings.transitionTime != null) {
-        rate = settings.transitionTime.toInteger()
     }
     if (settings.logEnable) { log.debug "using color transition rate ${rate}" }
     return rate
 }
 
 private Integer getLevelTransitionRate(Object level, Object transitionTime = null) {
+    Integer rate = 0
     Integer desiredLevel = level.toInteger()
-    Integer defaultTransition = (transitionTime != null ? (transitionTime.toBigDecimal() * 10) : (settings.transitionTime ?: 0)).toInteger()
     Integer currentLevel = (device.currentValue('level') as Integer) ?: 0
-    Integer upTransition = (settings.levelUpTransition ?: defaultTransition).toInteger()
-    Integer downTransition = (settings.levelDownTransition ?: defaultTransition).toInteger()
-    Integer rate = (currentLevel < desiredLevel) ? upTransition : downTransition
+    if (transitionTime != null) {
+        rate = (transitionTime.toBigDecimal() * 10).toInteger()
+    } else if (settings.levelUpTransition != null && currentLevel < desiredLevel) {
+        rate = settings.levelUpTransition.toInteger()
+    } else if (settings.levelDownTransition != null && currentLevel > desiredLevel) {
+        rate = settings.levelDownTransition.toInteger()
+    }
     if (settings.logEnable) { log.debug "using level transition rate ${rate}" }
     return rate
 }
