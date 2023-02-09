@@ -1,5 +1,5 @@
 {
-  "packageName": "Philips Hue Zigbee Direct Drivers",
+  "packageName": "Philips Hue Zigbee Drivers",
   "author": "Jonathan Bradshaw",
   "version": "1.0",
   "minimumHEVersion": "2.1.9",
@@ -11,7 +11,7 @@
   "drivers": [
     {
       "id": "ed67ff9b-68f1-4353-9c5c-0d8e71c7c6fd",
-      "name": "Philips Hue Zigbee White and Color Ambience",
+      "name": "Philips Hue Zigbee White and Color Ambiance",
       "namespace": "philips-hue",
       "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/PhilipsHue/Philips-Hue-Zigbee-Bulb-RGBW.groovy",
       "betaLocation": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/development/PhilipsHue/Philips-Hue-Zigbee-Bulb-RGBW.groovy",
@@ -19,7 +19,7 @@
     },
     {
       "id": "3acae55a-91a0-41ed-b250-5b06b7579c45",
-      "name": "Philips Hue White Ambience",
+      "name": "Philips Hue White Ambiance",
       "namespace": "philips-hue",
       "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/PhilipsHue/Philips-Hue-Zigbee-Bulb-CT.groovy",
       "betaLocation": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/development/PhilipsHue/Philips-Hue-Zigbee-Bulb-CT.groovy",

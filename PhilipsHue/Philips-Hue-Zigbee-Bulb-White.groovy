@@ -96,7 +96,6 @@ List<String> configure() {
     log.info 'configure...'
 
     state.clear()
-    state.ct = [ high: 6536, low: 2000 ] // default values
     state.reportingEnabled = false
 
     // Power Restore Behavior

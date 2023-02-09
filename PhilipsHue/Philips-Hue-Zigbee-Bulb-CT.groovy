@@ -29,7 +29,7 @@ import groovy.transform.Field
 import hubitat.zigbee.zcl.DataType
 
 metadata {
-    definition(name: 'Philips Hue White Ambience',
+    definition(name: 'Philips Hue White Ambiance',
             importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/PhilipsHue/Philips-Hue-Zigbee-Bulb-CT.groovy',
             namespace: 'philips-hue', author: 'Jonathan Bradshaw') {
         capability 'Actuator'
