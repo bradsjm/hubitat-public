@@ -11,7 +11,7 @@
   "drivers": [
     {
       "id": "ed67ff9b-68f1-4353-9c5c-0d8e71c7c6fd",
-      "name": "Philips Hue Zigbee White and Color Ambiance",
+      "name": "Philips Hue White and Color Ambiance",
       "namespace": "philips-hue",
       "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/PhilipsHue/Philips-Hue-Zigbee-Bulb-RGBW.groovy",
       "betaLocation": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/development/PhilipsHue/Philips-Hue-Zigbee-Bulb-RGBW.groovy",
