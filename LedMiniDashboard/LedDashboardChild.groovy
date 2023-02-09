@@ -364,14 +364,18 @@ Map editPage(Map params = [:]) {
 
             if (settings["${prefix}_conditions"]) {
                 section {
-                    input name: "${prefix}_delay", title: '<i>For number of minute(s):</i>', description: '1..60', type: 'number', width: 3, range: '0..60', required: false
-                    paragraph '', width: 1
+                    input name: "${prefix}_delay", title: '<i>For at least (minutes):</i>', description: '1..60', type: 'decimal', width: 3, range: '0..60', required: false
                     if (settings["${prefix}_effect"] != '255') {
                         String title = 'When conditions stop matching '
                         title += settings["${prefix}_autostop"] == false ? '<i>leave effect running</i>' : '<b>stop the effect</b>'
                         input name: "${prefix}_autostop", title: title, type: 'bool', defaultValue: true, width: 4, submitOnChange: true
                     } else {
                         app.removeSetting("${prefix}_autostop")
+                    }
+                    if (settings["${prefix}_autostop"]) {
+                        input name: "${prefix}_postdelay", title: '<i>Delay stop by (minutes):</i>', description: '1..60', type: 'decimal', width: 3, range: '0..60', required: false
+                    } else {
+                        app.removeSetting("${prefix}_postdelay")
                     }
                 }
 
@@ -804,13 +808,13 @@ void deviceStateTracker(Event event) {
     switch (event.value) {
         case 'User Cleared':
             DeviceStateTracker.remove(event.device.id)
-            logInfo "clearing all LED tracking for ${event.device}"
+            logDebug "clearing all LED tracking for ${event.device}"
             break
         case 'Stop All':
             Map<String, Map> tracker = DeviceStateTracker[event.device.id]
             if (tracker) {
                 tracker.remove('All')
-                logInfo "cleared LED tracking for ${event.device} All LED"
+                logDebug "cleared LED tracking for ${event.device} All LED"
             }
             break
         case ~/^Stop LED(\d)$/:
@@ -818,7 +822,7 @@ void deviceStateTracker(Event event) {
             if (tracker) {
                 String led = (Matcher.lastMatcher[0] as List)[1]
                 tracker.remove(led)
-                logInfo "cleared LED tracking for ${event.device} LED${led}"
+                logDebug "cleared LED tracking for ${event.device} LED${led}"
             }
             break
     }
@@ -888,6 +892,9 @@ void notificationDispatcher() {
     // Evaluate current dashboard condition rules
     Map<String, Boolean> dashboardResults = evaluateDashboardConditions()
 
+    // Process any delayed conditions
+    long nextEvaluationTime = evaluateDelayedConditions(dashboardResults)
+
     // Calculate desired LED states
     Map<String, Map> ledStates = calculateLedState(dashboardResults)
 
@@ -896,30 +903,44 @@ void notificationDispatcher() {
         updateDeviceLedState(config)
         pauseExecution(200)
     }
+
+    // Schedule the next evaluation time
+    if (nextEvaluationTime > now()) {
+        long delay = nextEvaluationTime - now()
+        logDebug "[evaluateDashboardConditions] scheduling evaluation in ${delay}ms"
+        runInMillis(delay, 'notificationDispatcher')
+    }
 }
 
 /*
  *  Dashboard evaluation function responsible for iterating each condition over
- *  the dashboards and returning a map with true/false result for each dashboard prefix.
- *
- *  Includes logic for delayed activiation by scheduling an update job
+ *  the dashboards and returning a map with true/false result for each dashboard prefix
  */
-Map<String, Map> evaluateDashboardConditions() {
+Map<String, Boolean> evaluateDashboardConditions() {
+    return getSortedDashboardPrefixes().collectEntries { prefix ->
+        [ prefix, evaluateConditions(prefix) ]
+    }
+}
+
+/*
+ *  Processes dashboard evaluation results for any delayed activiation
+ *  If found, changes the result to false and returns the next evaluation time
+ */
+long evaluateDelayedConditions(Map<String, Boolean> evaluationResults) {
     long nextEvaluationTime = 0
-    Map<String, Map> evaluationResults = [:]
-    // Iterate each dashboard
-    for (String prefix in getSortedDashboardPrefixes()) {
-        // Evaluate the dashboard conditions
-        boolean active = evaluateConditions(prefix)
-        // Check if dashboard delay configured
+    for (Map.Entry<String, Boolean> result in evaluationResults) {
+        String prefix = result.key
+        boolean active = result.value
+
+        // Check if delay before activation is configured
         String delayKey = "${prefix}_delay"
         if (active && settings[delayKey]) {
             int delayMs = (settings[delayKey] ?: 0) * 60000
             // Determine if delay has expired yet
             long targetTime = state.computeIfAbsent(delayKey) { k -> getOffsetMs(delayMs) }
             if (now() < targetTime) {
-                logDebug "[evaluateDashboardConditions] ${prefix} has delayed evaluation (${delayMs}ms)"
-                active = false
+                logDebug "[evaluateDelayedConditions] ${prefix} has delayed activation (${delayMs}ms)"
+                evaluationResults[prefix] = false
                 // calculate when we need to check again
                 if (!nextEvaluationTime || nextEvaluationTime > targetTime) {
                     nextEvaluationTime = targetTime
@@ -928,16 +949,30 @@ Map<String, Map> evaluateDashboardConditions() {
         } else {
             state.remove(delayKey)
         }
-        evaluationResults[prefix] = active
+
+        // Check if delay post activation is configured
+        String postDelayKey = "${prefix}_postdelay"
+        if (!active && settings[postDelayKey]) {
+            Long targetTime = state[postDelayKey] as Long
+            if (!targetTime) {
+                int delayMs = (settings[postDelayKey] ?: 0) * 60000
+                targetTime = getOffsetMs(delayMs)
+                state[postDelayKey] = targetTime // set expiration time when first inactive
+                evaluationResults[prefix] = true
+                logDebug "[evaluateDelayedConditions] ${prefix} has delayed deactivation (${delayMs}ms)"
+            } else if (now() < targetTime) {
+                evaluationResults[prefix] = true
+            }
+            // calculate when we need to check again
+            if (targetTime && (!nextEvaluationTime || nextEvaluationTime > targetTime)) {
+                nextEvaluationTime = targetTime
+            }
+        } else {
+            state.remove(postDelayKey)
+        }
     }
 
-    if (nextEvaluationTime) {
-        long delay = nextEvaluationTime - now()
-        logDebug "[evaluateDashboardConditions] scheduling evaluation in ${delay}ms"
-        runInMillis(delay, 'notificationDispatcher')
-    }
-
-    return evaluationResults
+    return nextEvaluationTime
 }
 
 /*
@@ -1266,7 +1301,6 @@ private void updateDeviceLedStateInovelliRedGen1(DeviceWrapper dw, Map config) {
         logDebug 'scheduling stopNotification for ' + duration + 'ms'
         runInMillis(duration + 1000, 'stopNotification')
     } else {
-        logDebug 'unschedule stopNotification'
         unschedule('stopNotification')
     }
 }
@@ -1329,7 +1363,6 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
         logDebug 'scheduling stopNotification in ' + duration + 'ms'
         runInMillis(duration + 1000, 'stopNotification')
     } else {
-        logDebug 'unschedule stopNotification'
         unschedule('stopNotification')
     }
 }
