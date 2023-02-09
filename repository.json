@@ -34,6 +34,17 @@
         "Monitoring",
         "Notifications"
       ]
+    },
+    {
+      "id": "55e9b3ed-3d1a-4a8c-9d2b-4244a9104470",
+      "name": "Philips Hue Zigbee Drivers",
+      "category": "Control",
+      "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/PhilipsHue/packageManifest.json",
+      "description": "Enhanced support for Philips Hue devices that are connected via Zigbee (not using the bridge)",
+      "tags": [
+        "Lights & Switches",
+        "Zigbee"
+      ]
     }
   ]
 }
