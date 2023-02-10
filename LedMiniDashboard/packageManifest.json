@@ -5,9 +5,9 @@
   "communityLink": "https://community.hubitat.com/t/switch-dashboard-and-switch-notifications/104986",
   "documentationLink": "https://github.com/bradsjm/hubitat-drivers/blob/main/SwitchLedDashboard/README.md",
   "licenseFile": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/LICENSE",
-  "version": "1.02",
-  "dateReleased": "2023-02-06",
-  "releaseNotes": "Added support for time conditions (sunrise/sunset/specific time)",
+  "version": "1.03",
+  "dateReleased": "2023-02-10",
+  "releaseNotes": "Added cooldown period for conditions",
   "apps": [
     {
       "id": "a5578fb7-3eb6-46f2-9eec-cb25fa4a6fdb",

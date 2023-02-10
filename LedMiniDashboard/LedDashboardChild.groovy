@@ -46,10 +46,11 @@
  *  1.00 - Add support for illuminence value comparison conditions
  *  1.01 - Bug fix for sunrise/sunset
  *  1.02 - Replaced sunrise/sunset conditions with new single option
+ *  1.03 - Add cool down period support for condition
  *
 */
 
-@Field static final String Version = '1.02'
+@Field static final String Version = '1.03'
 
 definition(
     name: 'LED Mini-Dashboard Topic',
