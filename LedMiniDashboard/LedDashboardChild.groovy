@@ -138,7 +138,7 @@ import java.util.regex.Matcher
     'RGB': [
         title: 'Generic RGB Device',
         type: 'capability.colorControl',
-        leds: [ 'All': 'Color' ],
+        leds: [ 'All': 'RGB' ],
         effects: [:],
         effectsAll: [ '255': 'None', '0': 'Off', '1': 'On', 'var': 'Variable Effect' ]
     ]
@@ -503,14 +503,14 @@ Map renderConditionSection(String prefix, String sectionTitle = null, Map<String
             Map<String, Map> inputs = condition.value.inputs
             if (inputs.device) {
                 input name: "${id}_device",
-                    title: (inputs.device.title ?: condition.value.name) + currentResult,
+                    title: (inputs.device.title ?: condition.value.title) + currentResult,
                     type: inputs.device.type,
                     width: inputs.device.width ?: 7,
                     multiple: inputs.device.multiple,
                     submitOnChange: true,
                     required: true
                 if (!inputs.device.any && settings["${id}_device"] in Collection && settings["${id}_device"]?.size() > 1) {
-                    String name = inputs.device.name ?: condition.value.name
+                    String name = inputs.device.title ?: condition.value.title
                     input name: "${id}_device_all",
                         title: settings["${id}_device_all"] ? "<b>All</b> ${name} devices" : "<b>Any</b> ${name} device",
                         type: 'bool', submitOnChange: true, width: 4
@@ -684,53 +684,53 @@ String getDashboardDescription(String prefix) {
     }
 
     if (config.conditions) {
-        String allMode = config.conditions_all ? ' and ' : ' or '
         List<String> conditions = config.conditions
             .findAll { c -> ConditionsMap.containsKey(c) }
             .collect { c ->
-                String all = config["${c}_all"] ? '<i>(All)</i>' : null
-                String title = ConditionsMap[c].title
-                String comparison = getComparisonsByType('number').get(config["${c}_comparison"])
-                if (comparison) { comparison = 'is ' + comparison }
-                String choice
-                if (config["${c}_choice"] != null) {
-                    title += ':'
-                    Map options = [:]
+                Map ctx = [
+                    device: config["${c}_device"],
+                    title: ConditionsMap[c].title,
+                    comparison: config["${c}_comparison"],
+                    choice: config["${c}_choice"],
+                    value: config["${c}_value"],
+                    delay: config.delay,
+                    postDelay: config.postDelay
+                ]
+                if (ctx.device) {
+                    if (ctx.device.size() > 2) {
+                        ctx.device = "${ctx.device.size()} ${ConditionsMap[c].inputs.device.title.toLowerCase()}"
+                        ctx.device = (config["${c}_device_all"] ? 'All ' : '') + ctx.device
+                    } else {
+                        ctx.device = ctx.device*.toString().join(config["${c}_device_all"] ? ' & ' : ' or ')
+                    }
+                }
+                if (ctx.comparison) {
+                    ctx.comparison = getComparisonsByType('number').get(ctx.comparison)?.toLowerCase()
+                }
+                if (ctx.choice != null) {
                     Map choiceInput = ConditionsMap[c].inputs.choice
+                    Object options = choiceInput.options
                     if (choiceInput.options in Closure) {
                         options = runClosure(choiceInput.options as Closure, [ device: config["${c}_device"] ]) ?: [:]
-                    } else if (choiceInput.options in Map) {
-                        options = choiceInput.options ?: [:]
                     }
-                    if (options && config["${c}_choice"] in List) {
-                        choice = config["${c}_choice"].collect { key -> options[key] ?: key }.join(' or ')
-                    } else if (options) {
-                        choice = options[config["${c}_choice"]]
-                    } else {
-                        choice = config["${c}_choice"]
+                    if (options in Map && config["${c}_choice"] in List) {
+                        ctx.choice = config["${c}_choice"].collect { key -> options[key] ?: key }.join(' or ')
+                    } else if (options in Map) {
+                        ctx.choice = options[config["${c}_choice"]]
                     }
                 }
-                String value = config["${c}_value"]
-                if (value != null) {
-                    value = ConditionsMap[c].inputs.value.title + ': ' + value
+                if (ctx.value =~ /^([0-9]{4})-/) { // special case for time format
+                    ctx.value = new Date(timeToday(value).time).format('hh:mm a')
                 }
-                if (value =~ /^([0-9]{4})-/) { // special case for time format
-                    value = new Date(timeToday(value).time).format('hh:mm a')
+                if (ConditionsMap[c].template) {
+                    return runClosure(ConditionsMap[c].template as Closure, ctx)
                 }
-                return ([ title, choice?.toLowerCase(), comparison?.toLowerCase(), value?.toLowerCase(), all ] - null).join(' ')
+                return ConditionsMap[c].title + ' <i>(' + ctx.device + ')</i>'
             }
+        String allMode = config.conditions_all ? ' and ' : ' or '
         sb << "\n<b>Activation${conditions.size() > 1 ? 's' : ''}:</b> ${conditions.join(allMode)}"
-        if (config.autostop != false) {
-            sb << ' (auto stop)'
-        }
     }
 
-    if (config.delay as Integer) {
-        sb << " for ${config.delay} minute"
-        if (config.delay > 1) {
-            sb << 's'
-        }
-    }
     return sb.toString()
 }
 
@@ -1373,10 +1373,10 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
  *  conditions and events including device attributes, hub variables and location events (HSM)
  */
 
-// TODO: Consider explicit event vs. condition (e.g. door has opened in last x seconds vs. door is open)
 @Field static final Map<String, Map> ConditionsMap = [
     'almanac': [
         title: 'Time period is between',
+        template: { ctx -> "Time period is from ${ctx.choice}" },
         inputs: [
             choice: [
                 title: 'Select time period',
@@ -1410,10 +1410,10 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
         }
     ],
     'accelerationActive': [
-        name: 'Acceleration sensors that become active',
         title: 'Acceleration becomes active',
         inputs: [
             device: [
+                title: 'Acceleration Sensors',
                 type: 'capability.accelerationSensor',
                 multiple: true
             ]
@@ -1422,10 +1422,11 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
         test: { ctx -> deviceAttributeTest(ctx.device, 'acceleration', '=', 'active', ctx.all) }
     ],
     'buttonPress': [
-        name: 'Device button is pressed',
         title: 'Button is pressed',
+        template: { ctx -> "${ctx.choice} is pressed <i>(${ctx.device})</i>" },
         inputs: [
             device: [
+                title: 'Pushable Buttons',
                 type: 'capability.pushableButton',
                 multiple: true,
                 any: true
@@ -1440,10 +1441,10 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
         test: { ctx -> ctx.choice && ctx.event.value in ctx.choice }
     ],
     'contactClose': [
-        name: 'Contact sensor that close',
         title: 'Contact closes',
         inputs: [
             device: [
+                title: 'Contact Sensors',
                 type: 'capability.contactSensor',
                 multiple: true
             ]
@@ -1452,10 +1453,10 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
         test: { ctx -> deviceAttributeTest(ctx.device, 'contact', '=', 'closed', ctx.all) }
     ],
     'contactOpen': [
-        name: 'Contact Sensors that open',
         title: 'Contact opens',
         inputs: [
             device: [
+                title: 'Contact Sensors',
                 type: 'capability.contactSensor',
                 multiple: true
             ]
@@ -1464,10 +1465,11 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
         test: { ctx -> deviceAttributeTest(ctx.device, 'contact', '=', 'open', ctx.all) }
     ],
     'customAttribute': [
-        name: 'Custom attribute',
         title: 'Custom attribute',
+        template: { ctx -> "${ctx.choice.capitalize()} is ${ctx.comparison} ${ctx.value} <i>(${ctx.device})</i>" },
         inputs: [
             device: [
+                title: 'Device',
                 type: 'capability.*',
                 multiple: true
             ],
@@ -1488,11 +1490,18 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
         test: { ctx -> deviceAttributeTest(ctx.device, ctx.choice, ctx.comparison, ctx.value, ctx.all) }
     ],
     'hsmAlert': [
-        name: 'HSM intrusion alert becomes',
         title: 'HSM intrusion alert becomes',
+        template: { ctx -> "HSM intrusion alert becomes ${ctx.choice}" },
         inputs: [
             choice: [
-                options: [ 'intrusion': 'Intrusion Away', 'intrusion-home': 'Intrusion Home', 'smoke': 'Smoke', 'water': 'Water', 'arming': 'Arming fail', 'cancel': 'Alert cancelled' ],
+                options: [
+                    'intrusion': 'Intrusion Away',
+                    'intrusion-home': 'Intrusion Home',
+                    'smoke': 'Smoke',
+                    'water': 'Water',
+                    'arming': 'Arming fail',
+                    'cancel': 'Alert cancelled'
+                ],
                 multiple: true
             ]
         ],
@@ -1500,8 +1509,8 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
         test: { ctx -> ctx.event.value in ctx.choice }
     ],
     'hsmStatus': [
-        name: 'HSM status becomes',
         title: 'HSM arming status becomes',
+        template: { ctx -> "HSM arming status becomes ${ctx.choice}" },
         inputs: [
             choice: [
                 options: [
@@ -1521,8 +1530,8 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
         test: { ctx -> location.hsmStatus in ctx.choice }
     ],
     'hubMode': [
-        name: 'Hub mode becomes',
         title: 'Hub mode becomes',
+        template: { ctx -> "Hub mode becomes ${ctx.choice}" },
         inputs: [
             choice: [
                 options: { ctx -> location.modes.collectEntries { m -> [ m.id as String, m.name ] } },
@@ -1533,10 +1542,10 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
         test: { ctx -> (location.currentMode.id as String) in ctx.choice }
     ],
     'locked': [
-        name: 'Lock',
         title: 'Lock is locked',
         inputs: [
             device: [
+                title: 'Locks',
                 type: 'capability.lock',
                 multiple: true
             ]
@@ -1545,10 +1554,11 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
         test: { ctx -> deviceAttributeTest(ctx.device, 'lock', '=', 'locked', ctx.all) }
     ],
     'luminosityAbove': [
-        name: 'Illuminance sensors that rise above',
         title: 'Illuminance rises above',
+        template: { ctx -> "Illuminance rises above ${ctx.value} <i>(${ctx.device})</i>" },
         inputs: [
             device: [
+                title: 'Illuminance Sensors',
                 type: 'capability.illuminanceMeasurement',
                 multiple: true
             ],
@@ -1560,10 +1570,11 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
         test: { ctx -> deviceAttributeTest(ctx.device, 'illuminance', '>', ctx.value, ctx.all) }
     ],
     'luminosityBelow': [
-        name: 'Illuminance sensors that fall',
         title: 'Illuminance falls below',
+        template: { ctx -> "Illuminance falls below ${ctx.value} <i>(${ctx.device})</i>" },
         inputs: [
             device: [
+                title: 'Illuminance Sensors',
                 type: 'capability.illuminanceMeasurement',
                 multiple: true
             ],
@@ -1575,10 +1586,10 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
         test: { ctx -> deviceAttributeTest(ctx.device, 'illuminance', '<', ctx.value, ctx.all) }
     ],
     'motionActive': [
-        name: 'Motion sensors that become active',
         title: 'Motion becomes active',
         inputs: [
             device: [
+                title: 'Motion Sensors',
                 type: 'capability.motionSensor',
                 multiple: true
             ]
@@ -1587,10 +1598,10 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
         test: { ctx -> deviceAttributeTest(ctx.device, 'motion', '=', 'active', ctx.all) }
     ],
     'motionInactive': [
-        name: 'Motion sensors that become inactive',
         title: 'Motion becomes inactive',
         inputs: [
             device: [
+                title: 'Motion Sensors',
                 type: 'capability.motionSensor',
                 multiple: true
             ]
@@ -1599,10 +1610,10 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
         test: { ctx -> deviceAttributeTest(ctx.device, 'motion', '=', 'inactive', ctx.all) }
     ],
     'notpresent': [
-        name: 'Presence sensors that become not present',
         title: 'Presence sensor becomes not present',
         inputs: [
             device: [
+                title: 'Presence Sensors',
                 type: 'capability.presenceSensor',
                 multiple: true
             ]
@@ -1611,10 +1622,10 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
         test: { ctx -> deviceAttributeTest(ctx.device, 'presence', '=', 'not present', ctx.all) }
     ],
     'present': [
-        name: 'Presence sensors that become present',
         title: 'Presence sensor becomes present',
         inputs: [
             device: [
+                title: 'Presence Sensors',
                 type: 'capability.presenceSensor',
                 multiple: true
             ]
@@ -1623,10 +1634,10 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
         test: { ctx -> deviceAttributeTest(ctx.device, 'presence', '=', 'present', ctx.all) }
     ],
     'smoke': [
-        name: 'Smoke detectors that detect smoke',
         title: 'Smoke is detected',
         inputs: [
             device: [
+                title: 'Smoke Detectors',
                 type: 'capability.smokeDetector',
                 multiple: true
             ]
@@ -1635,12 +1646,12 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
         test: { ctx -> deviceAttributeTest(ctx.device, 'smoke', '=', 'detected', ctx.all) }
     ],
     'switchOff': [
-        name: 'Switches that turn off',
         title: 'Switch turns off',
         attribute: 'switch',
         value: 'off',
         inputs: [
             device: [
+                title: 'Switch',
                 type: 'capability.switch',
                 multiple: true
             ]
@@ -1649,12 +1660,12 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
         test: { ctx -> deviceAttributeTest(ctx.device, 'switch', '=', 'off', ctx.all) }
     ],
     'switchOn': [
-        name: 'Switches that turn on',
         title: 'Switch turns on',
         attribute: 'switch',
         value: 'on',
         inputs: [
             device: [
+                title: 'Switch',
                 type: 'capability.switch',
                 multiple: true
             ]
@@ -1663,8 +1674,8 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
         test: { ctx -> deviceAttributeTest(ctx.device, 'switch', '=', 'on', ctx.all) }
     ],
     'timeBefore': [
-        name: 'Time is before',
         title: 'Time is before',
+        template: { ctx -> "Time is before ${ctx.value}" },
         inputs: [
             value: [
                 title: 'Before Time',
@@ -1675,8 +1686,8 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
         test: { ctx -> new Date() < timeToday(ctx.value) }
     ],
     'timeAfter': [
-        name: 'Time is after',
         title: 'Time is after',
+        template: { ctx -> "Time is after ${ctx.value}" },
         inputs: [
             value: [
                 title: 'After Time',
@@ -1688,12 +1699,12 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
         test: { ctx -> new Date() >= timeToday(ctx.value) }
     ],
     'unlocked': [
-        name: 'Locks that unlock',
         title: 'Lock unlocks',
         attribute: 'lock',
         value: 'unlocked',
         inputs: [
             device: [
+                name: 'Locks',
                 type: 'capability.lock',
                 multiple: true
             ]
@@ -1702,8 +1713,8 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
         test: { ctx -> deviceAttributeTest(ctx.device, 'lock', '=', 'unlocked', ctx.all) }
     ],
     'variable': [
-        name: 'Variable is set',
         title: 'Variable',
+        template: { ctx -> "Variable '${ctx.choice}' is ${ctx.comparison} ${ctx.value}" },
         inputs: [
             choice: [
                 options: { ctx -> getAllGlobalVars().keySet() }
@@ -1720,10 +1731,10 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
         test: { ctx -> evaluateComparison(ctx.event.value, ctx.value, ctx.comparison) }
     ],
     'waterDry': [
-        name: 'Water sensors that become dry',
         title: 'Water sensor becomes dry',
         inputs: [
             device: [
+                title: 'Water sensors',
                 type: 'capability.waterSensor',
                 multiple: true
             ]
@@ -1732,10 +1743,10 @@ private void updateDeviceColor(DeviceWrapper dw, Map config) {
         test: { ctx -> deviceAttributeTest(ctx.device, 'water', '=', 'dry', ctx.all) }
     ],
     'waterWet': [
-        name: 'Water sensors that become wet',
         title: 'Water sensor becomes wet',
         inputs: [
             device: [
+                title: 'Water sensors',
                 type: 'capability.waterSensor',
                 multiple: true
             ]
@@ -1881,14 +1892,14 @@ private boolean evaluateComparison(String a, String b, String operator) {
 
 // Given a set of devices, provides the distinct set of attribute names
 @CompileStatic
-private Map getAttributeChoices(List<DeviceWrapper> devices) {
-    return devices?.collectMany { d -> d.getSupportedAttributes()*.name }.collectEntries { name -> [name, name] }
+private List<String> getAttributeChoices(List<DeviceWrapper> devices) {
+    return devices?.collectMany { d -> d.getSupportedAttributes()*.name }
 }
 
 // Given a set of devices, provides the distinct set of attribute names
 @CompileStatic
-private Map getAttributeOptions(List<DeviceWrapper> devices, String attribute) {
-    return devices?.collectMany { d -> d.getSupportedAttributes().find { a -> a.name == attribute }.getValues() }.collectEntries { name -> [name, name] }
+private List<String> getAttributeOptions(List<DeviceWrapper> devices, String attribute) {
+    return devices?.collectMany { d -> d.getSupportedAttributes().find { a -> a.name == attribute }.getValues() }
 }
 
 // Given a set of button devices, provides the list of buttons to choose from
