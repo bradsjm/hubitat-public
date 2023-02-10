@@ -129,16 +129,17 @@ void updated() {
     }
 
     // Clear state (used mostly for tracking delayed conditions)
+    // Reminder - Do not put this above the paused state check!
     state.clear()
 
-    // Subscribe to events from switches
+    // Subscribe to events from supported Inovelli switches
     subscribeAllSwitches()
 
-    // Subscribe to events from conditions
+    // Subscribe to events from all conditions
     subscribeAllConditions()
 
-    // Subscribe to global variables
-    subscribeVariables()
+    // Subscribe to global variables from all conditions
+    subscribeAllVariables()
 
     // Dispatch the current notifications
     runInMillis(200, 'notificationDispatcher')
@@ -166,7 +167,7 @@ void putSettings(Map newSettings) {
 }
 
 /********************************************************************
- * START USER INTERFACE
+ * START OF USER INTERFACE SECTION
  */
 Map mainPage() {
     if (app.label == null) {
@@ -180,13 +181,13 @@ Map mainPage() {
     }
 
     return dynamicPage(name: 'mainPage', title: "<h2 style=\'color: #1A77C9; font-weight: bold\'>${app.label}</h2>") {
-        Map deviceType = getTargetSwitchType()
+        Map switchType = getTargetSwitchType()
         section {
             input name: 'deviceType',
                 title: '',
                 description: '<b>Select the target device type</b> <i>(one type per mini-dashboard)</i>',
                 type: 'enum',
-                options: DeviceTypeMap.collectEntries { dt -> [ dt.key, dt.value.title ] },
+                options: SupportedSwitchTypes.collectEntries { dt -> [ dt.key, dt.value.title ] },
                 multiple: false,
                 required: true,
                 submitOnChange: true,
@@ -198,10 +199,10 @@ Map mainPage() {
                 input name: 'pause', title: 'Pause', type: 'button', width: 1
             }
 
-            if (deviceType) {
+            if (switchType) {
                 input name: 'switches',
                     title: "Select ${settings['deviceType']} devices to include in mini-dashboard",
-                    type: deviceType.type,
+                    type: switchType.type,
                     required: true,
                     multiple: true,
                     submitOnChange: true,
@@ -209,7 +210,7 @@ Map mainPage() {
             }
         }
 
-        if (deviceType && settings['switches']) {
+        if (switchType && settings['switches']) {
             Set<String> prefixes = getSortedConditionPrefixes()
             section("<h3 style=\'color: #1A77C9; font-weight: bold\'>${app.label} Activation Conditions</h3>") {
                 for (String conditionPrefix in prefixes) {
@@ -222,7 +223,7 @@ Map mainPage() {
                         description: getConditionDescription(conditionPrefix),
                         page: 'editConditionPage',
                         params: [ conditionPrefix: conditionPrefix ],
-                        state: currentResult ? 'complete' : '',
+                        state: isActive ? 'complete' : '',
                         width: 10
                     )
                     input name: 'remove_' + conditionPrefix,
@@ -277,7 +278,7 @@ Map editConditionPage(Map params = [:]) {
         renderIndicationSection(conditionPrefix)
         String effectName = getEffectName(conditionPrefix)
         if (effectName) {
-            renderConditionsSection(conditionPrefix, "<span style=\'color: green; font-weight: bold\'>Select means to activate LED ${fxName} effect:</span><span class=\"required-indicator\">*</span>")
+            renderConditionsSection(conditionPrefix, "<span style=\'color: green; font-weight: bold\'>Select means to activate LED ${effectName} effect:</span><span class=\"required-indicator\">*</span>")
 
             if (settings["${conditionPrefix}_conditions"]) {
                 section {
@@ -309,13 +310,13 @@ Map editConditionPage(Map params = [:]) {
 }
 
 Map renderIndicationSection(String conditionPrefix, String title = null) {
-    Map deviceType = getTargetSwitchType()
+    Map switchType = getTargetSwitchType()
     String ledNumber = settings["${conditionPrefix}_lednumber"]
-    String ledName = deviceType.leds[settings[ledNumber]] ?: 'LED'
+    String ledName = switchType.leds[settings[ledNumber]] ?: 'LED'
 
     return section(title) {
         // LED Number
-        input name: "${conditionPrefix}_lednumber", title: '<span style=\'color: blue;\'>LED Number</span>', type: 'enum', options: deviceType.leds, width: 3, required: true, submitOnChange: true
+        input name: "${conditionPrefix}_lednumber", title: '<span style=\'color: blue;\'>LED Number</span>', type: 'enum', options: switchType.leds, width: 3, required: true, submitOnChange: true
         if (settings["${conditionPrefix}_lednumber"] == 'var') {
             input name: "${conditionPrefix}_lednumber_var", title: "<span style=\'color: blue;\'>LED Number Variable</span>", type: 'enum', options: getGlobalVarsByType('integer').keySet(), width: 3, required: true
         } else {
@@ -324,7 +325,7 @@ Map renderIndicationSection(String conditionPrefix, String title = null) {
 
         // Effect
         if (ledNumber) {
-            Map<String, String> fxOptions = ledNumber == 'All' ? deviceType.effectsAll : deviceType.effects
+            Map<String, String> fxOptions = ledNumber == 'All' ? switchType.effectsAll : switchType.effects
             input name: "${conditionPrefix}_effect", title: "<span style=\'color: blue;\'>${ledName} Effect</span>", type: 'enum',
                 options: fxOptions, width: 2, required: true, submitOnChange: true
             if (settings["${conditionPrefix}_effect"] == 'var') {
@@ -539,8 +540,8 @@ void appButtonHandler(String buttonName) {
 Map<String, String> getPrioritiesList(String conditionPrefix) {
     String ledNumber = settings["${conditionPrefix}_lednumber"]
     if (ledNumber == 'var') {
-        Map deviceType = getTargetSwitchType()
-        lednumber = lookupVariable(settings["${conditionPrefix}_lednumber_var"], deviceType.leds) ?: 'All'
+        Map switchType = getTargetSwitchType()
+        lednumber = lookupVariable(settings["${conditionPrefix}_lednumber_var"], switchType.leds) ?: 'All'
     }
     Set<Integer> usedPriorities = (getConditionPrefixes() - conditionPrefix)
         .findAll { String p -> settings["${p}_lednumber"] as String == ledNumber }
@@ -570,20 +571,20 @@ String getColorSpan(Integer hue, String text) {
 // Creates a description string for the dashboard configuration for display
 String getConditionDescription(String conditionPrefix) {
     Map config = getConditionConfig(conditionPrefix)
-    Map deviceType = getTargetSwitchType()
+    Map switchType = getTargetSwitchType()
     StringBuilder sb = new StringBuilder()
     sb << "<b>Priority</b>: ${config.priority}, "
 
     if (config.lednumber == 'var') {
         sb << "<b>LED Variable:</b> <i>${config.lednumber_var}</i>"
     } else if (config.lednumber) {
-        sb << "<b>${deviceType.leds[config.lednumber] ?: 'n/a'}</b>"
+        sb << "<b>${switchType.leds[config.lednumber] ?: 'n/a'}</b>"
     }
 
     if (config.effect == 'var') {
         sb << ", <b>Effect Variable</b>: <i>${config.effect_var}</i>"
     } else if (config.effect) {
-        Map<String, String> fxOptions = deviceType.effectsAll + deviceType.effects
+        Map<String, String> fxOptions = switchType.effectsAll + switchType.effects
         sb << ", <b>Effect:</b> ${fxOptions[config.effect] ?: 'n/a' }"
     }
 
@@ -624,7 +625,7 @@ String getConditionDescription(String conditionPrefix) {
                     if (ctx.device.size() > 2) {
                         String title = ConditionsMap[condition].inputs.device.title.toLowerCase()
                         ctx.device = "${ctx.device.size()} ${title}"
-                        ctx.device = (config["${c}_device_all"] ? 'All ' : '') + ctx.device
+                        ctx.device = (config["${c}_device_all"] ? 'All ' : 'Any of ') + ctx.device
                     } else {
                         boolean isAll = config["${condition}_device_all"]
                         ctx.device = ctx.device*.toString().join(isAll ? ' & ' : ' or ')
@@ -661,20 +662,20 @@ String getConditionDescription(String conditionPrefix) {
 }
 
 String getEffectName(String conditionPrefix) {
-    Map deviceType = getTargetSwitchType()
+    Map switchType = getTargetSwitchType()
     String ledKey = settings["${conditionPrefix}_lednumber"]
-    Map<String, String> fxOptions = ledKey == 'All' ? deviceType.effectsAll : deviceType.effects
+    Map<String, String> fxOptions = ledKey == 'All' ? switchType.effectsAll : switchType.effects
     String fxKey = settings["${conditionPrefix}_effect"]
     return fxOptions[fxKey]
 }
 
 String getSuggestedConditionName(String conditionPrefix) {
     Map config = getConditionConfig(conditionPrefix)
-    Map deviceType = getTargetSwitchType()
+    Map switchType = getTargetSwitchType()
     StringBuilder sb = new StringBuilder('Set ')
 
     if (config.lednumber && config.lednumber != 'var') {
-        sb << deviceType.leds[config.lednumber] ?: 'n/a'
+        sb << switchType.leds[config.lednumber] ?: 'n/a'
     } else {
         sb << 'LED'
     }
@@ -734,21 +735,21 @@ void eventHandler(Event event) {
  *  Track the led state changes and update the device tracker object
  *  Only supported for the Inovelli Blue LED driver
  */
-void deviceStateTracker(Event event) {
+void switchStateTracker(Event event) {
     switch (event.value) {
         case 'User Cleared':
             SwitchStateTracker.remove(event.device.id)
             logDebug "clearing all LED tracking for ${event.device}"
             break
         case 'Stop All':
-            Map<String, Map> tracker = DeviceStateTracker[event.device.id]
+            Map<String, Map> tracker = switchStateTracker[event.device.id]
             if (tracker) {
                 tracker.remove('All')
                 logDebug "cleared LED tracking for ${event.device} All LED"
             }
             break
         case ~/^Stop LED(\d)$/:
-            Map<String, Map> tracker = DeviceStateTracker[event.device.id]
+            Map<String, Map> tracker = switchStateTracker[event.device.id]
             if (tracker) {
                 String led = (Matcher.lastMatcher[0] as List)[1]
                 tracker.remove(led)
@@ -796,12 +797,12 @@ void timeAfterTrigger() {
 // Scheduled stop used for devices that don't have built-in timers
 void stopNotification() {
     logDebug 'stopNotification called'
-    Map deviceType = getTargetSwitchType()
+    Map switchType = getTargetSwitchType()
     for (DeviceWrapper device in settings['switches']) {
         Map<String, Map> tracker = getSwitchStateTracker(device)
         if (now() >= tracker['All']?.expires) {
             if (device.hasCommand('setConfigParameter')) {
-                Integer param = deviceType.ledLevelParam
+                Integer param = switchType.ledLevelParam
                 logDebug "${device}.setConfigParameter(${param}, 0, '1')"
                 device.setConfigParameter(param, 0, '1')
             } else if (device.hasCommand('off')) {
@@ -1019,11 +1020,11 @@ private List<String> getSortedConditionPrefixes() {
 
 // Returns the active device type configuration map
 private Map getTargetSwitchType() {
-    Map deviceTypeMap = DeviceTypeMap.get(settings['deviceType']) ?: [:]
-    if (!deviceTypeMap) {
+    Map switchType = SupportedSwitchTypes.get(settings['deviceType']) ?: [:]
+    if (!switchType) {
         logError "Unable to retrieve device type map for ${settings['deviceType']}"
     }
-    return deviceTypeMap
+    return switchType
 }
 
 // Logs information
@@ -1068,13 +1069,13 @@ private void removeSettings(String conditionPrefix) {
 
 // Populate configuration values with specified global variables
 private void replaceVariables(Map<String, String> config) {
-    Map deviceType = getTargetSwitchType()
-    if (deviceType) {
+    Map switchType = getTargetSwitchType()
+    if (switchType) {
         if (config.lednumber == 'var') {
-            config.lednumber = lookupVariable(config.lednumber_var, deviceType.leds) ?: 'All'
+            config.lednumber = lookupVariable(config.lednumber_var, switchType.leds) ?: 'All'
         }
         if (config.effect == 'var') {
-            Map<String, String> fxOptions = deviceType.effectsAll + deviceType.effects
+            Map<String, String> fxOptions = switchType.effectsAll + switchType.effects
             config.effect = lookupVariable(config.effect_var, fxOptions) as String
         }
         if (config.color == 'var') {
@@ -1094,10 +1095,10 @@ private void replaceVariables(Map<String, String> config) {
 
 // Set all switches to stop
 private void resetNotifications() {
-    Map deviceType = getTargetSwitchType()
-    if (deviceType) {
+    Map switchType = getTargetSwitchType()
+    if (switchType) {
         logInfo 'resetting all device notifications'
-        deviceType.leds.keySet().findAll { String s -> s != 'var' }.each { String led ->
+        switchType.leds.keySet().findAll { String s -> s != 'var' }.each { String led ->
             updateSwitchLedState(
                 [
                     name: 'clear notification',
@@ -1127,7 +1128,7 @@ private void subscribeAllSwitches() {
     switch (type) {
         case ~/^device.InovelliDimmer2-in-1BlueSeries.*/:
             logDebug "subscribing to ledEffect event for ${settings.switches}"
-            subscribe(settings.switches, 'ledEffect', 'deviceStateTracker', null)
+            subscribe(settings.switches, 'ledEffect', 'switchStateTracker', null)
             break
     }
 }
@@ -1178,14 +1179,22 @@ private void updateSwitchLedState(Map config) {
  *  updateSwitchColor is a wrapper around the color device driver methods
  */
 private void updateSwitchColor(DeviceWrapper dw, Map config) {
+    String key = "device-state-${dw.id}"
     Integer color = config.color as Integer
     switch (config.effect) {
         case '0': // Off
-        case '255':
             logDebug "${dw}.off()"
             dw.off()
+            state.remove(key)
             break
         case '1': // On
+            if (dw.currentValue('switch') == 'on') {
+                state[key] = [
+                    hue: dw.currentValue('hue') ?: 0,
+                    saturation: dw.currentValue('saturation') ?: 0,
+                    level: dw.currentValue('level') ?: 0,
+                ]
+            }
             int huePercent = Math.round((color / 360.0) * 100)
             logDebug "${dw}.setColor(${huePercent})"
             dw.setColor([
@@ -1193,6 +1202,20 @@ private void updateSwitchColor(DeviceWrapper dw, Map config) {
                 saturation: color == 360 ? 0 : 100,
                 level: config.level as Integer
             ])
+            break
+        case '255':
+            if (state[key]?.level) {
+                logDebug "${dw}.setColor(${state[key]})"
+                dw.setColor([
+                    hue: state[key].hue as Integer,
+                    saturation: state[key].saturation as Integer,
+                    level: state[key].level as Integer
+                ])
+                state.remove(key)
+            } else {
+                logDebug "${dw}.off()"
+                dw.off()
+            }
             break
     }
     if (config.unit && config.unit != '255') {
@@ -1250,12 +1273,12 @@ private void updateSwitchLedStateInovelliRedGen1(DeviceWrapper dw, Map config) {
     if (effect == 255) { // Stop notification option is mapped to 0
         effect = level = color = 0
     }
-    Map deviceType = getTargetSwitchType()
-    logDebug "${dw}.setConfigParameter(${deviceType.ledLevelParam},${level},'1')"
-    dw.setConfigParameter(deviceType.ledLevelParam as int, level, '1')
+    Map switchType = getTargetSwitchType()
+    logDebug "${dw}.setConfigParameter(${switchType.ledLevelParam},${level},'1')"
+    dw.setConfigParameter(switchType.ledLevelParam as int, level, '1')
     if (level > 0) {
-        logDebug "${dw}.setConfigParameter(${deviceType.ledColorParam},${color},'2')"
-        dw.setConfigParameter(deviceType.ledColorParam as int, color, '2')
+        logDebug "${dw}.setConfigParameter(${switchType.ledColorParam},${color},'2')"
+        dw.setConfigParameter(switchType.ledColorParam as int, color, '2')
     }
     if (config.unit && config.unit != '255') {
         long duration = convertParamToMs(Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255))
@@ -1393,7 +1416,7 @@ private void subscribeCondition(String prefix, Map<String, Map> ruleDefinitions 
             } else {
                 attribute = condition.subscribe
             }
-            logInfo "${name} [${condition.name}] subscribing to ${ctx.device ?: 'location'} for '${attribute}'"
+            logInfo "${name} [${condition.title}] subscribing to ${ctx.device ?: 'location'} for '${attribute}'"
             subscribe(ctx.device ?: location, attribute, 'eventHandler', null)
             if (attribute.startsWith('variable:')) {
                 addInUseGlobalVar(attribute.substring(9))
@@ -1402,7 +1425,7 @@ private void subscribeCondition(String prefix, Map<String, Map> ruleDefinitions 
     }
 }
 
-private void subscribeVariables() {
+private void subscribeAllVariables() {
     settings.findAll { s -> s.key.endsWith('_var') }.each { s ->
         logDebug "subscribing to variable ${s.value}"
         addInUseGlobalVar(s.value)
@@ -1503,7 +1526,7 @@ private Object runClosure(Closure c, Map ctx) {
 /*
  * Define the supported notification device types
  */
-@Field static final Map<String, Map> DeviceTypeMap = [
+@Field static final Map<String, Map> SupportedSwitchTypes = [
     'Inovelli Blue Switch': [
         title: 'Inovelli Dimmer 2-in-1 Blue Series VZM31-SN',
         type: 'device.InovelliDimmer2-in-1BlueSeriesVZM31-SN',
@@ -1564,7 +1587,7 @@ private Object runClosure(Closure c, Map ctx) {
         type: 'capability.colorControl',
         leds: [ 'All': 'RGB Color' ],
         effects: [:],
-        effectsAll: [ '255': 'None', '0': 'Off', '1': 'On', 'var': 'Variable Effect' ]
+        effectsAll: [ '255': 'Stop', '0': 'Off', '1': 'On', 'var': 'Variable Effect' ]
     ]
 ]
 
