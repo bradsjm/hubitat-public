@@ -453,7 +453,7 @@ Map renderConditionsSection(String conditionPrefix, String sectionTitle = null, 
                 }
                 if (options) {
                     input name: "${id}_choice",
-                        title: (inputs.choice.title ?: condition.value.title) + state,
+                        title: (inputs.choice.title ?: condition.value.title) + status,
                         defaultValue: inputs.choice.defaultValue,
                         options: options,
                         width: inputs.choice.width ?: 7,
