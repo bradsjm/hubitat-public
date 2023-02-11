@@ -884,23 +884,29 @@ long evaluateDelayedConditions(Map<String, Boolean> evaluationResults) {
 
         // Check if delay post activation is configured
         String cooldownKey = "${conditionPrefix}_cooldown"
-        if (!active && settings[cooldownKey]) {
-            Long targetTime = state[cooldownKey] as Long
-            if (!targetTime) {
+        if (settings[cooldownKey]) {
+            Long targetTime = state[cooldownKey]
+            if (active) {
+                state[cooldownKey] = -1 // mark that it has been active
+            } else if (targetTime == -1) {
                 int delayMs = (settings[cooldownKey] ?: 0) * 60000
                 targetTime = nowPlusOffset(delayMs)
                 state[cooldownKey] = targetTime // set expiration time when first inactive
                 evaluationResults[conditionPrefix] = true
                 logDebug "[evaluateDelayedConditions] ${conditionPrefix} has cooldown (${delayMs}ms)"
-            } else if (now() < targetTime) {
+            } else if (targetTime > 0 && now() < targetTime) {
+                // still in cooldown period
                 evaluationResults[conditionPrefix] = true
+            } else if (now() > targetTime) {
+                // we are done with cooldown so remove the state
+                state.remove(cooldownKey)
+                logDebug "[evaluateDelayedConditions] ${conditionPrefix} has completed cooldown"
             }
+
             // calculate when we need to check again
             if (targetTime && (!nextEvaluationTime || nextEvaluationTime > targetTime)) {
                 nextEvaluationTime = targetTime
             }
-        } else {
-            state.remove(cooldownKey)
         }
     }
 
