@@ -170,9 +170,7 @@ void putSettings(Map newSettings) {
  * START OF USER INTERFACE SECTION
  */
 Map mainPage() {
-    if (app.label == null) {
-        app.updateLabel('New LED Mini-Dashboard')
-    }
+    if (app.label == null) { app.updateLabel('New LED Mini-Dashboard') }
     updatePauseLabel()
 
     if (settings.removeSettings) {
@@ -272,7 +270,7 @@ Map mainPage() {
 }
 
 Map editConditionPage(Map params = [:]) {
-    String conditionPrefix = params.conditionPrefix
+    String conditionPrefix = params.prefix
     if (!conditionPrefix) { return mainPage() }
     String name = settings["${conditionPrefix}_name"] ?: 'New Activation Condition'
 
