@@ -736,24 +736,23 @@ void eventHandler(Event event) {
  *  Only supported for the Inovelli Blue LED driver
  */
 void switchStateTracker(Event event) {
+    Map<String, Map> tracker = switchStateTracker[event.device.id]
+
     switch (event.value) {
         case 'User Cleared':
-            SwitchStateTracker.remove(event.device.id)
-            logDebug "clearing all LED tracking for ${event.device}"
+            logInfo "clear notification button pushed on ${event.device}"
             break
         case 'Stop All':
-            Map<String, Map> tracker = switchStateTracker[event.device.id]
             if (tracker) {
                 tracker.remove('All')
-                logDebug "cleared LED tracking for ${event.device} All LED"
+                logDebug "${event.device} All LED effect stopped"
             }
             break
         case ~/^Stop LED(\d)$/:
-            Map<String, Map> tracker = switchStateTracker[event.device.id]
             if (tracker) {
                 String led = (Matcher.lastMatcher[0] as List)[1]
                 tracker.remove(led)
-                logDebug "cleared LED tracking for ${event.device} LED${led}"
+                logDebug "${event.device} LED${led} effect stopped"
             }
             break
     }
