@@ -222,7 +222,7 @@ Map mainPage() {
                         title: "<b>${name}</b>${status}",
                         description: getConditionDescription(conditionPrefix),
                         page: 'editConditionPage',
-                        params: [ conditionPrefix: conditionPrefix ],
+                        params: [ prefix: conditionPrefix ],
                         state: isActive ? 'complete' : '',
                         width: 10
                     )
