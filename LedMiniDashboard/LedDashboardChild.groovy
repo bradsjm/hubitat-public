@@ -454,7 +454,7 @@ Map renderConditionsSection(String conditionPrefix, String sectionTitle = null, 
                         title: (inputs.choice.title ?: condition.value.title) + status,
                         defaultValue: inputs.choice.defaultValue,
                         options: options,
-                        width: inputs.choice.width ?: 7,
+                        width: inputs.choice.width ?: 6,
                         multiple: inputs.choice.multiple,
                         type: 'enum',
                         submitOnChange: true, required: true
