@@ -472,7 +472,7 @@ Map renderConditionsSection(String conditionPrefix, String sectionTitle = null, 
                 }
                 input name: "${id}_comparison",
                     title: (inputs.comparison.title ?: 'Comparison') + ' ',
-                    width: inputs.comparison.width ?: 2,
+                    width: inputs.comparison.width ?: 3,
                     type: 'enum',
                     options: options,
                     defaultValue: inputs.comparison.defaultValue,
@@ -1472,9 +1472,7 @@ private List<String> getAttributeChoices(List<DeviceWrapper> devices) {
 // Given a set of devices, provides the distinct set of attribute names
 @CompileStatic
 private List<String> getAttributeOptions(List<DeviceWrapper> devices, String attribute) {
-    return devices?.collectMany { DeviceWrapper d ->
-        d.getSupportedAttributes().find { a -> a.name == attribute }?.getValues() ?: []
-    }
+    return devices?.collectMany { DeviceWrapper d -> (d.getSupportedAttributes().find { a -> a.name == attribute }?.getValues()) ?: [] as List<String> }
 }
 
 // Given a set of button devices, provides the list of buttons to choose from
