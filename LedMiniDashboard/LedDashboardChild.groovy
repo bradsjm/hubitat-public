@@ -270,8 +270,8 @@ Map mainPage() {
 }
 
 Map editConditionPage(Map params = [:]) {
+    if (!params?.prefix) { return mainPage() }
     String conditionPrefix = params.prefix
-    if (!conditionPrefix) { return mainPage() }
     String name = settings["${conditionPrefix}_name"] ?: 'New Activation Condition'
 
     return dynamicPage(name: 'editConditionPage', title: "<h3 style=\'color: #1A77C9; font-weight: bold\'>${name}</h3><br>") {
