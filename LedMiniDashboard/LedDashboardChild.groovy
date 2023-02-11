@@ -738,7 +738,7 @@ void eventHandler(Event event) {
  *  Only supported for the Inovelli Blue LED driver
  */
 void switchStateTracker(Event event) {
-    Map<String, Map> tracker = switchStateTracker[event.device.id]
+    Map<String, Map> tracker = SwitchStateTracker[event.device.id]
 
     switch (event.value) {
         case 'User Cleared':
