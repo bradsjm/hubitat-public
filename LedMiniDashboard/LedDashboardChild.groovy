@@ -183,15 +183,10 @@ Map mainPage() {
     return dynamicPage(name: 'mainPage', title: "<h2 style=\'color: #1A77C9; font-weight: bold\'>${app.label}</h2>") {
         Map switchType = getTargetSwitchType()
         section {
-            input name: 'deviceType',
-                title: '',
+            input name: 'deviceType', title: '', type: 'enum',
                 description: '<b>Select the target device type</b> <i>(one type per mini-dashboard)</i>',
-                type: 'enum',
                 options: SupportedSwitchTypes.collectEntries { dt -> [ dt.key, dt.value.title ] },
-                multiple: false,
-                required: true,
-                submitOnChange: true,
-                width: 10
+                multiple: false, required: true, submitOnChange: true, width: 10
 
             if (state.paused) {
                 input name: 'resume', title: 'Resume', type: 'button', width: 1
@@ -203,10 +198,7 @@ Map mainPage() {
                 input name: 'switches',
                     title: "Select ${settings['deviceType']} devices to include in mini-dashboard",
                     type: switchType.type,
-                    required: true,
-                    multiple: true,
-                    submitOnChange: true,
-                    width: 10
+                    required: true, multiple: true, submitOnChange: true, width: 10
             }
         }
 
@@ -216,10 +208,20 @@ Map mainPage() {
                 for (String conditionPrefix in prefixes) {
                     String name = settings["${conditionPrefix}_name"]
                     boolean isActive = evaluateAllConditions(conditionPrefix)
-                    String state = isActive ? ' <span style=\'color: green\'>(true)</span>' : ''
+                    String status = isActive ? ' &#128994;' : ''
+                    Long delayUntil = state["${conditionPrefix}_delay"] as Long
+                    Long cooldownUntil = state["${conditionPrefix}_cooldown"] as Long
+                    if (isActive && delayUntil > now()) {
+                        int minutes = Math.ceil((delayUntil - now()) / 60000)
+                        status = " &#128993; <span style=\'font-style: italic\'>(< ${minutes}m delay)</span>"
+                    } else if (!isActive && cooldownUntil > now()) {
+                        isActive = true
+                        int minutes = Math.ceil((cooldownUntil - now()) / 60000)
+                        status = " &#128993; <span style=\'font-style: italic\'>(< ${minutes}m cooldown)</span>"
+                    }
                     href(
                         name: "edit_${conditionPrefix}",
-                        title: "<b>${name}</b>${state}",
+                        title: "<b>${name}</b>${status}",
                         description: getConditionDescription(conditionPrefix),
                         page: 'editConditionPage',
                         params: [ conditionPrefix: conditionPrefix ],
@@ -418,7 +420,7 @@ Map renderConditionsSection(String conditionPrefix, String sectionTitle = null, 
         Map<String, Map> activeConditionRules = ruleDefinitions.findAll { String k, Map v -> k in activeConditions }
         for (Map.Entry<String, Map> condition in activeConditionRules) {
             String id = "${conditionPrefix}_${condition.key}"
-            String state = evaluateCondition(id, condition.value) ? ' <span style=\'color: green\'>(currently true)</span>' : ''
+            String status = evaluateCondition(id, condition.value) ? ' &#128994;' : ''
             if (!isFirst) {
                 paragraph allConditionsMode ? '<b>and</b>' : '<i>or</i>'
             }
@@ -426,13 +428,13 @@ Map renderConditionsSection(String conditionPrefix, String sectionTitle = null, 
             Map<String, Map> inputs = condition.value.inputs
             if (inputs.device) {
                 input name: "${id}_device",
-                    title: (inputs.device.title ?: condition.value.title) + state,
+                    title: (inputs.device.title ?: condition.value.title) + status,
                     type: inputs.device.type,
                     width: inputs.device.width ?: 7,
                     multiple: inputs.device.multiple,
                     submitOnChange: true,
                     required: true
-                state = ''
+                status = ''
                 if (!inputs.device.any && settings["${id}_device"] in Collection && settings["${id}_device"]?.size() > 1) {
                     String name = inputs.device.title ?: condition.value.title
                     input name: "${id}_device_all",
@@ -458,7 +460,7 @@ Map renderConditionsSection(String conditionPrefix, String sectionTitle = null, 
                         multiple: inputs.choice.multiple,
                         type: 'enum',
                         submitOnChange: true, required: true
-                    state = ''
+                    status = ''
                 }
             }
 
@@ -488,7 +490,7 @@ Map renderConditionsSection(String conditionPrefix, String sectionTitle = null, 
                     options = inputs.value.options
                 }
                 input name: "${id}_value",
-                    title: (inputs.value.title ?: 'Value') + state + ' ',
+                    title: (inputs.value.title ?: 'Value') + status + ' ',
                     width: inputs.value.width ?: 3,
                     defaultValue: inputs.value.defaultValue,
                     range: inputs.value.range,
@@ -853,24 +855,24 @@ Map<String, Boolean> evaluateDashboardConditions() {
 }
 
 /*
- *  Processes dashboard evaluation results for any delayed activiation
+ *  Processes dashboard evaluation results for delayed activiation and cooldown
  *  If found, changes the result to false and returns the next evaluation time
  */
 long evaluateDelayedConditions(Map<String, Boolean> evaluationResults) {
     long nextEvaluationTime = 0
     for (Map.Entry<String, Boolean> result in evaluationResults) {
-        String prefix = result.key
+        String conditionPrefix = result.key
         boolean active = result.value
 
         // Check if delay before activation is configured
-        String delayKey = "${prefix}_delay"
+        String delayKey = "${conditionPrefix}_delay"
         if (active && settings[delayKey]) {
             int delayMs = (settings[delayKey] ?: 0) * 60000
             // Determine if delay has expired yet
             long targetTime = state.computeIfAbsent(delayKey) { k -> nowPlusOffset(delayMs) }
             if (now() < targetTime) {
-                logDebug "[evaluateDelayedConditions] ${prefix} has delayed activation (${delayMs}ms)"
-                evaluationResults[prefix] = false
+                logDebug "[evaluateDelayedConditions] ${conditionPrefix} has delayed activation (${delayMs}ms)"
+                evaluationResults[conditionPrefix] = false
                 // calculate when we need to check again
                 if (!nextEvaluationTime || nextEvaluationTime > targetTime) {
                     nextEvaluationTime = targetTime
@@ -881,17 +883,17 @@ long evaluateDelayedConditions(Map<String, Boolean> evaluationResults) {
         }
 
         // Check if delay post activation is configured
-        String cooldownKey = "${prefix}_cooldown"
+        String cooldownKey = "${conditionPrefix}_cooldown"
         if (!active && settings[cooldownKey]) {
             Long targetTime = state[cooldownKey] as Long
             if (!targetTime) {
                 int delayMs = (settings[cooldownKey] ?: 0) * 60000
                 targetTime = nowPlusOffset(delayMs)
                 state[cooldownKey] = targetTime // set expiration time when first inactive
-                evaluationResults[prefix] = true
-                logDebug "[evaluateDelayedConditions] ${prefix} has delayed deactivation (${delayMs}ms)"
+                evaluationResults[conditionPrefix] = true
+                logDebug "[evaluateDelayedConditions] ${conditionPrefix} has cooldown (${delayMs}ms)"
             } else if (now() < targetTime) {
-                evaluationResults[prefix] = true
+                evaluationResults[conditionPrefix] = true
             }
             // calculate when we need to check again
             if (targetTime && (!nextEvaluationTime || nextEvaluationTime > targetTime)) {
