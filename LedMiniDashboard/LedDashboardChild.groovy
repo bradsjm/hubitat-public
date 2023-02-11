@@ -1442,20 +1442,23 @@ private void subscribeAllVariables() {
 @CompileStatic
 private boolean deviceAttributeHasValue(List<DeviceWrapper> devices, String attribute, String operator, String value, Boolean all) {
     Closure test = { DeviceWrapper d -> evaluateComparison(d.currentValue(attribute) as String, value, operator) }
-    return all ? devices?.every(test) : devices?.any(test)
+    boolean result = all ? devices?.every(test) : devices?.any(test)
+    return result
 }
 
 // Given two strings return true if satisfied by the operator
 @CompileStatic
 private boolean evaluateComparison(String a, String b, String operator) {
-    switch (operator) {
-        case '=': return a.equalsIgnoreCase(b)
-        case '!=': return !a.equalsIgnoreCase(b)
-        case '<>': return !a.equalsIgnoreCase(b)
-        case '>': return new BigDecimal(a) > new BigDecimal(b)
-        case '>=': return new BigDecimal(a) >= new BigDecimal(b)
-        case '<': return new BigDecimal(a) < new BigDecimal(b)
-        case '<=': return new BigDecimal(a) <= new BigDecimal(b)
+    if (a && b && operator) {
+        switch (operator) {
+            case '=': return a.equalsIgnoreCase(b)
+            case '!=': return !a.equalsIgnoreCase(b)
+            case '<>': return !a.equalsIgnoreCase(b)
+            case '>': return new BigDecimal(a) > new BigDecimal(b)
+            case '>=': return new BigDecimal(a) >= new BigDecimal(b)
+            case '<': return new BigDecimal(a) < new BigDecimal(b)
+            case '<=': return new BigDecimal(a) <= new BigDecimal(b)
+        }
     }
     return false
 }
@@ -1469,7 +1472,9 @@ private List<String> getAttributeChoices(List<DeviceWrapper> devices) {
 // Given a set of devices, provides the distinct set of attribute names
 @CompileStatic
 private List<String> getAttributeOptions(List<DeviceWrapper> devices, String attribute) {
-    return devices?.collectMany { DeviceWrapper d -> d.getSupportedAttributes().find { a -> a.name == attribute }.getValues() }
+    return devices?.collectMany { DeviceWrapper d ->
+        d.getSupportedAttributes().find { a -> a.name == attribute }?.getValues() ?: []
+    }
 }
 
 // Given a set of button devices, provides the list of buttons to choose from
@@ -1720,7 +1725,8 @@ private Object runClosure(Closure c, Map ctx) {
             ],
             value: [
                 title: 'Attribute Value',
-                options: { ctx -> ctx.device && ctx.choice ? getAttributeOptions(ctx.device, ctx.choice) : null }
+                //options: { ctx -> (ctx.device && ctx.choice) ? getAttributeOptions(ctx.device, ctx.choice) : null }
+                options: { ctx -> (ctx.device && ctx.choice) ? getAttributeOptions(ctx.device, ctx.choice) : null }
             ]
         ],
         subscribe: { ctx -> ctx.choice },
