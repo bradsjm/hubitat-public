@@ -97,7 +97,7 @@ metadata {
     }
 }
 
-@Field static final String VERSION = '1.0'
+@Field static final String VERSION = '1.01'
 
 List<String> configure() {
     List<String> cmds = []
@@ -224,6 +224,7 @@ List<String> refresh() {
 
     // Refresh other attributes
     cmds += hueStateRefresh(DELAY_MS)
+    cmds += colorRefresh(DELAY_MS)
 
     // Get group membership
     cmds += zigbee.command(zigbee.GROUPS_CLUSTER, 0x02, [:], DELAY_MS, '00')
@@ -647,7 +648,7 @@ void parseOnOffCluster(Map descMap) {
  * Utility Methods
  */
 private List<String> colorRefresh(int delayMs = 2000) {
-    return zigbee.readAttribute(zigbee.COLOR_CONTROL_CLUSTER, [0x00, 0x01, 0x07, 0x08], [:], delayMs)
+    return zigbee.readAttribute(zigbee.COLOR_CONTROL_CLUSTER, [0x07, 0x08], [:], delayMs)
 }
 
 private String clusterLookup(Object cluster) {
