@@ -10,7 +10,7 @@
       "id": "4983d2b6-1b2f-4002-94de-f3dd27d55a7b",
       "name": "Tuya IoT Platform (Cloud)",
       "namespace": "tuya",
-      "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/Tuya/TuyaOpenCloudAPI.groovy",
+      "location": "https://raw.githubusercontent.com/bradsjm/hubitat-public/main/Tuya/TuyaOpenCloudAPI.groovy",
       "required": true
     }
   ]

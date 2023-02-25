@@ -4,8 +4,8 @@
   "version": "1.0",
   "minimumHEVersion": "2.1.9",
   "communityLink": "https://community.hubitat.com/t/beta-philips-hue-rgbw-zigbee-direct-driver/111695",
-  "documentationLink": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/PhilipsHue/README.md",
-  "licenseFile": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/LICENSE",
+  "documentationLink": "https://raw.githubusercontent.com/bradsjm/hubitat-public/main/PhilipsHue/README.md",
+  "licenseFile": "https://raw.githubusercontent.com/bradsjm/hubitat-public/main/LICENSE",
   "dateReleased": "2023-02-08",
   "releaseNotes": "First public release",
   "drivers": [
@@ -13,24 +13,24 @@
       "id": "ed67ff9b-68f1-4353-9c5c-0d8e71c7c6fd",
       "name": "Philips Hue White and Color Ambiance",
       "namespace": "philips-hue",
-      "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/PhilipsHue/Philips-Hue-Zigbee-Bulb-RGBW.groovy",
-      "betaLocation": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/development/PhilipsHue/Philips-Hue-Zigbee-Bulb-RGBW.groovy",
+      "location": "https://raw.githubusercontent.com/bradsjm/hubitat-public/main/PhilipsHue/Philips-Hue-Zigbee-Bulb-RGBW.groovy",
+      "betaLocation": "https://raw.githubusercontent.com/bradsjm/hubitat-public/development/PhilipsHue/Philips-Hue-Zigbee-Bulb-RGBW.groovy",
       "required": false
     },
     {
       "id": "3acae55a-91a0-41ed-b250-5b06b7579c45",
       "name": "Philips Hue White Ambiance",
       "namespace": "philips-hue",
-      "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/PhilipsHue/Philips-Hue-Zigbee-Bulb-CT.groovy",
-      "betaLocation": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/development/PhilipsHue/Philips-Hue-Zigbee-Bulb-CT.groovy",
+      "location": "https://raw.githubusercontent.com/bradsjm/hubitat-public/main/PhilipsHue/Philips-Hue-Zigbee-Bulb-CT.groovy",
+      "betaLocation": "https://raw.githubusercontent.com/bradsjm/hubitat-public/development/PhilipsHue/Philips-Hue-Zigbee-Bulb-CT.groovy",
       "required": false
     },
     {
       "id": "50c4c62b-7bac-4cab-b9e7-9fc70b331f82",
       "name": "Philips Hue White",
       "namespace": "philips-hue",
-      "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/PhilipsHue/Philips-Hue-Zigbee-Bulb-White.groovy",
-      "betaLocation": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/development/PhilipsHue/Philips-Hue-Zigbee-Bulb-White.groovy",
+      "location": "https://raw.githubusercontent.com/bradsjm/hubitat-public/main/PhilipsHue/Philips-Hue-Zigbee-Bulb-White.groovy",
+      "betaLocation": "https://raw.githubusercontent.com/bradsjm/hubitat-public/development/PhilipsHue/Philips-Hue-Zigbee-Bulb-White.groovy",
       "required": false
     }
   ]
