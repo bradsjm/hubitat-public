@@ -73,7 +73,7 @@ void duplicate(Long id) {
     InstalledAppWrapper source = getChildAppById(id)
     InstalledAppWrapper target = addChildApp('nrgup', 'LED Mini-Dashboard Topic', "${source.label} duplicate")
     log.info "duplicating ${source.label}"
-    target.putSettings(source.getSettings())
+    target.writeSettings(source.readSettings())
 }
 
 private String getDescription() {
