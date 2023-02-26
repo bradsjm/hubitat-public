@@ -538,7 +538,9 @@ void appButtonHandler(String buttonName) {
     }
 }
 
-// Returns available priorities based on lednumber for display in dropdown
+/**
+ *  Returns available priorities based on lednumber for display in dropdown.
+ */
 Map<String, String> getPrioritiesList(String scenarioPrefix) {
     String ledNumber = settings["${scenarioPrefix}_lednumber"]
     if (ledNumber == 'var') {
@@ -561,7 +563,9 @@ Map<String, String> getPrioritiesList(String scenarioPrefix) {
     }
 }
 
-// Utility method for displaying CSS colored text
+/**
+ *  Utility method for displaying CSS colored text.
+ */
 String getColorSpan(Integer hue, String text) {
     if (hue != null && text) {
         String css = (hue == 360) ? 'white' : "hsl(${hue}, 50%, 50%)"
@@ -570,7 +574,9 @@ String getColorSpan(Integer hue, String text) {
     return 'n/a'
 }
 
-// Creates a description string for the dashboard configuration for display
+/**
+ *  Creates a description string for the dashboard configuration for display.
+ */
 String getScenarioDescription(String scenarioPrefix) {
     Map config = getScenarioConfig(scenarioPrefix)
     Map switchType = getTargetSwitchType()
@@ -663,6 +669,9 @@ String getScenarioDescription(String scenarioPrefix) {
     return sb.toString()
 }
 
+/**
+ *  Returns the name of the effect selected for the given scenerio.
+ */
 String getEffectName(String scenarioPrefix) {
     Map switchType = getTargetSwitchType()
     String ledKey = settings["${scenarioPrefix}_lednumber"]
@@ -671,6 +680,9 @@ String getEffectName(String scenarioPrefix) {
     return fxOptions[fxKey]
 }
 
+/**
+ *  Returns a suggested name for the given scenerio.
+ */
 String getSuggestedScenarioName(String scenarioPrefix) {
     Map config = getScenarioConfig(scenarioPrefix)
     Map switchType = getTargetSwitchType()
@@ -693,7 +705,9 @@ String getSuggestedScenarioName(String scenarioPrefix) {
     return sb.toString()
 }
 
-// Updates the app label based on pause state
+/**
+ *  Updates the app label based on pause state.
+ */
 void updatePauseLabel() {
     if (state.paused && !app.label?.endsWith(pauseText)) {
         app.updateLabel(app.label + pauseText)
@@ -704,10 +718,9 @@ void updatePauseLabel() {
 
 /**** END USER INTERFACE *********************************************************************/
 
-/*
- * Common event handler used by all rules
+/**
+ *  Common event handler used by all rules.
  */
-
 void eventHandler(Event event) {
     Map lastEvent = [
         descriptionText: event.descriptionText,
@@ -727,9 +740,9 @@ void eventHandler(Event event) {
     runInMillis(200, 'notificationDispatcher')
 }
 
-/*
- *  Track the led state changes and update the device tracker object
- *  Only supported for the Inovelli Blue LED driver
+/**
+ *  Tracks the led state changes and update the device tracker object.
+ *  Only supported for drivers with an 'ledEffect' attribute.
  */
 void switchStateTracker(Event event) {
     Map<String, Map> tracker = SwitchStateTracker[event.device.id]
@@ -755,10 +768,10 @@ void switchStateTracker(Event event) {
 }
 
 /**
- * If forced refresh is enabled then this is called every specified
- * interval to flush the cache and push updates out. This can be
- * helpful for devices that may not reliably receive commands but
- * should not be used unless required.
+ *  If forced refresh is enabled then this is called every specified
+ *  interval to flush the cache and push updates out. This can be
+ *  helpful for devices that may not reliably receive commands but
+ *  should not be used unless required.
  */
 void forceRefresh() {
     if (settings.periodicRefresh) {
@@ -771,25 +784,36 @@ void forceRefresh() {
     }
 }
 
+/**
+ *  Scheduled trigger used for rules that involve sunset times
+ */
 void sunsetTrigger() {
     logInfo 'executing sunset trigger'
     notificationDispatcher()
     subscribeAllScenarios()
 }
 
+/**
+ *  Scheduled trigger used for rules that involve sunrise times
+ */
 void sunriseTrigger() {
     logInfo 'executing sunrise trigger'
     notificationDispatcher()
     subscribeAllScenarios()
 }
 
+/**
+ *  Scheduled trigger used for rules that involve time
+ */
 void timeAfterTrigger() {
     logInfo 'executing time after trigger'
     notificationDispatcher()
     subscribeAllScenarios()
 }
 
-// Scheduled stop used for devices that don't have built-in timers
+/**
+ *  Scheduled stop used for devices that don't have built-in timers
+ */
 void stopNotification() {
     logDebug 'stopNotification called'
     Map switchType = getTargetSwitchType()
@@ -841,7 +865,7 @@ void notificationDispatcher() {
     }
 }
 
-/*
+/**
  *  Dashboard evaluation function responsible for iterating each condition over
  *  the dashboards and returning a map with true/false result for each dashboard prefix
  *  Does not apply any delay or cooldown options at this stage of the pipeline
@@ -851,12 +875,12 @@ Map<String, Boolean> evaluateDashboardScenarios(List<String> prefixes) {
     return prefixes.collectEntries { prefix -> [prefix, evaluateActivationRules(prefix)] }
 }
 
-/*
- * This code evaluates rules that have been delayed or have a cooldown period.
- * It takes in a map of strings and booleans, which represent the evaluation results of the rules.
- * It then checks if there is a delay before activation or a cooldown period set for each rule.
- * If so, it sets the evaluation result to false for the delayed rule and true for the cooled down rule.
- * Finally, it returns the next evaluation time based on when each rule should be evaluated again.
+/**
+ *  This code evaluates rules that have been delayed or have a cooldown period.
+ *  It takes in a map of strings and booleans, which represent the evaluation results of the rules.
+ *  It then checks if there is a delay before activation or a cooldown period set for each rule.
+ *  If so, it sets the evaluation result to false for the delayed rule and true for the cooled down rule.
+ *  Finally, it returns the next evaluation time based on when each rule should be evaluated again.
  */
 @CompileStatic
 long evaluateDelayedRules(Map<String, Boolean> evaluationResults) {
@@ -916,8 +940,8 @@ long evaluateDelayedRules(Map<String, Boolean> evaluationResults) {
     return nextEvaluationTime
 }
 
-/*
- *  Calculate Notification LED States from condition results
+/**
+ *  Calculate Notification LED States from condition results.
  *  It takes in two parameters: a list of strings (prefixes) and a map of strings and booleans (results).
  *  The code iterates through each prefix in the list, gets the scenario configuration for that prefix,
  *  and stores it in a map. It then checks if the result for that prefix is true or false. If it is true,
@@ -973,8 +997,10 @@ Map<String, Map> calculateLedState(List<String> prefixes, Map<String, Boolean> r
  *  Private Implementation Helper Methods
  */
 
-// Calculate milliseconds from Inovelli duration parameter (0-255)
-// 1-60=seconds, 61-120=1-60 minutes, 121-254=1-134 hours, 255=Indefinitely
+/**
+ * Calculates the total milliseconds from Inovelli duration parameter (0-255)
+ * where 1-60 = seconds, 61-120 = 1-60 minutes, 121-254 = 1-134 hours, 255 = Indefinite (24 hrs)
+ */
 @CompileStatic
 private static int convertParamToMs(Integer duration) {
     if (!duration) {
@@ -997,9 +1023,9 @@ private static Map<String, Map> getSwitchStateTracker(DeviceWrapper dw) {
     return SwitchStateTracker.computeIfAbsent(dw.id) { k -> [:].withDefault { [:] } }
 }
 
-/*
- *  This code is a method that takes in a list of DeviceWrapper objects, an attribute, an operator,
- *  and a value. It then evaluates whether all or any of the DeviceWrapper objects have a currentValue
+/**
+ *  Takes in a list of DeviceWrapper objects, an attribute, an operator, and a value.
+ *  It then evaluates whether all or any of the DeviceWrapper objects have a currentValue
  *  for the given attribute that satisfies the comparison with the given value using the given operator.
  *  It returns true if all or any of the DeviceWrapper objects satisfy this comparison, depending on the
  *  value of "all", and false otherwise.
@@ -1013,7 +1039,10 @@ private static boolean deviceAttributeHasValue(List<DeviceWrapper> devices, Stri
     return false
 }
 
-// Given two strings return true if satisfied by the operator
+/**
+ *  Takes in three parameters: two strings (a and b) and an operator and evaluates the comparison
+ *  between the two strings based on the operator and returns a boolean value.
+ */
 @CompileStatic
 private static boolean evaluateComparison(String a, String b, String operator) {
     if (a && b && operator) {
@@ -1030,13 +1059,20 @@ private static boolean evaluateComparison(String a, String b, String operator) {
     return false
 }
 
-// Given a set of devices, provides the distinct set of attribute names
+/**
+ *  Given a set of devices and an attribute name, provides the distinct set of attribute names.
+ */
 @CompileStatic
 private static List<String> getAttributeChoices(List<DeviceWrapper> devices) {
     return devices?.collectMany { DeviceWrapper d -> d.getSupportedAttributes()*.name }
 }
 
-// Given a set of devices, provides the distinct set of attribute names
+/**
+ *  Given a set of devices and an attribute name, provides the distinct set of attribute values.
+ *  Iterate through each DeviceWrapper object in the list and find the supported attributes
+ *  that match the given attribute string and if so, it gets the values associated with that
+ *  attribute and adds them to the returned list.
+ */
 @CompileStatic
 private static List<String> getAttributeOptions(List<DeviceWrapper> devices, String attribute) {
     return devices?.collectMany { DeviceWrapper d ->
@@ -1045,7 +1081,13 @@ private static List<String> getAttributeOptions(List<DeviceWrapper> devices, Str
     }
 }
 
-// Given a set of button devices, provides the list of buttons to choose from
+/**
+ *  Given a set of button devices, provides the list of valid button numbers that can be chosen from.
+ *  It then iterates through the devices to find the maximum number of buttons among all of the 
+ *  button devices. If there is at least one button, it creates a map with entries for each button
+ *  number (1 to maxButtons) and its corresponding label ("Button n"). If there are no buttons,
+ *  it returns an empty map.
+ */
 @CompileStatic
 private static Map<String, String> getButtonNumberChoices(List<DeviceWrapper> buttonDevices) {
     int maxButtons = buttonDevices?.collect { DeviceWrapper d ->
@@ -1057,6 +1099,11 @@ private static Map<String, String> getButtonNumberChoices(List<DeviceWrapper> bu
     return Collections.emptyMap()
 }
 
+/**
+ *  Returns a map of valid comparison choices for dropdown depending on the type that is passed in.
+ *  If the type is "number", "integer", or "bigdecimal", then the Map will contain additional entries
+ *  for "<", "<=", ">", and ">=" otherwise the Map will only contain two entries for '=' and '<>'.
+ */
 @CompileStatic
 private static Map<String, String> getComparisonsByType(String type) {
     Map<String, String> result = ['=': 'Equal to', '<>': 'Not equal to']
@@ -1075,7 +1122,9 @@ private static Map<String, String> getComparisonsByType(String type) {
     return result
 }
 
-// Cleans settings removing entries no longer in use
+/**
+ *  Cleans application settings removing entries no longer in use.
+ */
 @CompileStatic
 private void cleanSettings() {
     for (String prefix in getScenarioPrefixes()) {
@@ -1094,7 +1143,9 @@ private void cleanSettings() {
     }
 }
 
-// Returns next condition settings prefix
+/**
+ *  Returns next available scenerio settings prefix used when adding a new scenerio.
+ */
 @CompileStatic
 private String findNextPrefix() {
     List<Integer> keys = getScenarioPrefixes().collect { String p -> p.substring(10) as Integer }
@@ -1102,7 +1153,9 @@ private String findNextPrefix() {
     return "condition_${maxId + 1}"
 }
 
-// Returns key value map of specified condition settings
+/**
+ *  Returns key value map of scenario settings for the given prefix.
+ */
 @CompileStatic
 private Map<String, Object> getScenarioConfig(String scenarioPrefix) {
     Map<String, Object> config = [prefix: (Object) scenarioPrefix]
@@ -1115,7 +1168,9 @@ private Map<String, Object> getScenarioConfig(String scenarioPrefix) {
     return config
 }
 
-// Returns a set of condition prefixes
+/**
+ *  Returns the set of scenario prefixes from the settings.
+ */
 @CompileStatic
 private Set<String> getScenarioPrefixes() {
     return (Set<String>) getAppSettings().keySet().findAll { Object key ->
@@ -1123,7 +1178,9 @@ private Set<String> getScenarioPrefixes() {
     }.collect { Object key -> key.toString() - '_priority' }
 }
 
-// Returns condition setting prefix sorted by priority then name
+/**
+ *  Returns scenerio setting prefix sorted by priority then name.
+ */
 @CompileStatic
 private List<String> getSortedScenarioPrefixes() {
     return getScenarioPrefixes().collect { String scenarioPrefix ->
@@ -1137,7 +1194,9 @@ private List<String> getSortedScenarioPrefixes() {
     }*.prefix as List<String>
 }
 
-// Returns the active device type configuration map
+/**
+ *  Returns the device type configuration for the currently switch type setting.
+ */
 @CompileStatic
 private Map getTargetSwitchType() {
     String deviceType = getSettingString('deviceType')
@@ -1148,7 +1207,12 @@ private Map getTargetSwitchType() {
     return switchType
 }
 
-// Looks up a variable in the given lookup table and returns the key if found
+/**
+ *  Looks up a variable in a given dropdown map and returns the key if it exists.
+ *  It first gets the value of the variable from the 'getHubVariableValue' function
+ *  and then checks if it is present in the lookup table. If it is present,
+ *  it returns the key associated with that value. Otherwise, it returns null.
+ */
 @CompileStatic
 private String lookupVariable(String variableName, Map<String, String> lookupTable) {
     String value = getHubVariableValue(variableName) as String
@@ -1158,7 +1222,7 @@ private String lookupVariable(String variableName, Map<String, String> lookupTab
     return null
 }
 
-// Removes all condition settings starting with prefix
+// Removes all condition settings starting with prefix used when the user deletes a condition
 @CompileStatic
 private void removeSettings(String scenarioPrefix) {
     Set<String> entries = getAppSettings().keySet().findAll { String s -> s.startsWith(scenarioPrefix) }
@@ -1168,7 +1232,11 @@ private void removeSettings(String scenarioPrefix) {
     }
 }
 
-// Populate configuration values with specified global variables
+/**
+ *  Replace variables in the scenerio configuration settings with the appropriate values.
+ *  Checks if any of the variables (lednumber, effect, color, level) are set to 'var'.
+ *  If so, looks up the hub global variable value and assigns it to the configuration.
+ */
 @CompileStatic
 private void replaceVariables(Map<String, Object> config) {
     Map switchType = getTargetSwitchType()
@@ -1195,7 +1263,12 @@ private void replaceVariables(Map<String, Object> config) {
     }
 }
 
-// Set all switches to stop
+/**
+ *  Reset the notifications of a device. It first creates a map of all the leds associated with
+ *  the device. Then iterates through each led, setting its name to 'clear notification',
+ *  priority to 0, effect to 255 (stop effect code), color to 0 (default color), level to 100
+ *  (default level), and unit to 255 (infinite).
+ */
 @CompileStatic
 private void resetNotifications() {
     Map<String, String> leds = (Map<String, String>) getTargetSwitchType().leds
@@ -1217,7 +1290,11 @@ private void resetNotifications() {
     }
 }
 
-// Subscribe to all dashboard conditions
+/**
+ * Subscribes to all dashboard scenario rules. The method first gets all the scenario prefixes,
+ * then iterates through each one of them and calls the subscribeActiveRules() method with
+ * the scenario prefix as an argument.
+ */
 @CompileStatic
 private void subscribeAllScenarios() {
     getScenarioPrefixes().each { String scenarioPrefix ->
@@ -1225,7 +1302,11 @@ private void subscribeAllScenarios() {
     }
 }
 
-// Subscribe to switches with driver support
+/**
+ *  Subscribes to switch attributes. Iterates a list of attributes (in this case, 'ledEffect')
+ *  and checks if each switch device has that attribute. If it does, then it subscribes to the
+ *  attribute with the 'switchStateTracker' method.
+ */
 private void subscribeSwitchAttributes() {
     List<String> attributes = ['ledEffect']
     settings.switches.each { DeviceWrapper dw ->
@@ -1363,6 +1444,10 @@ private void updateSwitchLedStateInovelliBlue(DeviceWrapper dw, Map config) {
     pauseExecution(PAUSE_DELAY_MS)
 }
 
+/**
+ *  updateSwitchLedStateInovelliRedGen1 is a wrapper around the
+ *  Inovelli device driver setConfigParameter method.
+ */
 private void updateSwitchLedStateInovelliRedGen1(DeviceWrapper dw, Map config) {
     int color, effect, level
     if (config.unit != null) {
@@ -1400,7 +1485,8 @@ private void updateSwitchLedStateInovelliRedGen1(DeviceWrapper dw, Map config) {
 
 /**
  *  updateSwitchLedStateInovelliRedGen2 is a wrapper around the
- *  Inovelli device driver startnotification method.
+ *  Inovelli device driver startnotification method. This code will no longer be required
+ *  when the updated Gen2 driver is released with the startNotiication command.
  *  Reference https://nathanfiscus.github.io/inovelli-notification-calc/
  */
 private void updateSwitchLedStateInovelliRedGen2(DeviceWrapper dw, Map config) {
@@ -1433,14 +1519,14 @@ private void updateSwitchLedStateInovelliRedGen2(DeviceWrapper dw, Map config) {
 
 /**
  *  Evaluates all activation rules for a given prefix. It first gets the boolean value of the
- *  "all scenarios" flag and the name associated with the prefix. It then loops through all
- *  conditions associated with the prefix and evaluates each rule. If the "all scenarios" flag is true,
+ *  "requireAll" flag and the name associated with the prefix. It then loops through all
+ *  conditions associated with the prefix and evaluates each rule. If the "requireAll" flag is true,
  *  it will return false if any of the rules fail. If it is false, it will return true if any of the rules pass.
  */
 @CompileStatic
 private boolean evaluateActivationRules(String prefix) {
     boolean result = false
-    boolean allScenariosFlag = getSettingBoolean("${prefix}_conditions_all")
+    boolean requireAll = getSettingBoolean("${prefix}_conditions_all")
     String name = getSettingString("${prefix}_name")
 
     // Loop through all conditions updating the result
@@ -1450,11 +1536,11 @@ private boolean evaluateActivationRules(String prefix) {
         if (rule) {
             boolean testResult = evaluateRule("${prefix}_${ruleKey}", rule)
             // If all conditions is selected and the test failed, stop and return false
-            if (allScenariosFlag && !testResult) {
+            if (requireAll && !testResult) {
                 result = false
                 break
-                // If any conditions is selected and the test passed, stop and return true
-            } else if (!allScenariosFlag && testResult) {
+            // If any conditions is selected and the test passed, stop and return true
+            } else if (!requireAll && testResult) {
                 result = true
                 break
             }
@@ -1504,7 +1590,13 @@ private boolean evaluateRule(String prefix, Map rule) {
     return result
 }
 
-// Subscribe to a condition active rules (devices, location, variable etc.)
+/**
+ *  Used to subscribe to active rules for the provided condition prefix argument.
+ *  Iterates through the active rules from the setting with the given prefix.
+ *  For each rule, it checks if there is an execute closure, and if so, runs it with a context
+ *  of device, choice, and value. It then checks if there is a subscribe closure or attribute
+ *  and subscribes to the event handler with the given device (or location) and attribute.
+ */
 @CompileStatic
 private void subscribeActiveRules(String prefix) {
     List<String> activeRules = (List) getSetting("${prefix}_conditions", Collections.emptyList())
@@ -1537,6 +1629,10 @@ private void subscribeActiveRules(String prefix) {
     }
 }
 
+/**
+ *  Subscribe to all variables used in the dashboard by finding all settings with keys that end with
+ *  '_var'. The variable names are then iterated over and subscribeEventHandler() is called for each.
+ */
 @CompileStatic
 private void subscribeAllVariables() {
     getAppSettings().findAll { Map.Entry<String, Object> s -> s.key.endsWith('_var') }.values().each { Object var ->
@@ -1544,6 +1640,10 @@ private void subscribeAllVariables() {
     }
 }
 
+/**
+ *  Subscribes an event handler to a target for a given attribute.
+ *  If the attribute starts with "variable:", variable to a list of global variables in use.
+ */
 private void subscribeEventHandler(Object target, String attribute) {
     logDebug "subscribing to ${target} for attribute '${attribute}'"
     subscribe(target, attribute, 'eventHandler', null)
@@ -1554,11 +1654,11 @@ private void subscribeEventHandler(Object target, String attribute) {
     }
 }
 
-/*
- * Creates a map of sunrise and sunset times for the current day and the next day, based on a given date
- * (now) and an offset (default 0). It then calculates whether it is currently night or day by comparing the
- * current time to the sunrise and sunset times. Finally, it returns a map containing all of this information,
- * plus the offset used to calculate it.
+/**
+ *  Creates a map of sunrise and sunset times for the current day and the next day, based on a given date
+ *  (now) and an offset (default 0). It then calculates whether it is currently night or day by comparing the
+ *  current time to the sunrise and sunset times. Finally, it returns a map containing all of this information,
+ *  plus the offset used to calculate it.
  */
 private Map getAlmanac(Date now, int offset = 0) {
     Map<String, Date> today = getSunriseAndSunset([sunriseOffset: offset, sunsetOffset: offset, date: now])
@@ -1573,12 +1673,22 @@ private Map getAlmanac(Date now, int offset = 0) {
     return almanac
 }
 
+/**
+ *  Takes in a Date object (now) and a String (datetime) and returns a Date object.
+ *  Checks if the now Date is greater than or equal to the target Date. If it is,
+ *  it returns the target Date plus one day, otherwise it returns the target Date.
+ */
 private Date getNextTime(Date now, String datetime) {
     Date target = timeToday(datetime)
     return (now >= target) ? target + 1 : target
 }
 
-// Internal method to call closure (with this as delegate) passing the context parameter
+/**
+ *  Method to run a closure from a Closure object (c) and a Map object (ctx) and return result.
+ *  It first clones the Closure object so that it can set its delegate to "this". It then calls
+ *  the closure with the passed in ctx map as an argument. If an error occurs, it logs the error
+ *  along with the code for the closure and the context map.
+ */
 @CompileStatic
 private Object runClosure(Closure c, Map ctx) {
     try {
@@ -1592,8 +1702,13 @@ private Object runClosure(Closure c, Map ctx) {
     return null
 }
 
-/*
- * Define the supported notification device types
+/**
+ *  Defines the supported notification device types. Each entry defines a single type of device consisting of:
+ *      title      - Displayed to the user in selection dropdown
+ *      type       - The internal Hubitat device type used to allow device selection
+ *      leds       - Map of available leds when using this device ('All' and 'var' are special values)
+ *      effects    - Map of effects that can be selected from when using this device
+ *      effectsAll - Map of effects that can be selected from if led choice is set to 'All'
  */
 @Field static final Map<String, Map> SupportedSwitchTypes = [
     'Inovelli Blue Switch' : [
@@ -1708,15 +1823,15 @@ private Object runClosure(Closure c, Map ctx) {
 @Field static final Set<Integer> Priorities = 20..1 // can be increased if desired
 
 @Field static final Map<String, String> LevelMap = [
-    '10': '10',
-    '20': '20',
-    '30': '30',
-    '40': '40',
-    '50': '50',
-    '60': '60',
-    '70': '70',
-    '80': '80',
-    '90': '90',
+    '10' : '10',
+    '20' : '20',
+    '30' : '30',
+    '40' : '40',
+    '50' : '50',
+    '60' : '60',
+    '70' : '70',
+    '80' : '80',
+    '90' : '90',
     '100': '100',
     'val': 'Custom',
     'var': 'Variable'
@@ -1735,6 +1850,15 @@ private Object runClosure(Closure c, Map ctx) {
 // How long to pause execution between sending each device command
 @Field static final int PAUSE_DELAY_MS = 200
 
+/**
+ *  List of activation rules. Each entry defines a single selectable rule consisting of:
+ *      title     - Displayed to the user in dropdown selection
+ *      template  - Displayed in the overview description shown for each rule
+ *      inputs    - Defines the inputs required from the user when selecting the rule
+ *      execute   - Optional setup closure needed for this rule (run each time rules are evaluated)
+ *      subscribe - Attribute name or Closure that returns an attribute name that is subscribed to
+ *      test      - Closure that determines if the rule is satisfied by returning true or false
+ */
 @Field static final Map<String, Map> ActivationRules = [
     'almanac'           : [
         title   : 'Time period is between',
