@@ -136,7 +136,7 @@ void updated() {
     state.sortedPrefixes = getSortedScenarioPrefixes()
 
     // Subscribe to events from supported Inovelli switches
-    subscribeAllSwitches()
+    subscribeSwitchAttributes()
 
     // Subscribe to events from all conditions
     subscribeAllScenarios()
@@ -1226,13 +1226,14 @@ private void subscribeAllScenarios() {
 }
 
 // Subscribe to switches with driver support
-private void subscribeAllSwitches() {
-    String type = getTargetSwitchType().type
-    switch (type) {
-        case ~/^device.InovelliDimmer2-in-1BlueSeries.*/:
-            logDebug "subscribing to ledEffect event for ${settings.switches}"
-            subscribe(settings.switches, 'ledEffect', 'switchStateTracker', null)
-            break
+private void subscribeSwitchAttributes() {
+    List<String> attributes = ['ledEffect']
+    settings.switches.each { DeviceWrapper dw ->
+        attributes.each { attr ->
+            if (dw.hasAttribute(attr)) {
+                subscribe(dw, attr, 'switchStateTracker', null)
+            }
+        }
     }
 }
 
