@@ -303,8 +303,8 @@ Map editPage(Map params = [:]) {
                     input name: "${scenarioPrefix}_name", title: '<b>Notification Scenario Name:</b>', type: 'text', defaultValue: getSuggestedScenarioName(scenarioPrefix), width: 7, required: true, submitOnChange: true
                     input name: "${scenarioPrefix}_priority", title: '<b>Priority:</b>', type: 'enum', options: getPrioritiesList(scenarioPrefix), width: 2, required: true
                     paragraph '<i>Higher value scenario priorities take LED precedence.</i>'
-                    input name: "test_${scenarioPrefix}", title: 'Test', type: 'button', width: 2
-                    input name: 'reset', title: 'Reset', type: 'button', width: 2
+                    input name: "test_${scenarioPrefix}", title: '&#9658; Test Effect', type: 'button', width: 2
+                    input name: 'reset', title: '<b>&#9724;</b> Stop Test', type: 'button', width: 2
                 }
             }
         }
@@ -524,13 +524,24 @@ void appButtonHandler(String buttonName) {
             removeSettings(prefix)
             break
         case 'reset':
-            runIn(1, 'notificationDispatcher')
+            runInMillis(200, 'notificationDispatcher')
             break
         case ~/^test_(.+)/:
             String prefix = Matcher.lastMatcher[0][1]
             Map<String, String> config = getScenarioConfig(prefix)
             replaceVariables(config)
-            updateSwitchLedState(config)
+            ((String)config.lednumber).tokenize(',').each { String lednumber ->
+                updateSwitchLedState([
+                    color    : config.color,
+                    effect   : config.effect,
+                    lednumber: lednumber,
+                    level    : config.level,
+                    name     : config.name,
+                    prefix   : config.prefix,
+                    priority : config.priority,
+                    unit     : config.unit
+                ])
+            }
             break
         default:
             logWarn "unknown app button ${buttonName}"
@@ -1277,13 +1288,13 @@ private void resetNotifications() {
         leds.keySet().findAll { String s -> s != 'var' }.each { String led ->
             updateSwitchLedState(
                 [
+                    color    : '0',       // default color
+                    effect   : '255',     // stop effect code
+                    lednumber: led,
+                    level    : '100',     // default level
                     name     : 'clear notification',
                     priority : 0,
-                    lednumber: led,
-                    effect   : '255',    // stop effect code
-                    color    : '0',       // default color
-                    level    : '100',     // default level
-                    unit     : '255'       // infinite
+                    unit     : '255'      // infinite
                 ]
             )
         }
