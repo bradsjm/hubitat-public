@@ -1,12 +1,12 @@
 {
   "packageName": "Philips Hue Zigbee Drivers",
   "author": "Jonathan Bradshaw",
-  "version": "1.0",
+  "version": "1.01",
   "minimumHEVersion": "2.1.9",
   "communityLink": "https://community.hubitat.com/t/beta-philips-hue-rgbw-zigbee-direct-driver/111695",
   "documentationLink": "https://raw.githubusercontent.com/bradsjm/hubitat-public/main/PhilipsHue/README.md",
   "licenseFile": "https://raw.githubusercontent.com/bradsjm/hubitat-public/main/LICENSE",
-  "dateReleased": "2023-02-08",
+  "dateReleased": "2023-02-26",
   "releaseNotes": "First public release",
   "drivers": [
     {
