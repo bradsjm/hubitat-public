@@ -761,7 +761,7 @@ void parseOnOffCluster(Map descMap) {
         case POWER_RESTORE_ID:
             Integer value = hexStrToUnsignedInt(descMap.value)
             log.info "power restore mode is '${PowerRestoreOpts.options[value]}' (0x${descMap.value})"
-            device.updateSetting('powerRestore', [value: value, type: 'number' ])
+            device.updateSetting('powerRestore', [value: value.toString(), type: 'enum' ])
             break
         default:
             log.warn "zigbee received unknown ON_OFF_CLUSTER: ${descMap}"
