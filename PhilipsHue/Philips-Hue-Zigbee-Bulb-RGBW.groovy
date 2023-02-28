@@ -117,7 +117,7 @@ metadata {
     }
 }
 
-@Field static final String VERSION = '1.0'
+@Field static final String VERSION = '1.01'
 
 List<String> configure() {
     List<String> cmds = []
@@ -472,27 +472,27 @@ void parse(String description) {
     switch (descMap.clusterInt as Integer) {
         case zigbee.BASIC_CLUSTER:
             parseBasicCluster(descMap)
-            descMap.additionalAttrs?.each { m -> parseBasicCluster(m) }
+            descMap.remove('additionalAttrs')?.each { m -> parseBasicCluster(m) }
             break
         case zigbee.COLOR_CONTROL_CLUSTER:
             parseColorCluster(descMap)
-            descMap.additionalAttrs?.each { m -> parseColorCluster(m) }
+            descMap.remove('additionalAttrs')?.each { m -> parseColorCluster(m) }
             break
         case zigbee.GROUPS_CLUSTER:
             parseGroupsCluster(descMap)
-            descMap.additionalAttrs?.each { m -> parseGroupsCluster(m) }
+            descMap.remove('additionalAttrs')?.each { m -> parseGroupsCluster(m) }
             break
         case PHILIPS_PRIVATE_CLUSTER:
             parsePrivateCluster(descMap)
-            descMap.additionalAttrs?.each { m -> parsePrivateCluster(m) }
+            descMap.remove('additionalAttrs')?.each { m -> parsePrivateCluster(m) }
             break
         case zigbee.LEVEL_CONTROL_CLUSTER:
             parseLevelCluster(descMap)
-            descMap.additionalAttrs?.each { m -> parseLevelCluster(m) }
+            descMap.remove('additionalAttrs')?.each { m -> parseLevelCluster(m) }
             break
         case zigbee.ON_OFF_CLUSTER:
             parseOnOffCluster(descMap)
-            descMap.additionalAttrs?.each { m -> parseOnOffCluster(m) }
+            descMap.remove('additionalAttrs')?.each { m -> parseOnOffCluster(m) }
             break
         default:
             if (settings.logEnable) {
