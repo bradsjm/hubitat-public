@@ -872,12 +872,12 @@ private void sendColorModeEvent(String mode) {
     if (mode == 'CT') {
         sendColorTempNameEvent(device.currentValue('colorTemperature') as Integer)
     } else {
-        sendColorNameEvent(device.currentValue('hue') as Integer)
+        sendColorNameEvent(device.currentValue('hue') as Integer, device.currentValue('saturation') as Integer)
     }
 }
 
-private void sendColorNameEvent(Integer hue) {
-    String colorName = ColorNameMap.find { k, v -> hue * 3.6 <= k }?.value
+private void sendColorNameEvent(Integer hue, Integer saturation) {
+    String colorName = convertHueToGenericColorName(hue, saturation)
     if (!colorName) { return }
     descriptionText = "color name was set to ${colorName}"
     if (device.currentValue('colorName') != colorName && settings.txtEnable) {
@@ -898,7 +898,7 @@ private void sendColorTempEvent(String rawValue) {
 }
 
 private void sendColorTempNameEvent(Integer ct) {
-    String genericName = ColorTempName.find { k , v -> ct < k }?.value
+    String genericName = convertTemperatureToGenericColorName(ct)
     if (!genericName) { return }
     String descriptionText = "color is ${genericName}"
     if (device.currentValue('colorName') != genericName && settings.txtEnable) {
@@ -986,37 +986,6 @@ private List<String> setLevelPrivate(Object value, Integer rate = 0, Integer del
 @Field static final int HUE_PRIVATE_STATE_ID = 0x02
 @Field static final int PING_ATTR_ID = 0x01
 @Field static final int POWER_RESTORE_ID = 0x4003
-
-@Field static final Map<Integer, String> ColorNameMap = [
-    15: 'Red',
-    45: 'Orange',
-    75: 'Yellow',
-    105: 'Chartreuse',
-    135: 'Green',
-    165: 'Spring',
-    195: 'Cyan',
-    225: 'Azure',
-    255: 'Blue',
-    285: 'Violet',
-    315: 'Magenta',
-    345: 'Rose',
-    360: 'Red'
-]
-
-@Field static final Map<Integer, String> ColorTempName = [
-    2001: 'Sodium',
-    2101: 'Starlight',
-    2400: 'Sunrise',
-    2800: 'Incandescent',
-    3300: 'Soft White',
-    3500: 'Warm White',
-    4150: 'Moonlight',
-    5001: 'Horizon',
-    5500: 'Daylight',
-    6000: 'Electronic',
-    6501: 'Skylight',
-    20000: 'Polar'
-]
 
 @Field static final Map<Integer, String> HueEffectNames = [
     0x01: 'candle',
