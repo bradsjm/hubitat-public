@@ -48,10 +48,10 @@
     },
     {
       "id": "40bba6e4-914c-492d-b7c2-7b1f773cd1cc",
-      "name": "ThirdReality Zigbee Drivers",
+      "name": "Third Reality Zigbee Drivers",
       "category": "Control",
       "location": "https://raw.githubusercontent.com/bradsjm/hubitat-public/main/ThirdReality/packageManifest.json",
-      "description": "Enhanced support for ThirdReality Zigbee devices",
+      "description": "Enhanced support for Third Reality Zigbee devices",
       "tags": [
         "Energy Monitoring",
         "Lights & Switches",

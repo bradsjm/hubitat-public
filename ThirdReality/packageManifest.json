@@ -1,5 +1,5 @@
 {
-  "packageName": "ThirdReality Zigbee Drivers",
+  "packageName": "Third Reality Zigbee Drivers",
   "author": "Jonathan Bradshaw",
   "version": "1.00",
   "minimumHEVersion": "2.3.2",
@@ -11,7 +11,7 @@
   "drivers": [
     {
       "id": "27afeb89-1143-4f9a-a591-87d75e45dc7e",
-      "name": "ThirdReality Power Meter Plug",
+      "name": "Third Reality Power Meter Plug",
       "namespace": "thirdreality",
       "location": "https://raw.githubusercontent.com/bradsjm/hubitat-public/main/ThirdReality/ThirdRealityPowerMonitorPlug.groovy",
       "betaLocation": "https://raw.githubusercontent.com/bradsjm/hubitat-public/development/ThirdReality/ThirdRealityPowerMonitorPlug.groovy",
