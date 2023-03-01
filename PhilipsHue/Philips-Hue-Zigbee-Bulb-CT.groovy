@@ -373,27 +373,27 @@ void parse(String description) {
     switch (descMap.clusterInt as Integer) {
         case zigbee.BASIC_CLUSTER:
             parseBasicCluster(descMap)
-            descMap.additionalAttrs?.each { m -> parseBasicCluster(m) }
+            descMap.remove('additionalAttrs')?.each { m -> parseBasicCluster(m) }
             break
         case zigbee.COLOR_CONTROL_CLUSTER:
             parseColorCluster(descMap)
-            descMap.additionalAttrs?.each { m -> parseColorCluster(m) }
+            descMap.remove('additionalAttrs')?.each { m -> parseColorCluster(m) }
             break
         case zigbee.GROUPS_CLUSTER:
             parseGroupsCluster(descMap)
-            descMap.additionalAttrs?.each { m -> parseGroupsCluster(m) }
+            descMap.remove('additionalAttrs')?.each { m -> parseGroupsCluster(m) }
             break
         case PHILIPS_PRIVATE_CLUSTER:
             parsePrivateCluster(descMap)
-            descMap.additionalAttrs?.each { m -> parsePrivateCluster(m) }
+            descMap.remove('additionalAttrs')?.each { m -> parsePrivateCluster(m) }
             break
         case zigbee.LEVEL_CONTROL_CLUSTER:
             parseLevelCluster(descMap)
-            descMap.additionalAttrs?.each { m -> parseLevelCluster(m) }
+            descMap.remove('additionalAttrs')?.each { m -> parseLevelCluster(m) }
             break
         case zigbee.ON_OFF_CLUSTER:
             parseOnOffCluster(descMap)
-            descMap.additionalAttrs?.each { m -> parseOnOffCluster(m) }
+            descMap.remove('additionalAttrs')?.each { m -> parseOnOffCluster(m) }
             break
         default:
             if (settings.logEnable) {
@@ -635,7 +635,7 @@ void parseOnOffCluster(Map descMap) {
         case POWER_RESTORE_ID:
             Integer value = hexStrToUnsignedInt(descMap.value)
             log.info "power restore mode is '${PowerRestoreOpts.options[value]}' (0x${descMap.value})"
-            device.updateSetting('powerRestore', [value: value, type: 'number' ])
+            device.updateSetting('powerRestore', [value: value.toString(), type: 'enum' ])
             break
         default:
             log.warn "zigbee received unknown ON_OFF_CLUSTER: ${descMap}"
@@ -732,7 +732,7 @@ private void sendColorTempEvent(String rawValue) {
 }
 
 private void sendColorTempNameEvent(Integer ct) {
-    String genericName = ColorTempName.find { k , v -> ct < k }?.value
+    String genericName = convertTemperatureToGenericColorName(ct)
     if (!genericName) { return }
     String descriptionText = "color is ${genericName}"
     if (device.currentValue('colorName') != genericName && settings.txtEnable) {
@@ -820,21 +820,6 @@ private List<String> setLevelPrivate(Object value, Integer rate = 0, Integer del
 @Field static final int HUE_PRIVATE_STATE_ID = 0x02
 @Field static final int PING_ATTR_ID = 0x01
 @Field static final int POWER_RESTORE_ID = 0x4003
-
-@Field static final Map<Integer, String> ColorTempName = [
-    2001: 'Sodium',
-    2101: 'Starlight',
-    2400: 'Sunrise',
-    2800: 'Incandescent',
-    3300: 'Soft White',
-    3500: 'Warm White',
-    4150: 'Moonlight',
-    5001: 'Horizon',
-    5500: 'Daylight',
-    6000: 'Electronic',
-    6501: 'Skylight',
-    20000: 'Polar'
-]
 
 @Field static final Map<Integer, String> HueEffectNames = [
     0x01: 'candle',
