@@ -97,7 +97,7 @@ metadata {
     }
 }
 
-@Field static final String VERSION = '1.01'
+@Field static final String VERSION = '1.02'
 
 List<String> configure() {
     List<String> cmds = []
@@ -111,6 +111,7 @@ List<String> configure() {
     if (settings.powerRestore != null) {
         log.info "configure: setting power restore state to 0x${intToHexStr(settings.powerRestore as Integer)}"
         cmds += zigbee.writeAttribute(zigbee.ON_OFF_CLUSTER, POWER_RESTORE_ID, DataType.ENUM8, settings.powerRestore as Integer, [:], DELAY_MS)
+        cmds += zigbee.writeAttribute(zigbee.COLOR_CONTROL_CLUSTER, 0x4010, DataType.UINT16, 0xFFFF, [:], DELAY_MS)
     }
 
     // Attempt to enable cluster reporting, if it fails we fall back to polling after commands

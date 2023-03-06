@@ -89,7 +89,7 @@ metadata {
     }
 }
 
-@Field static final String VERSION = '1.01'
+@Field static final String VERSION = '1.02'
 
 List<String> configure() {
     List<String> cmds = []
