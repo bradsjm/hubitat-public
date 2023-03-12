@@ -221,6 +221,11 @@ void parse(String description) {
     updateAttribute('healthStatus', 'online')
     unschedule('deviceCommandTimeout')
 
+    if (descMap.profileId == '0000') {
+        parseZdo(descMap)
+        return
+    }
+
     if (descMap.isClusterSpecific == false) {
         if (settings.logEnable) { log.trace "zigbee received global message ${descMap}" }
         parseGlobalCommands(descMap)
@@ -371,6 +376,41 @@ void parseOnOffCluster(Map descMap) {
             break
         default:
             log.warn "zigbee received unknown ${clusterLookup(descMap.clusterInt)}: ${descMap}"
+            break
+    }
+}
+
+void parseZdo(Map descMap) {
+    switch (descMap.clusterInt as Integer) {
+        case 0x8005: //endpoint response
+            if (settings.logEnable) {
+                log.debug "zdo command: cluster: ${descMap.clusterId} (endpoint response) ${descMap.data}"
+            }
+            break
+        case 0x8004: //simple descriptor response
+            if (settings.logEnable) {
+                log.debug "zdo command: cluster: ${descMap.clusterId} (simple descriptor response)"
+            }
+            break
+        case 0x8034: //leave response
+            if (settings.logEnable) {
+                log.debug "zdo command: cluster: ${descMap.clusterId} (leave response)"
+            }
+            break
+        case 0x8021: //bind response
+            if (settings.logEnable) {
+                log.debug "zdo command: cluster: ${descMap.clusterId} (bind response) ${descMap}"
+            }
+            break
+        case 0x8022: //unbind request
+            if (settings.logEnable) {
+                log.debug "zdo command: cluster: ${descMap.clusterId} (unbind request)"
+            }
+            break
+        case 0x0013: //"device announce"
+            if (settings.logEnable) {
+                log.debug "zdo command: cluster: ${descMap.clusterId} (device announce)"
+            }
             break
     }
 }
