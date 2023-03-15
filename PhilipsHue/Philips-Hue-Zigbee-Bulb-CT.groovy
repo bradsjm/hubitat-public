@@ -77,15 +77,16 @@ metadata {
         input name: 'levelChangeRate', type: 'enum', title: '<b>Level change rate</b>', options: LevelRateOpts.options, defaultValue: LevelRateOpts.defaultValue, required: true, description:\
             '<i>Changes the speed that the light changes when using <b>start level change</b> until <b>stop level change</b> is sent.</i>'
 
-        input name: 'enableDimOnOffMode', type: 'bool', title: '<b>Dim to zero instead of off</b>', defaultValue: false, description:\
-            '<i>Changes the <b>Off</b> command to instead dim down to zero and <b>On</b> to dim up to the previous level.</i>'
-        input name: 'enableReporting', type: 'bool', title: '<b>Enable state reporting</b>', defaultValue: true, description:\
-            '<i>Enables the use of reporting to push updates instead of polling bulb. Only available from Generation 3 bulbs.</i>'
+        input name: 'offCommandMode', type: 'enum', title: '<b>Off command mode</b>', options: OffModeOpts.options, defaultValue: OffModeOpts.defaultValue, required: true, description:\
+            '<i>Changes off command. <b>Fade out</b> (default), <b>Instant</b> or <b>Dim to zero</b> (On will dim back to previous level).</i>'
 
         input name: 'flashEffect', type: 'enum', title: '<b>Flash effect</b>', options: IdentifyEffectNames.values(), defaultValue: 'Blink', required: true, description:\
             '<i>Changes the effect used when the <b>flash</b> command is used.</i>'
         input name: 'powerRestore', type: 'enum', title: '<b>Power restore mode</b>', options: PowerRestoreOpts.options, defaultValue: PowerRestoreOpts.defaultValue, description:\
             '<i>Changes what happens when power to the bulb is restored.</i>'
+
+        input name: 'enableReporting', type: 'bool', title: '<b>Enable state reporting</b>', defaultValue: true, description:\
+            '<i>Enables the use of reporting to push updates instead of polling bulb. Only available from Generation 3 bulbs.</i>'
 
         input name: 'healthCheckInterval', type: 'enum', title: '<b>Healthcheck Interval</b>', options: HealthcheckIntervalOpts.options, defaultValue: HealthcheckIntervalOpts.defaultValue, required: true, description:\
             '<i>Changes how often the hub pings the bulb to check health.</i>'
@@ -97,7 +98,7 @@ metadata {
     }
 }
 
-@Field static final String VERSION = '1.03'
+@Field static final String VERSION = '1.04'
 
 List<String> configure() {
     List<String> cmds = []
@@ -169,18 +170,21 @@ void logsOff() {
 }
 
 List<String> off() {
-    if (settings.enableDimOnOffMode == true) {
+    Integer mode = settings.offCommandMode as Integer
+    if (mode == 0xFF) {
         state.previousLevel = device.currentValue('level') as Integer
         return setLevel(0)
     }
     if (settings.txtEnable) { log.info 'turn off' }
     scheduleCommandTimeoutCheck()
-    return zigbee.command(zigbee.ON_OFF_CLUSTER, 0x40, [:], 0, '00 00') +
+    String variant = intToHexStr(mode)
+    return zigbee.command(zigbee.ON_OFF_CLUSTER, 0x40, [:], 0, "00 ${variant}") +
         ifPolling { zigbee.onOffRefresh(0) }
 }
 
 List<String> on() {
-    if (state.previousLevel && settings.enableDimOnOffMode == true) {
+    Integer mode = settings.offCommandMode as Integer
+    if (state.previousLevel && mode == 0xFF) {
         Integer level = state.previousLevel as Integer
         state.remove('previousLevel')
         return setLevel(level)
@@ -883,6 +887,11 @@ private List<String> setLevelPrivate(Object value, Integer rate = 0, Integer del
 @Field static final Map<Integer, String> IdentifyEffectNames = [
     0x00: 'Blink',
     0x01: 'Pulse (15s)'
+]
+
+@Field static Map OffModeOpts = [
+    defaultValue: 0x00,
+    options: [ 0x00: 'Fade Off (800ms)', 0x01: 'Instant Off', 0xFF: 'Dim to Zero' ]
 ]
 
 @Field static Map PowerRestoreOpts = [
