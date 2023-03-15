@@ -117,7 +117,7 @@ metadata {
     }
 }
 
-@Field static final String VERSION = '1.02'
+@Field static final String VERSION = '1.03'
 
 List<String> configure() {
     List<String> cmds = []
@@ -991,15 +991,21 @@ private void sendSwitchEvent(Boolean isOn) {
 }
 
 private List<String> setLevelPrivate(Object value, Integer rate = 0, Integer delay = 0, Boolean levelPreset = false) {
+    List<String> cmds = []
     Integer level = constrain(value)
     if (level > 0 && levelPreset == false) { sendSwitchEvent(true) } // assume success
     String hexLevel = intToHexStr(Math.round(level * 0xfe / 100.0).toInteger())
     String hexRate = intToSwapHexStr(rate)
     int levelCommand = levelPreset ? 0x00 : 0x04
+    if (device.currentValue('switch') == 'off' && level > 0 && levelPreset == false) {
+        // If light is off, first go to level 0 then to desired level
+        cmds += zigbee.command(zigbee.LEVEL_CONTROL_CLUSTER, 0x00, [:], delay, "00 00 ${PRESTAGING_OPTION}")
+    }
     // Payload: Level | Transition Time | Options Mask | Options Override
     // Options: Bit 0x01 enables prestaging level
-    return zigbee.command(zigbee.LEVEL_CONTROL_CLUSTER, levelCommand, [:], delay, "${hexLevel} ${hexRate} ${PRESTAGING_OPTION}") +
+    cmds += zigbee.command(zigbee.LEVEL_CONTROL_CLUSTER, levelCommand, [:], delay, "${hexLevel} ${hexRate} ${PRESTAGING_OPTION}") +
         ifPolling(DELAY_MS + (rate * 100)) { zigbee.levelRefresh(0) }
+    return cmds
 }
 
 // Configuration
