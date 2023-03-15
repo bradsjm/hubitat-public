@@ -834,7 +834,7 @@ private List<String> setLevelPrivate(Object value, Integer rate = 0, Integer del
     int levelCommand = levelPreset ? 0x00 : 0x04
     if (device.currentValue('switch') == 'off' && level > 0 && levelPreset == false) {
         // If light is off, first go to level 0 then to desired level
-        cmds += zigbee.command(zigbee.LEVEL_CONTROL_CLUSTER, 0x04, [:], delay, "00 0000 ${PRESTAGING_OPTION}")
+        cmds += zigbee.command(zigbee.LEVEL_CONTROL_CLUSTER, 0x00, [:], delay, "00 0000 ${PRESTAGING_OPTION}")
     }
     // Payload: Level | Transition Time | Options Mask | Options Override
     // Options: Bit 0x01 enables prestaging level
