@@ -623,9 +623,10 @@ private Integer constrain(Object value, Integer min = 0, Integer max = 100, Inte
 }
 
 private Integer getLevelTransitionRate(Object level, Object transitionTime = null) {
+    Boolean isOn = device.currentValue('switch') == 'on'
     Integer rate = 0
     Integer desiredLevel = level.toInteger()
-    Integer currentLevel = (device.currentValue('level') as Integer) ?: 0
+    Integer currentLevel = isOn ? ((device.currentValue('level') as Integer) ?: 0) : 0
     if (transitionTime != null) {
         rate = (transitionTime.toBigDecimal() * 10).toInteger()
     } else if (settings.levelUpTransition != null && currentLevel < desiredLevel) {
