@@ -998,7 +998,6 @@ private void sendSwitchEvent(Boolean isOn) {
 private List<String> setLevelPrivate(Object value, Integer rate = 0, Integer delay = 0, Boolean levelPreset = false) {
     List<String> cmds = []
     Integer level = constrain(value)
-    if (level > 0 && levelPreset == false) { sendSwitchEvent(true) } // assume success
     String hexLevel = intToHexStr(Math.round(level * 0xfe / 100.0).toInteger())
     String hexRate = intToSwapHexStr(rate)
     int levelCommand = levelPreset ? 0x00 : 0x04
