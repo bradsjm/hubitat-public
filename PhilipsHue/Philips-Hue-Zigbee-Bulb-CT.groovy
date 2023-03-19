@@ -50,6 +50,8 @@ metadata {
         attribute 'healthStatus', 'enum', [ 'unknown', 'offline', 'online' ]
 
         command 'identify', [ [ name: 'Effect type*', type: 'ENUM', description: 'Effect Type', constraints: IdentifyEffectNames.values()*.toLowerCase() ] ]
+        command 'setScene', [ [ name: 'Scene name*', type: 'ENUM', description: 'Philips Hue defined scenes', constraints: HueColorTemperatureScenes.keySet().sort() ] ]
+
         command 'stepColorTemperature', [
             [ name: 'Direction*', type: 'ENUM', description: 'Direction for step change request', constraints: [ 'up', 'down' ] ],
             [ name: 'Step Size (Mireds)*', type: 'NUMBER', description: 'Mireds step size (1-300)' ],
@@ -98,7 +100,7 @@ metadata {
     }
 }
 
-@Field static final String VERSION = '1.04'
+@Field static final String VERSION = '1.05'
 
 List<String> configure() {
     List<String> cmds = []
@@ -269,6 +271,11 @@ List<String> setEffect(Object number) {
     scheduleCommandTimeoutCheck()
     return zigbee.command(PHILIPS_PRIVATE_CLUSTER, 0x00, [ mfgCode: PHILIPS_VENDOR ], 0, "2100 01 ${intToHexStr(effect)}") +
         ifPolling { hueStateRefresh(0) }
+}
+
+List<String> setScene(String name) {
+    Map formula = HueColorTemperatureScenes.get(name)
+    return formula ? setColorTemperature(formula.colorTemp, formula.brightness) : []
 }
 
 List<String> setLevel(Object value, Object transitionTime = null) {
@@ -942,4 +949,35 @@ private List<String> setLevelPrivate(Object value, Integer rate = 0, Integer del
     0x94: 'TIMEOUT',
     0x9A: 'NOTIFICATION PENDING',
     0xC3: 'UNSUPPORTED CLUSTER'
+]
+
+@Field static final Map<String, Object> HueColorTemperatureScenes = [
+    'Relax': [
+      'brightness': 145,
+      'colorTemp': 447
+    ],
+    'Read': [
+      'brightness': 255,
+      'colorTemp': 346
+    ],
+    'Concentrate': [
+      'brightness': 255,
+      'colorTemp': 233
+    ],
+    'Energize': [
+      'brightness': 255,
+      'colorTemp': 156
+    ],
+    'Savanna sunset': [
+      'brightness': 145,
+      'colorTemp': 447
+    ],
+    'Tropical twilight': [
+      'brightness': 187,
+      'colorTemp': 322
+    ],
+    'Artic auroa': [
+      'brightness': 150,
+      'colorTemp': 153
+    ]
 ]

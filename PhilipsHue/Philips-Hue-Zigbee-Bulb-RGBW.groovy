@@ -53,6 +53,8 @@ metadata {
 
         command 'identify', [ [ name: 'Effect type*', type: 'ENUM', description: 'Effect Type', constraints: IdentifyEffectNames.values()*.toLowerCase() ] ]
         command 'setEnhancedHue', [ [ name: 'Hue*', type: 'NUMBER', description: 'Color Hue (0-360)' ] ]
+        command 'setScene', [ [ name: 'Scene name*', type: 'ENUM', description: 'Philips Hue defined scene', constraints: HueColorScenes.keySet().sort() ] ]
+
         command 'stepColorTemperature', [
             [ name: 'Direction*', type: 'ENUM', description: 'Direction for step change request', constraints: [ 'up', 'down' ] ],
             [ name: 'Step Size (Mireds)*', type: 'NUMBER', description: 'Mireds step size (1-300)' ],
@@ -84,6 +86,7 @@ metadata {
         fingerprint model: 'LCE002', profileId: '0104', inClusters: '0000,0003,0004,0005,0006,0008,1000,FC03,0300,FC01', outClusters: '0019'
         fingerprint model: 'LCG001', profileId: '0104', inClusters: '0000,0003,0004,0005,0006,0008,1000,FC03,0300,FC01', outClusters: '0019'
         fingerprint model: 'LCG002', profileId: '0104', inClusters: '0000,0003,0004,0005,0006,0008,1000,FC03,0300,FC01', outClusters: '0019'
+        fingerprint model: 'LCD007', profileId: '0104', inClusters: '0000,0003,0004,0005,0006,0008,1000,FC03,0300,FC01', outClusters: '0019'
     }
 
     preferences {
@@ -118,7 +121,7 @@ metadata {
     }
 }
 
-@Field static final String VERSION = '1.04'
+@Field static final String VERSION = '1.05'
 
 List<String> configure() {
     List<String> cmds = []
@@ -280,11 +283,11 @@ List<String> setColor(Map value) {
     String rateHex = intToSwapHexStr(rate)
     String scaledHueValue = intToHexStr(Math.round(hue * 0xfe / 100.0))
     String scaledSatValue = intToHexStr(Math.round(saturation * 0xfe / 100.0))
-    cmds += zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, 0x06, [:], DELAY_MS, "${scaledHueValue} ${scaledSatValue} ${isOn ? rateHex : '0000'} ${PRESTAGING_OPTION}")
     if (value.level != null) {
         // This will turn on the device if it is off and set level
         cmds += setLevelPrivate(value.level, getLevelTransitionRate(value.level))
     }
+    cmds += zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, 0x06, [:], DELAY_MS, "${scaledHueValue} ${scaledSatValue} ${isOn ? rateHex : '0000'} ${PRESTAGING_OPTION}")
     scheduleCommandTimeoutCheck()
     return cmds + ifPolling(DELAY_MS + (rate * 100)) { colorRefresh(0) }
 }
@@ -343,6 +346,20 @@ List<String> setHue(Object value) {
     String scaledHueValue = intToHexStr(Math.round(hue * 0xfe / 100.0) as Integer)
     scheduleCommandTimeoutCheck()
     return zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, 0x00, [:], 0, "${scaledHueValue} 00 ${rateHex} ${PRESTAGING_OPTION}") +
+        ifPolling(DELAY_MS + (rate * 100)) { colorRefresh(0) }
+}
+
+List<String> setScene(String name) {
+    Map formula = HueColorScenes.get(name)
+    if (!formula) { return [] }
+    Boolean isOn = device.currentValue('switch') == 'on'
+    Integer rate = isOn ? getColorTransitionRate() : 0
+    String rateHex = intToSwapHexStr(rate)
+    String scaledHueValue = intToSwapHexStr(Math.round(formula.hue * 182.04444) as Integer)
+    String scaledSatValue = intToHexStr(Math.round(formula.saturation * 0xfe / 100.0))
+    scheduleCommandTimeoutCheck()
+    return setLevelPrivate(formula.brightness, getLevelTransitionRate(formula.brightness)) +
+        zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, 0x43, [:], 0, "${scaledHueValue} ${scaledSatValue} ${rateHex} 00 ${PRESTAGING_OPTION}") +
         ifPolling(DELAY_MS + (rate * 100)) { colorRefresh(0) }
 }
 
@@ -1110,4 +1127,62 @@ private List<String> setLevelPrivate(Object value, Integer rate = 0, Integer del
     0x94: 'TIMEOUT',
     0x9A: 'NOTIFICATION PENDING',
     0xC3: 'UNSUPPORTED CLUSTER'
+]
+
+@Field static final Map<String, Object> HueColorScenes = [
+    'Savanna Sunset': [
+        'brightness': 200,
+        'hue': 14.717,
+        'saturation': 83.137
+    ],
+    'Tropical Twilight': [
+        'brightness': 123,
+        'hue': 263.182,
+        'saturation': 34.51
+    ],
+    'Artic Aurora': [
+        'brightness': 138,
+        'hue': 201.308,
+        'saturation': 83.922
+    ],
+    'Spring Blossom': [
+        'brightness': 215,
+        'hue': 339.718,
+        'saturation': 27.843
+    ],
+    'Relax': [
+        'brightness': 145,
+        'hue': 36.568,
+        'saturation': 66.275
+    ],
+    'Read': [
+        'brightness': 255,
+        'hue': 38.88,
+        'saturation': 49.02
+    ],
+    'Concentrate': [
+        'brightness': 255,
+        'hue': 45,
+        'saturation': 21.961
+    ],
+    'Energize': [
+        'brightness': 255,
+        'hue': 173.333,
+        'saturation': 3.529
+    ],
+    'Bright': [
+        'brightness': 255,
+        'hue': 38.667,
+        'saturation': 52.941
+    ],
+    'Dimmed': [
+        'brightness': 77,
+        'hue': 38.222,
+        'saturation': 52.941
+    ],
+    'Nightlight': [
+        'brightness': 1,
+        'hue': 33.767,
+        'saturation': 84.314
+    ]
 ]

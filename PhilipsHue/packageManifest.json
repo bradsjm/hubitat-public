@@ -1,13 +1,13 @@
 {
   "packageName": "Philips Hue Zigbee Drivers",
   "author": "Jonathan Bradshaw",
-  "version": "1.03",
+  "version": "1.05",
   "minimumHEVersion": "2.3.2",
   "communityLink": "https://community.hubitat.com/t/beta-philips-hue-rgbw-zigbee-direct-driver/111695",
   "documentationLink": "https://raw.githubusercontent.com/bradsjm/hubitat-public/main/PhilipsHue/README.md",
   "licenseFile": "https://raw.githubusercontent.com/bradsjm/hubitat-public/main/LICENSE",
-  "dateReleased": "2023-03-15",
-  "releaseNotes": "If light is off, set level will transition from level 0 instead of previous level",
+  "dateReleased": "2023-03-18",
+  "releaseNotes": "If light is off, set level will transition from level 0. Added known preset hue scenes.",
   "drivers": [
     {
       "id": "ed67ff9b-68f1-4353-9c5c-0d8e71c7c6fd",
