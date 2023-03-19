@@ -968,15 +968,15 @@ private List<String> setLevelPrivate(Object value, Integer rate = 0, Integer del
       'brightness': 255,
       'colorTemp': 156
     ],
-    'Savanna sunset': [
+    'Savanna Sunset': [
       'brightness': 145,
       'colorTemp': 447
     ],
-    'Tropical twilight': [
+    'Tropical Twilight': [
       'brightness': 187,
       'colorTemp': 322
     ],
-    'Artic auroa': [
+    'Arctic Auroa': [
       'brightness': 150,
       'colorTemp': 153
     ]

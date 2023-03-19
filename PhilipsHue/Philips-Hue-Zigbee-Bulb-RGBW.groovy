@@ -1140,7 +1140,7 @@ private List<String> setLevelPrivate(Object value, Integer rate = 0, Integer del
         'hue': 263.182,
         'saturation': 34.51
     ],
-    'Artic Aurora': [
+    'Arctic Aurora': [
         'brightness': 138,
         'hue': 201.308,
         'saturation': 83.922
