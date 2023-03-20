@@ -52,6 +52,8 @@ metadata {
         attribute 'healthStatus', 'enum', [ 'unknown', 'offline', 'online' ]
 
         command 'identify', [ [ name: 'Effect type*', type: 'ENUM', description: 'Effect Type', constraints: IdentifyEffectNames.values()*.toLowerCase() ] ]
+
+        command 'setColorXy', [ [ name: 'X*', type: 'NUMBER', description: 'X value' ], [ name: 'Y*', type: 'NUMBER', description: 'Y value' ], [ name: 'Level', type: 'NUMBER', description: 'Level to set' ] ]
         command 'setEnhancedHue', [ [ name: 'Hue*', type: 'NUMBER', description: 'Color Hue (0-360)' ] ]
         command 'setScene', [ [ name: 'Scene name*', type: 'ENUM', description: 'Philips Hue defined scene', constraints: HueColorScenes.keySet().sort() ] ]
 
@@ -238,7 +240,7 @@ List<String> ping() {
     return zigbee.readAttribute(zigbee.BASIC_CLUSTER, PING_ATTR_ID, [:], 0)
 }
 
-List<String> presetLevel(Object value) {
+List<String> presetLevel(BigDecimal value) {
     if (settings.txtEnable) { log.info "presetLevel (${value})" }
     Boolean isOn = device.currentValue('switch') == 'on'
     Integer rate = isOn ? getLevelTransitionRate(value) : 0
@@ -293,7 +295,7 @@ List<String> setColor(Map value) {
     return cmds + ifPolling(DELAY_MS + (rate * 100)) { colorRefresh(0) }
 }
 
-List<String> setColorTemperature(Object colorTemperature, Object level = null, Object transitionTime = null) {
+List<String> setColorTemperature(BigDecimal colorTemperature, BigDecimal level = null, BigDecimal transitionTime = null) {
     List<String> cmds = []
     if (settings.txtEnable) { log.info "setColorTemperature (${colorTemperature}, ${level}, ${transitionTime})" }
     Boolean isOn = device.currentValue('switch') == 'on'
@@ -310,7 +312,26 @@ List<String> setColorTemperature(Object colorTemperature, Object level = null, O
     return cmds + ifPolling(DELAY_MS + (rate * 100)) { colorRefresh(0) }
 }
 
-List<String> setEffect(Object number) {
+List<String> setColorXy(BigDecimal x, BigDecimal y, BigDecimal level = null) {
+    List<String> cmds = []
+    if (settings.txtEnable) { log.info "setColorXy (${x}, ${y}, ${level})" }
+    Boolean isOn = device.currentValue('switch') == 'on'
+    int intX = Math.round(constrain(x) * 65536).intValue() // 0..65279
+    int intY = Math.round(constrain(y) * 65536).intValue() // 0..65279
+    Integer rate = isOn ? getColorTransitionRate() : 0
+    String hexX = DataType.pack(intX, DataType.UINT16, true)
+    String hexY = DataType.pack(intY, DataType.UINT16, true)
+    String rateHex = DataType.pack(rate, DataType.UINT16, true)
+    if (level != null) {
+        // This will turn on the device if it is off and set level
+        cmds += setLevelPrivate(level, getLevelTransitionRate(level))
+    }
+    cmds += zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, 0x07, [:], DELAY_MS, "${hexX} ${hexY} ${isOn ? rateHex : '0000'} ${PRESTAGING_OPTION}")
+    scheduleCommandTimeoutCheck()
+    return cmds + ifPolling(DELAY_MS + (rate * 100)) { colorRefresh(0) }
+}
+
+List<String> setEffect(BigDecimal number) {
     List<String> effectNames = parseJson(device.currentValue('lightEffects') ?: '[]')
     Integer effectNumber = constrain(number, 0, effectNames.size())
     if (settings.txtEnable) { log.info "setEffect (${number})" }
@@ -327,7 +348,7 @@ List<String> setEffect(Object number) {
         ifPolling { hueStateRefresh(0) }
 }
 
-List<String> setEnhancedHue(Object value) {
+List<String> setEnhancedHue(BigDecimal value) {
     if (settings.txtEnable) { log.info "setEnhancedHue (${value})" }
     Boolean isOn = device.currentValue('switch') == 'on'
     Integer hue = constrain(value, 0, 360)
@@ -339,7 +360,7 @@ List<String> setEnhancedHue(Object value) {
         ifPolling(DELAY_MS + (rate * 100)) { colorRefresh(0) }
 }
 
-List<String> setHue(Object value) {
+List<String> setHue(BigDecimal value) {
     if (settings.txtEnable) { log.info "setHue (${value})" }
     Boolean isOn = device.currentValue('switch') == 'on'
     Integer hue = constrain(value)
@@ -365,7 +386,7 @@ List<String> setScene(String name) {
         ifPolling(DELAY_MS + (rate * 100)) { colorRefresh(0) }
 }
 
-List<String> setLevel(Object value, Object transitionTime = null) {
+List<String> setLevel(BigDecimal value, BigDecimal transitionTime = null) {
     if (settings.txtEnable) { log.info "setLevel (${value}, ${transitionTime})" }
     Integer rate = getLevelTransitionRate(value, transitionTime)
     scheduleCommandTimeoutCheck()
@@ -386,7 +407,7 @@ List<String> setPreviousEffect() {
     return setEffect(number)
 }
 
-List<String> setSaturation(Object value) {
+List<String> setSaturation(BigDecimal value) {
     if (settings.txtEnable) { log.info "setSaturation (${value})" }
     Boolean isOn = device.currentValue('switch') == 'on'
     Integer saturation = constrain(value)
@@ -406,7 +427,7 @@ List<String> startLevelChange(String direction) {
     return zigbee.command(zigbee.LEVEL_CONTROL_CLUSTER, 0x05, [:], 0, "${upDown} ${rate}")
 }
 
-List<String> stepColorTemperature(String direction, Object stepSize, Object transitionTime = null) {
+List<String> stepColorTemperature(String direction, BigDecimal stepSize, BigDecimal transitionTime = null) {
     if (settings.txtEnable) { log.info "stepColorTemperatureChange (${direction}, ${stepSize}, ${transitionTime})" }
     Integer rate = getColorTransitionRate(transitionTime)
     String rateHex = DataType.pack(rate, DataType.UINT16, true)
@@ -417,7 +438,7 @@ List<String> stepColorTemperature(String direction, Object stepSize, Object tran
         ifPolling { zigbee.colorRefresh(0) }
 }
 
-List<String> stepHueChange(String direction, Object stepSize, Object transitionTime = null) {
+List<String> stepHueChange(String direction, BigDecimal stepSize, BigDecimal transitionTime = null) {
     if (settings.txtEnable) { log.info "stepHueChange (${direction}, ${stepSize}, ${transitionTime})" }
     Integer rate = getColorTransitionRate(transitionTime)
     String rateHex = DataType.pack(rate, DataType.UINT16, true)
@@ -429,7 +450,7 @@ List<String> stepHueChange(String direction, Object stepSize, Object transitionT
         ifPolling { zigbee.colorRefresh(0) }
 }
 
-List<String> stepLevelChange(String direction, Object stepSize, Object transitionTime = null) {
+List<String> stepLevelChange(String direction, BigDecimal stepSize, BigDecimal transitionTime = null) {
     if (settings.txtEnable) { log.info "stepLevelChange (${direction}, ${stepSize}, ${transitionTime})" }
     Integer rate = getLevelTransitionRate(direction == 'down' ? 0 : 100, transitionTime)
     String rateHex = DataType.pack(rate, DataType.UINT16, true)
