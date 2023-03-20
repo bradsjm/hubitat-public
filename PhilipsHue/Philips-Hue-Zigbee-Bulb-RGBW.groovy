@@ -121,7 +121,7 @@ metadata {
     }
 }
 
-@Field static final String VERSION = '1.05'
+@Field static final String VERSION = '1.06'
 
 List<String> configure() {
     List<String> cmds = []
@@ -183,7 +183,8 @@ List<String> identify(String name) {
     Integer effect = IdentifyEffectNames.find { k, v -> v.equalsIgnoreCase(name) }?.key
     if (effect == null) { return [] }
     if (settings.txtEnable) { log.info "identify (${name})" }
-    return zigbee.command(zigbee.IDENTIFY_CLUSTER, 0x40, [:], 0, "${intToHexStr(effect)} 00")
+    String effectStr = DataType.pack(effect, DataType.UINT8)
+    return zigbee.command(zigbee.IDENTIFY_CLUSTER, 0x40, [:], 0, "${effectStr} 00")
 }
 
 void installed() {
@@ -212,7 +213,7 @@ List<String> off() {
     }
     if (settings.txtEnable) { log.info 'turn off' }
     scheduleCommandTimeoutCheck()
-    String variant = intToHexStr(mode)
+    String variant = DataType.pack(mode, DataType.UINT8)
     return zigbee.command(zigbee.ON_OFF_CLUSTER, 0x40, [:], 0, "00 ${variant}") +
         ifPolling { zigbee.onOffRefresh(0) }
 }
@@ -280,9 +281,9 @@ List<String> setColor(Map value) {
     Integer hue = constrain(value.hue)
     Integer saturation = constrain(value.saturation)
     Integer rate = isOn ? getColorTransitionRate() : 0
-    String rateHex = intToSwapHexStr(rate)
-    String scaledHueValue = intToHexStr(Math.round(hue * 0xfe / 100.0))
-    String scaledSatValue = intToHexStr(Math.round(saturation * 0xfe / 100.0))
+    String rateHex = DataType.pack(rate, DataType.UINT16, true)
+    String scaledHueValue = DataType.pack(Math.round(hue * 0xfe / 100.0), DataType.UINT8)
+    String scaledSatValue = DataType.pack(Math.round(saturation * 0xfe / 100.0), DataType.UINT8)
     if (value.level != null) {
         // This will turn on the device if it is off and set level
         cmds += setLevelPrivate(value.level, getLevelTransitionRate(value.level))
@@ -297,9 +298,9 @@ List<String> setColorTemperature(Object colorTemperature, Object level = null, O
     if (settings.txtEnable) { log.info "setColorTemperature (${colorTemperature}, ${level}, ${transitionTime})" }
     Boolean isOn = device.currentValue('switch') == 'on'
     Integer rate = isOn ? getColorTransitionRate(transitionTime) : 0
-    String rateHex = intToSwapHexStr(rate)
+    String rateHex = DataType.pack(rate, DataType.UINT16, true)
     Integer ct = constrain(colorTemperature, state.ct.low, state.ct.high)
-    String miredHex = ctToMiredHex(ct)
+    String miredHex = DataType.pack(ctToMired(ct), DataType.UINT16, true)
     cmds += zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, 0x0A, [:], DELAY_MS, "${miredHex} ${rateHex} ${PRESTAGING_OPTION}")
     if (level != null) {
         // This will turn on the device if it is off and set level
@@ -320,8 +321,9 @@ List<String> setEffect(Object number) {
     String effectName = effectNames[effectNumber - 1]
     state.effect = number
     int effect = HueEffectNames.find { k, v -> v == effectName }?.key
+    String effectHex = DataType.pack(effect, DataType.UINT8)
     scheduleCommandTimeoutCheck()
-    return zigbee.command(PHILIPS_PRIVATE_CLUSTER, 0x00, [ mfgCode: PHILIPS_VENDOR ], 0, "2100 01 ${intToHexStr(effect)}") +
+    return zigbee.command(PHILIPS_PRIVATE_CLUSTER, 0x00, [ mfgCode: PHILIPS_VENDOR ], 0, "2100 01 ${effectHex}") +
         ifPolling { hueStateRefresh(0) }
 }
 
@@ -330,10 +332,10 @@ List<String> setEnhancedHue(Object value) {
     Boolean isOn = device.currentValue('switch') == 'on'
     Integer hue = constrain(value, 0, 360)
     Integer rate = isOn ? getColorTransitionRate() : 0
-    String rateHex = intToSwapHexStr(rate)
-    String scaledHueValue = intToSwapHexStr(Math.round(hue * 182.04444) as Integer)
+    String rateHex = DataType.pack(rate, DataType.UINT16, true)
+    String scaledHueHex = DataType.pack(Math.round(hue * 182.04444) as Integer, DataType.UINT16, true)
     scheduleCommandTimeoutCheck()
-    return zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, 0x40, [:], 0, "${scaledHueValue} 00 ${rateHex} ${PRESTAGING_OPTION}") +
+    return zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, 0x40, [:], 0, "${scaledHueHex} 00 ${rateHex} ${PRESTAGING_OPTION}") +
         ifPolling(DELAY_MS + (rate * 100)) { colorRefresh(0) }
 }
 
@@ -342,10 +344,10 @@ List<String> setHue(Object value) {
     Boolean isOn = device.currentValue('switch') == 'on'
     Integer hue = constrain(value)
     Integer rate = isOn ? getColorTransitionRate() : 0
-    String rateHex = intToSwapHexStr(rate)
-    String scaledHueValue = intToHexStr(Math.round(hue * 0xfe / 100.0) as Integer)
+    String rateHex = DataType.pack(rate, DataType.UINT16, true)
+    String scaledHueHex = DataType.pack(Math.round(hue * 0xfe / 100.0) as Integer, DataType.UINT8)
     scheduleCommandTimeoutCheck()
-    return zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, 0x00, [:], 0, "${scaledHueValue} 00 ${rateHex} ${PRESTAGING_OPTION}") +
+    return zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, 0x00, [:], 0, "${scaledHueHex} 00 ${rateHex} ${PRESTAGING_OPTION}") +
         ifPolling(DELAY_MS + (rate * 100)) { colorRefresh(0) }
 }
 
@@ -354,12 +356,12 @@ List<String> setScene(String name) {
     if (!formula) { return [] }
     Boolean isOn = device.currentValue('switch') == 'on'
     Integer rate = isOn ? getColorTransitionRate() : 0
-    String rateHex = intToSwapHexStr(rate)
-    String scaledHueValue = intToSwapHexStr(Math.round(formula.hue * 182.04444) as Integer)
-    String scaledSatValue = intToHexStr(Math.round(formula.saturation * 0xfe / 100.0))
+    String rateHex = DataType.pack(rate, DataType.UINT16, true)
+    String scaledHueHex = DataType.pack(Math.round(formula.hue * 182.04444) as Integer, DataType.UINT8)
+    String scaledSatHex = DataType.pack(Math.round(formula.saturation * 0xfe / 100.0), DataType.UINT8)
     scheduleCommandTimeoutCheck()
     return setLevelPrivate(formula.brightness, getLevelTransitionRate(formula.brightness)) +
-        zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, 0x43, [:], 0, "${scaledHueValue} ${scaledSatValue} ${rateHex} 00 ${PRESTAGING_OPTION}") +
+        zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, 0x43, [:], 0, "${scaledHueHex} ${scaledSatHex} ${rateHex} 00 ${PRESTAGING_OPTION}") +
         ifPolling(DELAY_MS + (rate * 100)) { colorRefresh(0) }
 }
 
@@ -389,10 +391,10 @@ List<String> setSaturation(Object value) {
     Boolean isOn = device.currentValue('switch') == 'on'
     Integer saturation = constrain(value)
     Integer rate = isOn ? getColorTransitionRate() : 0
-    String rateHex = intToSwapHexStr(rate)
-    String scaledSatValue = intToHexStr(Math.round(saturation * 0xfe / 100.0))
+    String rateHex = DataType.pack(rate, DataType.UINT16, true)
+    String scaledSatHex = DataType.pack(Math.round(saturation * 0xfe / 100.0), DataType.UINT8)
     scheduleCommandTimeoutCheck()
-    return zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, 0x03, [:], 0, "${scaledSatValue} 00 ${rateHex} ${PRESTAGING_OPTION}") +
+    return zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, 0x03, [:], 0, "${scaledSatHex} 00 ${rateHex} ${PRESTAGING_OPTION}") +
         ifPolling(DELAY_MS + (rate * 100)) { colorRefresh(0) }
 }
 
@@ -407,35 +409,35 @@ List<String> startLevelChange(String direction) {
 List<String> stepColorTemperature(String direction, Object stepSize, Object transitionTime = null) {
     if (settings.txtEnable) { log.info "stepColorTemperatureChange (${direction}, ${stepSize}, ${transitionTime})" }
     Integer rate = getColorTransitionRate(transitionTime)
-    String rateHex = intToSwapHexStr(rate)
-    String stepHex = intToSwapHexStr(constrain(stepSize.toInteger(), 1, 300))
-    String upDown = direction == 'down' ? '01' : '03'
+    String rateHex = DataType.pack(rate, DataType.UINT16, true)
+    String stepHex = DataType.pack(constrain(stepSize.toInteger(), 1, 300), DataType.UINT16, true)
+    String upDownHex = direction == 'down' ? '01' : '03'
     scheduleCommandTimeoutCheck()
-    return zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, 0x4C, [:], 0, "${upDown} ${stepHex} ${rateHex} 0000 0000") +
+    return zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, 0x4C, [:], 0, "${upDownHex} ${stepHex} ${rateHex} 0000 0000") +
         ifPolling { zigbee.colorRefresh(0) }
 }
 
 List<String> stepHueChange(String direction, Object stepSize, Object transitionTime = null) {
     if (settings.txtEnable) { log.info "stepHueChange (${direction}, ${stepSize}, ${transitionTime})" }
     Integer rate = getColorTransitionRate(transitionTime)
-    String rateHex = intToSwapHexStr(rate)
+    String rateHex = DataType.pack(rate, DataType.UINT16, true)
     Integer level = constrain(stepSize, 1, 99)
-    String stepHex = intToHexStr((level * 2.55).toInteger())
-    String upDown = direction == 'down' ? '03' : '01'
+    String stepHex = DataType.pack((level * 2.55).toInteger(), DataType.UINT8)
+    String upDownHex = direction == 'down' ? '03' : '01'
     scheduleCommandTimeoutCheck()
-    return zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, 0x02, [:], 0, "${upDown} ${stepHex} ${rateHex}") +
+    return zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, 0x02, [:], 0, "${upDownHex} ${stepHex} ${rateHex}") +
         ifPolling { zigbee.colorRefresh(0) }
 }
 
 List<String> stepLevelChange(String direction, Object stepSize, Object transitionTime = null) {
     if (settings.txtEnable) { log.info "stepLevelChange (${direction}, ${stepSize}, ${transitionTime})" }
     Integer rate = getLevelTransitionRate(direction == 'down' ? 0 : 100, transitionTime)
-    String rateHex = intToSwapHexStr(rate)
+    String rateHex = DataType.pack(rate, DataType.UINT16, true)
     Integer level = constrain(stepSize, 1, 99)
-    String stepHex = intToHexStr((level * 2.55).toInteger())
-    String upDown = direction == 'down' ? '01' : '00'
+    String stepHex = DataType.pack((level * 2.55).toInteger(), DataType.UINT8)
+    String upDownHex = direction == 'down' ? '01' : '00'
     scheduleCommandTimeoutCheck()
-    return zigbee.command(zigbee.LEVEL_CONTROL_CLUSTER, 0x06, [:], 0, "${upDown} ${stepHex} ${rateHex}") +
+    return zigbee.command(zigbee.LEVEL_CONTROL_CLUSTER, 0x06, [:], 0, "${upDownHex} ${stepHex} ${rateHex}") +
         ifPolling { zigbee.levelRefresh(0) + zigbee.onOffRefresh(0) }
 }
 
@@ -846,13 +848,18 @@ private String clusterLookup(Object cluster) {
     return zigbee.clusterLookup(cluster.toInteger()) ?: "private cluster 0x${intToHexStr(cluster.toInteger())}"
 }
 
+private BigDecimal constrain(BigDecimal value, BigDecimal min = 0, BigDecimal max = 100, BigDecimal nullValue = 0) {
+    if (min == null || max == null) { return value }
+    return value != null ? max.min(value.max(min)) : nullValue
+}
+
 private Integer constrain(Object value, Integer min = 0, Integer max = 100, Integer nullValue = 0) {
     if (min == null || max == null) { return value }
     return value != null ? Math.min(Math.max(value.toInteger(), min), max) : nullValue
 }
 
-private String ctToMiredHex(int ct) {
-    return zigbee.swapOctets(intToHexStr((1000000 / ct).toInteger(), 2))
+private Integer ctToMired(int ct) {
+    return (1000000 / ct).toInteger()
 }
 
 private Integer getColorTransitionRate(Object transitionTime = null) {
@@ -892,10 +899,6 @@ private List<String> ifPolling(int delayMs = 0, Closure commands) {
         return [ "delay ${value}" ] + (commands() as List<String>)
     }
     return []
-}
-
-private String intToSwapHexStr(Integer i, String nullValue = '0000') {
-    return i != null ? zigbee.swapOctets(intToHexStr(i, 2)) : nullValue
 }
 
 private int miredHexToCt(String mired) {
@@ -1015,8 +1018,8 @@ private void sendSwitchEvent(Boolean isOn) {
 private List<String> setLevelPrivate(Object value, Integer rate = 0, Integer delay = 0, Boolean levelPreset = false) {
     List<String> cmds = []
     Integer level = constrain(value)
-    String hexLevel = intToHexStr(Math.round(level * 0xfe / 100.0).toInteger())
-    String hexRate = intToSwapHexStr(rate)
+    String hexLevel = DataType.pack(Math.round(level * 0xfe / 100.0).intValue(), DataType.UINT8)
+    String hexRate = DataType.pack(rate, DataType.UINT16, true)
     int levelCommand = levelPreset ? 0x00 : 0x04
     if (device.currentValue('switch') == 'off' && level > 0 && levelPreset == false) {
         // If light is off, first go to level 0 then to desired level
