@@ -53,24 +53,29 @@ metadata {
 
         command 'identify', [ [ name: 'Effect type*', type: 'ENUM', description: 'Effect Type', constraints: IdentifyEffectNames.values()*.toLowerCase() ] ]
 
-        command 'setColorXy', [ [ name: 'X*', type: 'NUMBER', description: 'X value' ], [ name: 'Y*', type: 'NUMBER', description: 'Y value' ], [ name: 'Level', type: 'NUMBER', description: 'Level to set' ] ]
+        command 'setColorXy', [
+            [ name: 'X*', type: 'NUMBER', description: 'X value' ],
+            [ name: 'Y*', type: 'NUMBER', description: 'Y value' ],
+            [ name: 'Level', type: 'NUMBER', description: 'Level to set' ],
+            [ name: 'Transition time', type: 'NUMBER', description: 'Transition duration in seconds' ]
+        ]
         command 'setEnhancedHue', [ [ name: 'Hue*', type: 'NUMBER', description: 'Color Hue (0-360)' ] ]
         command 'setScene', [ [ name: 'Scene name*', type: 'ENUM', description: 'Philips Hue defined scene', constraints: HueColorScenes.keySet().sort() ] ]
 
         command 'stepColorTemperature', [
             [ name: 'Direction*', type: 'ENUM', description: 'Direction for step change request', constraints: [ 'up', 'down' ] ],
             [ name: 'Step Size (Mireds)*', type: 'NUMBER', description: 'Mireds step size (1-300)' ],
-            [ name: 'Duration', type: 'NUMBER', description: 'Transition duration in seconds' ]
+            [ name: 'Transition time', type: 'NUMBER', description: 'Transition duration in seconds' ]
         ]
         command 'stepHueChange', [
             [ name: 'Direction*', type: 'ENUM', description: 'Direction for step change request', constraints: [ 'up', 'down' ] ],
             [ name: 'Step Size*', type: 'NUMBER', description: 'Hue change step size (1-99)' ],
-            [ name: 'Duration', type: 'NUMBER', description: 'Transition duration in seconds' ]
+            [ name: 'Transition time', type: 'NUMBER', description: 'Transition duration in seconds' ]
         ]
         command 'stepLevelChange', [
             [ name: 'Direction*', type: 'ENUM', description: 'Direction for step change request', constraints: [ 'up', 'down' ] ],
             [ name: 'Step Size*', type: 'NUMBER', description: 'Level change step size (1-99)' ],
-            [ name: 'Duration', type: 'NUMBER', description: 'Transition duration in seconds' ]
+            [ name: 'Transition time', type: 'NUMBER', description: 'Transition duration in seconds' ]
         ]
         command 'toggle'
 
@@ -312,13 +317,13 @@ List<String> setColorTemperature(BigDecimal colorTemperature, BigDecimal level =
     return cmds + ifPolling(DELAY_MS + (rate * 100)) { colorRefresh(0) }
 }
 
-List<String> setColorXy(BigDecimal x, BigDecimal y, BigDecimal level = null) {
+List<String> setColorXy(BigDecimal x, BigDecimal y, BigDecimal level = null, BigDecimal transitionTime = null) {
     List<String> cmds = []
     if (settings.txtEnable) { log.info "setColorXy (${x}, ${y}, ${level})" }
     Boolean isOn = device.currentValue('switch') == 'on'
     int intX = Math.round(constrain(x) * 65536).intValue() // 0..65279
     int intY = Math.round(constrain(y) * 65536).intValue() // 0..65279
-    Integer rate = isOn ? getColorTransitionRate() : 0
+    Integer rate = isOn ? getColorTransitionRate(transitionTime) : 0
     String hexX = DataType.pack(intX, DataType.UINT16, true)
     String hexY = DataType.pack(intY, DataType.UINT16, true)
     String rateHex = DataType.pack(rate, DataType.UINT16, true)
