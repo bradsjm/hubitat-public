@@ -105,6 +105,14 @@
       "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-Switch.groovy",
       "required": false,
       "version": "1.0"
+    },
+    {
+      "id": "53967184-935a-40a4-9852-30062aca4cde",
+      "name": "ESPHome Temperature Sensor",
+      "namespace": "esphome",
+      "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-TemperatureSensor.groovy",
+      "required": false,
+      "version": "1.0"
     }
   ]
 }
