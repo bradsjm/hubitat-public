@@ -427,9 +427,9 @@ List<String> setSaturation(BigDecimal value) {
 List<String> startLevelChange(String direction) {
     if (settings.txtEnable) { log.info "startLevelChange (${direction})" }
     String upDown = direction == 'down' ? '01' : '00'
-    String rate = getLevelTransitionRate(direction == 'down' ? 0 : 100)
+    String rateHex = DataType.pack(settings.levelChangeRate as Integer, DataType.UINT8)
     scheduleCommandTimeoutCheck()
-    return zigbee.command(zigbee.LEVEL_CONTROL_CLUSTER, 0x05, [:], 0, "${upDown} ${rate}")
+    return zigbee.command(zigbee.LEVEL_CONTROL_CLUSTER, 0x05, [:], 0, "${upDown} ${rateHex}")
 }
 
 List<String> stepColorTemperature(String direction, BigDecimal stepSize, BigDecimal transitionTime = null) {

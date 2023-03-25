@@ -302,9 +302,9 @@ List<String> setPreviousEffect() {
 List<String> startLevelChange(String direction) {
     if (settings.txtEnable) { log.info "startLevelChange (${direction})" }
     String upDown = direction == 'down' ? '01' : '00'
-    String rate = getLevelTransitionRate(direction == 'down' ? 0 : 100)
+    String rateHex = intToHexStr(settings.levelChangeRate as Integer)
     scheduleCommandTimeoutCheck()
-    return zigbee.command(zigbee.LEVEL_CONTROL_CLUSTER, 0x05, [:], 0, "${upDown} ${rate}")
+    return zigbee.command(zigbee.LEVEL_CONTROL_CLUSTER, 0x05, [:], 0, "${upDown} ${rateHex}")
 }
 
 List<String> stepColorTemperature(String direction, Object stepSize, Object transitionTime = null) {
