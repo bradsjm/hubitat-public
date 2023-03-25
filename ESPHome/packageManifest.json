@@ -113,6 +113,14 @@
       "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-TemperatureSensor.groovy",
       "required": false,
       "version": "1.0"
+    },
+    {
+      "id": "3eae5fa6-50f4-456c-b358-92add233aff0",
+      "name": "ESPHome Multi Switch & Contact Sensor",
+      "namespace": "esphome",
+      "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-MultiSwitchSensor.groovy",
+      "required": false,
+      "version": "1.0"
     }
   ]
 }
