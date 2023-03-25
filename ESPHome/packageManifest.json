@@ -121,6 +121,14 @@
       "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-MultiSwitchSensor.groovy",
       "required": false,
       "version": "1.0"
+    },
+    {
+      "id": "5b4e0c18-39ec-494a-a2a4-1927cca019d5",
+      "name": "ESPHome Everything Presence One",
+      "namespace": "esphome",
+      "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-EverythingPresenceOne.groovy",
+      "required": false,
+      "version": "1.0"
     }
   ]
 }
