@@ -287,7 +287,7 @@ List<String> setColor(Map value) {
     Boolean isOn = device.currentValue('switch') == 'on'
     Integer hue = constrain(value.hue)
     Integer saturation = constrain(value.saturation)
-    Integer rate = isOn ? getColorTransitionRate() : 0
+    Integer rate = isOn ? getColorTransitionRate(value.rate) : 0
     String rateHex = DataType.pack(rate, DataType.UINT16, true)
     String scaledHueValue = DataType.pack(Math.round(hue * 0xfe / 100.0), DataType.UINT8)
     String scaledSatValue = DataType.pack(Math.round(saturation * 0xfe / 100.0), DataType.UINT8)

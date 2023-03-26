@@ -400,6 +400,7 @@ private void setColorInternal(Map colorMap) {
         device.currentValue('switch') == 'off') {
         if (logTextEnable) { log.info "${device} ${state ? 'set' : 'preset'} color ${colorMap}" }
         def (int r, int g, int b) = ColorUtils.hsvToRGB([colorMap.hue, colorMap.saturation, colorMap.level])
+        Integer transitionLength = colorMap.rate == null ? null : colorMap.rate * 1000
         espHomeLightCommand(
             key: settings.light as Long,
             red: r / 255f,
@@ -409,7 +410,7 @@ private void setColorInternal(Map colorMap) {
             masterBrightness: colorMap.level / 100f,
             colorBrightness: 1f, // use the master brightness
             colorMode: getColorMode(COLOR_CAP_RGB),
-            transitionLength: device.currentValue('colorMode') == 'RGB' ? null : 0
+            transitionLength: device.currentValue('colorMode') == 'RGB' ? transitionLength : 0
         )
     }
 }
