@@ -108,7 +108,7 @@ void installed() {
     sendEvent(name: 'power', value: 0, unit: 'W')
     sendEvent(name: 'switch', value: 'off')
     sendEvent(name: 'voltage', value: 0, unit: 'V')
-    sendEvent(name: 'powerFactor', value: 1)
+    sendEvent(name: 'powerFactor', value: 0)
 }
 
 void logsOff() {
@@ -483,7 +483,7 @@ private void updatePowerFactor() {
         BigDecimal powerFactor = calculatePowerFactor(rmsVoltage, rmsCurrent, activePower)
         updateAttribute('powerFactor', powerFactor.setScale(1, RoundingMode.HALF_UP), null, 'digital')
     } else {
-        updateAttribute('powerFactor', 1, null, 'digital')
+        updateAttribute('powerFactor', 0, null, 'digital')
     }
 }
 
