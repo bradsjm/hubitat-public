@@ -46,6 +46,7 @@ metadata {
         command 'updateFirmware'
 
         attribute 'healthStatus', 'enum', [ 'unknown', 'offline', 'online' ]
+        attribute 'powerFactor', 'number'
 
         fingerprint model: '3RSP02028BZ', manufacturer: 'Third Reality, Inc', profileId: '0104', endpointId: '01', inClusters: '0000,0003,0004,0005,0006,1000,0B04', outClusters: '0019', application: '1E'
     }
@@ -107,6 +108,7 @@ void installed() {
     sendEvent(name: 'power', value: 0, unit: 'W')
     sendEvent(name: 'switch', value: 'off')
     sendEvent(name: 'voltage', value: 0, unit: 'V')
+    sendEvent(name: 'powerFactor', value: 1)
 }
 
 void logsOff() {
@@ -303,6 +305,7 @@ void parseElectricalMeasurementCluster(Map descMap) {
             if (multiplier > 0 && divisor > 0) {
                 BigDecimal result = value * multiplier / divisor
                 updateAttribute('amperage', result.setScale(1, RoundingMode.HALF_UP), 'A', 'physical')
+                updatePowerFactor()
             }
             break
         case ACTIVE_POWER_ID:
@@ -313,6 +316,7 @@ void parseElectricalMeasurementCluster(Map descMap) {
                 updateEnergyCalculation()
                 BigDecimal result = (int)value * multiplier / divisor
                 updateAttribute('power', result.setScale(1, RoundingMode.HALF_UP), 'W', 'physical')
+                updatePowerFactor()
             }
             break
         case RMS_VOLTAGE_ID:
@@ -321,6 +325,7 @@ void parseElectricalMeasurementCluster(Map descMap) {
             if (multiplier > 0 && divisor > 0) {
                 BigDecimal result = value * multiplier / divisor
                 updateAttribute('voltage', result.setScale(0, RoundingMode.HALF_UP), 'V', 'physical')
+                updatePowerFactor()
             }
             break
         default:
@@ -415,6 +420,19 @@ void parseZdo(Map descMap) {
     }
 }
 
+private static BigDecimal calculateEnergyInKWh(BigDecimal currentPower, Long durationMs) {
+    BigDecimal powerInKw = currentPower / 1000
+    BigDecimal timeInHours = durationMs / (1000 * 60 * 60)
+    BigDecimal energyInKwh = powerInKw * timeInHours
+    return energyInKwh
+}
+
+private static BigDecimal calculatePowerFactor(BigDecimal rmsVoltage, BigDecimal rmsCurrent, BigDecimal activePower) {
+    BigDecimal apparentPower = rmsVoltage * rmsCurrent
+    BigDecimal powerFactor = activePower / apparentPower
+    return powerFactor
+}
+
 private String clusterLookup(Object cluster) {
     int clusterInt = cluster in String ? hexStrToUnsignedInt(cluster) : cluster.toInteger()
     String label = zigbee.clusterLookup(clusterInt)?.clusterLabel
@@ -457,11 +475,16 @@ private void updateEnergyCalculation() {
     }
 }
 
-private BigDecimal calculateEnergyInKWh(BigDecimal currentPower, Long durationMs) {
-    BigDecimal powerInKw = currentPower / 1000
-    BigDecimal timeInHours = durationMs / (1000 * 60 * 60)
-    BigDecimal energyInKwh = powerInKw * timeInHours
-    return energyInKwh
+private void updatePowerFactor() {
+    BigDecimal rmsVoltage = device.currentValue('voltage') as BigDecimal
+    BigDecimal rmsCurrent = device.currentValue('amperage') as BigDecimal
+    BigDecimal activePower = device.currentValue('power') as BigDecimal
+    if (rmsVoltage && rmsCurrent && activePower) {
+        BigDecimal powerFactor = calculatePowerFactor(rmsVoltage, rmsCurrent, activePower)
+        updateAttribute('powerFactor', powerFactor.setScale(1, RoundingMode.HALF_UP), null, 'digital')
+    } else {
+        updateAttribute('powerFactor', 1, null, 'digital')
+    }
 }
 
 // Zigbee Attribute IDs
