@@ -1,13 +1,13 @@
 {
   "packageName": "Third Reality Zigbee Drivers",
   "author": "Jonathan Bradshaw",
-  "version": "1.00",
+  "version": "1.01",
   "minimumHEVersion": "2.3.2",
-  "communityLink": "",
+  "communityLink": "https://community.hubitat.com/t/new-third-reality-power-monitoring-plug/109786",
   "documentationLink": "https://raw.githubusercontent.com/bradsjm/hubitat-public/main/ThirdReality/README.md",
   "licenseFile": "https://raw.githubusercontent.com/bradsjm/hubitat-public/main/LICENSE",
-  "dateReleased": "2023-02-28",
-  "releaseNotes": "First public release",
+  "dateReleased": "2023-03-27",
+  "releaseNotes": "Added power factor calculation",
   "drivers": [
     {
       "id": "27afeb89-1143-4f9a-a591-87d75e45dc7e",
