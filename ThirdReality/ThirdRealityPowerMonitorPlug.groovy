@@ -482,8 +482,6 @@ private void updatePowerFactor() {
     if (rmsVoltage && rmsCurrent && activePower) {
         BigDecimal powerFactor = calculatePowerFactor(rmsVoltage, rmsCurrent, activePower)
         updateAttribute('powerFactor', powerFactor.setScale(1, RoundingMode.HALF_UP), null, 'digital')
-    } else {
-        updateAttribute('powerFactor', 0, null, 'digital')
     }
 }
 
