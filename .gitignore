@@ -1,3 +1,6 @@
+.idea/
 .hubitat/
 .vscode/
+out/
+*.iml
 .DS_Store
