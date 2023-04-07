@@ -25,9 +25,7 @@
  */
 
 import groovy.json.JsonOutput
-import groovy.transform.CompileStatic
 import groovy.transform.Field
-import hubitat.helper.ColorUtils
 import hubitat.zigbee.zcl.DataType
 
 metadata {
@@ -130,7 +128,7 @@ metadata {
     }
 }
 
-@Field static final String VERSION = '1.06'
+@Field static final String VERSION = '1.07'
 
 List<String> configure() {
     List<String> cmds = []
@@ -243,6 +241,7 @@ void logsOff() {
  */
 List<String> off() {
     final Integer mode = settings.offCommandMode as Integer
+    // if off command mode is set to 'previous level' then store the current level and turn off
     if (mode == 0xFF) {
         state.previousLevel = device.currentValue('level') as Integer
         return setLevel(0)
@@ -262,6 +261,7 @@ List<String> off() {
  */
 List<String> on() {
     final Integer mode = settings.offCommandMode as Integer
+    // if off command mode is set to 'previous level' then restore the previous level
     if (state.previousLevel && mode == 0xFF) {
         final Integer level = state.previousLevel as Integer
         state.remove('previousLevel')
@@ -290,6 +290,7 @@ List<String> ping() {
 
 /**
  * Preset Level Command
+ * This will not turn the device on if it is off.
  * @param value level percent (0-100)
  * @return List of zigbee commands
  */
@@ -441,7 +442,8 @@ List<String> setEffect(final BigDecimal number) {
 }
 
 /**
- * Set Enhanced Hue Command
+ * Set Enhanced Hue Command.
+ * This will not turn the device on if it is off.
  * @param value hue value (0-360)
  * @return List of zigbee commands
  */
@@ -461,6 +463,7 @@ List<String> setEnhancedHue(final BigDecimal value) {
 
 /**
  * Set Hue Command
+ * This will not turn the device on if it is off.
  * @param value hue value (0-100)
  * @return List of zigbee commands
  */
@@ -548,6 +551,7 @@ List<String> setPreviousEffect() {
 
 /**
  * Set Saturation Command
+ * This will not turn the device on if it is off.
  * @param value saturation value (0-100)
  * @return List of zigbee commands
  */
@@ -1000,13 +1004,13 @@ void parsePrivateClusterState(final Map descMap) {
         case 0x000B: // XY mode
             sendColorModeEvent('RGB')
             sendLevelEvent(level)
-            sendColorXyEvent(level, value[8..15])
+            sendColorXyEvent(value[8..15])
             sendEffectNameEvent()
             break
         case 0x00AB: // XY mode with effect
             sendColorModeEvent('RGB')
             sendLevelEvent(level)
-            sendColorXyEvent(level, value[8..15])
+            sendColorXyEvent(value[8..15])
             sendEffectNameEvent(value[16..17])
             break
         default:
@@ -1314,30 +1318,14 @@ private void sendColorNameEvent(final Integer hue, final Integer saturation) {
 
 /**
  * Send 'colorXy' attribute event
- * @param level brightness level (0-254)
  * @param rawValue raw color xy attribute value
  */
-private void sendColorXyEvent(final int level, final String rawValue) {
+private void sendColorXyEvent(final String rawValue) {
     final BigDecimal colorX = hexStrToUnsignedInt(zigbee.swapOctets(rawValue[0..3])) / 0xFFFF
     final BigDecimal colorY = hexStrToUnsignedInt(zigbee.swapOctets(rawValue[4..7])) / 0xFFFF
-    log.debug "colorX: ${colorX}, colorY: ${colorY}"
-    final List<Integer> rgb = xyBrightnessToRgb(colorX, colorY, level)
-    log.debug "rgb: ${rgb}"
-    final List<Integer> hsv = ColorUtils.rgbToHSV(rgb)
-    log.debug "hsv: ${hsv}"
-    //final int hue = Math.round(hsv[0] as BigDecimal).intValue()
-    //final int saturation = Math.round(hsv[1] as BigDecimal).intValue()
-    // String descriptionText = "hue was set to ${hue}"
-    // if (device.currentValue('hue') as Integer != hue && settings.txtEnable) {
-    //     log.info descriptionText
-    // }
-    // sendEvent(name: 'hue', value: hue, descriptionText: descriptionText)
-    //
-    // descriptionText = "saturation was set to ${saturation}"
-    // if (device.currentValue('saturation') as Integer != saturation && settings.txtEnable) {
-    //     log.info descriptionText
-    // }
-    // sendEvent(name: 'saturation', value: saturation, descriptionText: descriptionText)
+    if (settings.logEnable) {
+        log.debug "colorX: ${colorX}, colorY: ${colorY}"
+    }
 }
 
 /**
@@ -1454,56 +1442,6 @@ private List<String> setLevelPrivate(final Object value, final Integer rate = 0,
         ifPolling(DELAY_MS + (rate * 100)) { zigbee.levelRefresh(0) }
     return cmds
 }
-
-/**
- * This method takes in a set of X, Y, and brightness values and converts them to an RGB
- * color value. The X and Y values represent a point in the CIE 1931 color space, while the
- * brightness value determines the overall brightness of the resulting color.
- * https://developers.meethue.com/develop/application-design-guidance/color-conversion-formulas-rgb-to-xy-and-back/
- *
- * @param colorX a BigDecimal representing the X value in the CIE 1931 color space
- * @param colorY a BigDecimal representing the Y value in the CIE 1931 color space
- * @param brightness an integer representing the overall brightness of the resulting color (0-254)
- * @return an integer list containing the resulting RGB color values (0-255)
- */
-@CompileStatic
-private static List<Integer> xyBrightnessToRgb(final BigDecimal colorX, final BigDecimal colorY, final int brightness) {
-    if (colorX == null || colorY == null) {
-        return [0, 0, 0]
-    }
-    // Calculate XYZ values
-    final BigDecimal z = 1.0 - colorX - colorY
-    final BigDecimal valueY = brightness / 254f
-    final BigDecimal valueX = (valueY / colorY) * colorX
-    final BigDecimal valueZ = (valueY / colorY) * z
-    // Convert to RGB using Wide RGB D65 conversion
-    BigDecimal red = valueX * 1.656492f - valueY * 0.354851f - valueZ * 0.255038f
-    BigDecimal green = -valueX * 0.707196f + valueY * 1.655397f + valueZ * 0.036152f
-    BigDecimal blue = valueX * 0.051713f - valueY * 0.121364f + valueZ * 1.011530f
-    // Apply reverse gamma correction
-    red = red <= 0.0031308f ? 12.92f * red : (1.0f + 0.055f) * Math.pow(red as double, (1.0f / 2.4f)) - 0.055f
-    green = green <= 0.0031308f ? 12.92f * green : (1.0f + 0.055f) * Math.pow(green as double, (1.0f / 2.4f)) - 0.055f
-    blue = blue <= 0.0031308f ? 12.92f * blue : (1.0f + 0.055f) * Math.pow(blue as double, (1.0f / 2.4f)) - 0.055f
-    // Constrain RGB values
-    final BigDecimal max = red.max(green).max(blue)
-    if (max > 1.0) {
-        red /= max
-        green /= max
-        blue /= max
-    }
-    if (red < 0) {
-        red = 0
-    }
-    if (green < 0) {
-        green = 0
-    }
-    if (blue < 0) {
-        blue = 0
-    }
-    return [(int) (red * 255), (int) (green * 255), (int) (blue * 255)]
-}
-
-// Configuration
 
 // Command timeout before setting healthState to offline
 @Field static final int COMMAND_TIMEOUT = 10
