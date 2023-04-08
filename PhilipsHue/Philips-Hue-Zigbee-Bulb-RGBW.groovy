@@ -128,8 +128,13 @@ metadata {
     }
 }
 
-@Field static final String VERSION = '1.07'
+@Field static final String VERSION = '1.07 (2023-04-08)'
 
+/**
+ * Send configuration parameters to the bulb
+ * Invoked when device is first installed and when the user updates the configuration
+ * @return List of zigbee commands
+ */
 List<String> configure() {
     List<String> cmds = []
     log.info 'configure...'
@@ -171,7 +176,7 @@ List<String> configure() {
     }
 
     runIn(2, 'refresh')
-    return cmds as List<String>
+    return cmds
 }
 
 /**
@@ -836,18 +841,7 @@ void parseGlobalCommands(final Map descMap) {
             }
             break
         case 0x01: // read attribute response
-            if (settings.logEnable) {
-                log.trace "zigbee read attribute response ${clusterLookup(descMap.clusterInt)}: ${descMap.data}"
-            }
-            final List<String> data = descMap.data as List<String>
-            final String attribute = data[1] + data[0]
-            final int statusCode = hexStrToUnsignedInt(data[2])
-            final String status = ZigbeeStatusEnum[statusCode] ?: "0x${data}"
-            if (settings.logEnable) {
-                log.trace "zigbee read ${clusterLookup(descMap.clusterInt)} attribute 0x${attribute} response: ${status} ${data}"
-            } else if (statusCode > 0x00) {
-                log.warn "zigbee read ${clusterLookup(descMap.clusterInt)} attribute 0x${attribute} error: ${status}"
-            }
+            parseGlobalReadAttrResponse(descMap)
             break
         case 0x02: // write attribute (with response)
             if (settings.logEnable) {
@@ -855,14 +849,7 @@ void parseGlobalCommands(final Map descMap) {
             }
             break
         case 0x04: // write attribute response
-            final String data = descMap.data in List ? (descMap.data as List)[0] : descMap.data
-            final int statusCode = hexStrToUnsignedInt(data)
-            final String status = ZigbeeStatusEnum[statusCode] ?: "0x${intToHexStr(statusCode)}"
-            if (settings.logEnable) {
-                log.trace "zigbee response write ${clusterLookup(descMap.clusterInt)} attribute response: ${status}"
-            } else if (statusCode > 0x00) {
-                log.warn "zigbee response write ${clusterLookup(descMap.clusterInt)} attribute error: ${status}"
-            }
+            parseGlobalWriteAttrResponse(descMap)
             break
         case 0x07: // configure reporting response
             if (settings.enableReporting != false) {
@@ -873,21 +860,63 @@ void parseGlobalCommands(final Map descMap) {
             }
             break
         case 0x0B: // default command response
-            final List<String> data = descMap.data as List<String>
-            final String commandId = data[0]
-            final int statusCode = hexStrToUnsignedInt(data[1])
-            final String status = ZigbeeStatusEnum[statusCode] ?: "0x${data[1]}"
-            if (settings.logEnable) {
-                log.trace "zigbee response status ${clusterLookup(descMap.clusterInt)} command 0x${commandId}: ${status}"
-            } else if (statusCode > 0x00) {
-                log.warn "zigbee response error (${clusterLookup(descMap.clusterInt)}, command: 0x${commandId}) ${status}"
-            }
+            parseGlobalCommandResponse(descMap)
             break
         default:
             if (settings.logEnable) {
                 log.debug "zigbee received unknown global command: ${descMap}"
             }
             break
+    }
+}
+
+/**
+ * Zigbee Global Command Response Parsing
+ * @param descMap Zigbee message in parsed map format
+ */
+void parseGlobalCommandResponse(final Map descMap) {
+    final List<String> data = descMap.data as List<String>
+    final String commandId = data[0]
+    final int statusCode = hexStrToUnsignedInt(data[1])
+    final String status = ZigbeeStatusEnum[statusCode] ?: "0x${data[1]}"
+    if (settings.logEnable) {
+        log.trace "zigbee response status ${clusterLookup(descMap.clusterInt)} command 0x${commandId}: ${status}"
+    } else if (statusCode > 0x00) {
+        log.warn "zigbee response error (${clusterLookup(descMap.clusterInt)}, command: 0x${commandId}) ${status}"
+    }
+}
+
+/**
+ * Zigbee Global Read Attribute Response Parsing
+ * @param descMap Zigbee message in parsed map format
+ */
+void parseGlobalReadAttrResponse(final Map descMap) {
+    if (settings.logEnable) {
+        log.trace "zigbee read attribute response ${clusterLookup(descMap.clusterInt)}: ${descMap.data}"
+    }
+    final List<String> data = descMap.data as List<String>
+    final String attribute = data[1] + data[0]
+    final int statusCode = hexStrToUnsignedInt(data[2])
+    final String status = ZigbeeStatusEnum[statusCode] ?: "0x${data}"
+    if (settings.logEnable) {
+        log.trace "zigbee read ${clusterLookup(descMap.clusterInt)} attribute 0x${attribute} response: ${status} ${data}"
+    } else if (statusCode > 0x00) {
+        log.warn "zigbee read ${clusterLookup(descMap.clusterInt)} attribute 0x${attribute} error: ${status}"
+    }
+}
+
+/**
+ * Zigbee Global Write Attribute Response Parsing
+ * @param descMap Zigbee message in parsed map format
+ */
+void parseGlobalWriteAttrResponse(final Map descMap) {
+    final String data = descMap.data in List ? (descMap.data as List)[0] : descMap.data
+    final int statusCode = hexStrToUnsignedInt(data)
+    final String status = ZigbeeStatusEnum[statusCode] ?: "0x${intToHexStr(statusCode)}"
+    if (settings.logEnable) {
+        log.trace "zigbee response write ${clusterLookup(descMap.clusterInt)} attribute response: ${status}"
+    } else if (statusCode > 0x00) {
+        log.warn "zigbee response write ${clusterLookup(descMap.clusterInt)} attribute error: ${status}"
     }
 }
 
@@ -904,7 +933,7 @@ void parseGroupsCluster(final Map descMap) {
             final Set<String> groups = []
             for (int i = 0; i < groupCount; i++) {
                 int pos = (i * 2) + 2
-                String group = data[pos + 1] + data[pos]
+                String group = hexStrToUnsignedInt(data[pos + 1] + data[pos])
                 groups.add(group)
             }
             state.groups = groups
@@ -1096,24 +1125,6 @@ void parseZdo(final Map descMap) {
 /*-------------------------- END OF ZIGBEE PARSING --------------------*/
 
 /**
- * Read the color attributes from the Color Control cluster
- * @param delayMs delay in milliseconds between each attribute read
- * @return list of commands to be sent to the device
- */
-private List<String> colorRefresh(final int delayMs = 2000) {
-    return zigbee.readAttribute(zigbee.COLOR_CONTROL_CLUSTER, [0x00, 0x01, 0x07, 0x08], [:], delayMs)
-}
-
-/**
- * Lookup the cluster name from the cluster ID
- * @param cluster cluster ID
- * @return cluster name if known, otherwise "private cluster"
- */
-private String clusterLookup(final Object cluster) {
-    return zigbee.clusterLookup(cluster.toInteger()) ?: "private cluster 0x${intToHexStr(cluster.toInteger())}"
-}
-
-/**
  * Constrain a value to a range
  * @param value value to constrain
  * @param min minimum value (default 0)
@@ -1148,6 +1159,24 @@ private static Integer constrain(final Object value, final Integer min = 0, fina
  */
 private static Integer ctToMired(final int kelvin) {
     return (1000000 / kelvin).toInteger()
+}
+
+/**
+ * Read the color attributes from the Color Control cluster
+ * @param delayMs delay in milliseconds between each attribute read
+ * @return list of commands to be sent to the device
+ */
+private List<String> colorRefresh(final int delayMs = 2000) {
+    return zigbee.readAttribute(zigbee.COLOR_CONTROL_CLUSTER, [0x00, 0x01, 0x07, 0x08], [:], delayMs)
+}
+
+/**
+ * Lookup the cluster name from the cluster ID
+ * @param cluster cluster ID
+ * @return cluster name if known, otherwise "private cluster"
+ */
+private String clusterLookup(final Object cluster) {
+    return zigbee.clusterLookup(cluster.toInteger()) ?: "private cluster 0x${intToHexStr(cluster.toInteger())}"
 }
 
 /**
