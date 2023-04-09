@@ -5,9 +5,9 @@
   "communityLink": "https://community.hubitat.com/t/switch-dashboard-and-switch-notifications/104986",
   "documentationLink": "https://github.com/bradsjm/hubitat-public/blob/main/SwitchLedDashboard/README.md",
   "licenseFile": "https://raw.githubusercontent.com/bradsjm/hubitat-public/main/LICENSE",
-  "version": "1.04",
+  "version": "1.05",
   "dateReleased": "2023-02-26",
-  "releaseNotes": "Duplicating dashboard will includes devices, add top/middle/bottom led selection options",
+  "releaseNotes": "Make button selection more resilient",
   "apps": [
     {
       "id": "a5578fb7-3eb6-46f2-9eec-cb25fa4a6fdb",

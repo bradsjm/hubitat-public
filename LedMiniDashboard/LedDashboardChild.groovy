@@ -48,9 +48,10 @@
  *  1.02 - Replaced sunrise/sunset conditions with new single option
  *  1.03 - Add cool down period support for condition
  *  1.04 - Duplicating dashboard will includes devices, add top/middle/bottom led selection options
+ *  1.05 - Modified button selection to be more resilient
 */
 
-@Field static final String Version = '1.04'
+@Field static final String Version = '1.05'
 
 definition(
     name: 'LED Mini-Dashboard Topic',
@@ -1101,11 +1102,14 @@ private static List<String> getAttributeOptions(List<DeviceWrapper> devices, Str
  */
 @CompileStatic
 private static Map<String, String> getButtonNumberChoices(List<DeviceWrapper> buttonDevices) {
-    int maxButtons = buttonDevices?.collect { DeviceWrapper d ->
-        d.currentValue('numberOfButtons') as Integer ?: 0
-    }?.max()
-    if (maxButtons > 0) {
-        return (1..maxButtons).collectEntries { int n -> [n as String, "Button ${n}"] }
+    if (buttonDevices) {
+        List<Integer> buttonCounts = buttonDevices.collect { DeviceWrapper d ->
+            d.currentValue('numberOfButtons') as Integer ?: 0
+        }
+        Integer maxButtons = buttonCounts.max()
+        if (maxButtons >= 1) {
+            return (1..maxButtons).collectEntries { int n -> [n as String, "Button ${n}"] }
+        }
     }
     return Collections.emptyMap()
 }
@@ -1702,12 +1706,13 @@ private Date getNextTime(Date now, String datetime) {
  */
 @CompileStatic
 private Object runClosure(Closure c, Map ctx) {
+    String code = 'unknown'
     try {
+        code = c.metaClass.classNode.getDeclaredMethods('doCall')?.first()?.code?.text
         Closure closure = (Closure) c.clone()
         closure.delegate = this
         return closure.call(ctx)
     } catch (e) {
-        String code = c.metaClass.classNode.getDeclaredMethods('doCall')[0].code.text
         logWarn "runClosure error ${e}: ${code} with ctx ${ctx}"
     }
     return null
