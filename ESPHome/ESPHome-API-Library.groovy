@@ -668,6 +668,18 @@ private static Map espHomeListEntitiesSensorResponse(Map<Integer, List> tags) {
 }
 
 @CompileStatic
+private static Map espHomeListEntitiesSelectResponse(Map<Integer, List> tags) {
+    return parseEntity(tags) + [
+            type: 'entity',
+            platform: 'select',
+            icon: getStringTag(tags, 5),
+            options: getStringTagList(tags, 6),
+            disabledByDefault: getBooleanTag(tags, 7),
+            entityCategory: toEntityCategory(getIntTag(tags, 8))
+    ]
+}
+
+@CompileStatic
 private static Map espHomeListEntitiesSirenResponse(Map<Integer, List> tags) {
     return parseEntity(tags) + [
             type: 'entity',
@@ -712,6 +724,17 @@ private static Map espHomeLockState(Map<Integer, List> tags) {
             platform: 'lock',
             key: getLongTag(tags, 1),
             state: getIntTag(tags, 2),
+    ]
+}
+
+@CompileStatic
+private static Map espHomeSelectState(Map<Integer, List> tags) {
+    return [
+            type: 'state',
+            platform: 'select',
+            key: getLongTag(tags, 1),
+            state: getStringTag(tags, 2),
+            hasState: getBooleanTag(tags, 3, true)
     ]
 }
 
@@ -1007,19 +1030,22 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
             espHomeGetTimeRequest()
             break
         case MSG_LIST_NUMBER_RESPONSE:
-            espHomeListEntitiesNumberResponse(tags)
+            parse espHomeListEntitiesNumberResponse(tags)
             break
         case MSG_LIST_CAMERA_RESPONSE:
-            espHomeListEntitiesCameraResponse(tags)
+            parse espHomeListEntitiesCameraResponse(tags)
             break
         case MSG_CAMERA_IMAGE_RESPONSE:
-            espHomeCameraImageResponse(tags)
+            parse espHomeCameraImageResponse(tags)
             break
         case MSG_NUMBER_STATE_RESPONSE:
             parse espHomeNumberState(tags)
             break
+        case MSG_LIST_SELECT_RESPONSE:
+            parse espHomeListEntitiesSelectResponse(tags)
+            break
         case MSG_LIST_SIREN_RESPONSE:
-            espHomeListEntitiesSirenResponse(tags)
+            parse espHomeListEntitiesSirenResponse(tags)
             break
         case MSG_SIREN_STATE_RESPONSE:
             parse espHomeSirenState(tags)
@@ -1041,6 +1067,9 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
             break
         case MSG_BLUETOOTH_LE_RESPONSE:
             parse espHomeBluetoothLeResponse(tags)
+            break
+        case MSG_SELECT_STATE_RESPONSE:
+            parse espHomeSelectState(tags)
             break
         default:
             if (!handled) {
@@ -1125,8 +1154,9 @@ private void espHomeDeviceInfoResponse(Map<Integer, List> tags) {
 
     parse(deviceInfo)
 
-    if (requireRefresh) {
+    if (requireRefresh || state.requireRefresh) {
         espHomeListEntitiesRequest()
+        state.remove('requireRefresh')
     } else {
         espHomeSubscribe()
     }
