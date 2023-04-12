@@ -1240,7 +1240,7 @@ private Integer getLevelTransitionRate(final Integer desiredLevel, final Integer
     // Check if 'transitionTime' has a value
     if (transitionTime > 0) {
         // Calculate the rate by converting 'transitionTime' to BigDecimal, multiplying by 10, and converting to Integer
-        rate = (transitionTime.toBigDecimal() * 10).toInteger()
+        rate = transitionTime * 10
     } else {
         // Check if the 'levelUpTransition' setting has a value and the current level is less than the desired level
         if ((settings.levelUpTransition as Integer) > 0 && currentLevel < desiredLevel) {
