@@ -87,6 +87,13 @@ metadata {
         input name: 'powerRestore', type: 'enum', title: '<b>Power restore mode</b>', options: PowerRestoreOpts.options, defaultValue: PowerRestoreOpts.defaultValue, description: \
              '<i>Changes what happens when power to the bulb is restored.</i>'
 
+        input name: 'groupbinding1', type: 'number', title: '<b>Group Bind # 1</b>', range: '-1..65527', description: \
+             '<i>Enter the Zigbee Group ID or leave blank to UNBind.</i>'
+        input name: 'groupbinding2', type: 'number', title: '<b>Group Bind # 2</b>', range: '1..65527', description: \
+             '<i>Enter the Zigbee Group ID or leave blank to UNBind.</i>'
+        input name: 'groupbinding3', type: 'number', title: '<b>Group Bind # 3</b>', range: '1..65527', description: \
+             '<i>Enter the Zigbee Group ID or leave blank to UNBind.</i>'
+
         input name: 'enableReporting', type: 'bool', title: '<b>Enable state reporting</b>', defaultValue: true, description: \
              '<i>Enables the use of reporting to push updates instead of polling bulb. Only available from Generation 3 bulbs.</i>'
 
@@ -121,6 +128,9 @@ List<String> configure() {
         cmds += zigbee.writeAttribute(zigbee.ON_OFF_CLUSTER, POWER_RESTORE_ID, DataType.ENUM8, settings.powerRestore as Integer, [:], DELAY_MS)
         cmds += zigbee.writeAttribute(zigbee.COLOR_CONTROL_CLUSTER, 0x4010, DataType.UINT16, 0xFFFF, [:], DELAY_MS)
     }
+
+    // Add to specified groups (if group is null then remove from previous group if any)
+    cmds += setGroupMembership()
 
     // Attempt to enable cluster reporting, if it fails we fall back to polling after commands
     if (settings.enableReporting != false) {
@@ -350,6 +360,36 @@ List<String> setEffect(final BigDecimal number) {
     scheduleCommandTimeoutCheck()
     return zigbee.command(PHILIPS_PRIVATE_CLUSTER, 0x00, [mfgCode: PHILIPS_VENDOR], 0, "2100 01 ${effectHex}") +
         ifPolling { hueStateRefresh(0) }
+}
+
+/**
+ * Add or remove bulb from specified group configuration
+ * @return List of zigbee commands
+ */
+List<String> setGroupMembership() {
+    List<String> cmds = []
+    for (final int i = 1; i <= 3; i++) {
+        final String config = "groupbinding${i}"
+        // Remove from previous group if necessary
+        if (state[config] && state[config] as Integer != settings[config] as Integer) {
+            final Integer group = state[config] as Integer
+            log.info "configure: removing from group ${group}"
+            final String groupHex = DataType.pack(group, DataType.UINT16, true)
+            cmds += zigbee.command(zigbee.GROUPS_CLUSTER, 0x03, [:], DELAY_MS, groupHex)
+            state.remove(config)
+        }
+        // Add to new group if specified
+        if (settings[config]) {
+            final Integer group = settings[config] as Integer
+            if (group >= 1 && group <= 0xFFF7) {
+                log.info "configure: adding to group ${group}"
+                final String groupHex = DataType.pack(group, DataType.UINT16, true)
+                cmds += zigbee.command(zigbee.GROUPS_CLUSTER, 0x00, [:], DELAY_MS, "${groupHex} 00")
+                state[config] = group
+            }
+        }
+    }
+    return cmds
 }
 
 /**

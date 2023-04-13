@@ -116,11 +116,11 @@ metadata {
              '<i>Changes what happens when power to the bulb is restored.</i>'
 
         input name: 'groupbinding1', type: 'number', title: '<b>Group Bind # 1</b>', range: '-1..65527', description: \
-             '<i>Specify first Zigbee group number to bind light to.</i>'
+             '<i>Enter the Zigbee Group ID or leave blank to UNBind.</i>'
         input name: 'groupbinding2', type: 'number', title: '<b>Group Bind # 2</b>', range: '1..65527', description: \
-             '<i>Specify second Zigbee group number to bind light to.</i>'
+             '<i>Enter the Zigbee Group ID or leave blank to UNBind.</i>'
         input name: 'groupbinding3', type: 'number', title: '<b>Group Bind # 3</b>', range: '1..65527', description: \
-             '<i>Specify third Zigbee group number to bind light to.</i>'
+             '<i>Enter the Zigbee Group ID or leave blank to UNBind.</i>'
 
         input name: 'enableReporting', type: 'bool', title: '<b>Enable state reporting</b>', defaultValue: true, description: \
              '<i>Enables push state updates instead of polling. (Generation 3 or newer with recent firmware)</i>'
