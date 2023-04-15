@@ -22,7 +22,7 @@
  */
 metadata {
     definition(
-        name: 'Upsy Desky',
+        name: 'ESPHome Upsy Desky',
         namespace: 'esphome',
         author: 'Jonathan Bradshaw',
         singleThreaded: true,
