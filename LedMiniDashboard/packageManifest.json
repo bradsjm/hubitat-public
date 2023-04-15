@@ -6,7 +6,7 @@
   "documentationLink": "https://github.com/bradsjm/hubitat-public/blob/main/SwitchLedDashboard/README.md",
   "licenseFile": "https://raw.githubusercontent.com/bradsjm/hubitat-public/main/LICENSE",
   "version": "1.05",
-  "dateReleased": "2023-02-26",
+  "dateReleased": "2023-04-14",
   "releaseNotes": "Make button selection more resilient",
   "apps": [
     {

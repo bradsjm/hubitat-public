@@ -97,7 +97,7 @@ metadata {
     }
 }
 
-@Field static final String VERSION = '1.07 (2023-04-08)'
+@Field static final String VERSION = '1.08 (2023-04-14)'
 
 /**
  * Send configuration parameters to the bulb
