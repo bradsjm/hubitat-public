@@ -397,6 +397,17 @@ List<String> refresh() {
 }
 
 /**
+ * Send color name event based on current color mode
+ */
+void sendColorNameEvent() {
+    if (device.currentValue('colorMode') == 'CT') {
+        sendColorTempNameEvent(device.currentValue('colorTemperature') as Integer)
+    } else {
+        sendColorHueSatNameEvent(device.currentValue('hue') as Integer, device.currentValue('saturation') as Integer)
+    }
+}
+
+/**
  * Set Color Command
  * @param value color map (hue, saturation, level, rate)
  * @return List of zigbee commands
@@ -417,7 +428,7 @@ List<String> setColor(final Map value) {
         // This will turn on the device if it is off and set level
         cmds += setLevelPrivate(value.level, getLevelTransitionRate(value.level as Integer))
     }
-    cmds += zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, 0x06, [:], DELAY_MS, "${scaledHueValue} ${scaledSatValue} ${isOn ? rateHex : '0000'} ${PRE_STAGING_OPTION}")
+    cmds += zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, 0x06, [:], DELAY_MS, "${scaledHueValue} ${scaledSatValue} ${rateHex} ${PRE_STAGING_OPTION}")
     scheduleCommandTimeoutCheck()
     return cmds + ifPolling(DELAY_MS + (rate * 100)) { colorRefresh(0) }
 }
@@ -625,7 +636,7 @@ List<String> setSaturation(final BigDecimal value) {
     final String rateHex = DataType.pack(rate, DataType.UINT16, true)
     final String scaledSatHex = DataType.pack(Math.round(saturation * 2.54), DataType.UINT8)
     scheduleCommandTimeoutCheck()
-    return zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, 0x03, [:], 0, "${scaledSatHex} 00 ${rateHex} ${PRE_STAGING_OPTION}") +
+    return zigbee.command(zigbee.COLOR_CONTROL_CLUSTER, 0x03, [:], 0, "${scaledSatHex} ${rateHex} ${PRE_STAGING_OPTION}") +
         ifPolling(DELAY_MS + (rate * 100)) { colorRefresh(0) }
 }
 
@@ -1339,6 +1350,7 @@ private void sendHueEvent(final String rawValue) {
         log.info descriptionText
     }
     sendEvent(name: 'hue', value: hue, descriptionText: descriptionText)
+    runIn(1, 'sendColorNameEvent')
 }
 
 /**
@@ -1353,6 +1365,7 @@ private void sendSaturationEvent(final String rawValue) {
         log.info descriptionText
     }
     sendEvent(name: 'saturation', value: saturation, descriptionText: descriptionText)
+    runIn(1, 'sendColorNameEvent')
 }
 
 /**
@@ -1365,11 +1378,7 @@ private void sendColorModeEvent(final String mode) {
         log.info descriptionText
     }
     sendEvent(name: 'colorMode', value: mode, descriptionText: descriptionText)
-    if (mode == 'CT') {
-        sendColorTempNameEvent(device.currentValue('colorTemperature') as Integer)
-    } else {
-        sendColorNameEvent(device.currentValue('hue') as Integer, device.currentValue('saturation') as Integer)
-    }
+    runIn(1, 'sendColorNameEvent')
 }
 
 /**
@@ -1377,7 +1386,7 @@ private void sendColorModeEvent(final String mode) {
  * @param hue hue value
  * @param saturation saturation value
  */
-private void sendColorNameEvent(final Integer hue, final Integer saturation) {
+private void sendColorHueSatNameEvent(final Integer hue, final Integer saturation) {
     final String colorName = convertHueToGenericColorName(hue, saturation)
     if (!colorName) {
         return
@@ -1418,6 +1427,7 @@ private void sendColorTempEvent(final String rawValue) {
         log.info descriptionText
     }
     sendEvent(name: 'colorTemperature', value: value, descriptionText: descriptionText, unit: '°K')
+    runIn(1, 'sendColorNameEvent')
 }
 
 /**
