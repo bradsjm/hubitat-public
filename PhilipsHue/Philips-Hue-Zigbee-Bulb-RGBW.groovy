@@ -28,6 +28,8 @@ import groovy.json.JsonOutput
 import groovy.transform.Field
 import hubitat.zigbee.zcl.DataType
 
+@Field static final String VERSION = '1.09 (2023-04-16)'
+
 metadata {
     definition(name: 'Philips Hue White and Color Ambiance',
         importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/PhilipsHue/Philips-Hue-Zigbee-Bulb-RGBW.groovy',
@@ -51,6 +53,7 @@ metadata {
         attribute 'effectName', 'string'
         attribute 'healthStatus', 'enum', ['unknown', 'offline', 'online']
 
+        command 'bindInitiator'
         command 'identify', [[name: 'Effect type*', type: 'ENUM', description: 'Effect Type', constraints: IdentifyEffectNames.values()*.toLowerCase()]]
 
         command 'setColorXy', [
@@ -103,9 +106,13 @@ metadata {
              '<i>Changes the speed the light dims down. Increasing the value slows down the transition.</i>'
         input name: 'colorTransitionTime', type: 'enum', title: '<b>Color transition length</b>', options: TransitionOpts.options, defaultValue: TransitionOpts.defaultValue, required: true, description: \
              '<i>Changes the speed the light changes color/temperature. Increasing the value slows down the transition.</i>'
-
         input name: 'levelChangeRate', type: 'enum', title: '<b>Level change rate</b>', options: LevelRateOpts.options, defaultValue: LevelRateOpts.defaultValue, required: true, description: \
              '<i>Changes the speed that the light changes when using <b>start level change</b> until <b>stop level change</b> is sent.</i>'
+
+        input name: 'minLevel', type: 'number', title: '<b>Minimum Level</b>', defaultValue: 0, required: true, displayDuringSetup: false, range: '1..99', description: \
+             '<i>The minimum level (percent) the light can be dimmed to.</i>'
+        input name: 'maxLevel', type: 'number', title: '<b>Maximum Level</b>', defaultValue: 100, required: true, displayDuringSetup: false, range: '2..100', description: \
+             '<i>The maximum level (percent) the light can be dimmed to.</i>'
 
         input name: 'offCommandMode', type: 'enum', title: '<b>Off command mode</b>', options: OffModeOpts.options, defaultValue: OffModeOpts.defaultValue, required: true, description: \
              '<i>Changes off command. <b>Fade out</b> (default), <b>Instant</b> or <b>Dim to zero</b> (On will dim back to previous level).</i>'
@@ -134,7 +141,18 @@ metadata {
     }
 }
 
-@Field static final String VERSION = '1.08 (2023-04-14)'
+/**
+ * Invokes the Bind Initiator command on the bulb for 30 seconds.
+ * The bulb will blink during this time.
+ * @return List of zigbee commands
+ */
+List<String> bindInitiator() {
+    if (settings.txtEnable) {
+        log.info 'bindInitiator (30 seconds)'
+    }
+    final String secondsHexStr = DataType.pack(30, DataType.UINT16, true)
+    return zigbee.command(zigbee.IDENTIFY_CLUSTER, 0x00, [:], 0, secondsHexStr)
+}
 
 /**
  * Send configuration parameters to the bulb
@@ -1483,7 +1501,9 @@ private void sendSwitchEvent(final Boolean isOn) {
  */
 private List<String> setLevelPrivate(final Object value, final Integer rate = 0, final Integer delay = 0, final Boolean levelPreset = false) {
     List<String> cmds = []
-    final Integer level = constrain(value)
+    final Integer minLevel = settings.minLevel ?: 0
+    final Integer maxLevel = settings.maxLevel ?: 100
+    final Integer level = constrain(value, minLevel, maxLevel)
     final String hexLevel = DataType.pack(Math.round(level * 2.54).intValue(), DataType.UINT8)
     final String hexRate = DataType.pack(rate, DataType.UINT16, true)
     final int levelCommand = levelPreset ? 0x00 : 0x04
