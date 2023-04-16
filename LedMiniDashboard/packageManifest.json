@@ -1,5 +1,5 @@
 {
-  "packageName": "LED Mini-Dashboards",
+  "packageName": "LED Mini-Dashboards for Inovelli Switches",
   "author": "Jonathan Bradshaw",
   "minimumHEVersion": "2.1.9",
   "communityLink": "https://community.hubitat.com/t/switch-dashboard-and-switch-notifications/104986",
