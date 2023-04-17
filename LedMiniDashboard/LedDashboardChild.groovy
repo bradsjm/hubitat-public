@@ -48,10 +48,11 @@
  *  1.02 - Replaced sunrise/sunset conditions with new single option
  *  1.03 - Add cool down period support for condition
  *  1.04 - Duplicating dashboard will includes devices, add top/middle/bottom led selection options
- *  1.05 - Modified button selection to be more resilient
+ *  1.05 - Modified button selection to be more resilient (check nulls)
+ *  1.06 - Modified device attribute test to be more resilient (check nulls)
 */
 
-@Field static final String Version = '1.05'
+@Field static final String Version = '1.06'
 
 definition(
     name: 'LED Mini-Dashboard Topic',
@@ -88,8 +89,8 @@ void installed() {
 
 // Invoked by the hub when a global variable is renamed
 @CompileStatic
-void renameVariable(String oldName, String newName) {
-    getAppSettings().findAll { Map.Entry<String, Object> s -> s.value == oldName }.each { Map.Entry<String, Object> s ->
+void renameVariable(final String oldName, final String newName) {
+    getAppSettings().findAll { final Map.Entry<String, Object> s -> s.value == oldName }.each { final Map.Entry<String, Object> s ->
         logInfo "updating variable name ${oldName} to ${newName} for ${s.key}"
         s.value = newName
     }
@@ -150,7 +151,7 @@ void updated() {
 
     if (settings.periodicRefresh) {
         logInfo "enabling periodic forced refresh every ${settings.periodicRefreshInterval} minutes"
-        int seconds = 60 * (settings.periodicRefreshInterval as Integer ?: 60)
+        final int seconds = 60 * (settings.periodicRefreshInterval as Integer ?: 60)
         runIn(seconds, 'forceRefresh')
     }
 }
@@ -160,11 +161,11 @@ void updated() {
  */
 
 Map<String, Map> readSettings() {
-    return (Map<String, Map>) settings.collectEntries { k, v -> [k, [type: getSettingType(k), value: v]] }
+    return (Map<String, Map>) settings.collectEntries { final k, final v -> [k, [type: getSettingType(k), value: v]] }
 }
 
-void writeSettings(Map<String, Map> newSettings) { //TODO: Change method name
-    newSettings.each { k, v -> app.updateSetting(k, [type: v.type, value: v.value]) }
+void writeSettings(final Map<String, Map> newSettings) { //TODO: Change method name
+    newSettings.each { final k, final v -> app.updateSetting(k, [type: v.type, value: v.value]) }
     state.paused = true
     updatePauseLabel()
 }
@@ -179,11 +180,11 @@ Map mainPage() {
     updatePauseLabel()
 
     return dynamicPage(name: 'mainPage', title: "<h2 style=\'color: #1A77C9; font-weight: bold\'>${app.label}</h2>") {
-        Map switchType = settings['deviceType'] ? getTargetSwitchType() : null
+        final Map switchType = settings['deviceType'] ? getTargetSwitchType() : null
         section {
             input name: 'deviceType', title: '', type: 'enum',
                 description: '<b>Select the target device type</b> <i>(one type per mini-dashboard)</i>',
-                options: SupportedSwitchTypes.collectEntries { String key, Map value -> [key, value.title] },
+                options: SupportedSwitchTypes.collectEntries { final String key, final Map value -> [key, value.title] },
                 multiple: false, required: true, submitOnChange: true, width: 10
 
             if (state.paused) {
@@ -201,9 +202,9 @@ Map mainPage() {
         }
 
         if (switchType && settings['switches']) {
-            Set<String> prefixes = getSortedScenarioPrefixes()
+            final Set<String> prefixes = getSortedScenarioPrefixes()
             section("<h3 style=\'color: #1A77C9; font-weight: bold\'>${app.label} Notification Scenarios</h3>") {
-                for (String scenarioPrefix in prefixes) {
+                for (final String scenarioPrefix in prefixes) {
                     String name = settings["${scenarioPrefix}_name"]
                     boolean isActive = evaluateActivationRules(scenarioPrefix)
                     String status = isActive ? ' &#128994;' : ''
@@ -270,16 +271,16 @@ Map mainPage() {
     }
 }
 
-Map editPage(Map params = [:]) {
+Map editPage(final Map params = [:]) {
     if (!params?.prefix) {
         return mainPage()
     }
-    String scenarioPrefix = params.prefix
-    String name = settings["${scenarioPrefix}_name"] ?: 'New Notification Scenario'
+    final String scenarioPrefix = params.prefix
+    final String name = settings["${scenarioPrefix}_name"] ?: 'New Notification Scenario'
 
     return dynamicPage(name: 'editPage', title: "<h3 style=\'color: #1A77C9; font-weight: bold\'>${name}</h3><br>") {
         renderIndicationSection(scenarioPrefix)
-        String effectName = getEffectName(scenarioPrefix)
+        final String effectName = getEffectName(scenarioPrefix)
         if (effectName) {
             renderScenariosSection(scenarioPrefix, "<span style=\'color: green; font-weight: bold\'>Select rules to activate notification LED ${effectName} effect:</span><span class=\"required-indicator\">*</span>")
 
@@ -312,10 +313,10 @@ Map editPage(Map params = [:]) {
     }
 }
 
-Map renderIndicationSection(String scenarioPrefix, String title = null) {
-    Map switchType = getTargetSwitchType()
-    String ledNumber = settings["${scenarioPrefix}_lednumber"]
-    String ledName = switchType.leds[settings[ledNumber]] ?: 'LED'
+Map renderIndicationSection(final String scenarioPrefix, final String title = null) {
+    final Map switchType = getTargetSwitchType()
+    final String ledNumber = settings["${scenarioPrefix}_lednumber"]
+    final String ledName = switchType.leds[settings[ledNumber]] ?: 'LED'
 
     return section(title) {
         // LED Number
@@ -328,7 +329,7 @@ Map renderIndicationSection(String scenarioPrefix, String title = null) {
 
         // Effect
         if (ledNumber) {
-            Map<String, String> fxOptions = ledNumber == 'All' ? switchType.effectsAll : switchType.effects as Map<String, String>
+            final Map<String, String> fxOptions = ledNumber == 'All' ? switchType.effectsAll : switchType.effects as Map<String, String>
             input name: "${scenarioPrefix}_effect", title: "<span style=\'color: blue;\'>${ledName} Effect</span>", type: 'enum',
                 options: fxOptions, width: 2, required: true, submitOnChange: true
             if (settings["${scenarioPrefix}_effect"] == 'var') {
@@ -339,12 +340,12 @@ Map renderIndicationSection(String scenarioPrefix, String title = null) {
             }
 
             // Color
-            String effect = settings["${scenarioPrefix}_effect"]
+            final String effect = settings["${scenarioPrefix}_effect"]
             if (effect != '0' && effect != '255') {
-                String color = settings["${scenarioPrefix}_color"]
+                final String color = settings["${scenarioPrefix}_color"]
                 input name: "${scenarioPrefix}_color", title: "<span style=\'color: blue;\'>${ledName} Color</span>", type: 'enum', options: ColorMap, width: 3, required: true, submitOnChange: true
                 if (color == 'val') {
-                    String url = '''<a href="https://community-assets.home-assistant.io/original/3X/6/c/6c0d1ea7c96b382087b6a34dee6578ac4324edeb.png" target="_blank">'''
+                    final String url = '''<a href="https://community-assets.home-assistant.io/original/3X/6/c/6c0d1ea7c96b382087b6a34dee6578ac4324edeb.png" target="_blank">'''
                     input name: "${scenarioPrefix}_color_val", title: url + "<span style=\'color: blue; text-decoration: underline;\'>Hue Value</span></a>", type: 'number', range: '0..360', width: 2, required: true, submitOnChange: true
                 } else {
                     app.removeSetting("${scenarioPrefix}_color_val")
@@ -366,7 +367,7 @@ Map renderIndicationSection(String scenarioPrefix, String title = null) {
                     options: TimePeriodsMap, width: 2, defaultValue: 'Infinite', required: true, submitOnChange: true
                 if (settings["${scenarioPrefix}_unit"] in ['0', '60', '120']) {
                     // Time Duration
-                    String timePeriod = TimePeriodsMap[settings["${scenarioPrefix}_unit"]]
+                    final String timePeriod = TimePeriodsMap[settings["${scenarioPrefix}_unit"]]
                     input name: "${scenarioPrefix}_duration", title: "<span style=\'color: blue;\'>${timePeriod}&nbsp;</span>", type: 'enum', width: 2, defaultValue: 1, required: true,
                         options: ['1', '2', '3', '4', '5', '10', '15', '20', '25', '30', '40', '50', '60']
                 } else {
@@ -403,23 +404,23 @@ Map renderIndicationSection(String scenarioPrefix, String title = null) {
     }
 }
 
-Map renderScenariosSection(String scenarioPrefix, String sectionTitle = null) {
+Map renderScenariosSection(final String scenarioPrefix, final String sectionTitle = null) {
     return section(sectionTitle) {
-        Map<String, String> ruleTitles = ActivationRules.collectEntries { String k, Map v -> [k, v.title] }
-        List<String> activeRules = settings["${scenarioPrefix}_conditions"] ?: []
+        final Map<String, String> ruleTitles = ActivationRules.collectEntries { final String k, final Map v -> [k, v.title] }
+        final List<String> activeRules = settings["${scenarioPrefix}_conditions"] ?: []
         input name: "${scenarioPrefix}_conditions", title: '', type: 'enum', options: ruleTitles, multiple: true, required: true, width: 9, submitOnChange: true
 
-        Boolean allScenariosMode = settings["${scenarioPrefix}_conditions_all"] ?: false
+        final Boolean allScenariosMode = settings["${scenarioPrefix}_conditions_all"] ?: false
         if (settings["${scenarioPrefix}_conditions"]?.size() > 1) {
-            String title = "${allScenariosMode ? '<b>All</b> rules' : '<b>Any</b> rule'}"
+            final String title = "${allScenariosMode ? '<b>All</b> rules' : '<b>Any</b> rule'}"
             input name: "${scenarioPrefix}_conditions_all", title: title, type: 'bool', width: 3, submitOnChange: true
         } else {
             paragraph ''
         }
 
         boolean isFirst = true
-        Map<String, Map> activeScenarioRules = ActivationRules.findAll { String k, Map v -> k in activeRules }
-        for (Map.Entry<String, Map> rule in activeScenarioRules) {
+        final Map<String, Map> activeScenarioRules = ActivationRules.findAll { final String k, final Map v -> k in activeRules }
+        for (final Map.Entry<String, Map> rule in activeScenarioRules) {
             String id = "${scenarioPrefix}_${rule.key}"
             String status = evaluateRule(id, rule.value) ? ' &#128994;' : ''
             if (!isFirst) {
@@ -503,7 +504,7 @@ Map renderScenariosSection(String scenarioPrefix, String sectionTitle = null) {
     }
 }
 
-void appButtonHandler(String buttonName) {
+void appButtonHandler(final String buttonName) {
     logDebug "button ${buttonName} pushed"
     switch (buttonName) {
         case 'duplicate':
@@ -521,17 +522,17 @@ void appButtonHandler(String buttonName) {
             updated()
             break
         case ~/^remove_(.+)/:
-            String prefix = Matcher.lastMatcher[0][1]
+            final String prefix = Matcher.lastMatcher[0][1]
             removeSettings(prefix)
             break
         case 'reset':
             runInMillis(200, 'notificationDispatcher')
             break
         case ~/^test_(.+)/:
-            String prefix = Matcher.lastMatcher[0][1]
-            Map<String, String> config = getScenarioConfig(prefix)
+            final String prefix = Matcher.lastMatcher[0][1]
+            final Map<String, String> config = getScenarioConfig(prefix)
             replaceVariables(config)
-            ((String)config.lednumber).tokenize(',').each { String lednumber ->
+            ((String)config.lednumber).tokenize(',').each { final String lednumber ->
                 updateSwitchLedState([
                     color    : config.color,
                     effect   : config.effect,
@@ -553,16 +554,16 @@ void appButtonHandler(String buttonName) {
 /**
  *  Returns available priorities based on lednumber for display in dropdown.
  */
-Map<String, String> getPrioritiesList(String scenarioPrefix) {
-    String ledNumber = settings["${scenarioPrefix}_lednumber"]
+Map<String, String> getPrioritiesList(final String scenarioPrefix) {
+    final String ledNumber = settings["${scenarioPrefix}_lednumber"]
     if (ledNumber == 'var') {
-        Map switchType = getTargetSwitchType()
+        final Map switchType = getTargetSwitchType()
         lednumber = lookupVariable(settings["${scenarioPrefix}_lednumber_var"], switchType.leds) ?: 'All'
     }
-    Set<Integer> usedPriorities = (getScenarioPrefixes() - scenarioPrefix)
-        .findAll { String p -> settings["${p}_lednumber"] as String == ledNumber }
-        .collect { String p -> settings["${p}_priority"] as Integer }
-    return Priorities.collectEntries { Integer p ->
+    final Set<Integer> usedPriorities = (getScenarioPrefixes() - scenarioPrefix)
+        .findAll { final String p -> settings["${p}_lednumber"] as String == ledNumber }
+        .collect { final String p -> settings["${p}_priority"] as Integer }
+    return Priorities.collectEntries { final Integer p ->
         String text = p as String
         if (p in usedPriorities) {
             text += ' (In Use)'
@@ -578,9 +579,9 @@ Map<String, String> getPrioritiesList(String scenarioPrefix) {
 /**
  *  Utility method for displaying CSS colored text.
  */
-String getColorSpan(Integer hue, String text) {
+String getColorSpan(final Integer hue, final String text) {
     if (hue != null && text) {
-        String css = (hue == 360) ? 'white' : "hsl(${hue}, 50%, 50%)"
+        final String css = (hue == 360) ? 'white' : "hsl(${hue}, 50%, 50%)"
         return "<span style=\'color: ${css}\'>${text}</span>"
     }
     return 'n/a'
@@ -589,10 +590,10 @@ String getColorSpan(Integer hue, String text) {
 /**
  *  Creates a description string for the dashboard configuration for display.
  */
-String getScenarioDescription(String scenarioPrefix) {
-    Map config = getScenarioConfig(scenarioPrefix)
-    Map switchType = getTargetSwitchType()
-    StringBuilder sb = new StringBuilder()
+String getScenarioDescription(final String scenarioPrefix) {
+    final Map config = getScenarioConfig(scenarioPrefix)
+    final Map switchType = getTargetSwitchType()
+    final StringBuilder sb = new StringBuilder()
     sb << "<b>Priority</b>: ${config.priority}, "
 
     if (config.lednumber == 'var') {
@@ -604,7 +605,7 @@ String getScenarioDescription(String scenarioPrefix) {
     if (config.effect == 'var') {
         sb << ", <b>Effect Variable</b>: <i>${config.effect_var}</i>"
     } else if (config.effect) {
-        Map<String, String> fxOptions = switchType.effectsAll + switchType.effects
+        final Map<String, String> fxOptions = switchType.effectsAll + switchType.effects
         sb << ", <b>Effect:</b> ${fxOptions[config.effect] ?: 'n/a'}"
     }
 
@@ -629,10 +630,10 @@ String getScenarioDescription(String scenarioPrefix) {
     }
 
     if (config.conditions) {
-        List<String> rules = config.conditions
-            .findAll { String rule -> ActivationRules.containsKey(rule) }
-            .collect { String rule ->
-                Map ctx = [
+        final List<String> rules = config.conditions
+            .findAll { final String rule -> ActivationRules.containsKey(rule) }
+            .collect { final String rule ->
+                final Map ctx = [
                     device    : config["${rule}_device"],
                     title     : ActivationRules[rule].title,
                     comparison: config["${rule}_comparison"],
@@ -642,9 +643,9 @@ String getScenarioDescription(String scenarioPrefix) {
                     cooldown  : config.cooldown
                 ]
                 if (ctx.device) {
-                    boolean isAll = config["${rule}_device_all"]
+                    final boolean isAll = config["${rule}_device_all"]
                     if (ctx.device.size() > 2) {
-                        String title = ActivationRules[rule].inputs.device.title.toLowerCase()
+                        final String title = ActivationRules[rule].inputs.device.title.toLowerCase()
                         ctx.device = "${ctx.device.size()} ${title}"
                         ctx.device = (isAll ? 'All ' : 'Any of ') + ctx.device
                     } else {
@@ -655,13 +656,13 @@ String getScenarioDescription(String scenarioPrefix) {
                     ctx.comparison = getComparisonsByType('number').get(ctx.comparison)?.toLowerCase()
                 }
                 if (ctx.choice != null) {
-                    Map choiceInput = ActivationRules[rule].inputs.choice
+                    final Map choiceInput = ActivationRules[rule].inputs.choice
                     Object options = choiceInput.options
                     if (choiceInput.options in Closure) {
                         options = runClosure((Closure) choiceInput.options, [device: config["${rule}_device"]]) ?: [:]
                     }
                     if (options in Map && config["${rule}_choice"] in List) {
-                        ctx.choice = config["${rule}_choice"].collect { String key -> options[key] ?: key }.join(' or ')
+                        ctx.choice = config["${rule}_choice"].collect { final String key -> options[key] ?: key }.join(' or ')
                     } else if (options in Map) {
                         ctx.choice = options[config["${rule}_choice"]]
                     }
@@ -674,7 +675,7 @@ String getScenarioDescription(String scenarioPrefix) {
                 }
                 return ActivationRules[rule].title + ' <i>(' + ctx.device + ')</i>'
             }
-        String allMode = config.conditions_all ? ' and ' : ' or '
+        final String allMode = config.conditions_all ? ' and ' : ' or '
         sb << "\n<b>Activation${rules.size() > 1 ? 's' : ''}:</b> ${rules.join(allMode)}"
     }
 
@@ -684,21 +685,21 @@ String getScenarioDescription(String scenarioPrefix) {
 /**
  *  Returns the name of the effect selected for the given scenerio.
  */
-String getEffectName(String scenarioPrefix) {
-    Map switchType = getTargetSwitchType()
-    String ledKey = settings["${scenarioPrefix}_lednumber"]
-    Map<String, String> fxOptions = ledKey == 'All' ? switchType.effectsAll : switchType.effects
-    String fxKey = settings["${scenarioPrefix}_effect"]
+String getEffectName(final String scenarioPrefix) {
+    final Map switchType = getTargetSwitchType()
+    final String ledKey = settings["${scenarioPrefix}_lednumber"]
+    final Map<String, String> fxOptions = ledKey == 'All' ? switchType.effectsAll : switchType.effects
+    final String fxKey = settings["${scenarioPrefix}_effect"]
     return fxOptions[fxKey]
 }
 
 /**
  *  Returns a suggested name for the given scenerio.
  */
-String getSuggestedScenarioName(String scenarioPrefix) {
-    Map config = getScenarioConfig(scenarioPrefix)
-    Map switchType = getTargetSwitchType()
-    StringBuilder sb = new StringBuilder('Set ')
+String getSuggestedScenarioName(final String scenarioPrefix) {
+    final Map config = getScenarioConfig(scenarioPrefix)
+    final Map switchType = getTargetSwitchType()
+    final StringBuilder sb = new StringBuilder('Set ')
 
     if (config.lednumber && config.lednumber != 'var') {
         sb << switchType.leds[config.lednumber] ?: 'n/a'
@@ -707,7 +708,7 @@ String getSuggestedScenarioName(String scenarioPrefix) {
     }
     if (config.color && config.color != 'var' && config.color != 'val') {
         sb << ' to '
-        String effectName = getEffectName(scenarioPrefix)
+        final String effectName = getEffectName(scenarioPrefix)
         if (effectName) {
             sb << "${effectName} "
         }
@@ -733,8 +734,8 @@ void updatePauseLabel() {
 /**
  *  Common event handler used by all rules.
  */
-void eventHandler(Event event) {
-    Map lastEvent = [
+void eventHandler(final Event event) {
+    final Map lastEvent = [
         descriptionText: event.descriptionText,
         deviceId       : event.deviceId,
         isStateChange  : event.isStateChange,
@@ -756,8 +757,8 @@ void eventHandler(Event event) {
  *  Tracks the led state changes and update the device tracker object.
  *  Only supported for drivers with an 'ledEffect' attribute.
  */
-void switchStateTracker(Event event) {
-    Map<String, Map> tracker = SwitchStateTracker[event.device.id]
+void switchStateTracker(final Event event) {
+    final Map<String, Map> tracker = SwitchStateTracker[event.device.id]
 
     switch (event.value) {
         case 'User Cleared':
@@ -771,7 +772,7 @@ void switchStateTracker(Event event) {
             break
         case ~/^Stop LED(\d)$/:
             if (tracker) {
-                String led = (Matcher.lastMatcher[0] as List)[1]
+                final String led = (Matcher.lastMatcher[0] as List)[1]
                 tracker.remove(led)
                 logDebug "${event.device} LED${led} effect stopped"
             }
@@ -791,7 +792,7 @@ void forceRefresh() {
         SwitchStateTracker.clear()
         notificationDispatcher()
 
-        int seconds = 60 * (settings.periodicRefreshInterval ?: 60)
+        final int seconds = 60 * (settings.periodicRefreshInterval ?: 60)
         runIn(seconds, 'forceRefresh')
     }
 }
@@ -828,8 +829,8 @@ void timeAfterTrigger() {
  */
 void stopNotification() {
     logDebug 'stopNotification called'
-    Map switchType = getTargetSwitchType()
-    for (DeviceWrapper device in (settings['switches'] as List<DeviceWrapper>)) {
+    final Map switchType = getTargetSwitchType()
+    for (final DeviceWrapper device in (settings['switches'] as List<DeviceWrapper>)) {
         Map<String, Map> tracker = getSwitchStateTracker(device)
         if (getTimeMs() >= (tracker['All']?.expires as Long)) {
             if (device.hasCommand('setConfigParameter')) {
@@ -855,23 +856,23 @@ void stopNotification() {
 @CompileStatic
 void notificationDispatcher() {
     // Get prioritized list of dashboards
-    List<String> prefixes = (List) getState('sortedPrefixes') ?: getSortedScenarioPrefixes()
+    final List<String> prefixes = (List) getState('sortedPrefixes') ?: getSortedScenarioPrefixes()
 
     // Evaluate current dashboard condition rules
-    Map<String, Boolean> dashboardResults = evaluateDashboardScenarios(prefixes)
+    final Map<String, Boolean> dashboardResults = evaluateDashboardScenarios(prefixes)
 
     // Process any delayed conditions
-    long nextEvaluationTime = evaluateDelayedRules(dashboardResults)
+    final long nextEvaluationTime = evaluateDelayedRules(dashboardResults)
 
     // Calculate desired LED states
-    Map<String, Map> ledStates = calculateLedState(prefixes, dashboardResults)
+    final Map<String, Map> ledStates = calculateLedState(prefixes, dashboardResults)
 
     // Dispatch each LED state to devices
-    ledStates.values().each { config -> updateSwitchLedState(config) }
+    ledStates.values().each { final config -> updateSwitchLedState(config) }
 
     // Schedule the next evaluation time
     if (nextEvaluationTime > getTimeMs()) {
-        long delay = nextEvaluationTime - getTimeMs()
+        final long delay = nextEvaluationTime - getTimeMs()
         logDebug "[notificationDispatcher] scheduling next evaluation in ${delay}ms"
         runAfterMs(delay, 'notificationDispatcher')
     }
@@ -883,8 +884,8 @@ void notificationDispatcher() {
  *  Does not apply any delay or cooldown options at this stage of the pipeline
  */
 @CompileStatic
-Map<String, Boolean> evaluateDashboardScenarios(List<String> prefixes) {
-    return prefixes.collectEntries { prefix -> [prefix, evaluateActivationRules(prefix)] }
+Map<String, Boolean> evaluateDashboardScenarios(final List<String> prefixes) {
+    return prefixes.collectEntries { final prefix -> [prefix, evaluateActivationRules(prefix)] }
 }
 
 /**
@@ -895,9 +896,9 @@ Map<String, Boolean> evaluateDashboardScenarios(List<String> prefixes) {
  *  Finally, it returns the next evaluation time based on when each rule should be evaluated again.
  */
 @CompileStatic
-long evaluateDelayedRules(Map<String, Boolean> evaluationResults) {
+long evaluateDelayedRules(final Map<String, Boolean> evaluationResults) {
     long nextEvaluationTime = 0
-    for (Map.Entry<String, Boolean> result in evaluationResults) {
+    for (final Map.Entry<String, Boolean> result in evaluationResults) {
         String scenarioPrefix = result.key
         boolean active = result.value
         long now = getTimeMs()
@@ -908,7 +909,7 @@ long evaluateDelayedRules(Map<String, Boolean> evaluationResults) {
         if (active && delay) {
             int delayMs = delay * 60000
             // Determine if delay has expired yet
-            long targetTime = getState().computeIfAbsent(delayKey) { k -> getTimeMs(delayMs) } as long
+            long targetTime = getState().computeIfAbsent(delayKey) { final k -> getTimeMs(delayMs) } as long
             if (now < targetTime) {
                 logDebug "[evaluateDelayedRules] ${scenarioPrefix} has delayed activation (${delayMs}ms)"
                 evaluationResults[scenarioPrefix] = false
@@ -963,9 +964,9 @@ long evaluateDelayedRules(Map<String, Boolean> evaluationResults) {
  *  Finally, this code returns the ledStates map.
  */
 @CompileStatic
-Map<String, Map> calculateLedState(List<String> prefixes, Map<String, Boolean> results) {
-    Map<String, Map> ledStates = [:]
-    for (String scenarioPrefix in prefixes) {
+Map<String, Map> calculateLedState(final List<String> prefixes, final Map<String, Boolean> results) {
+    final Map<String, Map> ledStates = [:]
+    for (final String scenarioPrefix in prefixes) {
         Map<String, Object> config = getScenarioConfig(scenarioPrefix)
         Map<String, Map> oldState = ledStates[config.lednumber as String] ?: [:]
         int oldPriority = oldState.priority as Integer ?: 0
@@ -973,7 +974,7 @@ Map<String, Map> calculateLedState(List<String> prefixes, Map<String, Boolean> r
             replaceVariables(config)
             int newPriority = config.priority as Integer ?: 0
             if (newPriority >= oldPriority) {
-                ((String)config.lednumber).tokenize(',').each { String lednumber ->
+                ((String)config.lednumber).tokenize(',').each { final String lednumber ->
                     ledStates[lednumber] = [
                         prefix   : config.prefix,
                         name     : config.name,
@@ -988,7 +989,7 @@ Map<String, Map> calculateLedState(List<String> prefixes, Map<String, Boolean> r
             }
         } else if (config.autostop != false && !oldPriority) {
             // Auto stop effect
-            ((String)config.lednumber).tokenize(',').each { String lednumber ->
+            ((String)config.lednumber).tokenize(',').each { final String lednumber ->
                 ledStates[lednumber] = [
                     prefix   : config.prefix,
                     name     : "[auto stop] ${config.name}",
@@ -1014,7 +1015,7 @@ Map<String, Map> calculateLedState(List<String> prefixes, Map<String, Boolean> r
  * where 1-60 = seconds, 61-120 = 1-60 minutes, 121-254 = 1-134 hours, 255 = Indefinite (24 hrs)
  */
 @CompileStatic
-private static int convertParamToMs(Integer duration) {
+private static int convertParamToMs(final Integer duration) {
     if (!duration) {
         return 0
     }
@@ -1031,8 +1032,8 @@ private static int convertParamToMs(Integer duration) {
 }
 
 @CompileStatic
-private static Map<String, Map> getSwitchStateTracker(DeviceWrapper dw) {
-    return SwitchStateTracker.computeIfAbsent(dw.id) { k -> [:].withDefault { [:] } }
+private static Map<String, Map> getSwitchStateTracker(final DeviceWrapper dw) {
+    return SwitchStateTracker.computeIfAbsent(dw.id) { final k -> [:].withDefault { [:] } }
 }
 
 /**
@@ -1043,12 +1044,17 @@ private static Map<String, Map> getSwitchStateTracker(DeviceWrapper dw) {
  *  value of "all", and false otherwise.
  */
 @CompileStatic
-private static boolean deviceAttributeHasValue(List<DeviceWrapper> devices, String attribute, String operator, String value, Boolean all) {
-    if (devices) {
-        Closure test = { DeviceWrapper d -> evaluateComparison(d.currentValue(attribute) as String, value, operator) }
-        return all ? devices.every(test) : devices.any(test)
+private static boolean deviceAttributeHasValue(final List<DeviceWrapper> devices, final String attribute, final String operator, final String value, final Boolean all) {
+    // if no devices, return false
+    if (devices == null || devices.isEmpty()) {
+        return false
+    // if no attribute, operator, or value, return false
+    } else if (attribute == null || operator == null || value == null) {
+        return false
     }
-    return false
+    final Closure test = { final DeviceWrapper device -> evaluateComparison(device.currentValue(attribute) as String, value, operator) }
+    // if all is true, return true if all devices satisfy the comparison otherwise return true if any satisfy the comparison
+    return all == true ? devices.every(test) : devices.any(test)
 }
 
 /**
@@ -1056,7 +1062,7 @@ private static boolean deviceAttributeHasValue(List<DeviceWrapper> devices, Stri
  *  between the two strings based on the operator and returns a boolean value.
  */
 @CompileStatic
-private static boolean evaluateComparison(String a, String b, String operator) {
+private static boolean evaluateComparison(final String a, final String b, final String operator) {
     if (a && b && operator) {
         switch (operator) {
             case '=': return a.equalsIgnoreCase(b)
@@ -1075,8 +1081,8 @@ private static boolean evaluateComparison(String a, String b, String operator) {
  *  Given a set of devices and an attribute name, provides the distinct set of attribute names.
  */
 @CompileStatic
-private static List<String> getAttributeChoices(List<DeviceWrapper> devices) {
-    return devices?.collectMany { DeviceWrapper d -> d.getSupportedAttributes()*.name }
+private static List<String> getAttributeChoices(final List<DeviceWrapper> devices) {
+    return devices?.collectMany { final DeviceWrapper d -> d.getSupportedAttributes()*.name }
 }
 
 /**
@@ -1086,9 +1092,9 @@ private static List<String> getAttributeChoices(List<DeviceWrapper> devices) {
  *  attribute and adds them to the returned list.
  */
 @CompileStatic
-private static List<String> getAttributeOptions(List<DeviceWrapper> devices, String attribute) {
-    return devices?.collectMany { DeviceWrapper d ->
-        List<String> values = d.getSupportedAttributes().find { attr -> attr.name == attribute }?.getValues()
+private static List<String> getAttributeOptions(final List<DeviceWrapper> devices, final String attribute) {
+    return devices?.collectMany { final DeviceWrapper d ->
+        final List<String> values = d.getSupportedAttributes().find { final attr -> attr.name == attribute }?.getValues()
         return values ?: Collections.emptyList() as List<String>
     }
 }
@@ -1101,14 +1107,14 @@ private static List<String> getAttributeOptions(List<DeviceWrapper> devices, Str
  *  it returns an empty map.
  */
 @CompileStatic
-private static Map<String, String> getButtonNumberChoices(List<DeviceWrapper> buttonDevices) {
+private static Map<String, String> getButtonNumberChoices(final List<DeviceWrapper> buttonDevices) {
     if (buttonDevices) {
-        List<Integer> buttonCounts = buttonDevices.collect { DeviceWrapper d ->
+        final List<Integer> buttonCounts = buttonDevices.collect { final DeviceWrapper d ->
             d.currentValue('numberOfButtons') as Integer ?: 0
         }
-        Integer maxButtons = buttonCounts.max()
+        final Integer maxButtons = buttonCounts.max()
         if (maxButtons >= 1) {
-            return (1..maxButtons).collectEntries { int n -> [n as String, "Button ${n}"] }
+            return (1..maxButtons).collectEntries { final int n -> [n as String, "Button ${n}"] }
         }
     }
     return Collections.emptyMap()
@@ -1120,7 +1126,7 @@ private static Map<String, String> getButtonNumberChoices(List<DeviceWrapper> bu
  *  for "<", "<=", ">", and ">=" otherwise the Map will only contain two entries for '=' and '<>'.
  */
 @CompileStatic
-private static Map<String, String> getComparisonsByType(String type) {
+private static Map<String, String> getComparisonsByType(final String type) {
     Map<String, String> result = ['=': 'Equal to', '<>': 'Not equal to']
     switch (type.toLowerCase()) {
         case 'number':
@@ -1142,15 +1148,15 @@ private static Map<String, String> getComparisonsByType(String type) {
  */
 @CompileStatic
 private void cleanSettings() {
-    for (String prefix in getScenarioPrefixes()) {
+    for (final String prefix in getScenarioPrefixes()) {
         // Clean unused dashboard settings
         List<String> rules = (List) getSetting("${prefix}_conditions", [])
         ActivationRules.keySet()
-            .findAll { String key -> !(key in rules) }
-            .each { String key -> removeSettings("${prefix}_${key}") }
+            .findAll { final String key -> !(key in rules) }
+            .each { final String key -> removeSettings("${prefix}_${key}") }
 
         // Clean unused variable settings
-        ['lednumber', 'effect', 'color'].each { var ->
+        ['lednumber', 'effect', 'color'].each { final var ->
             if (getSettingString("${prefix}_${var}") != 'var') {
                 removeSetting("${prefix}_${var}_var")
             }
@@ -1163,8 +1169,8 @@ private void cleanSettings() {
  */
 @CompileStatic
 private String findNextPrefix() {
-    List<Integer> keys = getScenarioPrefixes().collect { String p -> p.substring(10) as Integer }
-    int maxId = keys ? Collections.max(keys) : 0
+    final List<Integer> keys = getScenarioPrefixes().collect { final String p -> p.substring(10) as Integer }
+    final int maxId = keys ? Collections.max(keys) : 0
     return "condition_${maxId + 1}"
 }
 
@@ -1172,12 +1178,12 @@ private String findNextPrefix() {
  *  Returns key value map of scenario settings for the given prefix.
  */
 @CompileStatic
-private Map<String, Object> getScenarioConfig(String scenarioPrefix) {
-    Map<String, Object> config = [prefix: (Object) scenarioPrefix]
-    int startPos = scenarioPrefix.size() + 1
-    getAppSettings().findAll { String key, Object value ->
+private Map<String, Object> getScenarioConfig(final String scenarioPrefix) {
+    final Map<String, Object> config = [prefix: (Object) scenarioPrefix]
+    final int startPos = scenarioPrefix.size() + 1
+    getAppSettings().findAll { final String key, final Object value ->
         key.startsWith(scenarioPrefix + '_')
-    }.each { String key, Object value ->
+    }.each { final String key, final Object value ->
         config[key.substring(startPos)] = value
     }
     return config
@@ -1188,9 +1194,9 @@ private Map<String, Object> getScenarioConfig(String scenarioPrefix) {
  */
 @CompileStatic
 private Set<String> getScenarioPrefixes() {
-    return (Set<String>) getAppSettings().keySet().findAll { Object key ->
+    return (Set<String>) getAppSettings().keySet().findAll { final Object key ->
         key.toString().matches('^condition_[0-9]+_priority$')
-    }.collect { Object key -> key.toString() - '_priority' }
+    }.collect { final Object key -> key.toString() - '_priority' }
 }
 
 /**
@@ -1198,13 +1204,13 @@ private Set<String> getScenarioPrefixes() {
  */
 @CompileStatic
 private List<String> getSortedScenarioPrefixes() {
-    return getScenarioPrefixes().collect { String scenarioPrefix ->
+    return getScenarioPrefixes().collect { final String scenarioPrefix ->
         [
             prefix  : (String) scenarioPrefix,
             name    : getSettingString("${scenarioPrefix}_name"),
             priority: getSettingInteger("${scenarioPrefix}_priority")
         ]
-    }.sort { a, b ->
+    }.sort { final a, final b ->
         (Integer) b.priority <=> (Integer) a.priority ?: (String) a.name <=> (String) b.name
     }*.prefix as List<String>
 }
@@ -1214,8 +1220,8 @@ private List<String> getSortedScenarioPrefixes() {
  */
 @CompileStatic
 private Map getTargetSwitchType() {
-    String deviceType = getSettingString('deviceType')
-    Map switchType = SupportedSwitchTypes.get(deviceType)
+    final String deviceType = getSettingString('deviceType')
+    final Map switchType = SupportedSwitchTypes.get(deviceType)
     if (!switchType) {
         logError "Unable to retrieve supported switch Type for '${deviceType}'"
     }
@@ -1229,21 +1235,21 @@ private Map getTargetSwitchType() {
  *  it returns the key associated with that value. Otherwise, it returns null.
  */
 @CompileStatic
-private String lookupVariable(String variableName, Map<String, String> lookupTable) {
-    String value = getHubVariableValue(variableName) as String
+private String lookupVariable(final String variableName, final Map<String, String> lookupTable) {
+    final String value = getHubVariableValue(variableName) as String
     if (value) {
-        return lookupTable.find { String k, String v -> v.equalsIgnoreCase(value) }?.key
+        return lookupTable.find { final String k, final String v -> v.equalsIgnoreCase(value) }?.key
     }
     return null
 }
 
 // Removes all condition settings starting with prefix used when the user deletes a condition
 @CompileStatic
-private void removeSettings(String scenarioPrefix) {
-    Set<String> entries = getAppSettings().keySet().findAll { String s -> s.startsWith(scenarioPrefix) }
+private void removeSettings(final String scenarioPrefix) {
+    final Set<String> entries = getAppSettings().keySet().findAll { final String s -> s.startsWith(scenarioPrefix) }
     if (entries) {
         logDebug "removing settings ${entries}"
-        entries.each { String s -> removeSetting(s) }
+        entries.each { final String s -> removeSetting(s) }
     }
 }
 
@@ -1253,14 +1259,14 @@ private void removeSettings(String scenarioPrefix) {
  *  If so, looks up the hub global variable value and assigns it to the configuration.
  */
 @CompileStatic
-private void replaceVariables(Map<String, Object> config) {
-    Map switchType = getTargetSwitchType()
+private void replaceVariables(final Map<String, Object> config) {
+    final Map switchType = getTargetSwitchType()
     if (switchType) {
         if (config.lednumber == 'var') {
             config.lednumber = lookupVariable((String) config.lednumber_var, (Map) switchType.leds) ?: 'All'
         }
         if (config.effect == 'var') {
-            Map<String, String> fxOptions = (Map<String, String>) switchType.effectsAll + (Map<String, String>) switchType.effects
+            final Map<String, String> fxOptions = (Map<String, String>) switchType.effectsAll + (Map<String, String>) switchType.effects
             config.effect = lookupVariable((String) config.effect_var, fxOptions) as String
         }
         if (config.color == 'var') {
@@ -1286,10 +1292,10 @@ private void replaceVariables(Map<String, Object> config) {
  */
 @CompileStatic
 private void resetNotifications() {
-    Map<String, String> leds = (Map<String, String>) getTargetSwitchType().leds
+    final Map<String, String> leds = (Map<String, String>) getTargetSwitchType().leds
     if (leds) {
         logInfo 'resetting all device notifications'
-        leds.keySet().findAll { String s -> s != 'var' }.each { String led ->
+        leds.keySet().findAll { final String s -> s != 'var' }.each { final String led ->
             updateSwitchLedState(
                 [
                     color    : '0',       // default color
@@ -1312,7 +1318,7 @@ private void resetNotifications() {
  */
 @CompileStatic
 private void subscribeAllScenarios() {
-    getScenarioPrefixes().each { String scenarioPrefix ->
+    getScenarioPrefixes().each { final String scenarioPrefix ->
         subscribeActiveRules(scenarioPrefix)
     }
 }
@@ -1323,9 +1329,9 @@ private void subscribeAllScenarios() {
  *  attribute with the 'switchStateTracker' method.
  */
 private void subscribeSwitchAttributes() {
-    List<String> attributes = ['ledEffect']
-    settings.switches.each { DeviceWrapper dw ->
-        attributes.each { attr ->
+    final List<String> attributes = ['ledEffect']
+    settings.switches.each { final DeviceWrapper dw ->
+        attributes.each { final attr ->
             if (dw.hasAttribute(attr)) {
                 subscribe(dw, attr, 'switchStateTracker', null)
             }
@@ -1340,8 +1346,8 @@ private void subscribeSwitchAttributes() {
  *  Finally, it will set an expiration time for the LED state based on the unit and duration parameters.
  */
 @CompileStatic
-private void updateSwitchLedState(Map config) {
-    for (DeviceWrapper device in (List<DeviceWrapper>) getSetting('switches', [])) {
+private void updateSwitchLedState(final Map config) {
+    for (final DeviceWrapper device in (List<DeviceWrapper>) getSetting('switches', [])) {
         logDebug "setting ${device} LED #${config.lednumber} (" +
             "id=${config.prefix}, name=${config.name}, priority=${config.priority}, " +
             "effect=${config.effect ?: ''}, color=${config.color}, level=${config.level}, " +
@@ -1381,9 +1387,9 @@ private void updateSwitchLedState(Map config) {
 /**
  *  updateSwitchColor is a wrapper around the color device driver methods
  */
-private void updateSwitchColor(DeviceWrapper dw, Map config) {
-    String key = "device-state-${dw.id}"
-    Integer color = config.color as Integer
+private void updateSwitchColor(final DeviceWrapper dw, final Map config) {
+    final String key = "device-state-${dw.id}"
+    final Integer color = config.color as Integer
     switch (config.effect) {
         case '0': // Off
             logDebug "${dw}.off()"
@@ -1398,7 +1404,7 @@ private void updateSwitchColor(DeviceWrapper dw, Map config) {
                     level     : dw.currentValue('level') ?: 0,
                 ]
             }
-            int huePercent = (int) Math.round((color / 360.0) * 100)
+            final int huePercent = (int) Math.round((color / 360.0) * 100)
             logDebug "${dw}.setColor(${huePercent})"
             dw.setColor([
                 hue       : color == 360 ? 0 : huePercent,
@@ -1422,7 +1428,7 @@ private void updateSwitchColor(DeviceWrapper dw, Map config) {
             break
     }
     if (config.unit && config.unit != '255') {
-        int duration = convertParamToMs(Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255))
+        final int duration = convertParamToMs(Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255))
         logDebug 'scheduling stopNotification in ' + duration + 'ms'
         runInMillis(duration + 1000, 'stopNotification')
     } else {
@@ -1435,8 +1441,8 @@ private void updateSwitchColor(DeviceWrapper dw, Map config) {
  *  The wrapper uses the trackingState to reduce the Zigbee traffic by checking the
  *  assumed LED state before sending changes.
  */
-private void updateSwitchLedStateInovelliBlue(DeviceWrapper dw, Map config) {
-    int color, duration, effect, level
+private void updateSwitchLedStateInovelliBlue(final DeviceWrapper dw, final Map config) {
+    final int color, duration, effect, level
     if (config.unit != null) {
         duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255)
     }
@@ -1463,7 +1469,7 @@ private void updateSwitchLedStateInovelliBlue(DeviceWrapper dw, Map config) {
  *  updateSwitchLedStateInovelliRedGen1 is a wrapper around the
  *  Inovelli device driver setConfigParameter method.
  */
-private void updateSwitchLedStateInovelliRedGen1(DeviceWrapper dw, Map config) {
+private void updateSwitchLedStateInovelliRedGen1(final DeviceWrapper dw, final Map config) {
     int color, effect, level
     if (config.unit != null) {
         duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255) as int
@@ -1481,7 +1487,7 @@ private void updateSwitchLedStateInovelliRedGen1(DeviceWrapper dw, Map config) {
     if (effect == 255) { // Stop notification option is mapped to 0
         effect = level = color = 0
     }
-    Map switchType = getTargetSwitchType()
+    final Map switchType = getTargetSwitchType()
     logDebug "${dw}.setConfigParameter(${switchType.ledLevelParam},${level},'1')"
     dw.setConfigParameter(switchType.ledLevelParam as int, level, '1')
     if (level > 0) {
@@ -1489,7 +1495,7 @@ private void updateSwitchLedStateInovelliRedGen1(DeviceWrapper dw, Map config) {
         dw.setConfigParameter(switchType.ledColorParam as int, color, '2')
     }
     if (config.unit && config.unit != '255') {
-        long duration = convertParamToMs(Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255))
+        final long duration = convertParamToMs(Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255))
         logDebug 'scheduling stopNotification for ' + duration + 'ms'
         runInMillis(duration + 1000, 'stopNotification')
     } else {
@@ -1504,7 +1510,7 @@ private void updateSwitchLedStateInovelliRedGen1(DeviceWrapper dw, Map config) {
  *  when the updated Gen2 driver is released with the startNotiication command.
  *  Reference https://nathanfiscus.github.io/inovelli-notification-calc/
  */
-private void updateSwitchLedStateInovelliRedGen2(DeviceWrapper dw, Map config) {
+private void updateSwitchLedStateInovelliRedGen2(final DeviceWrapper dw, final Map config) {
     int color, duration, effect, level
     if (config.unit != null) {
         duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255) as int
@@ -1521,8 +1527,8 @@ private void updateSwitchLedStateInovelliRedGen2(DeviceWrapper dw, Map config) {
     if (effect == 255) { // Stop notification option is mapped to 0
         effect = duration = level = color = 0
     }
-    byte[] bytes = [effect as byte, duration as byte, level as byte, color as byte]
-    int value = new BigInteger(bytes).intValue()
+    final byte[] bytes = [effect as byte, duration as byte, level as byte, color as byte]
+    final int value = new BigInteger(bytes).intValue()
     logDebug "${dw}.startNotification(${value}) [${bytes[0] & 0xff}, ${bytes[1] & 0xff}, ${bytes[2] & 0xff}, ${bytes[3] & 0xff}]"
     if (config.lednumber == 'All') {
         dw.startNotification(value)
@@ -1539,14 +1545,14 @@ private void updateSwitchLedStateInovelliRedGen2(DeviceWrapper dw, Map config) {
  *  it will return false if any of the rules fail. If it is false, it will return true if any of the rules pass.
  */
 @CompileStatic
-private boolean evaluateActivationRules(String prefix) {
+private boolean evaluateActivationRules(final String prefix) {
     boolean result = false
-    boolean requireAll = getSettingBoolean("${prefix}_conditions_all")
-    String name = getSettingString("${prefix}_name")
+    final boolean requireAll = getSettingBoolean("${prefix}_conditions_all")
+    final String name = getSettingString("${prefix}_name")
 
     // Loop through all conditions updating the result
-    List<String> activeRules = (List) getSetting("${prefix}_conditions", [])
-    for (String ruleKey in activeRules) {
+    final List<String> activeRules = (List) getSetting("${prefix}_conditions", [])
+    for (final String ruleKey in activeRules) {
         Map<String, Map> rule = ActivationRules[ruleKey]
         if (rule) {
             boolean testResult = evaluateRule("${prefix}_${ruleKey}", rule)
@@ -1576,13 +1582,13 @@ private boolean evaluateActivationRules(String prefix) {
  *  or false depending on the result.
  */
 @CompileStatic
-private boolean evaluateRule(String prefix, Map rule) {
-    String attribute
+private boolean evaluateRule(final String prefix, final Map rule) {
+    final String attribute
     if (!rule) {
         return false
     }
     if (rule.subscribe in Closure) {
-        Map ctx = [
+        final Map ctx = [
             device: getSetting("${prefix}_device"),
             choice: getSetting("${prefix}_choice"),
             value : getSetting("${prefix}_value")
@@ -1591,7 +1597,7 @@ private boolean evaluateRule(String prefix, Map rule) {
     } else {
         attribute = rule.subscribe
     }
-    Map ctx = [
+    final Map ctx = [
         all       : getSettingBoolean("${prefix}_device_all"),
         attribute : attribute,
         choice    : getSetting("${prefix}_choice"),
@@ -1600,7 +1606,7 @@ private boolean evaluateRule(String prefix, Map rule) {
         event     : getState('lastEvent') ?: [:],
         value     : getSetting("${prefix}_value")
     ].asImmutable()
-    boolean result = runClosure((Closure) rule.test, ctx) ?: false
+    final boolean result = runClosure((Closure) rule.test, ctx) ?: false
     logDebug "[evaluateRule] ${rule.title} (${prefix}) is ${result}"
     return result
 }
@@ -1613,9 +1619,9 @@ private boolean evaluateRule(String prefix, Map rule) {
  *  and subscribes to the event handler with the given device (or location) and attribute.
  */
 @CompileStatic
-private void subscribeActiveRules(String prefix) {
-    List<String> activeRules = (List) getSetting("${prefix}_conditions", Collections.emptyList())
-    for (String ruleKey in activeRules) {
+private void subscribeActiveRules(final String prefix) {
+    final List<String> activeRules = (List) getSetting("${prefix}_conditions", Collections.emptyList())
+    for (final String ruleKey in activeRules) {
         Map<String, Map> rule = ActivationRules[ruleKey]
         if (rule.execute in Closure) {
             String key = "${prefix}_${ruleKey}"
@@ -1650,7 +1656,7 @@ private void subscribeActiveRules(String prefix) {
  */
 @CompileStatic
 private void subscribeAllVariables() {
-    getAppSettings().findAll { Map.Entry<String, Object> s -> s.key.endsWith('_var') }.values().each { Object var ->
+    getAppSettings().findAll { final Map.Entry<String, Object> s -> s.key.endsWith('_var') }.values().each { final Object var ->
         subscribeEventHandler(location, "variable:${var}")
     }
 }
@@ -1659,11 +1665,11 @@ private void subscribeAllVariables() {
  *  Subscribes an event handler to a target for a given attribute.
  *  If the attribute starts with "variable:", variable to a list of global variables in use.
  */
-private void subscribeEventHandler(Object target, String attribute) {
+private void subscribeEventHandler(final Object target, final String attribute) {
     logDebug "subscribing to ${target} for attribute '${attribute}'"
     subscribe(target, attribute, 'eventHandler', null)
     if (attribute.startsWith('variable:')) {
-        String variable = attribute.substring(9)
+        final String variable = attribute.substring(9)
         logDebug "registering use of Hub variable '${variable}'"
         addInUseGlobalVar(variable)
     }
@@ -1675,15 +1681,15 @@ private void subscribeEventHandler(Object target, String attribute) {
  *  current time to the sunrise and sunset times. Finally, it returns a map containing all of this information,
  *  plus the offset used to calculate it.
  */
-private Map getAlmanac(Date now, int offset = 0) {
-    Map<String, Date> today = getSunriseAndSunset([sunriseOffset: offset, sunsetOffset: offset, date: now])
-    Map<String, Date> tomorrow = getSunriseAndSunset([sunriseOffset: offset, sunsetOffset: offset, date: now + 1])
-    Map<String, Date> next = [sunrise: (Date) now < (Date) today.sunrise ? (Date) today.sunrise : (Date) tomorrow.sunrise, sunset: now < today.sunset ? (Date) today.sunset : (Date) tomorrow.sunset]
-    LocalTime sunsetTime = LocalTime.of(today.sunset.getHours(), today.sunset.getMinutes())
-    LocalTime sunriseTime = LocalTime.of(next.sunrise.getHours(), next.sunrise.getMinutes())
-    LocalTime nowTime = LocalTime.of(now.getHours(), now.getMinutes())
-    boolean isNight = nowTime > sunsetTime || nowTime < sunriseTime
-    Map almanac = [today: today, tomorrow: tomorrow, next: next, isNight: isNight, offset: offset]
+private Map getAlmanac(final Date now, final int offset = 0) {
+    final Map<String, Date> today = getSunriseAndSunset([sunriseOffset: offset, sunsetOffset: offset, date: now])
+    final Map<String, Date> tomorrow = getSunriseAndSunset([sunriseOffset: offset, sunsetOffset: offset, date: now + 1])
+    final Map<String, Date> next = [sunrise: (Date) now < (Date) today.sunrise ? (Date) today.sunrise : (Date) tomorrow.sunrise, sunset: now < today.sunset ? (Date) today.sunset : (Date) tomorrow.sunset]
+    final LocalTime sunsetTime = LocalTime.of(today.sunset.getHours(), today.sunset.getMinutes())
+    final LocalTime sunriseTime = LocalTime.of(next.sunrise.getHours(), next.sunrise.getMinutes())
+    final LocalTime nowTime = LocalTime.of(now.getHours(), now.getMinutes())
+    final boolean isNight = nowTime > sunsetTime || nowTime < sunriseTime
+    final Map almanac = [today: today, tomorrow: tomorrow, next: next, isNight: isNight, offset: offset]
     logDebug "almanac: ${almanac}"
     return almanac
 }
@@ -1693,8 +1699,8 @@ private Map getAlmanac(Date now, int offset = 0) {
  *  Checks if the now Date is greater than or equal to the target Date. If it is,
  *  it returns the target Date plus one day, otherwise it returns the target Date.
  */
-private Date getNextTime(Date now, String datetime) {
-    Date target = timeToday(datetime)
+private Date getNextTime(final Date now, final String datetime) {
+    final Date target = timeToday(datetime)
     return (now >= target) ? target + 1 : target
 }
 
@@ -1705,14 +1711,14 @@ private Date getNextTime(Date now, String datetime) {
  *  along with the code for the closure and the context map.
  */
 @CompileStatic
-private Object runClosure(Closure c, Map ctx) {
+private Object runClosure(final Closure c, final Map ctx) {
     String code = 'unknown'
     try {
         code = c.metaClass.classNode.getDeclaredMethods('doCall')?.first()?.code?.text
-        Closure closure = (Closure) c.clone()
+        final Closure closure = (Closure) c.clone()
         closure.delegate = this
         return closure.call(ctx)
-    } catch (e) {
+    } catch (final e) {
         logWarn "runClosure error ${e}: ${code} with ctx ${ctx}"
     }
     return null
@@ -1815,7 +1821,7 @@ private Object runClosure(Closure c, Map ctx) {
         effects   : [:],
         effectsAll: ['255': 'Stop', '0': 'Off', '1': 'On', 'var': 'Variable Effect']
     ]
-].sort { a, b -> a.value.title <=> b.value.title }
+].sort { final a, final b -> a.value.title <=> b.value.title }
 
 // Definitions for condition options
 @Field static final Map<String, String> ColorMap = [
@@ -1878,7 +1884,7 @@ private Object runClosure(Closure c, Map ctx) {
 @Field static final Map<String, Map> ActivationRules = [
     'almanac'           : [
         title   : 'Time period is between',
-        template: { Map ctx -> "Time period is from ${ctx.choice}" },
+        template: { final Map ctx -> "Time period is from ${ctx.choice}" },
         inputs  : [
             choice: [
                 options : [
@@ -1896,13 +1902,13 @@ private Object runClosure(Closure c, Map ctx) {
                 width       : 2
             ]
         ],
-        execute : { Map ctx ->
-            Map almanac = getAlmanac(new Date(), (ctx.value as Integer) ?: 0)
+        execute : { final Map ctx ->
+            final Map almanac = getAlmanac(new Date(), (ctx.value as Integer) ?: 0)
             runOnce(almanac.next.sunset, 'sunsetTrigger')
             runOnce(almanac.next.sunrise, 'sunriseTrigger')
         },
-        test    : { Map ctx ->
-            Map almanac = getAlmanac(new Date(), (ctx.value as Integer) ?: 0)
+        test    : { final Map ctx ->
+            final Map almanac = getAlmanac(new Date(), (ctx.value as Integer) ?: 0)
             switch (ctx.choice) {
                 case 'sunsetToSunrise': return almanac.isNight
                 case 'sunriseToSunset': return !almanac.isNight
@@ -1919,12 +1925,12 @@ private Object runClosure(Closure c, Map ctx) {
                 multiple: true
             ]
         ],
-        subscribe: 'contact',
-        test     : { Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'acceleration', '=', 'active', ctx.all as Boolean) }
+        subscribe: 'acceleration',
+        test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'acceleration', '=', 'active', ctx.all as Boolean) }
     ],
     'buttonPress'       : [
         title    : 'Button is pressed',
-        template : { Map ctx -> "${ctx.choice} is pressed <i>(${ctx.device})</i>" },
+        template : { final Map ctx -> "${ctx.choice} is pressed <i>(${ctx.device})</i>" },
         inputs   : [
             device: [
                 title   : 'devices',
@@ -1934,12 +1940,12 @@ private Object runClosure(Closure c, Map ctx) {
             ],
             choice: [
                 title   : 'Select Button Number(s)',
-                options : { Map ctx -> getButtonNumberChoices(ctx.device as List<DeviceWrapper>) },
+                options : { final Map ctx -> getButtonNumberChoices(ctx.device as List<DeviceWrapper>) },
                 multiple: true
             ]
         ],
         subscribe: 'pushed',
-        test     : { Map ctx -> ctx.choice && ctx.event.value in ctx.choice }
+        test     : { final Map ctx -> ctx.choice && ctx.event.value in ctx.choice }
     ],
     'contactClose'      : [
         title    : 'Contact closes',
@@ -1951,7 +1957,7 @@ private Object runClosure(Closure c, Map ctx) {
             ]
         ],
         subscribe: 'contact',
-        test     : { Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'contact', '=', 'closed', ctx.all as Boolean) }
+        test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'contact', '=', 'closed', ctx.all as Boolean) }
     ],
     'contactOpen'       : [
         title    : 'Contact opens',
@@ -1963,11 +1969,11 @@ private Object runClosure(Closure c, Map ctx) {
             ]
         ],
         subscribe: 'contact',
-        test     : { Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'contact', '=', 'open', ctx.all as Boolean) }
+        test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'contact', '=', 'open', ctx.all as Boolean) }
     ],
     'customAttribute'   : [
         title    : 'Custom attribute',
-        template : { Map ctx -> "${ctx.choice.capitalize()} is ${ctx.comparison} ${ctx.value} <i>(${ctx.device})</i>" },
+        template : { final Map ctx -> "${ctx.choice.capitalize()} is ${ctx.comparison} ${ctx.value} <i>(${ctx.device})</i>" },
         inputs   : [
             device    : [
                 title   : 'Select Devices',
@@ -1976,26 +1982,26 @@ private Object runClosure(Closure c, Map ctx) {
             ],
             choice    : [
                 title   : 'Select Custom Attribute',
-                options : { Map ctx -> ctx.device ? getAttributeChoices(ctx.device as List<DeviceWrapper>) : null },
+                options : { final Map ctx -> ctx.device ? getAttributeChoices(ctx.device as List<DeviceWrapper>) : null },
                 multiple: false
             ],
             comparison: [
-                options: { Map ctx -> getComparisonsByType('number') }
+                options: { final Map ctx -> getComparisonsByType('number') }
             ],
             value     : [
                 title  : 'Attribute Value',
-                options: { Map ctx -> (ctx.device && ctx.choice) ? getAttributeOptions(ctx.device as List<DeviceWrapper>, ctx.choice as String) : null }
+                options: { final Map ctx -> (ctx.device && ctx.choice) ? getAttributeOptions(ctx.device as List<DeviceWrapper>, ctx.choice as String) : null }
             ]
         ],
-        subscribe: { Map ctx -> ctx.choice },
-        test     : { Map ctx ->
+        subscribe: { final Map ctx -> ctx.choice },
+        test     : { final Map ctx ->
             deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, ctx.choice as String, ctx.comparison as String,
                 ctx.value as String, ctx.all as Boolean)
         }
     ],
     'hsmAlert'          : [
         title    : 'HSM intrusion alert becomes',
-        template : { Map ctx -> "HSM intrusion alert becomes ${ctx.choice}" },
+        template : { final Map ctx -> "HSM intrusion alert becomes ${ctx.choice}" },
         inputs   : [
             choice: [
                 options : [
@@ -2010,11 +2016,11 @@ private Object runClosure(Closure c, Map ctx) {
             ]
         ],
         subscribe: 'hsmAlert',
-        test     : { Map ctx -> ctx.event.value in ctx.choice }
+        test     : { final Map ctx -> ctx.event.value in ctx.choice }
     ],
     'hsmStatus'         : [
         title    : 'HSM arming status becomes',
-        template : { Map ctx -> "HSM arming status becomes ${ctx.choice}" },
+        template : { final Map ctx -> "HSM arming status becomes ${ctx.choice}" },
         inputs   : [
             choice: [
                 options : [
@@ -2031,19 +2037,19 @@ private Object runClosure(Closure c, Map ctx) {
             ]
         ],
         subscribe: 'hsmStatus',
-        test     : { Map ctx -> location.hsmStatus in ctx.choice }
+        test     : { final Map ctx -> location.hsmStatus in ctx.choice }
     ],
     'hubMode'           : [
         title    : 'Hub mode becomes',
-        template : { Map ctx -> "Hub mode becomes ${ctx.choice}" },
+        template : { final Map ctx -> "Hub mode becomes ${ctx.choice}" },
         inputs   : [
             choice: [
-                options : { Map ctx -> location.modes.collectEntries { m -> [m.id as String, m.name] } },
+                options : { final Map ctx -> location.modes.collectEntries { final m -> [m.id as String, m.name] } },
                 multiple: true
             ],
         ],
         subscribe: 'mode',
-        test     : { Map ctx -> (location.currentMode.id as String) in ctx.choice }
+        test     : { final Map ctx -> (location.currentMode.id as String) in ctx.choice }
     ],
     'locked'            : [
         title    : 'Lock is locked',
@@ -2055,11 +2061,11 @@ private Object runClosure(Closure c, Map ctx) {
             ]
         ],
         subscribe: 'lock',
-        test     : { Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'lock', '=', 'locked', ctx.all as Boolean) }
+        test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'lock', '=', 'locked', ctx.all as Boolean) }
     ],
     'luminosityAbove'   : [
         title    : 'Illuminance rises above',
-        template : { Map ctx -> "Illuminance rises above ${ctx.value} <i>(${ctx.device})</i>" },
+        template : { final Map ctx -> "Illuminance rises above ${ctx.value} <i>(${ctx.device})</i>" },
         inputs   : [
             device: [
                 title   : 'sensors',
@@ -2071,11 +2077,11 @@ private Object runClosure(Closure c, Map ctx) {
             ]
         ],
         subscribe: { 'illuminance' },
-        test     : { Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'illuminance', '>', ctx.value as String, ctx.all as Boolean) }
+        test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'illuminance', '>', ctx.value as String, ctx.all as Boolean) }
     ],
     'luminosityBelow'   : [
         title    : 'Illuminance falls below',
-        template : { Map ctx -> "Illuminance falls below ${ctx.value} <i>(${ctx.device})</i>" },
+        template : { final Map ctx -> "Illuminance falls below ${ctx.value} <i>(${ctx.device})</i>" },
         inputs   : [
             device: [
                 title   : 'sensors',
@@ -2087,7 +2093,7 @@ private Object runClosure(Closure c, Map ctx) {
             ]
         ],
         subscribe: { 'illuminance' },
-        test     : { Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'illuminance', '<', ctx.value as String, ctx.all as Boolean) }
+        test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'illuminance', '<', ctx.value as String, ctx.all as Boolean) }
     ],
     'motionActive'      : [
         title    : 'Motion becomes active',
@@ -2099,7 +2105,7 @@ private Object runClosure(Closure c, Map ctx) {
             ]
         ],
         subscribe: 'motion',
-        test     : { Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'motion', '=', 'active', ctx.all as Boolean) }
+        test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'motion', '=', 'active', ctx.all as Boolean) }
     ],
     'motionInactive'    : [
         title    : 'Motion becomes inactive',
@@ -2111,7 +2117,7 @@ private Object runClosure(Closure c, Map ctx) {
             ]
         ],
         subscribe: 'motion',
-        test     : { Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'motion', '=', 'inactive', ctx.all as Boolean) }
+        test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'motion', '=', 'inactive', ctx.all as Boolean) }
     ],
     'notpresent'        : [
         title    : 'Presence sensor becomes not present',
@@ -2123,7 +2129,7 @@ private Object runClosure(Closure c, Map ctx) {
             ]
         ],
         subscribe: 'presence',
-        test     : { Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'presence', '=', 'not present', ctx.all as Boolean) }
+        test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'presence', '=', 'not present', ctx.all as Boolean) }
     ],
     'present'           : [
         title    : 'Presence sensor becomes present',
@@ -2135,7 +2141,7 @@ private Object runClosure(Closure c, Map ctx) {
             ]
         ],
         subscribe: 'presence',
-        test     : { Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'presence', '=', 'present', ctx.all as Boolean) }
+        test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'presence', '=', 'present', ctx.all as Boolean) }
     ],
     'smoke'             : [
         title    : 'Smoke is detected',
@@ -2147,7 +2153,7 @@ private Object runClosure(Closure c, Map ctx) {
             ]
         ],
         subscribe: 'smoke',
-        test     : { Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'smoke', '=', 'detected', ctx.all as Boolean) }
+        test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'smoke', '=', 'detected', ctx.all as Boolean) }
     ],
     'switchOff'         : [
         title    : 'Switch turns off',
@@ -2161,7 +2167,7 @@ private Object runClosure(Closure c, Map ctx) {
             ]
         ],
         subscribe: 'switch',
-        test     : { Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'switch', '=', 'off', ctx.all as Boolean) }
+        test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'switch', '=', 'off', ctx.all as Boolean) }
     ],
     'switchOn'          : [
         title    : 'Switch turns on',
@@ -2175,11 +2181,11 @@ private Object runClosure(Closure c, Map ctx) {
             ]
         ],
         subscribe: 'switch',
-        test     : { Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'switch', '=', 'on', ctx.all as Boolean) }
+        test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'switch', '=', 'on', ctx.all as Boolean) }
     ],
     'timeBefore'        : [
         title   : 'Time is before',
-        template: { ctx -> "Time is before ${ctx.value}" },
+        template: { final ctx -> "Time is before ${ctx.value}" },
         inputs  : [
             value: [
                 title: 'Before Time',
@@ -2187,11 +2193,11 @@ private Object runClosure(Closure c, Map ctx) {
                 width: 2
             ]
         ],
-        test    : { Map ctx -> new Date() < timeToday(ctx.value as String) }
+        test    : { final Map ctx -> new Date() < timeToday(ctx.value as String) }
     ],
     'timeAfter'         : [
         title   : 'Time is after',
-        template: { Map ctx -> "Time is after ${ctx.value}" },
+        template: { final Map ctx -> "Time is after ${ctx.value}" },
         inputs  : [
             value: [
                 title: 'After Time',
@@ -2199,8 +2205,8 @@ private Object runClosure(Closure c, Map ctx) {
                 width: 2
             ]
         ],
-        execute : { Map ctx -> runOnce(getNextTime(new Date(), ctx.value as String), 'timeAfterTrigger') },
-        test    : { Map ctx -> new Date() >= timeToday(ctx.value as String) }
+        execute : { final Map ctx -> runOnce(getNextTime(new Date(), ctx.value as String), 'timeAfterTrigger') },
+        test    : { final Map ctx -> new Date() >= timeToday(ctx.value as String) }
     ],
     'unlocked'          : [
         title    : 'Lock unlocks',
@@ -2214,25 +2220,25 @@ private Object runClosure(Closure c, Map ctx) {
             ]
         ],
         subscribe: 'lock',
-        test     : { Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'lock', '=', 'unlocked', ctx.all as Boolean) }
+        test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'lock', '=', 'unlocked', ctx.all as Boolean) }
     ],
     'variable'          : [
         title    : 'Variable',
-        template : { Map ctx -> "Variable '${ctx.choice}' is ${ctx.comparison} ${ctx.value}" },
+        template : { final Map ctx -> "Variable '${ctx.choice}' is ${ctx.comparison} ${ctx.value}" },
         inputs   : [
             choice    : [
-                options: { Map ctx -> getAllGlobalVars().keySet() }
+                options: { final Map ctx -> getAllGlobalVars().keySet() }
             ],
             comparison: [
-                options: { Map ctx -> getComparisonsByType(getGlobalVar(ctx.choice as String)?.type as String) }
+                options: { final Map ctx -> getComparisonsByType(getGlobalVar(ctx.choice as String)?.type as String) }
             ],
             value     : [
                 title  : 'Variable Value',
-                options: { Map ctx -> getGlobalVar(ctx.choice)?.type == 'boolean' ? ['true': 'True', 'false': 'False'] : null }
+                options: { final Map ctx -> getGlobalVar(ctx.choice)?.type == 'boolean' ? ['true': 'True', 'false': 'False'] : null }
             ]
         ],
-        subscribe: { Map ctx -> "variable:${ctx.choice}" },
-        test     : { Map ctx -> evaluateComparison(ctx.event.value as String, ctx.value as String, ctx.comparison as String) }
+        subscribe: { final Map ctx -> "variable:${ctx.choice}" },
+        test     : { final Map ctx -> evaluateComparison(ctx.event.value as String, ctx.value as String, ctx.comparison as String) }
     ],
     'waterDry'          : [
         title    : 'Water sensor becomes dry',
@@ -2244,7 +2250,7 @@ private Object runClosure(Closure c, Map ctx) {
             ]
         ],
         subscribe: 'water',
-        test     : { Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'water', '=', 'dry', ctx.all as Boolean) }
+        test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'water', '=', 'dry', ctx.all as Boolean) }
     ],
     'waterWet'          : [
         title    : 'Water sensor becomes wet',
@@ -2256,42 +2262,42 @@ private Object runClosure(Closure c, Map ctx) {
             ]
         ],
         subscribe: 'water',
-        test     : { Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'water', '=', 'wet', ctx.all as Boolean) }
+        test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'water', '=', 'wet', ctx.all as Boolean) }
     ],
-].sort { a, b -> a.value.title <=> b.value.title }
+].sort { final a, final b -> a.value.title <=> b.value.title }
 
 // Hubitat wrapper methods to allow for calls from functions with @CompileStatic attribute
 private String getCurrentMode() { return (String) location.getCurrentMode().getName() }
 private String getHsmStatus() { return (String) location.hsmStatus }
-private Object getHubVariableValue(String name) { return getGlobalVar(name)?.value }
-private Object getSetting(String name, Object defaultValue = null) {
+private Object getHubVariableValue(final String name) { return getGlobalVar(name)?.value }
+private Object getSetting(final String name, final Object defaultValue = null) {
     return settings.containsKey(name) ? settings.get(name) : defaultValue
 }
 private Map<String, Object> getAppSettings() { return settings }
-private Boolean getSettingBoolean(String name, Boolean defaultValue = false) {
+private Boolean getSettingBoolean(final String name, final Boolean defaultValue = false) {
     return settings.containsKey(name) ? settings.get(name).toBoolean() : defaultValue
 }
-private String getSettingString(String name, String defaultValue = '') {
+private String getSettingString(final String name, final String defaultValue = '') {
     return settings.containsKey(name) ? settings.get(name).toString() : defaultValue
 }
-private Integer getSettingInteger(String name, Integer defaultValue = null) {
+private Integer getSettingInteger(final String name, final Integer defaultValue = null) {
     return settings.containsKey(name) ? settings.get(name).toInteger() : defaultValue
 }
 private Map getState() { return state }
-private Object getState(String name, Object defaultValue = null) {
+private Object getState(final String name, final Object defaultValue = null) {
     return state.containsKey(name) ? state.get(name) : defaultValue
 }
 private Object getLocation() { return location }
-private long getTimeMs(int offset = 0) { return (long) now() + offset }
-private void logDebug(String s) {
+private long getTimeMs(final int offset = 0) { return (long) now() + offset }
+private void logDebug(final String s) {
     if (settings.logEnable) {
         log.debug s
     }
 }
-private void logError(String s) { log.error app.label + ' ' + s }
-private void logInfo(String s) { log.info app.label + ' ' + s }
-private void logWarn(String s) { log.warn app.label + ' ' + s }
-private void removeSetting(String s) { app.removeSetting(s) }
-private void removeState(String s) { state.remove(s) }
-private void runAfterMs(long delay, String handler) { runInMillis(delay, handler) }
-private void setState(String name, Object value) { state.put(name, value) }
+private void logError(final String s) { log.error app.label + ' ' + s }
+private void logInfo(final String s) { log.info app.label + ' ' + s }
+private void logWarn(final String s) { log.warn app.label + ' ' + s }
+private void removeSetting(final String s) { app.removeSetting(s) }
+private void removeState(final String s) { state.remove(s) }
+private void runAfterMs(final long delay, final String handler) { runInMillis(delay, handler) }
+private void setState(final String name, final Object value) { state.put(name, value) }
