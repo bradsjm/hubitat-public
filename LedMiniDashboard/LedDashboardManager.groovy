@@ -69,14 +69,14 @@ Map mainPage() {
 }
 
 // called from child app to duplicate itself
-void duplicate(Long id) {
-    InstalledAppWrapper source = getChildAppById(id)
-    InstalledAppWrapper target = addChildApp('nrgup', 'LED Mini-Dashboard Topic', "${source.label} duplicate")
+void duplicate(final Long appId) {
+    final InstalledAppWrapper source = getChildAppById(appId)
+    final InstalledAppWrapper target = addChildApp('nrgup', 'LED Mini-Dashboard Topic', "${source.label} duplicate")
     log.info "duplicating ${source.label}"
     target.writeSettings(source.readSettings())
 }
 
-private String getDescription() {
+private static String getDescription() {
     return '''\
         <b>This application allows easy linking of Hubitat device, variables and HSM
         states to LEDs of your switches.</b><br>You can link states such as contact
