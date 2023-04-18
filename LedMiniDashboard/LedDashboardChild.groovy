@@ -21,36 +21,28 @@
  *  SOFTWARE.
  */
 
-/*
- * Thanks to Mattias Fornander (@mfornander) for the original application concept
+/**
+ * Key updates:
  *
- * Version history:
- *  0.1  - Initial development (alpha)
- *  0.2  - Initial Beta Test release
- *  0.3  - Add condition current state feedback indicator
- *  0.4  - Add 'auto stop' effect option to clear effect
- *  0.5  - Add additional device support for Inovelli Red switches and dimmers
- *  0.6  - Add additional effect types support
- *  0.7  - Fixes for split effect definitions (effects vs effectsAll)
- *  0.8  - Add location mode condition
- *  0.9  - Add delayed activation option per dashboard and variable level
- *  0.91 - Increase number of priorities, fix driver titles, allow 0 for delay time
- *  0.92 - Add test/clear buttons for testing indications and duplicate dashboard
- *  0.93 - Change sorting to include condition title as second key
- *  0.94 - Fix LED display order and effect names and add Red Series Fan + Switch LZW36 support
- *  0.95 - Fix broken pause and update LZW36 support
- *  0.96 - Allow force refresh interval to be specified and fixes device tracking issue
- *  0.97 - Fixes for Red Series Fan + Switch LZW36 support
- *  0.98 - Update driver name for Blue Fan Switch and updated effect order and consistency of options
- *  0.99 - Add initial support for RGB child devices used by older Red switches and custom levels
- *  1.00 - Add support for illuminance value comparison conditions
- *  1.01 - Bug fix for sunrise/sunset
- *  1.02 - Replaced sunrise/sunset conditions with new single option
- *  1.03 - Add cool down period support for condition
- *  1.04 - Duplicating dashboard will includes devices, add top/middle/bottom led selection options
- *  1.05 - Modified button selection to be more resilient (check nulls)
- *  1.06 - Modified device attribute test to be more resilient (check nulls)
-*/
+ * v0.3: Added state feedback indicator for conditions
+ * v0.4: Introduced 'auto stop' effect option to clear effects
+ * v0.5: Expanded device support for Inovelli Red switches and dimmers
+ * v0.6: Added new effect types support
+ * v0.7: Fixed split effect definitions (effects vs effectsAll)
+ * v0.8: Implemented location mode condition
+ * v0.9: Introduced delayed activation option per dashboard and variable level
+ * v0.94: Improved Red Series Fan + Switch LZW36 support
+ * v0.98: Updated Blue Fan Switch driver name and effect order consistency
+ * v0.99: Added initial support for RGB child devices and custom levels
+ * v1.00: Introduced illuminance value comparison conditions
+ * v1.02: Replaced sunrise/sunset conditions with a single option
+ * v1.03: Added cool-down period support for conditions
+ * v1.04: Enhanced dashboard duplication to include devices, and added LED selection options
+ * v1.10: Code refactoring, cleanup, and inline documentation for maintainability
+ *
+ * Thanks to Mattias Fornander (@mfornander) for the original application concept
+ */
+
 
 import com.hubitat.app.DeviceWrapper
 import com.hubitat.hub.domain.Event
@@ -61,7 +53,7 @@ import java.time.LocalTime
 import java.util.concurrent.ConcurrentHashMap
 import java.util.regex.Matcher
 
-@Field static final String Version = '1.06'
+@Field static final String Version = '1.10'
 
 definition(
     name: 'LED Mini-Dashboard Topic',
@@ -96,9 +88,6 @@ void installed() {
 void initialize() {
     // Clear state (used mostly for tracking delayed conditions)
     state.clear()
-
-    // Build list of prioritized dashboards
-    state['sortedPrefixes'] = getSortedScenarioPrefixes()
 
     // Subscribe to events from supported Inovelli switches
     subscribeSwitchAttributes()
@@ -908,50 +897,50 @@ void renderValueInput(final String key, final Map valueInput, final String statu
 String getScenarioDescription(final String scenarioPrefix) {
     final Map<String, Object> config = getScenarioConfig(scenarioPrefix)
     final Map switchType = getTargetSwitchType()
-    final StringBuilder sb = new StringBuilder()
+    final StringBuilder str = new StringBuilder()
 
-    sb << "<b>Priority</b>: ${config.priority}, "
+    str << "<b>Priority</b>: ${config.priority}, "
 
     if (config.lednumber == 'var') {
-        stringBuilder << "<b>LED Variable:</b> <i>${config.lednumber_var}</i>"
+        str << "<b>LED Variable:</b> <i>${config.lednumber_var}</i>"
     } else if (config.lednumber) {
-        stringBuilder << "<b>${switchType.leds[config.lednumber as String] ?: 'n/a'}</b>"
+        str << "<b>${switchType.leds[config.lednumber as String] ?: 'n/a'}</b>"
     }
 
     if (config.effect == 'var') {
-        stringBuilder << ", <b>Effect Variable</b>: <i>${config.effect_var}</i>"
+        str << ", <b>Effect Variable</b>: <i>${config.effect_var}</i>"
     } else if (config.effect) {
         final Map<String, String> fxOptions = switchType.effectsAll + switchType.effects
-        stringBuilder << ", <b>Effect:</b> ${fxOptions[config.effect as String] ?: 'n/a'}"
+        str << ", <b>Effect:</b> ${fxOptions[config.effect as String] ?: 'n/a'}"
     }
 
     if (config.color == 'var') {
-        stringBuilder << ", <b>Color Variable:</b> <i>${config.color_var}</i>"
+        str << ", <b>Color Variable:</b> <i>${config.color_var}</i>"
     } else if (config.color == 'val') {
-        stringBuilder << ', <b>Color Hue</b>: ' + getColorSpan(config.color_val as Integer, "#${config.color_val}")
+        str << ', <b>Color Hue</b>: ' + getColorSpan(config.color_val as Integer, "#${config.color_val}")
     } else if (config.color) {
-        stringBuilder << ', <b>Color</b>: ' + getColorSpan(config.color as Integer, ColorMap[config.color as String])
+        str << ', <b>Color</b>: ' + getColorSpan(config.color as Integer, ColorMap[config.color as String])
     }
 
     if (config.level == 'var') {
-        stringBuilder << ", <b>Level Variable:</b> <i>${config.level_var}</i>"
+        str << ", <b>Level Variable:</b> <i>${config.level_var}</i>"
     } else if (config.level == 'val') {
-        stringBuilder << ", <b>Level:</b> ${config.level_val}%"
+        str << ", <b>Level:</b> ${config.level_val}%"
     } else if (config.level) {
-        stringBuilder << ", <b>Level:</b> ${config.level}%"
+        str << ", <b>Level:</b> ${config.level}%"
     }
 
     if (config.duration && config.unit) {
-        stringBuilder << ", <b>Duration:</b> ${config.duration} ${TimePeriodsMap[config.unit as String]?.toLowerCase()}"
+        str << ", <b>Duration:</b> ${config.duration} ${TimePeriodsMap[config.unit as String]?.toLowerCase()}"
     }
 
     if (config.conditions) {
         final List<String> rules = getRules(config)
         final String allMode = config.conditions_all ? ' and ' : ' or '
-        stringBuilder << "\n<b>Activation${rules.size() > 1 ? 's' : ''}:</b> ${rules.join(allMode)}"
+        str << "\n<b>Activation${rules.size() > 1 ? 's' : ''}:</b> ${rules.join(allMode)}"
     }
 
-    return sb.toString()
+    return str.toString()
 }
 
 /**
@@ -1211,7 +1200,7 @@ void stopNotification() {
 @CompileStatic
 void notificationDispatcher() {
     // Get prioritized list of dashboards
-    final List<String> prefixes = (List) getState('sortedPrefixes') ?: getSortedScenarioPrefixes()
+    final List<String> prefixes = getSortedScenarioPrefixes()
 
     // Evaluate current dashboard condition rules
     final Map<String, Boolean> dashboardResults = evaluateDashboardScenarios(prefixes)
@@ -1220,10 +1209,10 @@ void notificationDispatcher() {
     final long nextEvaluationTime = evaluateDelayedRules(dashboardResults)
 
     // Calculate desired LED states
-    final Map<String, Map> ledStates = calculateLedState(prefixes, dashboardResults)
+    final Collection<Map> ledStates = calculateLedStates(dashboardResults)
 
     // Dispatch each LED state to devices
-    ledStates.values().each { final config -> updateSwitchLedState(config) }
+    ledStates.each { final config -> updateSwitchLedState(config) }
 
     // Schedule the next evaluation time
     if (nextEvaluationTime > getTimeMs()) {
@@ -1326,17 +1315,35 @@ long evaluateDelayedRules(final Map<String, Boolean> evaluationResults) {
  * @return Map of LED states
  */
 @CompileStatic
-Map<String, Map> calculateLedState(final List<String> prefixes, final Map<String, Boolean> results) {
+Collection<Map> calculateLedStates(final Map<String, Boolean> results) {
+    // Initialize the LED states map
     final Map<String, Map> ledStates = [:]
-    for (final String scenarioPrefix in prefixes) {
-        Map<String, Object> config = getScenarioConfig(scenarioPrefix)
-        Map<String, Map> oldState = ledStates[config.lednumber as String] ?: [:]
+
+    // Iterate through each scenario prefix
+    for (final Map.Entry<String, Boolean> result in results) {
+        // Get scenario config for the given prefix
+        Map<String, Object> config = getScenarioConfig(result.key)
+
+        // Get the previous state of the LED, if available
+        String ledNumberKey = config.lednumber as String
+        Map<String, Map> oldState = ledStates[ledNumberKey] ?: [:]
         int oldPriority = oldState.priority as Integer ?: 0
-        if (results[scenarioPrefix]) {
+
+        // If the scenario is true in the results, update the LED states
+        if (result.value) {
+            // Replace variables in the config
             replaceVariables(config)
+
+            // Get the new priority from the config
             int newPriority = config.priority as Integer ?: 0
+
+            // Update the LED states if the new priority is higher or equal to the old priority
             if (newPriority >= oldPriority) {
-                ((String)config.lednumber).tokenize(',').each { final String ledNumber ->
+                // Get the list of LED numbers from the config
+                final List<String> ledNumbers = ledNumberKey.tokenize(',')
+
+                // Update the state for each LED number
+                ledNumbers.each { final String ledNumber ->
                     ledStates[ledNumber] = [
                         prefix   : config.prefix,
                         name     : config.name,
@@ -1350,22 +1357,27 @@ Map<String, Map> calculateLedState(final List<String> prefixes, final Map<String
                 }
             }
         } else if (config.autostop != false && !oldPriority) {
-            // Auto stop effect
-            ((String)config.lednumber).tokenize(',').each { final String ledNumber ->
+            // If auto stop is enabled and the old priority is zero then stop
+            final List<String> ledNumbers = ledNumberKey.tokenize(',')
+
+            // Update the state for each LED number with the stop effect
+            ledNumbers.each { final String ledNumber ->
                 ledStates[ledNumber] = [
                     prefix   : config.prefix,
                     name     : "[auto stop] ${config.name}",
                     lednumber: ledNumber,
-                    priority : 0,    // lowest priority
-                    effect   : '255',  // stop effect code
+                    priority : 0,       // lowest priority
+                    effect   : '255',   // stop effect code
                     color    : '0',     // default color
                     level    : '100',   // default level
-                    unit     : '255'     // Infinite
+                    unit     : '255'    // Infinite
                 ]
             }
         }
     }
-    return ledStates
+
+    // Return the updated LED states
+    return ledStates.values()
 }
 
 /*
@@ -1546,6 +1558,20 @@ private static Map<String, String> getComparisonsByType(final String type) {
 }
 
 /**
+ * Determines whether the tracker has changed.
+ * @param map1 The first map
+ * @param map2 The second map
+ * @return Whether the tracker has changed
+ */
+private static boolean isTrackerChanged(final Map map1, final Map map2) {
+    if (map1 == null || map2 == null) {
+        return true
+    }
+    final List<String> keys = ['effect', 'color', 'level', 'unit', 'duration']
+    return keys.every { final String key -> map1[key] == map2[key] }
+}
+
+/**
  * Cleans application settings removing entries no longer in use.
  */
 @CompileStatic
@@ -1723,12 +1749,12 @@ private void resetNotifications() {
     final Map<String, String> ledMap = (Map<String, String>) getTargetSwitchType().leds
     if (ledMap) {
         logInfo 'resetting all device notifications'
-        ledMap.keySet().findAll { final String led -> led != 'var' }.each { final String led ->
+        ledMap.keySet().findAll { final String ledNumber -> ledNumber != 'var' }.each { final String ledNumber ->
             updateSwitchLedState(
                 [
                     color    : '0',       // default color
                     effect   : '255',     // stop effect code
-                    lednumber: led,
+                    lednumber: ledNumber,
                     level    : '100',     // default level
                     name     : 'clear notification',
                     priority : 0,
@@ -1738,6 +1764,253 @@ private void resetNotifications() {
         }
     }
 }
+
+/**
+ * Restores the color of a device from the state map.
+ * @param device The device to restore
+ * @param key The key to use to restore the device color from state
+ */
+private void restoreDeviceColor(final DeviceWrapper device, final String key) {
+    if (state[key]?.level) {
+        logDebug "${device}.setColor(${state[key]})"
+        device.setColor([
+            hue       : state[key].hue as Integer,
+            saturation: state[key].saturation as Integer,
+            level     : state[key].level as Integer
+        ])
+        removeState(key)
+    } else {
+        logDebug "${device}.off()"
+        device.off()
+    }
+}
+
+/**
+ * Saves the color of a device to the state map.
+ * @param device The device to save
+ * @param key The key to use to save the device color to state
+ */
+private void saveDeviceColor(final DeviceWrapper device, final String key) {
+    state[key] = [
+        hue       : device.currentValue('hue') ?: 0,
+        saturation: device.currentValue('saturation') ?: 0,
+        level     : device.currentValue('level') ?: 0,
+    ]
+}
+
+/**
+ * Schedules the stopNotification method to run after the duration of the notification.
+ * @param config The configuration to use to determine the duration of the notification
+ */
+private void scheduleStopNotification(final Map config) {
+    if (config.unit && config.unit != '255') {
+        final int duration = convertParamToMs(Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255))
+        logDebug 'scheduling stopNotification in ' + duration + 'ms'
+        runInMillis(duration + 1000, 'stopNotification')
+    } else {
+        unschedule('stopNotification')
+    }
+}
+
+/**
+ * Provides a wrapper around the color device driver methods
+ * @param device the device to update
+ * @param config the configuration to update the device with
+ */
+private void setColorDeviceEffect(final DeviceWrapper device, final Map config) {
+    final String key = "device-state-${device.id}"
+
+    switch (config.effect) {
+        case '0': // Off
+            turnDeviceOff(device, key)
+            break
+        case '1': // On
+            if (device.currentValue('switch') == 'on') {
+                saveDeviceColor(device, key)
+            }
+            setDeviceColor(device, config)
+            break
+        case '255':
+            restoreDeviceColor(device, key)
+            break
+    }
+
+    scheduleStopNotification(config)
+}
+
+/**
+ * Provides a wrapper around the color device driver methods
+ * @param device the device to update
+ * @param config the configuration to update the device with
+ */
+private void setDeviceColor(final DeviceWrapper device, final Map config) {
+    final int color = config.color as int
+    final int level = config.level as int
+    final int huePercent = (int) Math.round(color / 360.0) * 100
+    logDebug "${device}.setColor(${huePercent})"
+    device.setColor([
+        hue       : huePercent,
+        saturation: 100,
+        level     : level
+    ])
+}
+
+/**
+ * Provides a wrapper around the ledEffect driver methods for the Inovelli Blue devices.
+ * This method translates the values in the config map to the appropriate values for the device.
+ * @param device the device to update
+ * @param config the configuration to update the device with
+ */
+private void setInovelliBlueLedEffect(final DeviceWrapper device, final Map config) {
+    int color = 0, duration = 0, effect = 0, level = 0
+
+    // Calculate duration based on given unit and duration values, with a max value of 255
+    if (config.unit) {
+        duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255)
+    }
+
+    // Calculate color value based on given color value (0-360), scaling it to a range of 0-255
+    if (config.color) {
+        color = (int) Math.min(Math.round(((config.color as Integer) / 360.0) * 255), 255)
+    }
+
+    // Set the effect value if provided
+    if (config.effect) {
+        effect = config.effect as int
+    }
+
+    // Set the level value if provided
+    if (config.level) {
+        level = config.level as int
+    }
+
+    if (config.lednumber == 'All') {
+        // Apply the effect, color, level, and duration to all LEDs if 'All' is specified
+        logDebug "${device}.ledEffectALL(${effect},${color},${level},${duration})"
+        device.ledEffectAll(effect, color, level, duration)
+    } else {
+        // Otherwise, apply the effect, color, level, and duration to the specified LED number
+        logDebug "${device}.ledEffectONE(${ledNumber},${effect},${color},${level},${duration})"
+        device.ledEffectOne(ledNumber, effect, color, level, duration)
+    }
+}
+
+/**
+ * Provides a wrapper around the Inovelli device driver setConfigParameter method.
+ * @param device the device to update
+ * @param config the configuration to update the device with
+ */
+private void setInovelliRedGen1Effect(final DeviceWrapper device, final Map config) {
+    int color = 0, effect = 0, level = 0
+
+    // Calculate color based on the provided color value, ensuring it remains within the valid range (0-254)
+    if (config.color) {
+        color = Math.min(Math.round(((config.color as Integer) / 360.0) * 255), 255) as int
+        // Normalize color value to a range between 0 and 255
+        if (color <= 2) {
+            color = 0
+        } else if (color >= 98) {
+            color = 254
+        } else {
+            color = (int)((color / 100) * 255)
+        }
+    }
+
+    // Calculate level based on the provided level value
+    if (config.level) {
+        level = Math.round((config.level as int) / 10) as int
+    }
+
+    // Set effect based on the provided effect value
+    if (config.effect) {
+        effect = config.effect as int
+    }
+
+    // If the effect value is 255, stop the notification and reset all values
+    if (effect == 255) {
+        level = color = 0
+    }
+
+    final Map switchType = getTargetSwitchType()
+
+    // Set LED level parameter
+    logDebug "${device}.setConfigParameter(${switchType.ledLevelParam},${level},'1')"
+    device.setConfigParameter(switchType.ledLevelParam as int, level, '1')
+
+    // Set LED color parameter if level is greater than 0
+    if (level > 0) {
+        logDebug "${device}.setConfigParameter(${switchType.ledColorParam},${color},'2')"
+        device.setConfigParameter(switchType.ledColorParam as int, color, '2')
+    }
+
+    // Schedule stopNotification
+    scheduleStopNotification(config)
+}
+
+/**
+ * Provides a wrapper around the Inovelli device driver start-notification method.
+ * This code will no longer be required when the updated Gen2 driver is released with the
+ * startNotification command.
+ * Reference https://nathanfiscus.github.io/inovelli-notification-calc/
+ * @param device the device to update
+ * @param config the configuration to update the device with
+ */
+private void setInovelliRedGen2Effect(final DeviceWrapper device, final Map config) {
+    int color = 0, duration = 0, effect = 0, level = 0
+
+    // Calculate duration based on given unit and duration values, with a max value of 255
+    if (config.unit) {
+        duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255)
+    }
+
+    // Calculate color value based on given color value (0-360), scaling it to a range of 0-255
+    if (config.color) {
+        color = (int)Math.min(Math.round(((config.color as Integer) / 360.0) * 255), 255)
+    }
+
+    // Set level if available in config
+    if (config.level) {
+        level = (int)Math.round((config.level as int) / 10)
+    }
+
+    // Set effect if available in config
+    if (config.effect) {
+        effect = config.effect as int
+    }
+
+    // Reset effect, duration, level, and color if effect is 255 (stop notification)
+    if (effect == 255) {
+        effect = duration = level = color = 0
+    }
+
+    // Create byte array with effect, duration, level, and color values
+    final byte[] bytes = [
+        effect as byte,
+        duration as byte,
+        level as byte,
+        color as byte
+    ]
+
+    // Convert byte array to integer value
+    final int value = new BigInteger(bytes).intValue()
+
+    // Log notification details
+    logDebug "${device}.startNotification(${value}) [${bytes[0] & 0xff}, ${bytes[1] & 0xff}, ${bytes[2] & 0xff}, ${bytes[3] & 0xff}]"
+
+    // Send notification to device based on 'led-number' in config
+    if (config.lednumber == 'All') {
+        device.startNotification(value)
+    } else {
+        device.startNotification(value, config.lednumber as int)
+    }
+}
+
+private void turnDeviceOff(final DeviceWrapper device, final String key) {
+    logDebug "${device}.off()"
+    device.off()
+    state.remove(key)
+}
+
 
 /**
  * Subscribes to all dashboard scenario rules. The method first gets all the scenario prefixes,
@@ -1765,6 +2038,29 @@ private void subscribeSwitchAttributes() {
             }
         }
     }
+}
+
+/**
+ * Provides a wrapper around the device driver methods for updating the LED state of a device.
+ * It checks the available commands on the device and calls the appropriate method.
+ * @param device the device to update
+ * @param config the configuration to update the device with
+ */
+private void updateDeviceLedState(final DeviceWrapper device, final Map config) {
+    if (device.hasCommand('ledEffectOne')) {
+        setInovelliBlueLedEffect(device, config)
+    } else if (device.hasCommand('startNotification')) {
+        setInovelliRedGen2Effect(device, config)
+    } else if (device.hasCommand('setConfigParameter')) {
+        setInovelliRedGen1Effect(device, config)
+    } else if (device.hasCommand('setColor')) {
+        setColorDeviceEffect(device, config)
+    } else {
+        logWarn "Unable to determine notification command for ${device}"
+        return
+    }
+
+    pauseExecution(PAUSE_DELAY_MS)
 }
 
 /**
@@ -1797,196 +2093,6 @@ private void updateSwitchLedState(final Map config) {
             logDebug "Skipping update to ${device} (no change detected)"
         }
     }
-}
-
-private boolean isTrackerChanged(final Map map1, final Map map2) {
-    if (map1 == null || map2 == null) {
-        return true
-    }
-    final List<String> keys = ['effect', 'color', 'level', 'unit', 'duration']
-    return keys.every { final String key -> map1[key] == map2[key] }
-}
-
-/**
- * Provides a wrapper around the device driver methods for updating the LED state of a device.
- * It checks the device type and calls the appropriate method.
- * @param device the device to update
- * @param config the configuration to update the device with
- */
-private void updateDeviceLedState(final DeviceWrapper device, final Map config) {
-    if (device.hasCommand('ledEffectOne')) {
-        updateSwitchLedStateInovelliBlue(device, config)
-    } else if (device.hasCommand('startNotification')) {
-        updateLedStateInovelliRedGen2(device, config)
-    } else if (device.hasCommand('setConfigParameter')) {
-        updateSwitchLedInovelliRedGen1(device, config)
-    } else if (device.hasCommand('setColor')) {
-        updateSwitchColor(device, config)
-    } else {
-        logWarn "Unable to determine notification command for ${device}"
-    }
-}
-
-/**
- * updateSwitchColor is a wrapper around the color device driver methods
- * @param device the device to update
- * @param config the configuration to update the device with
- */
-private void updateSwitchColor(final DeviceWrapper device, final Map config) {
-    final String key = "device-state-${device.id}"
-    final Integer color = config.color as Integer
-    switch (config.effect) {
-        case '0': // Off
-            logDebug "${device}.off()"
-            device.off()
-            state.remove(key)
-            break
-        case '1': // On
-            if (device.currentValue('switch') == 'on') {
-                state[key] = [
-                    hue       : device.currentValue('hue') ?: 0,
-                    saturation: device.currentValue('saturation') ?: 0,
-                    level     : device.currentValue('level') ?: 0,
-                ]
-            }
-            final int huePercent = (int) Math.round((color / 360.0) * 100)
-            logDebug "${device}.setColor(${huePercent})"
-            device.setColor([
-                hue       : color == 360 ? 0 : huePercent,
-                saturation: color == 360 ? 0 : 100,
-                level     : config.level as Integer
-            ])
-            break
-        case '255':
-            if (state[key]?.level) {
-                logDebug "${device}.setColor(${state[key]})"
-                device.setColor([
-                    hue       : state[key].hue as Integer,
-                    saturation: state[key].saturation as Integer,
-                    level     : state[key].level as Integer
-                ])
-                removeState(key)
-            } else {
-                logDebug "${device}.off()"
-                device.off()
-            }
-            break
-    }
-    if (config.unit && config.unit != '255') {
-        final int duration = convertParamToMs(Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255))
-        logDebug 'scheduling stopNotification in ' + duration + 'ms'
-        runInMillis(duration + 1000, 'stopNotification')
-    } else {
-        unschedule('stopNotification')
-    }
-}
-
-/**
- * updateSwitchLedStateInovelliBlue is a wrapper around the Inovelli device ledEffect driver methods
- * The wrapper uses the trackingState to reduce the Zigbee traffic by checking the
- * assumed LED state before sending changes.
- * @param device the device to update
- * @param config the configuration to update the device with
- */
-private void updateSwitchLedStateInovelliBlue(final DeviceWrapper device, final Map config) {
-    final int color, duration, effect, level
-    if (config.unit != null) {
-        duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255)
-    }
-    if (config.color != null) {
-        color = (int) Math.min(Math.round(((config.color as Integer) / 360.0) * 255), 255)
-    }
-    if (config.effect != null) {
-        effect = config.effect as int
-    }
-    if (config.level != null) {
-        level = config.level as int
-    }
-    if (config.lednumber == 'All') {
-        logDebug "${device}.ledEffectALL(${effect},${color},${level},${duration})"
-        device.ledEffectAll(effect, color, level, duration)
-    } else {
-        logDebug "${device}.ledEffectONE(${config.lednumber},${effect},${color},${level},${duration})"
-        device.ledEffectOne(config.lednumber, effect, color, level, duration)
-    }
-    pauseExecution(PAUSE_DELAY_MS)
-}
-
-/**
- * updateSwitchLedStateInovelliRedGen1 is a wrapper around the
- * Inovelli device driver setConfigParameter method.
- * @param device the device to update
- * @param config the configuration to update the device with
- */
-private void updateSwitchLedInovelliRedGen1(final DeviceWrapper device, final Map config) {
-    int color, effect, level
-    if (config.unit != null) {
-        duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255) as int
-    }
-    if (config.color != null) {
-        color = Math.min(Math.round(((config.color as Integer) / 360.0) * 255), 255) as int
-        color = color <= 2 ? 0 : (color >= 98 ? 254 : color / 100 * 255)
-    }
-    if (config.level != null) {
-        level = Math.round((config.level as int) / 10) as int
-    }
-    if (config.effect != null) {
-        effect = config.effect as int
-    }
-    if (effect == 255) { // Stop notification option is mapped to 0
-        effect = level = color = 0
-    }
-    final Map switchType = getTargetSwitchType()
-    logDebug "${device}.setConfigParameter(${switchType.ledLevelParam},${level},'1')"
-    device.setConfigParameter(switchType.ledLevelParam as int, level, '1')
-    if (level > 0) {
-        logDebug "${device}.setConfigParameter(${switchType.ledColorParam},${color},'2')"
-        device.setConfigParameter(switchType.ledColorParam as int, color, '2')
-    }
-    if (config.unit && config.unit != '255') {
-        final long duration = convertParamToMs(Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255))
-        logDebug 'scheduling stopNotification for ' + duration + 'ms'
-        runInMillis(duration + 1000, 'stopNotification')
-    } else {
-        unschedule('stopNotification')
-    }
-    pauseExecution(PAUSE_DELAY_MS)
-}
-
-/**
- * updateSwitchLedStateInovelliRedGen2 is a wrapper around the
- * Inovelli device driver start-notification method. This code will no longer be required
- * when the updated Gen2 driver is released with the startNotification command.
- * Reference https://nathanfiscus.github.io/inovelli-notification-calc/
- * @param device the device to update
- * @param config the configuration to update the device with
- */
-private void updateLedStateInovelliRedGen2(final DeviceWrapper device, final Map config) {
-    int color, duration, effect, level
-    if (config.unit != null) {
-        duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255) as int
-    }
-    if (config.color != null) {
-        color = Math.min(Math.round(((config.color as Integer) / 360.0) * 255), 255) as int
-    }
-    if (config.level != null) {
-        level = Math.round((config.level as int) / 10) as int
-    }
-    if (config.effect != null) {
-        effect = config.effect as int
-    }
-    if (effect == 255) { // Stop notification option is mapped to 0
-        effect = duration = level = color = 0
-    }
-    final byte[] bytes = [effect as byte, duration as byte, level as byte, color as byte]
-    final int value = new BigInteger(bytes).intValue()
-    logDebug "${device}.startNotification(${value}) [${bytes[0] & 0xff}, ${bytes[1] & 0xff}, ${bytes[2] & 0xff}, ${bytes[3] & 0xff}]"
-    if (config.lednumber == 'All') {
-        device.startNotification(value)
-    } else {
-        device.startNotification(value, config.lednumber as Integer)
-    }
-    pauseExecution(PAUSE_DELAY_MS)
 }
 
 /**
@@ -2720,40 +2826,62 @@ private Object runClosure(final Closure template, final Map ctx) {
     ],
 ].sort { final valueA, final valueB -> valueA.value.title <=> valueB.value.title } as Map<String,Map>
 
+// Maximum number of rules that can be created (to prevent memory and performance issues)
 @Field private static final int MAX_RULES = 10
 
-// Hubitat wrapper methods to allow for calls from functions with @CompileStatic attribute
+//-------------------------------------------------------------------------------
+// Hubitat wrapper methods to allow for dynamic calls from @CompileStatic methods
+//-------------------------------------------------------------------------------
 private String getCurrentMode() { return (String) location.getCurrentMode().getName() }
+
 private String getHsmStatus() { return (String) location.hsmStatus }
+
 private Object getHubVariableValue(final String name) { return getGlobalVar(name)?.value }
+
 private Object getSetting(final String name, final Object defaultValue = null) {
     return settings.containsKey(name) ? settings.get(name) : defaultValue
 }
+
 private Map<String, Object> getAppSettings() { return settings }
+
 private Boolean getSettingBoolean(final String name, final Boolean defaultValue = false) {
     return settings.containsKey(name) ? settings.get(name).toBoolean() : defaultValue
 }
+
 private String getSettingString(final String name, final String defaultValue = '') {
     return settings.containsKey(name) ? settings.get(name).toString() : defaultValue
 }
+
 private Integer getSettingInteger(final String name, final Integer defaultValue = null) {
     return settings.containsKey(name) ? settings.get(name).toInteger() : defaultValue
 }
+
 private Map getState() { return state }
+
 private Object getState(final String name, final Object defaultValue = null) {
     return state.containsKey(name) ? state[name] : defaultValue
 }
+
 private Object getLocation() { return location }
+
 private long getTimeMs(final int offset = 0) { return (long) now() + offset }
+
 private void logDebug(final String string) {
     if (settings.logEnable) {
         log.debug string
     }
 }
+
 private void logError(final String string) { log.error app.label + ' ' + string }
+
 private void logInfo(final String string) { log.info app.label + ' ' + string }
+
 private void logWarn(final String string) { log.warn app.label + ' ' + string }
+
 private void removeSetting(final String string) { app.removeSetting(string) }
+
 private void removeState(final String string) { state.remove(string) }
+
 private void runAfterMs(final long delay, final String handler) { runInMillis(delay, handler) }
+
 private void setState(final String name, final Object value) { state[name]=value }

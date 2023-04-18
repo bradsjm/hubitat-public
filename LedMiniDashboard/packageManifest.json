@@ -5,9 +5,9 @@
   "communityLink": "https://community.hubitat.com/t/switch-dashboard-and-switch-notifications/104986",
   "documentationLink": "https://github.com/bradsjm/hubitat-public/blob/main/SwitchLedDashboard/README.md",
   "licenseFile": "https://raw.githubusercontent.com/bradsjm/hubitat-public/main/LICENSE",
-  "version": "1.06",
+  "version": "1.1",
   "dateReleased": "2023-04-14",
-  "releaseNotes": "Modified device attribute test to be more resilient (check nulls)",
+  "releaseNotes": "Code refactoring, cleanup and inline documentation for maintainability.",
   "apps": [
     {
       "id": "a5578fb7-3eb6-46f2-9eec-cb25fa4a6fdb",
