@@ -269,8 +269,16 @@ void renderDeviceTypeInput() {
  */
 void renderLoggingAndRefreshSection() {
     section {
-        input name: 'logEnable', title: 'Enable debug logging', type: 'bool', defaultValue: false, width: 4
-        input name: 'periodicRefresh', title: 'Enable periodic forced refresh', type: 'bool', defaultValue: false, width: 8, submitOnChange: true
+        input name: 'logEnable', title: 'Enable debug logging', type: 'bool', defaultValue: false
+
+        input name: 'metering', title: 'Enable metering (delay) of device updates', type: 'bool', defaultValue: false, width: 3, submitOnChange: true
+        if (settings.metering) {
+            input name: 'meteringInterval', title: 'Metering interval (ms):', type: 'number', width: 3, range: '10..10000', defaultValue: 100
+        } else {
+            app.removeSetting('meteringInterval')
+        }
+
+        input name: 'periodicRefresh', title: 'Enable periodic forced refresh of all devices', type: 'bool', defaultValue: false, width: 3, submitOnChange: true
         if (settings.periodicRefresh) {
             input name: 'periodicRefreshInterval', title: 'Refresh interval (minutes):', type: 'number', width: 3, range: '1..1440', defaultValue: 60
         } else {
@@ -310,7 +318,7 @@ void renderNotificationScenarios(final Map<String, String> switchType) {
         final Set<String> prefixes = getSortedScenarioPrefixes()
         final String title = "<h3 style=\'color: #1A77C9; font-weight: bold\'>${app.label} Notification Scenarios</h3>"
         section(title) {
-            for (final String scenarioPrefix : prefixes) {
+            for (final String scenarioPrefix in prefixes) {
                 renderScenarioDescription(scenarioPrefix)
             }
             renderAddDashboardButton()
@@ -334,11 +342,12 @@ void renderPauseResumeButton() {
  */
 void renderScenarioDescription(final String scenarioPrefix) {
     final String scenarioStatus = getScenarioStatus(scenarioPrefix)
+    final String description = getScenarioDescription(scenarioPrefix)
 
     href(
         name: "edit_${scenarioPrefix}",
         title: "<b>${settings["${scenarioPrefix}_name"]}</b>${scenarioStatus}",
-        description: getScenarioDescription(scenarioPrefix),
+        description: description,
         page: 'editPage',
         params: [prefix: scenarioPrefix],
         state: scenarioStatus ? 'complete' : '',
@@ -652,7 +661,7 @@ void renderDelayAndAutoStopInputs(final String scenarioPrefix) {
     section {
         input name: "${scenarioPrefix}_delay", title: '<i>For at least (minutes):</i>', description: '1..60', type: 'decimal', width: 3, range: '0..60', required: false
 
-        if (settings["${scenarioPrefix}_effect"] != '255') {
+        if (settings["${scenarioPrefix}_unit"] == '255' && settings["${scenarioPrefix}_effect"] != '255') {
             String title = 'When rules stop matching '
             title += settings["${scenarioPrefix}_autostop"] == false ? '<i>leave effect running</i>' : '<b>stop the effect</b>'
             input name: "${scenarioPrefix}_autostop", title: title, type: 'bool', defaultValue: true, width: 3, submitOnChange: true
@@ -812,10 +821,12 @@ void renderRule(final String scenarioPrefix, final Map.Entry<String, Map> rule, 
 
     if (inputs.choice) {
         renderChoiceInput(key, rule, inputs.choice, status)
+        status = ''
     }
 
     if (inputs.comparison) {
         renderComparisonInput(key, inputs.comparison)
+        status = ''
     }
 
     if (inputs.value) {
@@ -935,7 +946,7 @@ String getScenarioDescription(final String scenarioPrefix) {
     }
 
     if (config.conditions) {
-        final List<String> rules = getRules(config)
+        final List<String> rules = getConditionDescriptions(config)
         final String allMode = config.conditions_all ? ' and ' : ' or '
         str << "\n<b>Activation${rules.size() > 1 ? 's' : ''}:</b> ${rules.join(allMode)}"
     }
@@ -944,27 +955,23 @@ String getScenarioDescription(final String scenarioPrefix) {
 }
 
 /**
- * Creates a description string for the active rules.
+ * Creates a list description string for the active conditions.
  * @param config The scenario configuration.
+ * @return A list of condition descriptions.
  */
-List<String> getRules(final Map<String, Object> config) {
+List<String> getConditionDescriptions(final Map<String, Object> config) {
+    final Closure<String> formatRule = { final String rule ->
+        final Map ctx = createTemplateContext(config, rule)
+        if (ActivationRules[rule].template) {
+            return (String)runClosure((Closure) ActivationRules[rule].template, ctx) ?: ''
+        }
+        return ActivationRules[rule].title + ' <i>(' + ctx.device + ')</i>'
+    }
+
     return (config.conditions as List<String>)
         .take(MAX_RULES)
         .findAll { final String rule -> ActivationRules.containsKey(rule) }
-        .collect { final String rule -> formatRule(config, rule) } as List<String>
-}
-
-/**
- * Formats a specific rule for display.
- * @param config The scenario configuration.
- * @param rule The rule to format.
- */
-String formatRule(final Map config, final String rule) {
-    final Map ctx = createTemplateContext(config, rule)
-    if (ActivationRules[rule].template) {
-        return runClosure((Closure) ActivationRules[rule].template, ctx) ?: ''
-    }
-    return ActivationRules[rule].title + ' <i>(' + ctx.device + ')</i>'
+        .collect { final String rule -> formatRule(rule) } as List<String>
 }
 
 /**
@@ -985,11 +992,11 @@ Map createTemplateContext(final Map<String, Object> config, final String rule) {
 
     if (ctx.device) {
         final boolean isAll = config["${rule}_device_all" as String]
-        if (ctx.device.size() > 2) {
+        if (ctx.device instanceof List && ctx.device.size() > 2) {
             final String title = ActivationRules[rule].inputs.device.title.toLowerCase()
             ctx['device'] = "${ctx.device.size()} ${title}"
             ctx['device'] = (isAll ? 'All ' : 'Any of ') + ctx['device']
-        } else {
+        } else if (ctx.device instanceof List) {
             ctx['device'] = ctx.device*.toString().join(isAll ? ' & ' : ' or ')
         }
     }
@@ -1568,7 +1575,7 @@ private static boolean isTrackerChanged(final Map map1, final Map map2) {
         return true
     }
     final List<String> keys = ['effect', 'color', 'level', 'unit', 'duration']
-    return keys.every { final String key -> map1[key] == map2[key] }
+    return keys.any { final String key -> map1[key] != map2[key] }
 }
 
 /**
@@ -1890,8 +1897,8 @@ private void setInovelliBlueLedEffect(final DeviceWrapper device, final Map conf
         device.ledEffectAll(effect, color, level, duration)
     } else {
         // Otherwise, apply the effect, color, level, and duration to the specified LED number
-        logDebug "${device}.ledEffectONE(${ledNumber},${effect},${color},${level},${duration})"
-        device.ledEffectOne(ledNumber, effect, color, level, duration)
+        logDebug "${device}.ledEffectONE(${config.lednumber},${effect},${color},${level},${duration})"
+        device.ledEffectOne(config.lednumber as int, effect, color, level, duration)
     }
 }
 
@@ -2060,7 +2067,9 @@ private void updateDeviceLedState(final DeviceWrapper device, final Map config) 
         return
     }
 
-    pauseExecution(PAUSE_DELAY_MS)
+    if (settings.metering && settings.meteringInterval > 0) {
+        pauseExecution(settings.meteringInterval as int)
+    }
 }
 
 /**
@@ -2082,7 +2091,6 @@ private void updateSwitchLedState(final Map config) {
         Map<String, Map> tracker = getSwitchStateTracker(device)
         String key = config.lednumber
         boolean isTrackerExpired = (Long) tracker[key]?.expires <= getTimeMs()
-
         if (isTrackerChanged(tracker[key], config) || isTrackerExpired) {
             updateDeviceLedState(device, config)
 
@@ -2272,14 +2280,14 @@ private Date getNextTime(final Date now, final String datetime) {
  */
 @CompileStatic
 private Object runClosure(final Closure template, final Map ctx) {
-    String code = 'unknown'
+    logInfo(template.hashCode().toString())
     try {
-        code = template.metaClass.classNode.getDeclaredMethods('doCall')?.first()?.code?.text
         final Closure closure = (Closure) template.clone()
         closure.delegate = this
         return closure.call(ctx)
     } catch (final e) {
-        logWarn "runClosure error ${e}: ${code} with ctx ${ctx}"
+        final String code = template?.metaClass?.classNode?.getDeclaredMethods('doCall')?.first()?.code?.text
+        logWarn "runClosure error ${e}: ${code ?: 'unknown code'} with ctx ${ctx}"
     }
     return null
 }
@@ -2429,9 +2437,6 @@ private Object runClosure(final Closure template, final Map ctx) {
 // Defines the text used to show the application is paused
 @Field static final String pauseText = $/<span style='color: red;'> (Paused)</span>/$
 
-// How long to pause execution between sending each device command
-@Field static final int PAUSE_DELAY_MS = 200
-
 /**
  *  List of activation rules. Each entry defines a single selectable rule consisting of:
  *      title     - Displayed to the user in dropdown selection
@@ -2532,7 +2537,7 @@ private Object runClosure(final Closure template, final Map ctx) {
         test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'contact', '=', 'open', ctx.all as Boolean) }
     ],
     'customAttribute'   : [
-        title    : 'Custom attribute',
+        title    : 'Custom device attribute',
         template : { final Map ctx -> "${ctx.choice?.capitalize()} is ${ctx.comparison} ${ctx.value} <i>(${ctx.device})</i>" },
         inputs   : [
             device    : [
@@ -2557,6 +2562,35 @@ private Object runClosure(final Closure template, final Map ctx) {
         test     : { final Map ctx ->
             deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, ctx.choice as String, ctx.comparison as String,
                 ctx.value as String, ctx.all as Boolean)
+        }
+    ],
+    'eventAttribute'   : [
+        title    : 'Custom event attribute',
+        template : { final Map ctx -> "${ctx.choice?.capitalize()} is ${ctx.comparison} ${ctx.value} <i>(${ctx.device})</i>" },
+        inputs   : [
+            device    : [
+                title   : 'Select Device',
+                type    : 'capability.*',
+                multiple: false
+            ],
+            choice    : [
+                title   : 'Select Event Attribute',
+                options : { final Map ctx -> ctx.device ? getAttributeChoices(ctx.device as List<DeviceWrapper>) : null },
+                multiple: false
+            ],
+            comparison: [
+                options: { final Map ctx -> getComparisonsByType('number') }
+            ],
+            value     : [
+                title  : 'Attribute Value',
+                options: { final Map ctx -> (ctx.device && ctx.choice) ? getAttributeOptions(ctx.device as List<DeviceWrapper>, ctx.choice as String) : null }
+            ]
+        ],
+        subscribe: { final Map ctx -> ctx.choice },
+        test     : { final Map ctx ->
+            ctx.event.deviceId == (ctx.device as DeviceWrapper).idAsLong &&
+            ctx.event.name == ctx.choice &&
+            evaluateComparison(ctx.event.value as String, ctx.value as String, ctx.comparison as String)
         }
     ],
     'hsmAlert'          : [
