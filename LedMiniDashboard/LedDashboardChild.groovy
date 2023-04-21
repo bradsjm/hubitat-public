@@ -625,7 +625,7 @@ void renderChoiceInput(final String key, final Map.Entry<String, Map> rule, fina
             defaultValue: choiceInput.defaultValue,
             type: 'enum',
             options: options,
-            width: choiceInput.width ?: 7,
+            width: choiceInput.width ?: 6,
             multiple: choiceInput.multiple,
             submitOnChange: true, required: true
     }
@@ -645,7 +645,7 @@ void renderComparisonInput(final String key, final Map comparisonInput) {
     if (options) {
         input name: "${key}_comparison",
             title: (comparisonInput.title ?: 'Comparison') + ' ',
-            width: comparisonInput.width ?: 2,
+            width: comparisonInput.width ?: 3,
             type: 'enum',
             options: options,
             defaultValue: comparisonInput.defaultValue,
@@ -658,8 +658,14 @@ void renderComparisonInput(final String key, final Map comparisonInput) {
  * @param scenarioPrefix The prefix of the scenario to render the inputs for.
  */
 void renderDelayAndAutoStopInputs(final String scenarioPrefix) {
+    final List<String> activeRules = settings["${scenarioPrefix}_conditions"] as List<String>
+
     section {
-        input name: "${scenarioPrefix}_delay", title: '<i>For at least (minutes):</i>', description: '1..60', type: 'decimal', width: 3, range: '0..60', required: false
+        if (activeRules?.every { final String ruleKey -> ActivationRules[ruleKey].inputs.delay }) {
+            input name: "${scenarioPrefix}_delay", title: '<i>For at least (minutes):</i>', description: '1..60', type: 'decimal', width: 3, range: '0..60', required: false
+        } else {
+            app.removeSetting("${scenarioPrefix}_delay")
+        }
 
         if (settings["${scenarioPrefix}_unit"] == '255' && settings["${scenarioPrefix}_effect"] != '255') {
             String title = 'When rules stop matching '
@@ -1555,9 +1561,9 @@ private static Map<String, String> getComparisonsByType(final String type) {
         case 'bigdecimal':
             result += [
                 '<' : 'Less than',
-                '<=': 'Less or equal',
+                '<=': 'Less or equal to',
                 '>' : 'Greater than',
-                '>=': 'Greater or equal'
+                '>=': 'Greater or equal to'
             ]
             break
     }
@@ -2465,7 +2471,8 @@ private Object runClosure(final Closure template, final Map ctx) {
                 range       : '-300..300',
                 defaultValue: 0,
                 width       : 2
-            ]
+            ],
+            delay: true
         ],
         execute : { final Map ctx ->
             final Map almanac = getAlmanac(new Date(), (ctx.value as Integer) ?: 0)
@@ -2482,13 +2489,14 @@ private Object runClosure(final Closure template, final Map ctx) {
         }
     ],
     'accelerationActive': [
-        title    : 'Acceleration becomes active',
+        title    : 'Acceleration is active',
         inputs   : [
             device: [
                 title   : 'sensors',
                 type    : 'capability.accelerationSensor',
                 multiple: true
-            ]
+            ],
+            delay: true
         ],
         subscribe: 'acceleration',
         test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'acceleration', '=', 'active', ctx.all as Boolean) }
@@ -2507,31 +2515,34 @@ private Object runClosure(final Closure template, final Map ctx) {
                 title   : 'button number(s)',
                 options : { final Map ctx -> getButtonNumberChoices(ctx.device as List<DeviceWrapper>) },
                 multiple: true
-            ]
+            ],
+            delay: false
         ],
         subscribe: 'pushed',
         test     : { final Map ctx -> ctx.choice && ctx.event.value in ctx.choice }
     ],
     'contactClose'      : [
-        title    : 'Contact closes',
+        title    : 'Contact is closed',
         inputs   : [
             device: [
                 title   : 'sensors',
                 type    : 'capability.contactSensor',
                 multiple: true
-            ]
+            ],
+            delay: true
         ],
         subscribe: 'contact',
         test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'contact', '=', 'closed', ctx.all as Boolean) }
     ],
     'contactOpen'       : [
-        title    : 'Contact opens',
+        title    : 'Contact is open',
         inputs   : [
             device: [
                 title   : 'sensors',
                 type    : 'capability.contactSensor',
                 multiple: true
-            ]
+            ],
+            delay: true
         ],
         subscribe: 'contact',
         test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'contact', '=', 'open', ctx.all as Boolean) }
@@ -2541,7 +2552,7 @@ private Object runClosure(final Closure template, final Map ctx) {
         template : { final Map ctx -> "${ctx.choice?.capitalize()} is ${ctx.comparison} ${ctx.value} <i>(${ctx.device})</i>" },
         inputs   : [
             device    : [
-                title   : 'Select Devices',
+                title   : 'device',
                 type    : 'capability.*',
                 multiple: true
             ],
@@ -2556,7 +2567,8 @@ private Object runClosure(final Closure template, final Map ctx) {
             value     : [
                 title  : 'Attribute Value',
                 options: { final Map ctx -> (ctx.device && ctx.choice) ? getAttributeOptions(ctx.device as List<DeviceWrapper>, ctx.choice as String) : null }
-            ]
+            ],
+            delay: true
         ],
         subscribe: { final Map ctx -> ctx.choice },
         test     : { final Map ctx ->
@@ -2565,11 +2577,11 @@ private Object runClosure(final Closure template, final Map ctx) {
         }
     ],
     'eventAttribute'   : [
-        title    : 'Custom event attribute',
-        template : { final Map ctx -> "${ctx.choice?.capitalize()} is ${ctx.comparison} ${ctx.value} <i>(${ctx.device})</i>" },
+        title    : 'Custom event attribute becomes',
+        template : { final Map ctx -> "${ctx.choice?.capitalize()} becomes ${ctx.comparison} ${ctx.value} <i>(${ctx.device})</i>" },
         inputs   : [
             device    : [
-                title   : 'Select Device',
+                title   : 'device',
                 type    : 'capability.*',
                 multiple: false
             ],
@@ -2584,7 +2596,8 @@ private Object runClosure(final Closure template, final Map ctx) {
             value     : [
                 title  : 'Attribute Value',
                 options: { final Map ctx -> (ctx.device && ctx.choice) ? getAttributeOptions(ctx.device as List<DeviceWrapper>, ctx.choice as String) : null }
-            ]
+            ],
+            delay: false
         ],
         subscribe: { final Map ctx -> ctx.choice },
         test     : { final Map ctx ->
@@ -2607,7 +2620,8 @@ private Object runClosure(final Closure template, final Map ctx) {
                     'cancel'        : 'Alert cancelled'
                 ],
                 multiple: true
-            ]
+            ],
+            delay: false
         ],
         subscribe: 'hsmAlert',
         test     : { final Map ctx -> ctx.event.value in ctx.choice }
@@ -2628,7 +2642,8 @@ private Object runClosure(final Closure template, final Map ctx) {
                     'allDisarmed': 'All Disarmed'
                 ],
                 multiple: true
-            ]
+            ],
+            delay: false
         ],
         subscribe: 'hsmStatus',
         test     : { final Map ctx -> location.hsmStatus in ctx.choice }
@@ -2641,6 +2656,7 @@ private Object runClosure(final Closure template, final Map ctx) {
                 options : { final Map ctx -> location.modes.collectEntries { final Object mode -> [mode.id as String, mode.name] } },
                 multiple: true
             ],
+            delay: true
         ],
         subscribe: 'mode',
         test     : { final Map ctx -> (location.currentMode.id as String) in ctx.choice }
@@ -2652,13 +2668,14 @@ private Object runClosure(final Closure template, final Map ctx) {
                 title   : 'devices',
                 type    : 'capability.lock',
                 multiple: true
-            ]
+            ],
+            delay: true
         ],
         subscribe: 'lock',
         test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'lock', '=', 'locked', ctx.all as Boolean) }
     ],
     'luminosityAbove'   : [
-        title    : 'Illuminance rises above',
+        title    : 'Illuminance is above',
         template : { final Map ctx -> "Illuminance rises above ${ctx.value} <i>(${ctx.device})</i>" },
         inputs   : [
             device: [
@@ -2668,13 +2685,14 @@ private Object runClosure(final Closure template, final Map ctx) {
             ],
             value : [
                 title: 'Enter Illuminance Value'
-            ]
+            ],
+            delay: true
         ],
         subscribe: { 'illuminance' },
         test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'illuminance', '>', ctx.value as String, ctx.all as Boolean) }
     ],
     'luminosityBelow'   : [
-        title    : 'Illuminance falls below',
+        title    : 'Illuminance is below',
         template : { final Map ctx -> "Illuminance falls below ${ctx.value} <i>(${ctx.device})</i>" },
         inputs   : [
             device: [
@@ -2684,55 +2702,60 @@ private Object runClosure(final Closure template, final Map ctx) {
             ],
             value : [
                 title: 'Enter Illuminance Value'
-            ]
+            ],
+            delay: true
         ],
         subscribe: { 'illuminance' },
         test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'illuminance', '<', ctx.value as String, ctx.all as Boolean) }
     ],
     'motionActive'      : [
-        title    : 'Motion becomes active',
+        title    : 'Motion is active',
         inputs   : [
             device: [
                 title   : 'sensors',
                 type    : 'capability.motionSensor',
                 multiple: true
-            ]
+            ],
+            delay: true
         ],
         subscribe: 'motion',
         test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'motion', '=', 'active', ctx.all as Boolean) }
     ],
     'motionInactive'    : [
-        title    : 'Motion becomes inactive',
+        title    : 'Motion is inactive',
         inputs   : [
             device: [
                 title   : 'sensors',
                 type    : 'capability.motionSensor',
                 multiple: true
-            ]
+            ],
+            delay: true
         ],
         subscribe: 'motion',
         test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'motion', '=', 'inactive', ctx.all as Boolean) }
     ],
     'notpresent'        : [
-        title    : 'Presence sensor becomes not present',
+        title    : 'Presence sensor is not present',
         inputs   : [
             device: [
                 title   : 'sensors',
                 type    : 'capability.presenceSensor',
                 multiple: true
-            ]
+            ],
+            delay: true
         ],
         subscribe: 'presence',
         test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'presence', '=', 'not present', ctx.all as Boolean) }
     ],
     'present'           : [
-        title    : 'Presence sensor becomes present',
+        title    : 'Presence sensor is present',
         inputs   : [
             device: [
                 title   : 'sensors',
                 type    : 'capability.presenceSensor',
                 multiple: true
-            ]
+            ],
+            delay: true
         ],
         subscribe: 'presence',
         test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'presence', '=', 'present', ctx.all as Boolean) }
@@ -2744,13 +2767,14 @@ private Object runClosure(final Closure template, final Map ctx) {
                 title   : 'devices',
                 type    : 'capability.smokeDetector',
                 multiple: true
-            ]
+            ],
+            delay: true
         ],
         subscribe: 'smoke',
         test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'smoke', '=', 'detected', ctx.all as Boolean) }
     ],
     'switchOff'         : [
-        title    : 'Switch turns off',
+        title    : 'Switch is off',
         attribute: 'switch',
         value    : 'off',
         inputs   : [
@@ -2758,13 +2782,14 @@ private Object runClosure(final Closure template, final Map ctx) {
                 title   : 'devices',
                 type    : 'capability.switch',
                 multiple: true
-            ]
+            ],
+            delay: true
         ],
         subscribe: 'switch',
         test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'switch', '=', 'off', ctx.all as Boolean) }
     ],
     'switchOn'          : [
-        title    : 'Switch turns on',
+        title    : 'Switch is on',
         attribute: 'switch',
         value    : 'on',
         inputs   : [
@@ -2772,7 +2797,8 @@ private Object runClosure(final Closure template, final Map ctx) {
                 title   : 'devices',
                 type    : 'capability.switch',
                 multiple: true
-            ]
+            ],
+            delay: true
         ],
         subscribe: 'switch',
         test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'switch', '=', 'on', ctx.all as Boolean) }
@@ -2785,7 +2811,8 @@ private Object runClosure(final Closure template, final Map ctx) {
                 title: 'Before Time',
                 type : 'time',
                 width: 2
-            ]
+            ],
+            delay: false
         ],
         test    : { final Map ctx -> new Date() < (timeToday(ctx.value as String) as Date) }
     ],
@@ -2797,13 +2824,14 @@ private Object runClosure(final Closure template, final Map ctx) {
                 title: 'After Time',
                 type : 'time',
                 width: 2
-            ]
+            ],
+            delay: false
         ],
         execute : { final Map ctx -> runOnce(getNextTime(new Date(), ctx.value as String), 'timeAfterTrigger') },
         test    : { final Map ctx -> new Date() >= (timeToday(ctx.value as String) as Date) }
     ],
     'unlocked'          : [
-        title    : 'Lock unlocks',
+        title    : 'Lock is unlocked',
         attribute: 'lock',
         value    : 'unlocked',
         inputs   : [
@@ -2811,13 +2839,14 @@ private Object runClosure(final Closure template, final Map ctx) {
                 title   : 'devices',
                 type    : 'capability.lock',
                 multiple: true
-            ]
+            ],
+            delay: true
         ],
         subscribe: 'lock',
         test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'lock', '=', 'unlocked', ctx.all as Boolean) }
     ],
     'variable'          : [
-        title    : 'Variable',
+        title    : 'Variable is value',
         template : { final Map ctx -> "Variable '${ctx.choice}' is ${ctx.comparison} ${ctx.value}" },
         inputs   : [
             choice    : [
@@ -2829,31 +2858,34 @@ private Object runClosure(final Closure template, final Map ctx) {
             value     : [
                 title  : 'Variable Value',
                 options: { final Map ctx -> (ctx.choice && getGlobalVar(ctx.choice)?.type == 'boolean') ? ['true': 'True', 'false': 'False'] : null }
-            ]
+            ],
+            delay: true
         ],
         subscribe: { final Map ctx -> "variable:${ctx.choice}" },
         test     : { final Map ctx -> evaluateComparison(ctx.event?.value as String, ctx.value as String, ctx.comparison as String) }
     ],
     'waterDry'          : [
-        title    : 'Water sensor becomes dry',
+        title    : 'Water sensor is dry',
         inputs   : [
             device: [
                 title   : 'sensors',
                 type    : 'capability.waterSensor',
                 multiple: true
-            ]
+            ],
+            delay: true
         ],
         subscribe: 'water',
         test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'water', '=', 'dry', ctx.all as Boolean) }
     ],
     'waterWet'          : [
-        title    : 'Water sensor becomes wet',
+        title    : 'Water sensor is wet',
         inputs   : [
             device: [
                 title   : 'sensors',
                 type    : 'capability.waterSensor',
                 multiple: true
-            ]
+            ],
+            delay: true
         ],
         subscribe: 'water',
         test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'water', '=', 'wet', ctx.all as Boolean) }
