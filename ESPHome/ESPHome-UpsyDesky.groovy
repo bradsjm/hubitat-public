@@ -32,8 +32,6 @@ metadata {
         capability 'Sensor'
         capability 'Refresh'
         capability 'Initialize'
-        capability 'PushableButton'
-        capability 'HoldableButton'
 
         command 'ledOn'
         command 'ledOff'
@@ -183,15 +181,6 @@ void parseState(final Map message) {
             updateAttribute('led', message.state ? 'on' : 'off')
             break
     }
-}
-
-void held(final BigDecimal number) {
-    savePreset(number)
-}
-
-// activate preset position
-void push(final BigDecimal number) {
-    preset(number)
 }
 
 void preset(final BigDecimal number) {
