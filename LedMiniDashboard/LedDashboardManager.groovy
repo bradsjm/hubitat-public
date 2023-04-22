@@ -36,6 +36,7 @@ definition(
     iconUrl: '',
     iconX2Url: '',
     installOnOpen: true,
+    singleInstance: true,
     singleThreaded: true
 )
 

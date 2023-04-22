@@ -2503,7 +2503,7 @@ private Object runClosure(final Closure template, final Map ctx) {
     ],
     'buttonPress'       : [
         title    : 'Button is pressed',
-        template : { final Map ctx -> "${ctx.choice} is pressed <i>(${ctx.device})</i>" },
+        template : { final Map ctx -> "When ${ctx.choice} is pressed <i>(${ctx.device})</i>" },
         inputs   : [
             device: [
                 title   : 'devices',
@@ -2548,7 +2548,7 @@ private Object runClosure(final Closure template, final Map ctx) {
         test     : { final Map ctx -> deviceAttributeHasValue(ctx.device as List<DeviceWrapper>, 'contact', '=', 'open', ctx.all as Boolean) }
     ],
     'customAttribute'   : [
-        title    : 'Custom device attribute',
+        title    : 'Custom attribute is value',
         template : { final Map ctx -> "${ctx.choice?.capitalize()} is ${ctx.comparison} ${ctx.value} <i>(${ctx.device})</i>" },
         inputs   : [
             device    : [
@@ -2577,8 +2577,8 @@ private Object runClosure(final Closure template, final Map ctx) {
         }
     ],
     'eventAttribute'   : [
-        title    : 'Custom event attribute becomes',
-        template : { final Map ctx -> "${ctx.choice?.capitalize()} becomes ${ctx.comparison} ${ctx.value} <i>(${ctx.device})</i>" },
+        title    : 'When custom attribute becomes',
+        template : { final Map ctx -> "When ${ctx.choice?.capitalize()} becomes ${ctx.comparison} ${ctx.value} <i>(${ctx.device})</i>" },
         inputs   : [
             device    : [
                 title   : 'device',
@@ -2608,7 +2608,7 @@ private Object runClosure(final Closure template, final Map ctx) {
     ],
     'hsmAlert'          : [
         title    : 'HSM intrusion alert becomes',
-        template : { final Map ctx -> "HSM intrusion alert becomes ${ctx.choice}" },
+        template : { final Map ctx -> "When HSM intrusion becomes ${ctx.choice}" },
         inputs   : [
             choice: [
                 options : [
@@ -2628,7 +2628,7 @@ private Object runClosure(final Closure template, final Map ctx) {
     ],
     'hsmStatus'         : [
         title    : 'HSM arming status becomes',
-        template : { final Map ctx -> "HSM arming status becomes ${ctx.choice}" },
+        template : { final Map ctx -> "When HSM arming status becomes ${ctx.choice}" },
         inputs   : [
             choice: [
                 options : [
@@ -2650,7 +2650,7 @@ private Object runClosure(final Closure template, final Map ctx) {
     ],
     'hubMode'           : [
         title    : 'Hub mode becomes',
-        template : { final Map ctx -> "Hub mode becomes ${ctx.choice}" },
+        template : { final Map ctx -> "When Hub mode becomes ${ctx.choice}" },
         inputs   : [
             choice: [
                 options : { final Map ctx -> location.modes.collectEntries { final Object mode -> [mode.id as String, mode.name] } },
@@ -2676,7 +2676,7 @@ private Object runClosure(final Closure template, final Map ctx) {
     ],
     'luminosityAbove'   : [
         title    : 'Illuminance is above',
-        template : { final Map ctx -> "Illuminance rises above ${ctx.value} <i>(${ctx.device})</i>" },
+        template : { final Map ctx -> "Illuminance is above ${ctx.value} <i>(${ctx.device})</i>" },
         inputs   : [
             device: [
                 title   : 'sensors',
@@ -2693,7 +2693,7 @@ private Object runClosure(final Closure template, final Map ctx) {
     ],
     'luminosityBelow'   : [
         title    : 'Illuminance is below',
-        template : { final Map ctx -> "Illuminance falls below ${ctx.value} <i>(${ctx.device})</i>" },
+        template : { final Map ctx -> "Illuminance is below ${ctx.value} <i>(${ctx.device})</i>" },
         inputs   : [
             device: [
                 title   : 'sensors',
