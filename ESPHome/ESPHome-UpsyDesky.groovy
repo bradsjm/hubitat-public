@@ -14,7 +14,7 @@
  *
  *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ *  FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL THE
  *  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
  *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
@@ -33,14 +33,18 @@ metadata {
         capability 'Refresh'
         capability 'Initialize'
         capability 'PushableButton'
-        capability 'Switch'
         capability 'HoldableButton'
 
-        command 'redetectDecoder'
+        command 'ledOn'
+        command 'ledOff'
+        command 'reDetectDecoder'
         command 'restart'
         command 'setPosition', [ [ name: 'Height*', type: 'NUMBER' ] ]
+        command 'preset', [ [ name: 'Number*', type: 'NUMBER', description: 'Preset Number (1-4)' ] ]
+        command 'setPreset', [ [ name: 'Number*', type: 'NUMBER', description: 'Preset Number (1-4)' ] ]
 
         attribute 'position', 'number'
+        attribute 'led', 'enum', [ 'on', 'off' ]
 
         // attribute populated by ESPHome API Library automatically
         attribute 'networkStatus', 'enum', [ 'connecting', 'online', 'offline' ]
@@ -73,7 +77,7 @@ metadata {
 
 import java.math.RoundingMode
 
-public void initialize() {
+void initialize() {
     // API library command to open socket to device, it will automatically reconnect if needed
     openSocket()
 
@@ -85,37 +89,37 @@ public void initialize() {
     }
 }
 
-public void installed() {
+void installed() {
     log.info "${device} driver installed"
 }
 
-public void logsOff() {
+void logsOff() {
     espHomeSubscribeLogs(LOG_LEVEL_INFO, false) // disable device logging
     device.updateSetting('logEnable', false)
     log.info "${device} debug logging disabled"
 }
 
-public void updated() {
+void updated() {
     log.info "${device} driver configuration updated"
     initialize()
 }
 
-public void uninstalled() {
+void uninstalled() {
     closeSocket('driver uninstalled') // make sure the socket is closed when uninstalling
     log.info "${device} driver uninstalled"
 }
 
 // driver commands
-public void refresh() {
+void refresh() {
     log.info "${device} refresh"
     state.clear()
     state.requireRefresh = true
     espHomeDeviceInfoRequest()
 }
 
-public void redetectDecoder() {
+void reDetectDecoder() {
     log.info "${device} redetectEncoder"
-    Long key = state.entities['re-detect_decoder']
+    final Long key = state.entities['re-detect_decoder'] as Long
     if (!key) {
         log.warn "${device} redetectEncoder not found"
         return
@@ -123,9 +127,9 @@ public void redetectDecoder() {
     espHomeButtonCommand([key: key])
 }
 
-public void restart() {
+void restart() {
     log.info "${device} restart"
-    Long key = state.entities['restart']
+    final Long key = state.entities['restart'] as Long
     if (!key) {
         log.warn "${device} restart not found"
         return
@@ -134,12 +138,13 @@ public void restart() {
 }
 
 // the parse method is invoked by the API library when messages are received
-public void parse(Map message) {
+void parse(final Map message) {
     if (logEnable) { log.debug "ESPHome received: ${message}" }
 
     switch (message.type) {
         case 'device':
             // Device information
+            log.info "device info: ${message}"
             break
 
         case 'entity':
@@ -147,47 +152,51 @@ public void parse(Map message) {
             if (state.entities == null) {
                 state.entities = [:]
             }
-            state.entities[message.objectId] = message.key
+            state.entities[message.objectId as String] = message.key
             break
 
         case 'state':
             if (message.key) {
-                String objectId = state.entities.find { e -> e.value as Long == message.key as Long }?.key
-                if (!objectId) {
-                    log.warn "ESPHome: Unknown entity key: ${message}"
-                    return
-                }
-                switch (objectId) {
-                    case 'desk_height':
-                        if (message.hasState) {
-                            BigDecimal value = (message.state as BigDecimal).setScale(1, RoundingMode.HALF_UP)
-                            updateAttribute('position', value)
-                        }
-                        break   
-                    case 'status_led':
-                        updateAttribute('switch', message.state ? 'on' : 'off')
-                        break
-                }
+                parseState(message)
             }
             break
     }
 }
 
-// set preset position
-public void hold(BigDecimal number) {
-    log.info "${device} hold: ${number}"
-    Long key = state.entities["set_preset_${number}"]
-    if (!key) {
-        log.warn "${device} invalid preset number: ${number}"
+// parse state messages
+void parseState(final Map message) {
+    final String objectId = state.entities.find { final Map.Entry entity ->
+        entity.value as Long == message.key as Long
+    }?.key
+    if (!objectId) {
+        log.warn "ESPHome: Unknown entity key: ${message}"
         return
     }
-    espHomeButtonCommand([key: key])
+    switch (objectId) {
+        case 'desk_height':
+            if (message.hasState) {
+                final BigDecimal value = (message.state as BigDecimal).setScale(1, RoundingMode.HALF_UP)
+                runInMillis(750, "updateAttributeDebounce", [ data: [ attribute: 'position', value: value ] ])
+            }
+            break
+        case 'status_led':
+            updateAttribute('led', message.state ? 'on' : 'off')
+            break
+    }
+}
+
+void held(final BigDecimal number) {
+    savePreset(number)
 }
 
 // activate preset position
-public void push(BigDecimal number) {
-    log.info "${device} push: ${number}"
-    Long key = state.entities["preset_${number}"]
+void push(final BigDecimal number) {
+    preset(number)
+}
+
+void preset(final BigDecimal number) {
+    log.info "${device} preset: ${number}"
+    final Long key = state.entities["preset_${number}"] as Long
     if (!key) {
         log.warn "${device} invalid preset number: ${number}"
         return
@@ -195,28 +204,41 @@ public void push(BigDecimal number) {
     espHomeButtonCommand([key: key])
 }
 
-public void setPosition(BigDecimal position) {
-    log.info "${device} setPosition: ${position}"
-    Long key = state.entities["target_desk_height"]
+void setPreset(final BigDecimal number) {
+    log.info "${device} hold: ${number}"
+    final Long key = state.entities["set_preset_${number}"] as Long
     if (!key) {
+        log.warn "${device} invalid preset number: ${number}"
+        return
+    }
+    espHomeButtonCommand([key: key])
+}
+
+void setPosition(final BigDecimal position) {
+    log.info "${device} setPosition: ${position}"
+    final Long key = state.entities['target_desk_height'] as Long
+    if (!key) {
+        log.warn "${device} target_desk_height key not found"
         return
     }
     espHomeNumberCommand([key: key, state: position])
 }
 
-public void on() {
+void ledOn() {
     log.info "${device} LED on"
-    Long key = state.entities['status_led']
+    final Long key = state.entities['status_led'] as Long
     if (!key) {
+        log.warn "${device} status_led key not found"
         return
     }
     espHomeLightCommand([key: key, state: true])
 }
 
-public void off() {
+void ledOff() {
     log.info "${device} LED off"
-    Long key = state.entities['status_led']
+    final Long key = state.entities['status_led'] as Long
     if (!key) {
+        log.warn "${device} status_led key not found"
         return
     }
     espHomeLightCommand([key: key, state: false])
@@ -235,6 +257,14 @@ private void updateAttribute(final String attribute, final Object value, final S
         log.info descriptionText
     }
     sendEvent(name: attribute, value: value, unit: unit, type: type, descriptionText: descriptionText)
+}
+
+/**
+ * Used to update an attribute with a delay from the runIn method
+ * @param data map of data to pass to the updateAttribute method
+ */
+private void updateAttributeDebounce(final Map data) {
+    updateAttribute(data.attribute as String, data.value, data.unit as String, data.type as String)
 }
 
 // Put this line at the end of the driver to include the ESPHome API library helper
