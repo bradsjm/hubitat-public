@@ -1,13 +1,13 @@
 {
   "packageName": "Third Reality Zigbee Drivers",
   "author": "Jonathan Bradshaw",
-  "version": "1.02",
+  "version": "1.03",
   "minimumHEVersion": "2.3.2",
   "communityLink": "https://community.hubitat.com/t/new-third-reality-power-monitoring-plug/109786",
   "documentationLink": "https://raw.githubusercontent.com/bradsjm/hubitat-public/main/ThirdReality/README.md",
   "licenseFile": "https://raw.githubusercontent.com/bradsjm/hubitat-public/main/LICENSE",
-  "dateReleased": "2023-03-27",
-  "releaseNotes": "Added power factor calculation",
+  "dateReleased": "2023-04-22",
+  "releaseNotes": "Using built-in energy field from device. Reduce Hubitat events by configuring thresholds to report.",
   "drivers": [
     {
       "id": "27afeb89-1143-4f9a-a591-87d75e45dc7e",

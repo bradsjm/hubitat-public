@@ -41,7 +41,6 @@ metadata {
         capability 'Switch'
         capability 'Voltage Measurement'
 
-        command 'resetEnergy'
         command 'toggle'
         command 'updateFirmware'
 
@@ -58,8 +57,20 @@ metadata {
         input name: 'healthCheckInterval', type: 'enum', title: '<b>Healthcheck Interval</b>', options: HealthcheckIntervalOpts.options, defaultValue: HealthcheckIntervalOpts.defaultValue, description:\
             '<i>Changes how often the hub pings outlet to check health.</i>'
 
-        input name: 'disableOnOff', type: 'bool', title: '<b>Disable Commands</b>', defaultValue: false, description:\
-            '<i>Disables all power commands.</i>'
+        input name: 'disableOnOff', type: 'bool', title: '<b>Disable Power Commands</b>', defaultValue: false, description:\
+            '<i>Disables the driver power commands to stop accidental changes.</i>'
+
+        input name: 'powerDelta', type: 'number', title: '<b>Power Minimum Change</b>', description:\
+            '<i>The minimum Power (watts) change that will be recorded.</i>', range: '0.1..1500'
+
+        input name: 'energyDelta', type: 'number', title: '<b>Energy Minimum Change</b>', description:\
+            '<i>The minimum energy kWh change that will be recorded.</i>', range: '0.1..100'
+
+        input name: 'amperageDelta', type: 'number', title: '<b>Amperage Minimum Change</b>', description:\
+            '<i>The minimum amperage change that will be recorded.</i>', range: '0.1..15'
+
+        input name: 'voltageDelta', type: 'number', title: '<b>Voltage Minimum Change</b>', description:\
+            '<i>The minimum voltage change that will be recorded.</i>', range: '1..100'
 
         input name: 'txtEnable', type: 'bool', title: '<b>Enable descriptionText logging</b>', defaultValue: true, description:\
             '<i>Enables command logging.</i>'
@@ -69,10 +80,10 @@ metadata {
     }
 }
 
-@Field static final String VERSION = '1.02 (2023-04-09)'
+@Field static final String VERSION = '1.03 (2023-04-22)'
 
 /**
- * Send configuration parameters to the bulb
+ * Send configuration parameters to the device
  * Invoked when device is first installed and when the user updates the configuration
  * @return List of zigbee commands
  */
@@ -86,13 +97,15 @@ List<String> configure() {
         cmds += zigbee.writeAttribute(zigbee.ON_OFF_CLUSTER, POWER_RESTORE_ID, DataType.ENUM8, settings.powerRestore as Integer, [:], DELAY_MS)
     }
 
-    cmds += zigbee.configureReporting(zigbee.ON_OFF_CLUSTER, POWER_ON_OFF_ID, DataType.BOOLEAN, 0, 3600, 1, [:], DELAY_MS)
-    cmds += zigbee.configureReporting(zigbee.ELECTRICAL_MEASUREMENT_CLUSTER, ACTIVE_POWER_ID, DataType.INT16, 5, 3600, 10, [:], DELAY_MS)
-    cmds += zigbee.configureReporting(zigbee.ELECTRICAL_MEASUREMENT_CLUSTER, RMS_CURRENT_ID, DataType.UINT16, 5, 3600, 50, [:], DELAY_MS)
-    cmds += zigbee.configureReporting(zigbee.ELECTRICAL_MEASUREMENT_CLUSTER, RMS_VOLTAGE_ID, DataType.UINT16, 5, 3600, 5, [:], DELAY_MS)
-    cmds += zigbee.configureReporting(zigbee.ELECTRICAL_MEASUREMENT_CLUSTER, AC_FREQUENCY_ID, DataType.UINT16, 5, 3600, 1, [:], DELAY_MS)
-
-    if (settings.logEnable) { log.debug "zigbee configure cmds: ${cmds}" }
+    // Configure reporting - This appears to be ignored by the device
+    // Out of the box reporting is only ON_OFF_CLUSTER minReportingInterval: 0, maxReportingInterval: 240
+    // However it appears be hardcoded to send updates every 30 seconds and any changes for all clusters
+    //cmds += zigbee.configureReporting(zigbee.ON_OFF_CLUSTER, POWER_ON_OFF_ID, DataType.BOOLEAN, 0, 240, null, [:], DELAY_MS)
+    //cmds += zigbee.configureReporting(zigbee.ELECTRICAL_MEASUREMENT_CLUSTER, ACTIVE_POWER_ID, DataType.INT16, 0, 240, 10, [:], DELAY_MS)
+    //cmds += zigbee.configureReporting(zigbee.ELECTRICAL_MEASUREMENT_CLUSTER, RMS_CURRENT_ID, DataType.UINT16, 0, 240, 10, [:], DELAY_MS)
+    //cmds += zigbee.configureReporting(zigbee.ELECTRICAL_MEASUREMENT_CLUSTER, RMS_VOLTAGE_ID, DataType.UINT16, 0, 240, 10, [:], DELAY_MS)
+    //cmds += zigbee.configureReporting(zigbee.ELECTRICAL_MEASUREMENT_CLUSTER, AC_FREQUENCY_ID, DataType.UINT16, 0, 240, 10, [:], DELAY_MS)
+    //cmds += zigbee.configureReporting(zigbee.METERING_CLUSTER, ATTRIBUTE_READING_INFO_SET, DataType.UINT48, 0, 240, 10, [:], DELAY_MS)
 
     runIn(5, 'refresh')
     return cmds
@@ -171,6 +184,7 @@ List<String> ping() {
  */
 List<String> refresh() {
     log.info 'refresh'
+    state.values = [:]
     List<String> cmds = []
 
     // Get Firmware Version
@@ -189,9 +203,10 @@ List<String> refresh() {
         AC_POWER_DIVISOR_ID
     ], [:], DELAY_MS)
 
-    // Get Current Power Measurement
+    // Get Power On/Off state
     cmds += zigbee.readAttribute(zigbee.ON_OFF_CLUSTER, POWER_ON_OFF_ID, [:], DELAY_MS)
 
+    // Get Current Power Measurement
     cmds += zigbee.readAttribute(zigbee.ELECTRICAL_MEASUREMENT_CLUSTER, [
         AC_FREQUENCY_ID,
         RMS_CURRENT_ID,
@@ -199,25 +214,21 @@ List<String> refresh() {
         ACTIVE_POWER_ID
     ], [:], DELAY_MS)
 
-    // Active Endpoint request
-    //cmds += "he raw ${device.deviceNetworkId} 0 0 0x0005 {00 ${zigbee.swapOctets(device.deviceNetworkId)}} {0x0000}"
-    // Simple discovery request
-    //cmds += "he raw ${device.deviceNetworkId} 0 0 0x0004 {00 ${zigbee.swapOctets(device.deviceNetworkId)}} {0x0000}"
+    // Get Energy Measurement
+    cmds += zigbee.readAttribute(zigbee.METERING_CLUSTER, ATTRIBUTE_READING_INFO_SET, [:], DELAY_MS)
+
+    // Get Reporting Configuration (for debug)
+    if (settings.logEnable) {
+        cmds += zigbee.reportingConfiguration(zigbee.ON_OFF_CLUSTER, POWER_ON_OFF_ID, [:], DELAY_MS)
+        cmds += zigbee.reportingConfiguration(zigbee.ELECTRICAL_MEASUREMENT_CLUSTER, ACTIVE_POWER_ID, [:], DELAY_MS)
+        cmds += zigbee.reportingConfiguration(zigbee.ELECTRICAL_MEASUREMENT_CLUSTER, RMS_CURRENT_ID, [:], DELAY_MS)
+        cmds += zigbee.reportingConfiguration(zigbee.ELECTRICAL_MEASUREMENT_CLUSTER, RMS_VOLTAGE_ID, [:], DELAY_MS)
+        cmds += zigbee.reportingConfiguration(zigbee.ELECTRICAL_MEASUREMENT_CLUSTER, AC_FREQUENCY_ID, [:], DELAY_MS)
+        cmds += zigbee.reportingConfiguration(zigbee.METERING_CLUSTER, ATTRIBUTE_READING_INFO_SET, [:], DELAY_MS)
+    }
 
     scheduleCommandTimeoutCheck()
     return cmds
-}
-
-/**
- * Reset Energy Command
- * @return List of zigbee commands
- */
-void resetEnergy() {
-    log.info 'reset energy value'
-    unschedule('updateEnergyCalculation')
-    state.energyInKwh = 0
-    state.lastPowerUpdate = now()
-    updateEnergyCalculation()
 }
 
 /**
@@ -233,12 +244,22 @@ List<String> toggle() {
 }
 
 /**
+ * Update Energy Calculation (no longer required - read from device)
+ * @return List of zigbee commands
+ */
+void updateEnergyCalculation() {
+    unschedule('updateEnergyCalculation') // legacy
+}
+
+/**
  * Invoked by Hubitat when the driver configuration is updated
  */
 void updated() {
     log.info 'updated...'
     log.info "driver version ${VERSION}"
     unschedule()
+    state.remove('energyInKwh') // legacy
+    state.remove('lastPowerUpdate') // legacy
 
     if (settings.logEnable) {
         log.debug settings
@@ -293,14 +314,20 @@ void parse(final String description) {
             parseBasicCluster(descMap)
             descMap.remove('additionalAttrs')?.each { final Map map -> parseBasicCluster(descMap + map) }
             break
+        case zigbee.ELECTRICAL_MEASUREMENT_CLUSTER:
+            if (state.attributes == null) { state.attributes = [:] }
+            if (state.values == null) { state.values = [:] }
+            parseElectricalMeasureCluster(descMap)
+            descMap.remove('additionalAttrs')?.each { final Map map -> parseElectricalMeasureCluster(descMap + map) }
+            break
+        case zigbee.METERING_CLUSTER:
+            if (state.values == null) { state.values = [:] }
+            parseMeteringCluster(descMap)
+            descMap.remove('additionalAttrs')?.each { final Map map -> parseMeteringCluster(descMap + map) }
+            break
         case zigbee.ON_OFF_CLUSTER:
             parseOnOffCluster(descMap)
             descMap.remove('additionalAttrs')?.each { final Map map -> parseOnOffCluster(descMap + map) }
-            break
-        case zigbee.ELECTRICAL_MEASUREMENT_CLUSTER:
-            if (state.attributes == null) { state.attributes = [:] }
-            parseElectricalMeasureCluster(descMap)
-            descMap.remove('additionalAttrs')?.each { final Map map -> parseElectricalMeasureCluster(descMap + map) }
             break
         default:
             if (settings.logEnable) {
@@ -350,37 +377,74 @@ void parseElectricalMeasureCluster(final Map descMap) {
             updateAttribute('frequency', value, 'Hz', 'physical')
             break
         case RMS_CURRENT_ID:
-            final Integer multiplier = state.attributes[AC_CURRENT_MULTIPLIER_ID as String] as Integer
-            final Integer divisor = state.attributes[AC_CURRENT_DIVISOR_ID as String] as Integer
-            if (multiplier > 0 && divisor > 0) {
-                final BigDecimal result = value * multiplier / divisor
-                updateAttribute('amperage', result.setScale(1, RoundingMode.HALF_UP), 'A', 'physical')
-                updatePowerFactor()
-            }
+            handleRmsCurrentValue(value)
             break
         case ACTIVE_POWER_ID:
-            final Integer multiplier = state.attributes[AC_POWER_MULTIPLIER_ID as String] as Integer
-            final Integer divisor = state.attributes[AC_POWER_DIVISOR_ID as String] as Integer
-            if (multiplier > 0 && divisor > 0) {
-                unschedule('updateEnergyCalculation')
-                updateEnergyCalculation()
-                final BigDecimal result = (int)value * multiplier / divisor
-                updateAttribute('power', result.setScale(1, RoundingMode.HALF_UP), 'W', 'physical')
-                updatePowerFactor()
-            }
+            handleActivePowerValue(value)
             break
         case RMS_VOLTAGE_ID:
-            final Integer multiplier = state.attributes[AC_VOLTAGE_MULTIPLIER_ID as String] as Integer
-            final Integer divisor = state.attributes[AC_VOLTAGE_DIVISOR_ID as String] as Integer
-            if (multiplier > 0 && divisor > 0) {
-                final BigDecimal result = value * multiplier / divisor
-                updateAttribute('voltage', result.setScale(0, RoundingMode.HALF_UP), 'V', 'physical')
-                updatePowerFactor()
-            }
+            handleRmsVoltageValue(value)
             break
         default:
             log.warn "zigbee received unknown Electrical Measurement cluster attribute 0x${descMap.attrId} (value ${descMap.value})"
             break
+    }
+}
+
+/**
+ * Handle RMS Current Value updates
+ * @param value The new RMS Current Value
+ */
+void handleRmsCurrentValue(final long value) {
+    final Integer multiplier = state.attributes[AC_CURRENT_MULTIPLIER_ID as String] as Integer
+    final Integer divisor = state.attributes[AC_CURRENT_DIVISOR_ID as String] as Integer
+    if (multiplier != null && divisor != null) {
+        final BigDecimal currentValue = state.values[RMS_CURRENT_ID as String] as BigDecimal
+        BigDecimal result = value * multiplier / divisor
+        result = result.setScale(1, RoundingMode.HALF_UP)
+        if (isDelta(currentValue, result, settings.amperageDelta as BigDecimal)) {
+            state.values[RMS_CURRENT_ID as String] = result
+            updateAttribute('amperage', result, 'A', 'physical')
+            runIn(1, 'updatePowerFactor')
+        }
+    }
+}
+
+/**
+ * Handle Active Power Value updates
+ * @param value The new Power Value
+ */
+void handleActivePowerValue(final long value) {
+    final Integer multiplier = state.attributes[AC_POWER_MULTIPLIER_ID as String] as Integer
+    final Integer divisor = state.attributes[AC_POWER_DIVISOR_ID as String] as Integer
+    if (multiplier > 0 && divisor > 0) {
+        final BigDecimal currentValue = state.values[ACTIVE_POWER_ID as String] as BigDecimal
+        BigDecimal result = (int)value * multiplier / divisor
+        result = result.setScale(1, RoundingMode.HALF_UP)
+        if (isDelta(currentValue, result, settings.powerDelta as BigDecimal)) {
+            state.values[ACTIVE_POWER_ID as String] = result
+            updateAttribute('power', result, 'W', 'physical')
+            runIn(1, 'updatePowerFactor')
+        }
+    }
+}
+
+/**
+ * Handle RMS Voltage Value updates
+ * @param value The new Voltage Value
+ */
+void handleRmsVoltageValue(final long value) {
+    final Integer multiplier = state.attributes[AC_VOLTAGE_MULTIPLIER_ID as String] as Integer
+    final Integer divisor = state.attributes[AC_VOLTAGE_DIVISOR_ID as String] as Integer
+    if (multiplier > 0 && divisor > 0) {
+        final BigDecimal currentValue = state.values[RMS_VOLTAGE_ID as String] as BigDecimal
+        BigDecimal result = value * multiplier / divisor
+        result = result.setScale(0, RoundingMode.HALF_UP)
+        if (isDelta(currentValue, result, settings.voltageDelta as BigDecimal)) {
+            state.values[RMS_VOLTAGE_ID as String] = result
+            updateAttribute('voltage', result, 'V', 'physical')
+            updatePowerFactor()
+        }
     }
 }
 
@@ -409,6 +473,9 @@ void parseGeneralCommandResponse(final Map descMap) {
             } else if (settings.logEnable) {
                 log.trace "zigbee configure reporting response: ${statusName} ${descMap.data}"
             }
+            break
+        case 0x09: // read reporting configuration response
+            parseReadReportingConfigResponse(descMap)
             break
         case 0x0B: // default command response
             parseDefaultCommandResponse(descMap)
@@ -445,6 +512,30 @@ void parseDefaultCommandResponse(final Map descMap) {
 }
 
 /**
+ * Zigbee Metering Cluster Parsing
+ * @param descMap Zigbee message in parsed map format
+ */
+void parseMeteringCluster(final Map descMap) {
+    if (descMap.value == null || descMap.value == 'FFFF') { return } // invalid or unknown value
+    final long value = hexStrToUnsignedInt(descMap.value)
+    switch (descMap.attrInt as Integer) {
+        case ATTRIBUTE_READING_INFO_SET:
+            final long divisor = 3600000
+            final BigDecimal currentValue = state.values[ATTRIBUTE_READING_INFO_SET as String] as BigDecimal
+            BigDecimal result = value / divisor
+            result = result.setScale(1, RoundingMode.HALF_UP)
+            if (isDelta(currentValue, result, settings.energyDelta as BigDecimal)) {
+                state.values[ATTRIBUTE_READING_INFO_SET as String] = result
+                updateAttribute('energy', result, 'kWh', 'physical')
+            }
+            break
+        default:
+            log.warn "zigbee received unknown Metering cluster attribute 0x${descMap.attrId} (value ${descMap.value})"
+            break
+    }
+}
+
+/**
  * Zigbee Read Attribute Response Parsing
  * @param descMap Zigbee message in parsed map format
  */
@@ -458,6 +549,36 @@ void parseReadAttributeResponse(final Map descMap) {
     } else if (statusCode > 0x00) {
         log.warn "zigbee read ${clusterLookup(descMap.clusterInt)} attribute 0x${attribute} error: ${status}"
     }
+}
+
+/**
+ * Zigbee Read Reporting Configuration Response Parsing
+ * @param descMap Zigbee message in parsed map format
+ */
+void parseReadReportingConfigResponse(final Map descMap) {
+    final List<String> data = descMap.data as List<String>
+    final String status = data.first()
+    final int statusCode = hexStrToUnsignedInt(status)
+    final String statusName = ZigbeeStatusEnum[statusCode] ?: "0x${status}"
+    if (statusCode > 0x00) {
+        log.warn "zigbee read reporting config error: ${statusName} ${descMap.data}"
+        return
+    } else if (settings.logEnable) {
+        log.trace "zigbee read reporting config: ${statusName} ${descMap.data}"
+    }
+    if (data[1] != '00') {
+        return
+    }
+    final String attribute = '0x' + data[3] + data[2]
+    final int dataType = hexStrToUnsignedInt(data[4])
+    final int minReportingInterval = hexStrToUnsignedInt(data[6] + data[5])
+    final int maxReportingInterval = hexStrToUnsignedInt(data[8] + data[7])
+    Integer reportableChange = null
+    if (!DataType.isDiscrete(dataType)) {
+        final int start = DataType.getLength(dataType) + 8
+        reportableChange = hexStrToUnsignedInt(data[start..9].join())
+    }
+    log.info "zigbee reporting configuration [attribute: ${attribute}, dataType: ${dataType}, minReportingInterval: ${minReportingInterval}, maxReportingInterval: ${maxReportingInterval}, reportableChange: ${reportableChange}]"
 }
 
 /**
@@ -552,19 +673,6 @@ void parseZdoClusters(final Map descMap) {
 }
 
 /**
- * Calculates the energy in kWh from the current power and duration
- * @param currentPower in W
- * @param durationMs in ms
- * @return energy in kWh
- */
-private static BigDecimal calculateEnergyInKWh(final BigDecimal currentPower, final Long durationMs) {
-    final BigDecimal powerInKw = currentPower / 1000
-    final BigDecimal timeInHours = durationMs / (1000 * 60 * 60)
-    final BigDecimal energyInKwh = powerInKw * timeInHours
-    return energyInKwh
-}
-
-/**
  * Calculates the power factor from the RMS voltage, RMS current and active power
  * @param rmsVoltage in V
  * @param rmsCurrent in A
@@ -575,6 +683,25 @@ private static BigDecimal calculatePowerFactor(final BigDecimal rmsVoltage, fina
     final BigDecimal apparentPower = rmsVoltage * rmsCurrent
     final BigDecimal powerFactor = activePower / apparentPower
     return powerFactor
+}
+
+/**
+ * Checks if the specified value is at or above the minimum change from the previous value
+ * @param value value to check
+ * @param previousValue previous value
+ * @param minimumChange minimum change
+ * @return true if the value is over the minimum change, otherwise false
+ */
+private boolean isDelta(final BigDecimal value, final BigDecimal previousValue, final BigDecimal minimumChange) {
+    boolean result = true
+    if (value > 0 && previousValue != null && minimumChange > 0) {
+        result = (value - previousValue).abs() >= minimumChange
+    }
+
+    if (settings.logEnable) {
+        log.debug "isDelta(value: ${value}, previousValue: ${previousValue}, minimumChange: ${minimumChange}) = ${result}"
+    }
+    return result
 }
 
 /**
@@ -619,27 +746,6 @@ private void updateAttribute(final String attribute, final Object value, final S
 }
 
 /**
- * Update the energy calculation and schedule the next update
- */
-private void updateEnergyCalculation() {
-    final Long now = now()
-    final Long lastUpdate = state.lastPowerUpdate as Long ?: now
-    final Long elapsedMs = now - lastUpdate
-    state.lastPowerUpdate = now
-    final BigDecimal powerInWatts = device.currentValue('power') as BigDecimal ?: 0
-    final BigDecimal energyInKwh = state.energyInKwh as BigDecimal ?: 0
-    final BigDecimal result = energyInKwh + calculateEnergyInKWh(powerInWatts, elapsedMs)
-    state.energyInKwh = result
-    updateAttribute('energy', result.setScale(2, RoundingMode.HALF_UP), 'kWh', 'digital')
-    if (powerInWatts > 0) {
-        runIn(60, 'updateEnergyCalculation')
-    }
-    if (settings.logEnable) {
-        log.debug "updateEnergyCalculation { power=${powerInWatts}W, elapsedMs=${elapsedMs}, total kWh=${result} }"
-    }
-}
-
-/**
  * Update the power factor calculation
  */
 private void updatePowerFactor() {
@@ -647,7 +753,9 @@ private void updatePowerFactor() {
     final BigDecimal rmsCurrent = device.currentValue('amperage') as BigDecimal
     final BigDecimal activePower = device.currentValue('power') as BigDecimal
     if (rmsVoltage && rmsCurrent && activePower) {
-        final BigDecimal powerFactor = calculatePowerFactor(rmsVoltage, rmsCurrent, activePower)
+        BigDecimal powerFactor = calculatePowerFactor(rmsVoltage, rmsCurrent, activePower)
+        if (powerFactor < -1) { powerFactor = -1 } // power factor can't be less than -1
+        if (powerFactor > 1) { powerFactor = 1 } // power factor can't be greater than 1
         updateAttribute('powerFactor', powerFactor.setScale(1, RoundingMode.HALF_UP), null, 'digital')
     }
 }
@@ -661,6 +769,7 @@ private void updatePowerFactor() {
 @Field static final int AC_VOLTAGE_DIVISOR_ID = 0x0601
 @Field static final int AC_VOLTAGE_MULTIPLIER_ID = 0x0600
 @Field static final int ACTIVE_POWER_ID = 0x050B
+@Field static final int ATTRIBUTE_READING_INFO_SET = 0x0000
 @Field static final int FIRMWARE_VERSION_ID = 0x4000
 @Field static final int PING_ATTR_ID = 0x01
 @Field static final int POWER_ON_OFF_ID = 0x0000
