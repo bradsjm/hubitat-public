@@ -5,8 +5,8 @@
   "communityLink": "https://community.hubitat.com/t/switch-dashboard-and-switch-notifications/104986",
   "documentationLink": "https://github.com/bradsjm/hubitat-public/blob/main/SwitchLedDashboard/README.md",
   "licenseFile": "https://raw.githubusercontent.com/bradsjm/hubitat-public/main/LICENSE",
-  "version": "1.1",
-  "dateReleased": "2023-04-14",
+  "version": "1.10",
+  "dateReleased": "2023-04-23",
   "releaseNotes": "Code refactoring, cleanup and inline documentation for maintainability.",
   "apps": [
     {
