@@ -136,34 +136,8 @@ public void parse(Map message) {
             break
 
         case 'entity':
-            if (message.platform == 'sensor') {
-                switch (message.deviceClass) {
-                    case 'illuminance':
-                        state.sensors = (state.sensors ?: [:]) + [ (message.key): message ]
-                        if (!settings.temperature) {
-                            device.updateSetting('illuminance', message.key)
-                        }
-                        break
-                    case 'motion':
-                        state.sensors = (state.sensors ?: [:]) + [ (message.key): message ]
-                        if (!settings.temperature) {
-                            device.updateSetting('motion', message.key)
-                        }
-                        break
-                    case 'occupancy':
-                        state.sensors = (state.sensors ?: [:]) + [ (message.key): message ]
-                        if (!settings.temperature) {
-                            device.updateSetting('occupancy', message.key)
-                        }
-                        break
-                    case 'temperature':
-                        state.sensors = (state.sensors ?: [:]) + [ (message.key): message ]
-                        if (!settings.temperature) {
-                            device.updateSetting('temperature', message.key)
-                        }
-                        break
-                }
-                return
+            if (message.platform in ['sensor', 'binary']) {
+                state.sensors = (state.sensors ?: [:]) + [ (message.key): message ]
             }
             break
 
