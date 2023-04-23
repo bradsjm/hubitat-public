@@ -198,6 +198,7 @@ Map mainPage() {
     final String title = "<h2 style=\'color: #1A77C9; font-weight: bold\'>${app.label}</h2>"
     return dynamicPage(name: 'mainPage', title: title) {
         final Map<String, String> switchType = settings['deviceType'] ? getTargetSwitchType() : null
+        final List<DeviceWrapper> switches = (settings['switches'] ?: []) as List<DeviceWrapper>
         section {
             renderDeviceTypeInput()
             renderPauseResumeButton()
@@ -206,7 +207,7 @@ Map mainPage() {
         renderNotificationScenarios(switchType)
         renderNameAndDuplicateSection()
         renderMessageSection()
-        renderLoggingAndRefreshSection()
+        renderLoggingAndRefreshSection(switches)
     }
 }
 
@@ -267,13 +268,17 @@ void renderDeviceTypeInput() {
 /**
  * Render the Debug Logging and Periodic Refresh section.
  */
-void renderLoggingAndRefreshSection() {
+void renderLoggingAndRefreshSection(final List<DeviceWrapper> switches) {
     section {
         input name: 'logEnable', title: 'Enable debug logging', type: 'bool', defaultValue: false
 
-        input name: 'metering', title: 'Enable metering (delay) of device updates', type: 'bool', defaultValue: false, width: 3, submitOnChange: true
-        if (settings.metering) {
-            input name: 'meteringInterval', title: 'Metering interval (ms):', type: 'number', width: 3, range: '10..10000', defaultValue: 100
+        if (switches.size() > 1) {
+            input name: 'metering', title: 'Enable metering (delay) of device updates', type: 'bool', defaultValue: false, width: 3, submitOnChange: true
+            if (settings.metering) {
+                input name: 'meteringInterval', title: 'Metering interval (ms):', type: 'number', width: 3, range: '10..10000', defaultValue: 100
+            } else {
+                app.removeSetting('meteringInterval')
+            }
         } else {
             app.removeSetting('meteringInterval')
         }
@@ -2286,7 +2291,6 @@ private Date getNextTime(final Date now, final String datetime) {
  */
 @CompileStatic
 private Object runClosure(final Closure template, final Map ctx) {
-    logInfo(template.hashCode().toString())
     try {
         final Closure closure = (Closure) template.clone()
         closure.delegate = this
