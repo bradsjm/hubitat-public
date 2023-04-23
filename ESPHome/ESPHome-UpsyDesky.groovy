@@ -79,9 +79,6 @@ void initialize() {
     // API library command to open socket to device, it will automatically reconnect if needed
     openSocket()
 
-    // set the number of preset buttons
-    updateAttribute('numberOfButtons', 4)
-
     if (logEnable) {
         runIn(1800, 'logsOff')
     }
