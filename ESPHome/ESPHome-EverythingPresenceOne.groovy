@@ -112,6 +112,7 @@ public void logsOff() {
 public void refresh() {
     log.info "${device} refresh"
     state.clear()
+    state.requireRefresh = true
     espHomeDeviceInfoRequest()
 }
 
