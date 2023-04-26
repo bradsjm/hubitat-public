@@ -81,7 +81,7 @@ metadata {
         input name: 'levelChangeRate', type: 'enum', title: '<b>Level change rate</b>', options: LevelRateOpts.options, defaultValue: LevelRateOpts.defaultValue, required: true, description: \
              '<i>Changes the speed that the light changes when using <b>start level change</b> until <b>stop level change</b> is sent.</i>'
 
-        input name: 'minLevel', type: 'number', title: '<b>Minimum Level</b>', defaultValue: 0, required: true, displayDuringSetup: false, range: '1..99', description: \
+        input name: 'minLevel', type: 'number', title: '<b>Minimum Level</b>', defaultValue: 1, required: true, displayDuringSetup: false, range: '1..99', description: \
              '<i>The minimum level (percent) the light can be dimmed to.</i>'
         input name: 'maxLevel', type: 'number', title: '<b>Maximum Level</b>', defaultValue: 100, required: true, displayDuringSetup: false, range: '2..100', description: \
              '<i>The maximum level (percent) the light can be dimmed to.</i>'
