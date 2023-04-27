@@ -345,36 +345,42 @@ void parseState(final Map message) {
         case state.entities['esp32_status_led']:
             // ESP32 Status LED
             if (message.hasState) {
+                log.info "ESP32 Status LED: ${message.state}"
                 device.updateSetting('statusLedEnable', message.state)
             }
             break
         case state.entities['mmwave_distance']:
             // Millimeter wave radar sensor distance
             if (message.hasState) {
+                log.info "Millimeter wave radar sensor distance: ${message.state}"
                 device.updateSetting('mmwaveDistance', message.state)
             }
             break
         case state.entities['mmwave_led']:
             // Millimeter wave radar sensor LED
             if (message.hasState) {
+                log.info "Millimeter wave radar sensor LED: ${message.state}"
                 device.updateSetting('mmwaveLedEnable', message.state)
             }
             break
         case state.entities['mmwave_off_latency']:
             // Millimeter wave radar sensor off latency
             if (message.hasState) {
+                log.info "Millimeter wave radar sensor off latency: ${message.state}"
                 device.updateSetting('mmwaveOffLatency', message.state)
             }
             break
         case state.entities['mmwave_on_latency']:
             // Millimeter wave radar sensor on latency
             if (message.hasState) {
+                log.info "Millimeter wave radar sensor on latency: ${message.state}"
                 device.updateSetting('mmwaveOnLatency', message.state)
             }
             break
         case state.entities['mmwave_sensitivity']:
             // Millimeter wave radar sensor sensitivity
             if (message.hasState) {
+                log.info "Millimeter wave radar sensor sensitivity: ${message.state}"
                 device.updateSetting('mmwaveSensitivity', message.state)
             }
             break
