@@ -1864,7 +1864,7 @@ private void setColorDeviceEffect(final DeviceWrapper device, final Map config) 
 private void setDeviceColor(final DeviceWrapper device, final Map config) {
     final int color = config.color as int
     final int level = config.level as int
-    final int huePercent = (int) Math.round(color / 360.0) * 100
+    final int huePercent = (int) Math.round((color / 360.0) * 100)
     logDebug "${device}.setColor(${huePercent})"
     device.setColor([
         hue       : huePercent,
