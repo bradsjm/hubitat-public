@@ -39,6 +39,7 @@
  * v1.03: Added cool-down period support for conditions
  * v1.04: Enhanced dashboard duplication to include devices, and added LED selection options
  * v1.10: Code refactoring, cleanup, and inline documentation for maintainability
+ * v1.11: Bug fix for color devices
  *
  * Thanks to Mattias Fornander (@mfornander) for the original application concept
  */
