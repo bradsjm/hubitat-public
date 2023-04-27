@@ -148,7 +148,7 @@ void configure() {
         }
     }
 
-    if (isNullOrEmpty(settings)['mmwaveSensitivity']) {
+    if (isNullOrEmpty(settings['mmwaveSensitivity'])) {
         final Long key = state.entities['mmwave_sensitivity'] as Long
         if (key) {
             final BigDecimal value = settings['mmwaveSensitivity'] as Integer
