@@ -307,7 +307,7 @@ void parseState(final Map message) {
         case state.entities['illuminance']:
             // Illuminance Sensor
             if (message.hasState) {
-                updateAttribute('illuminance', message.state, 'lx')
+                updateAttribute('illuminance', message.state as Integer, 'lx')
             }
             break
         case state.entities['mmwave']:
@@ -338,7 +338,7 @@ void parseState(final Map message) {
         case state.entities['humidity']:
             // Humidity Sensor
             if (message.hasState) {
-                updateAttribute('humidity', message.state, '%rh')
+                updateAttribute('humidity', message.state as Integer, '%rh')
             }
             break
         case state.entities['esp32_status_led']:
