@@ -50,61 +50,60 @@ metadata {
     preferences {
         input name: 'ipAddress',    // required setting for API library
             type: 'text',
-            title: 'Device IP Address',
+            title: '<b>Device IP Address</b>',
             required: true
 
         input name: 'password',     // optional setting for API library
             type: 'text',
-            title: 'Device Password <i>(if required)</i>',
+            title: '<b>Device Password</b>',
+            description: '<i>(if required)</i>',
             required: false
-
-        input name: 'mmwaveOnLatency',
-            type: 'number',
-            title: 'mmWave On Latency (seconds)',
-            required: false,
-            range: '0..60'
-
-        input name: 'mmwaveOffLatency',
-            type: 'number',
-            title: 'mmWave Off Latency (seconds)',
-            required: false,
-            range: '1..60'
 
         input name: 'mmwaveSensitivity',
             type: 'number',
-            title: 'mmWave Sensitivity (0-9)',
+            title: '<b>mmWave Sensitivity</b>',
+            description: '<i>How much motion is required to trigger the sensor (0 is most, 9 is least sensitive)</i>',
             required: false,
             range: '0..9'
 
         input name: 'mmwaveDistance',
             type: 'number',
-            title: 'mmWave Range (cm)',
+            title: '<b>mmWave Distance</b>',
+            description: '<i>Set to the distance of the room you have the EP1 in (0 to 800cm)</i>',
             required: false,
             range: '0..800'
 
+        input name: 'mmwaveOnLatency (Advanced)',
+            type: 'number',
+            title: '<b>mmWave On Latency</b>',
+            description: '<i>How long motion must be detected for before triggering (0 to 60 seconds)</i>',
+            required: false,
+            range: '0..60'
+
+        input name: 'mmwaveOffLatency (Advanced)',
+            type: 'number',
+            title: '<b>mmWave Off Latency</b>',
+            description: '<i>How long after motion is no longer detected to wait (1 to 60 seconds)</i>',
+            required: false,
+            range: '1..60'
+
         input name: 'statusLedEnable',
             type: 'bool',
-            title: 'Enable Status LED',
+            title: '<b>Enable Status LED</b>',
             required: false,
             defaultValue: true
 
         input name: 'mmwaveLedEnable',
             type: 'bool',
-            title: 'Enable mmWave LED',
+            title: '<b>Enable mmWave LED</b>',
             required: false,
             defaultValue: true
 
-        input name: 'logEnable',    // if enabled the library will log debug details
-                type: 'bool',
-                title: 'Enable Debug Logging',
-                required: false,
-                defaultValue: false
+        input name: 'txtEnable', type: 'bool', title: '<b>Enable descriptionText logging</b>', defaultValue: true, description: \
+             '<i>Enables command logging.</i>'
 
-        input name: 'logTextEnable',
-              type: 'bool',
-              title: 'Enable descriptionText logging',
-              required: false,
-              defaultValue: true
+        input name: 'logEnable', type: 'bool', title: '<b>Enable debug logging</b>', defaultValue: false, description: \
+             '<i>Turns on debug logging for 30 minutes.</i>'
     }
 }
 
