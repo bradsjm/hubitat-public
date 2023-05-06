@@ -54,7 +54,7 @@ metadata {
         input name: 'powerRestore', type: 'enum', title: '<b>Power Restore Mode</b>', options: PowerRestoreOpts.options, defaultValue: PowerRestoreOpts.defaultValue, description:\
             '<i>Changes what happens when power is restored to outlet.</i>'
 
-        input name: 'healthCheckInterval', type: 'enum', title: '<b>Healthcheck Interval</b>', options: HealthcheckIntervalOpts.options, defaultValue: HealthcheckIntervalOpts.defaultValue, description:\
+        input name: 'HealthCheckInterval', type: 'enum', title: '<b>HealthCheck Interval</b>', options: HealthCheckIntervalOpts.options, defaultValue: HealthCheckIntervalOpts.defaultValue, description:\
             '<i>Changes how often the hub pings outlet to check health.</i>'
 
         input name: 'disableOnOff', type: 'bool', title: '<b>Disable Power Commands</b>', defaultValue: false, description:\
@@ -203,6 +203,13 @@ List<String> refresh() {
         AC_POWER_DIVISOR_ID
     ], [:], DELAY_MS)
 
+    // Get Measurement Formatting
+    cmds += zigbee.readAttribute(zigbee.METERING_CLUSTER, [
+        METERING_DIVISOR_ID,
+        METERING_UNIT_OF_MEASURE_ID,
+        METERING_SUMMATION_FORMATTING_ID
+    ], [:], DELAY_MS)
+
     // Get Power On/Off state
     cmds += zigbee.readAttribute(zigbee.ON_OFF_CLUSTER, POWER_ON_OFF_ID, [:], DELAY_MS)
 
@@ -266,7 +273,7 @@ void updated() {
         runIn(1800, logsOff)
     }
 
-    final int interval = (settings.healthCheckInterval as Integer) ?: 0
+    final int interval = (settings.HealthCheckInterval as Integer) ?: 0
     if (interval > 0) {
         log.info "scheduling health check every ${interval} minutes"
         scheduleDeviceHealthCheck(interval)
@@ -520,14 +527,22 @@ void parseMeteringCluster(final Map descMap) {
     final long value = hexStrToUnsignedInt(descMap.value)
     switch (descMap.attrInt as Integer) {
         case ATTRIBUTE_READING_INFO_SET:
-            final long divisor = 3600000
+            final Long divisor = state.attributes[METERING_DIVISOR_ID as String] as Long
             final BigDecimal currentValue = state.values[ATTRIBUTE_READING_INFO_SET as String] as BigDecimal
-            BigDecimal result = value / divisor
-            result = result.setScale(1, RoundingMode.HALF_UP)
-            if (isDelta(currentValue, result, settings.energyDelta as BigDecimal)) {
-                state.values[ATTRIBUTE_READING_INFO_SET as String] = result
-                updateAttribute('energy', result, 'kWh', 'physical')
+            if (divisor > 0) {
+                BigDecimal result = value / divisor
+                result = result.setScale(1, RoundingMode.HALF_UP)
+                final String unit = state.attributes[METERING_UNIT_OF_MEASURE_ID as String] == 0 ? 'kWh' : ''
+                if (isDelta(currentValue, result, settings.energyDelta as BigDecimal)) {
+                    state.values[ATTRIBUTE_READING_INFO_SET as String] = result
+                    updateAttribute('energy', result, unit, 'physical')
+                }
             }
+            break
+        case METERING_DIVISOR_ID:
+        case METERING_UNIT_OF_MEASURE_ID:
+        case METERING_SUMMATION_FORMATTING_ID:
+            state.attributes[descMap.attrInt as String] = value
             break
         default:
             log.warn "zigbee received unknown Metering cluster attribute 0x${descMap.attrId} (value ${descMap.value})"
@@ -723,11 +738,11 @@ private void scheduleCommandTimeoutCheck(final int delay = COMMAND_TIMEOUT) {
 
 /**
  * Schedule a device health check
- * @param intervalMins interval in minutes
+ * @param intervalMin interval in minutes
  */
-private void scheduleDeviceHealthCheck(final int intervalMins) {
+private void scheduleDeviceHealthCheck(final int intervalMin) {
     final Random rnd = new Random()
-    schedule("${rnd.nextInt(59)} ${rnd.nextInt(9)}/${intervalMins} * ? * * *", 'ping')
+    schedule("${rnd.nextInt(59)} ${rnd.nextInt(9)}/${intervalMin} * ? * * *", 'ping')
 }
 
 /**
@@ -776,13 +791,16 @@ private void updatePowerFactor() {
 @Field static final int POWER_RESTORE_ID = 0x4003
 @Field static final int RMS_CURRENT_ID = 0x0508
 @Field static final int RMS_VOLTAGE_ID = 0x0505
+@Field static final int METERING_UNIT_OF_MEASURE_ID = 0x0300
+@Field static final int METERING_DIVISOR_ID = 0x0302
+@Field static final int METERING_SUMMATION_FORMATTING_ID = 0x0303
 
 @Field static final Map PowerRestoreOpts = [
     defaultValue: 0xFF,
     options: [ 0x00: 'Off', 0x01: 'On', 0xFF: 'Last State' ]
 ]
 
-@Field static final Map HealthcheckIntervalOpts = [
+@Field static final Map HealthCheckIntervalOpts = [
     defaultValue: 10,
     options: [ 10: 'Every 10 Mins', 15: 'Every 15 Mins', 30: 'Every 30 Mins', 45: 'Every 45 Mins', 59: 'Every Hour', 00: 'Disabled' ]
 ]
