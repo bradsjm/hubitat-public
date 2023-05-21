@@ -1016,6 +1016,17 @@ void parseGroupsCluster(final Map descMap) {
             state.groups = groups
             log.info "zigbee group memberships: ${groups} (capacity available: ${capacity})"
             break
+        case 0x03: // Remove group response
+            final List<String> data = descMap.data as List<String>
+            final int statusCode = hexStrToUnsignedInt(data[0])
+            final String statusName = ZigbeeStatusEnum[statusCode] ?: "0x${data[0]}"
+            final int groupId = hexStrToUnsignedInt(data[2] + data[1])
+            if (settings.logEnable) {
+                log.trace "zigbee response remove group ${groupId}: ${statusName}"
+            } else if (statusCode > 0x00) {
+                log.warn "zigbee response remove group ${groupId} error: ${statusName}"
+            }
+            break
         default:
             log.warn "zigbee received unknown GROUPS cluster: ${descMap}"
             break
