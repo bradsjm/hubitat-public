@@ -40,6 +40,7 @@
  * v1.04: Enhanced dashboard duplication to include devices, and added LED selection options
  * v1.10: Code refactoring, cleanup, and inline documentation for maintainability
  * v1.11: Bug fix for color devices
+ * v1.12: Bug fix for duration settings
  *
  * Thanks to Mattias Fornander (@mfornander) for the original application concept
  */
@@ -54,7 +55,7 @@ import java.time.LocalTime
 import java.util.concurrent.ConcurrentHashMap
 import java.util.regex.Matcher
 
-@Field static final String Version = '1.10'
+@Field static final String Version = '1.12'
 
 definition(
     name: 'LED Mini-Dashboard Topic',
@@ -1079,7 +1080,8 @@ void appButtonHandler(final String buttonName) {
                         name     : config.name,
                         prefix   : config.prefix,
                         priority : config.priority,
-                        unit     : config.unit
+                        unit     : config.unit,
+                        duration : config.duration
                     ])
                 }
             }
@@ -1371,7 +1373,8 @@ Collection<Map> calculateLedStates(final Map<String, Boolean> results) {
                         effect   : config.effect,
                         color    : config.color,
                         level    : config.level,
-                        unit     : config.unit
+                        unit     : config.unit,
+                        duration : config.duration
                     ]
                 }
             }
@@ -1978,12 +1981,12 @@ private void setInovelliRedGen2Effect(final DeviceWrapper device, final Map conf
     int color = 0, duration = 0, effect = 0, level = 0
 
     // Calculate duration based on given unit and duration values, with a max value of 255
-    if (config.unit) {
+    if (config.unit != null) {
         duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255)
     }
 
     // Calculate color value based on given color value (0-360), scaling it to a range of 0-255
-    if (config.color) {
+    if (config.color != null) {
         color = (int)Math.min(Math.round(((config.color as Integer) / 360.0) * 255), 255)
     }
 
@@ -2097,7 +2100,7 @@ private void updateSwitchLedState(final Map config) {
     for (final DeviceWrapper device in devices) {
         logDebug "Setting ${device} LED #${config.lednumber} (id=${config.prefix}, name=${config.name}, " +
                 "priority=${config.priority}, effect=${config.effect ?: ''}, color=${config.color}, " +
-                "level=${config.level}, duration=${config.duration ?: ''} " +
+                "level=${config.level}, duration=${config.duration ?: '(none)'} " +
                 "${TimePeriodsMap[config.unit as String] ?: ''})"
 
         Map<String, Map> tracker = getSwitchStateTracker(device)

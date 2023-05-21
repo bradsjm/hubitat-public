@@ -5,9 +5,9 @@
   "communityLink": "https://community.hubitat.com/t/switch-dashboard-and-switch-notifications/104986",
   "documentationLink": "https://github.com/bradsjm/hubitat-public/blob/main/SwitchLedDashboard/README.md",
   "licenseFile": "https://raw.githubusercontent.com/bradsjm/hubitat-public/main/LICENSE",
-  "version": "1.11",
-  "dateReleased": "2023-04-27",
-  "releaseNotes": "Bug fix release for color devices only going to red.",
+  "version": "1.12",
+  "dateReleased": "2023-05-21",
+  "releaseNotes": "Bug fix release for missing duration settings.",
   "apps": [
     {
       "id": "a5578fb7-3eb6-46f2-9eec-cb25fa4a6fdb",
