@@ -39,6 +39,7 @@
  * v1.03: Added cool-down period support for conditions
  * v1.04: Enhanced dashboard duplication to include devices, and added LED selection options
  * v1.10: Code refactoring, cleanup, and inline documentation for maintainability
+ * v1.11: Bug fix for durations that somehow got lost during refactoring
  *
  * Thanks to Mattias Fornander (@mfornander) for the original application concept
  */
@@ -53,7 +54,7 @@ import java.time.LocalTime
 import java.util.concurrent.ConcurrentHashMap
 import java.util.regex.Matcher
 
-@Field static final String Version = '1.10'
+@Field static final String Version = '1.11'
 
 definition(
     name: 'LED Mini-Dashboard Topic',
@@ -1072,6 +1073,7 @@ void appButtonHandler(final String buttonName) {
                 ((String)config.lednumber).tokenize(',').each { final String ledNumber ->
                     updateSwitchLedState([
                         color    : config.color,
+                        duration : config.duration,
                         effect   : config.effect,
                         lednumber: ledNumber,
                         level    : config.level,
@@ -1363,13 +1365,14 @@ Collection<Map> calculateLedStates(final Map<String, Boolean> results) {
                 // Update the state for each LED number
                 ledNumbers.each { final String ledNumber ->
                     ledStates[ledNumber] = [
-                        prefix   : config.prefix,
-                        name     : config.name,
-                        lednumber: ledNumber,
-                        priority : config.priority,
-                        effect   : config.effect,
                         color    : config.color,
+                        duration : config.duration,
+                        effect   : config.effect,
+                        lednumber: ledNumber,
                         level    : config.level,
+                        name     : config.name,
+                        prefix   : config.prefix,
+                        priority : config.priority,
                         unit     : config.unit
                     ]
                 }
@@ -2096,8 +2099,8 @@ private void updateSwitchLedState(final Map config) {
     for (final DeviceWrapper device in devices) {
         logDebug "Setting ${device} LED #${config.lednumber} (id=${config.prefix}, name=${config.name}, " +
                 "priority=${config.priority}, effect=${config.effect ?: ''}, color=${config.color}, " +
-                "level=${config.level}, duration=${config.duration ?: ''} " +
-                "${TimePeriodsMap[config.unit as String] ?: ''})"
+                "level=${config.level}, duration=${config.duration ?: '(none)'} " +
+                "${TimePeriodsMap[config.unit as String]})"
 
         Map<String, Map> tracker = getSwitchStateTracker(device)
         String key = config.lednumber
