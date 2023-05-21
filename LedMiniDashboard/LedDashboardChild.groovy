@@ -1883,22 +1883,22 @@ private void setInovelliBlueLedEffect(final DeviceWrapper device, final Map conf
     int color = 0, duration = 0, effect = 0, level = 0
 
     // Calculate duration based on given unit and duration values, with a max value of 255
-    if (config.unit) {
+    if (config.unit != null) {
         duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255)
     }
 
     // Calculate color value based on given color value (0-360), scaling it to a range of 0-255
-    if (config.color) {
+    if (config.color != null) {
         color = (int) Math.min(Math.round(((config.color as Integer) / 360.0) * 255), 255)
     }
 
     // Set the effect value if provided
-    if (config.effect) {
+    if (config.effect != null) {
         effect = config.effect as int
     }
 
     // Set the level value if provided
-    if (config.level) {
+    if (config.level != null) {
         level = config.level as int
     }
 
@@ -1977,22 +1977,22 @@ private void setInovelliRedGen2Effect(final DeviceWrapper device, final Map conf
     int color = 0, duration = 0, effect = 0, level = 0
 
     // Calculate duration based on given unit and duration values, with a max value of 255
-    if (config.unit) {
+    if (config.unit != null) {
         duration = Math.min(((config.unit as Integer) ?: 0) + ((config.duration as Integer) ?: 0), 255)
     }
 
     // Calculate color value based on given color value (0-360), scaling it to a range of 0-255
-    if (config.color) {
+    if (config.color != null) {
         color = (int)Math.min(Math.round(((config.color as Integer) / 360.0) * 255), 255)
     }
 
     // Set level if available in config
-    if (config.level) {
+    if (config.level != null) {
         level = (int)Math.round((config.level as int) / 10)
     }
 
     // Set effect if available in config
-    if (config.effect) {
+    if (config.effect != null) {
         effect = config.effect as int
     }
 
