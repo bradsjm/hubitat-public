@@ -47,7 +47,7 @@ metadata {
         attribute 'healthStatus', 'enum', [ 'unknown', 'offline', 'online' ]
         attribute 'powerFactor', 'number'
 
-        fingerprint model: '3RSP02028BZ', manufacturer: 'Third Reality, Inc', profileId: '0104', endpointId: '01', inClusters: '0000,0003,0004,0005,0006,1000,0B04', outClusters: '0019', application: '1E'
+        fingerprint model: '3RSP02028BZ', manufacturer: 'Third Reality, Inc', profileId: '0104', endpointId: '01', inClusters: '0000,0003,0004,0005,0006,1000,0B04,0702', outClusters: '0019'
     }
 
     preferences {
@@ -232,6 +232,11 @@ List<String> refresh() {
         cmds += zigbee.reportingConfiguration(zigbee.ELECTRICAL_MEASUREMENT_CLUSTER, RMS_VOLTAGE_ID, [:], DELAY_MS)
         cmds += zigbee.reportingConfiguration(zigbee.ELECTRICAL_MEASUREMENT_CLUSTER, AC_FREQUENCY_ID, [:], DELAY_MS)
         cmds += zigbee.reportingConfiguration(zigbee.METERING_CLUSTER, ATTRIBUTE_READING_INFO_SET, [:], DELAY_MS)
+
+        // Management LQI (Neighbor Table) Request (response is 0x8031)
+        //cmds += "he raw ${device.deviceNetworkId} 0x01 0x00 0x0031 { 01 00 } { 0000 }"
+        // Management Rtg (Routing Table) Request (response is 0x8032)
+        //cmds += "he raw ${device.deviceNetworkId} 0x01 0x00 0x0032 { 01 00 } { 0000 }"
     }
 
     scheduleCommandTimeoutCheck()
@@ -263,7 +268,7 @@ void updateEnergyCalculation() {
  */
 void updated() {
     log.info 'updated...'
-    log.info "driver version ${VERSION}"
+    log.info "${device} driver version ${VERSION}"
     unschedule()
     state.remove('energyInKwh') // legacy
     state.remove('lastPowerUpdate') // legacy
@@ -275,7 +280,7 @@ void updated() {
 
     final int interval = (settings.HealthCheckInterval as Integer) ?: 0
     if (interval > 0) {
-        log.info "scheduling health check every ${interval} minutes"
+        log.info "${device} scheduling health check every ${interval} minutes"
         scheduleDeviceHealthCheck(interval)
     }
 
@@ -313,7 +318,7 @@ void parse(final String description) {
     if (settings.logEnable) {
         final String clusterName = clusterLookup(descMap.clusterInt)
         final String attribute = descMap.attrId ? " attribute 0x${descMap.attrId} (value ${descMap.value})" : ''
-        if (settings.logEnable) { log.trace "zigbee received ${clusterName} message" + attribute }
+        if (settings.logEnable) { log.trace "${device} zigbee received ${clusterName} message" + attribute }
     }
 
     switch (descMap.clusterInt as Integer) {
@@ -355,11 +360,11 @@ void parseBasicCluster(final Map descMap) {
             break
         case FIRMWARE_VERSION_ID:
             final String version = descMap.value ?: 'unknown'
-            log.info "device firmware version is ${version}"
+            log.info "${device} device firmware version is ${version}"
             updateDataValue('softwareBuild', version)
             break
         default:
-            log.warn "zigbee received unknown Basic cluster attribute 0x${descMap.attrId} (value ${descMap.value})"
+            log.warn "${device} zigbee received unknown Basic cluster attribute 0x${descMap.attrId} (value ${descMap.value})"
             break
     }
 }
@@ -393,7 +398,7 @@ void parseElectricalMeasureCluster(final Map descMap) {
             handleRmsVoltageValue(value)
             break
         default:
-            log.warn "zigbee received unknown Electrical Measurement cluster attribute 0x${descMap.attrId} (value ${descMap.value})"
+            log.warn "${device} zigbee received unknown Electrical Measurement cluster attribute 0x${descMap.attrId} (value ${descMap.value})"
             break
     }
 }
@@ -476,9 +481,9 @@ void parseGeneralCommandResponse(final Map descMap) {
             }
             final String statusName = ZigbeeStatusEnum[statusCode] ?: "0x${status}"
             if (statusCode > 0x00) {
-                log.warn "zigbee configure reporting error: ${statusName} ${descMap.data}"
+                log.warn "${device} zigbee configure reporting error: ${statusName} ${descMap.data}"
             } else if (settings.logEnable) {
-                log.trace "zigbee configure reporting response: ${statusName} ${descMap.data}"
+                log.trace "${device} zigbee configure reporting response: ${statusName} ${descMap.data}"
             }
             break
         case 0x09: // read reporting configuration response
@@ -494,9 +499,9 @@ void parseGeneralCommandResponse(final Map descMap) {
             final int statusCode = hexStrToUnsignedInt(status)
             final String statusName = ZigbeeStatusEnum[statusCode] ?: "0x${status}"
             if (statusCode > 0x00) {
-                log.warn "zigbee ${commandName} ${clusterName} error: ${statusName}"
+                log.warn "${device} zigbee ${commandName} ${clusterName} error: ${statusName}"
             } else if (settings.logEnable) {
-                log.trace "zigbee ${commandName} ${clusterName}: ${descMap.data}"
+                log.trace "${device} zigbee ${commandName} ${clusterName}: ${descMap.data}"
             }
             break
     }
@@ -512,9 +517,9 @@ void parseDefaultCommandResponse(final Map descMap) {
     final int statusCode = hexStrToUnsignedInt(data[1])
     final String status = ZigbeeStatusEnum[statusCode] ?: "0x${data[1]}"
     if (statusCode > 0x00) {
-        log.warn "zigbee ${clusterLookup(descMap.clusterInt)} command 0x${commandId} error: ${status}"
+        log.warn "${device} zigbee ${clusterLookup(descMap.clusterInt)} command 0x${commandId} error: ${status}"
     } else if (settings.logEnable) {
-        log.trace "zigbee ${clusterLookup(descMap.clusterInt)} command 0x${commandId} response: ${status}"
+        log.trace "${device} zigbee ${clusterLookup(descMap.clusterInt)} command 0x${commandId} response: ${status}"
     }
 }
 
@@ -545,7 +550,7 @@ void parseMeteringCluster(final Map descMap) {
             state.attributes[descMap.attrInt as String] = value
             break
         default:
-            log.warn "zigbee received unknown Metering cluster attribute 0x${descMap.attrId} (value ${descMap.value})"
+            log.warn "${device} zigbee received unknown Metering cluster attribute 0x${descMap.attrId} (value ${descMap.value})"
             break
     }
 }
@@ -560,9 +565,9 @@ void parseReadAttributeResponse(final Map descMap) {
     final int statusCode = hexStrToUnsignedInt(data[2])
     final String status = ZigbeeStatusEnum[statusCode] ?: "0x${data}"
     if (settings.logEnable) {
-        log.trace "zigbee read ${clusterLookup(descMap.clusterInt)} attribute 0x${attribute} response: ${status} ${data}"
+        log.trace "${device} zigbee read ${clusterLookup(descMap.clusterInt)} attribute 0x${attribute} response: ${status} ${data}"
     } else if (statusCode > 0x00) {
-        log.warn "zigbee read ${clusterLookup(descMap.clusterInt)} attribute 0x${attribute} error: ${status}"
+        log.warn "${device} zigbee read ${clusterLookup(descMap.clusterInt)} attribute 0x${attribute} error: ${status}"
     }
 }
 
@@ -576,10 +581,10 @@ void parseReadReportingConfigResponse(final Map descMap) {
     final int statusCode = hexStrToUnsignedInt(status)
     final String statusName = ZigbeeStatusEnum[statusCode] ?: "0x${status}"
     if (statusCode > 0x00) {
-        log.warn "zigbee read reporting config error: ${statusName} ${descMap.data}"
+        log.warn "${device} zigbee read reporting config error: ${statusName} ${descMap.data}"
         return
     } else if (settings.logEnable) {
-        log.trace "zigbee read reporting config: ${statusName} ${descMap.data}"
+        log.trace "${device} zigbee read reporting config: ${statusName} ${descMap.data}"
     }
     if (data[1] != '00') {
         return
@@ -593,7 +598,7 @@ void parseReadReportingConfigResponse(final Map descMap) {
         final int start = DataType.getLength(dataType) + 8
         reportableChange = hexStrToUnsignedInt(data[start..9].join())
     }
-    log.info "zigbee reporting configuration [attribute: ${attribute}, dataType: ${dataType}, minReportingInterval: ${minReportingInterval}, maxReportingInterval: ${maxReportingInterval}, reportableChange: ${reportableChange}]"
+    log.info "${device} zigbee reporting configuration [attribute: ${attribute}, dataType: ${dataType}, minReportingInterval: ${minReportingInterval}, maxReportingInterval: ${maxReportingInterval}, reportableChange: ${reportableChange}]"
 }
 
 /**
@@ -605,9 +610,9 @@ void parseWriteAttributeResponse(final Map descMap) {
     final int statusCode = hexStrToUnsignedInt(data)
     final String statusName = ZigbeeStatusEnum[statusCode] ?: "0x${data}"
     if (settings.logEnable) {
-        log.trace "zigbee response write ${clusterLookup(descMap.clusterInt)} attribute response: ${statusName}"
+        log.trace "${device} zigbee response write ${clusterLookup(descMap.clusterInt)} attribute response: ${statusName}"
     } else if (statusCode > 0x00) {
-        log.warn "zigbee response write ${clusterLookup(descMap.clusterInt)} attribute error: ${statusName}"
+        log.warn "${device} zigbee response write ${clusterLookup(descMap.clusterInt)} attribute error: ${statusName}"
     }
 }
 
@@ -623,9 +628,9 @@ void parseGroupsCluster(final Map descMap) {
             final String statusName = ZigbeeStatusEnum[statusCode] ?: "0x${data[0]}"
             final int groupId = hexStrToUnsignedInt(data[2] + data[1])
             if (settings.logEnable) {
-                log.trace "zigbee response add group ${groupId}: ${statusName}"
+                log.trace "${device} zigbee response add group ${groupId}: ${statusName}"
             } else if (statusCode > 0x00) {
-                log.warn "zigbee response add group ${groupId} error: ${statusName}"
+                log.warn "${device} zigbee response add group ${groupId} error: ${statusName}"
             }
             break
         case 0x02: // Group membership response
@@ -639,10 +644,10 @@ void parseGroupsCluster(final Map descMap) {
                 groups.add(group)
             }
             state.groups = groups
-            log.info "zigbee group memberships: ${groups} (capacity available: ${capacity})"
+            log.info "${device} zigbee group memberships: ${groups} (capacity available: ${capacity})"
             break
         default:
-            log.warn "zigbee received unknown GROUPS cluster: ${descMap}"
+            log.warn "${device} zigbee received unknown GROUPS cluster: ${descMap}"
             break
     }
 }
@@ -661,11 +666,11 @@ void parseOnOffCluster(final Map descMap) {
         case POWER_RESTORE_ID:
             final Map<Integer, String> options = PowerRestoreOpts.options as Map<Integer, String>
             final Integer value = hexStrToUnsignedInt(descMap.value)
-            log.info "power restore mode is '${options[value]}' (0x${descMap.value})"
+            log.info "${device} power restore mode is '${options[value]}' (0x${descMap.value})"
             device.updateSetting('powerRestore', [value: value.toString(), type: 'enum' ])
             break
         default:
-            log.warn "zigbee received unknown ${clusterLookup(descMap.clusterInt)}: ${descMap}"
+            log.warn "${device} zigbee received unknown ${clusterLookup(descMap.clusterInt)}: ${descMap}"
             break
     }
 }
@@ -681,9 +686,9 @@ void parseZdoClusters(final Map descMap) {
     final Integer statusCode = hexStrToUnsignedInt(statusHex)
     final String statusName = ZigbeeStatusEnum[statusCode] ?: "0x${statusHex}"
     if (statusCode > 0x00) {
-        log.warn "zigbee received device object ${clusterName} error: ${statusName}"
+        log.warn "${device} zigbee received device object ${clusterName} error: ${statusName}"
     } else if (settings.logEnable) {
-        log.trace "zigbee received device object ${clusterName} success: ${descMap.data}"
+        log.trace "${device} zigbee received device object ${clusterName} success: ${descMap.data}"
     }
 }
 

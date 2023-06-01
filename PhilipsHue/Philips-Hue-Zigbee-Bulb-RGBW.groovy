@@ -195,6 +195,7 @@ List<String> configure() {
     cmds += zigbee.configureReporting(zigbee.COLOR_CONTROL_CLUSTER, 0x03, DataType.UINT16, 0, 0xFFFF, 1, [:], DELAY_MS)
     cmds += zigbee.configureReporting(zigbee.COLOR_CONTROL_CLUSTER, 0x04, DataType.UINT16, 0, 0xFFFF, 1, [:], DELAY_MS)
     cmds += zigbee.configureReporting(zigbee.COLOR_CONTROL_CLUSTER, 0x07, DataType.UINT16, 0, 0xFFFF, 1, [:], DELAY_MS)
+    cmds += zigbee.configureReporting(zigbee.COLOR_CONTROL_CLUSTER, 0x08, DataType.ENUM8, 0, 0xFFFF, null, [:], DELAY_MS)
 
     if (settings.logEnable) {
         log.debug "zigbee configure cmds: ${cmds}"
