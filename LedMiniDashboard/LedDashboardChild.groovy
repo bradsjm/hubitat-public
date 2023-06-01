@@ -55,7 +55,7 @@ import java.time.LocalTime
 import java.util.concurrent.ConcurrentHashMap
 import java.util.regex.Matcher
 
-@Field static final String Version = '1.12'
+@Field static final String Version = '1.13'
 
 definition(
     name: 'LED Mini-Dashboard Topic',
@@ -1927,14 +1927,14 @@ private void setInovelliRedGen1Effect(final DeviceWrapper device, final Map conf
 
     // Calculate color based on the provided color value, ensuring it remains within the valid range (0-254)
     if (config.color) {
-        color = Math.min(Math.round(((config.color as Integer) / 360.0) * 255), 255) as int
+        color = config.color as int
         // Normalize color value to a range between 0 and 255
         if (color <= 2) {
             color = 0
-        } else if (color >= 98) {
-            color = 254
+        } else if (color >= 356) {
+            color = 255
         } else {
-            color = (int)((color / 100) * 255)
+            color = (int)((color / 360) * 255)
         }
     }
 
