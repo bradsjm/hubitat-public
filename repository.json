@@ -57,6 +57,16 @@
         "Lights & Switches",
         "Zigbee"
       ]
+    },
+    {
+      "id": "7659C2C1-44A7-41C2-B1C2-7949A86B24AA",
+      "name": "Aqara Human Presence Sensor FP1",
+      "category": "Control",
+      "location": "https://raw.githubusercontent.com/bradsjm/hubitat-public/main/Aqara/packageManifest.json",
+      "description": "Aqara Human Presence Sensor FP1",
+      "tags": [
+        "Zigbee"
+      ]
     }
   ]
 }

@@ -1,0 +1,20 @@
+{
+  "packageName": "Aqara Human Presence Sensor FP1",
+  "author": "Jonathan Bradshaw",
+  "version": "1.0",
+  "minimumHEVersion": "2.1.9",
+  "communityLink": "",
+  "documentationLink": "https://github.com/bradsjm/hubitat-drivers/blob/main/Aqara/README.md",
+  "licenseFile": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/LICENSE",
+  "dateReleased": "2023-07-07",
+  "releaseNotes": "v1.0 - Public Release",
+  "drivers": [
+    {
+      "id": "2C17C98C-AC9D-48CC-9040-BDE890BDF67E",
+      "name": "Aqara Human Presence Sensor FP1",
+      "namespace": "aqara",
+      "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/Aqara/AqaraPresenceSensorFP1.groovy",
+      "required": true
+    }
+  ]
+}
