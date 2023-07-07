@@ -41,6 +41,8 @@
  * v1.10: Code refactoring, cleanup, and inline documentation for maintainability
  * v1.11: Bug fix for color devices
  * v1.12: Bug fix for duration settings
+ * v1.13: Bug fix for LZW31 color
+ * v1.14: Add support for Inovelli VZW31-SN dimmer
  *
  * Thanks to Mattias Fornander (@mfornander) for the original application concept
  */
@@ -2395,6 +2397,27 @@ private Object runClosure(final Closure template, final Map ctx) {
         leds      : ['All': 'Notification'],
         effects   : [:],
         effectsAll: ['255': 'Stop', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', 'var': 'Variable Effect']
+    ],
+    'Inovelli Dimmer 2-in-1 Red Series VZW31-SN' : [
+        title     : 'Inovelli Dimmer 2-in-1 Red Series VZW31-SN',
+        type      : 'device.InovelliDimmer2-in-1RedSeriesVZW31-SN',
+        leds      : [
+            'All': 'All LEDs',
+            '7': 'LED 7 (Top)',
+            '6': 'LED 6',
+            '5': 'LED 5',
+            '4': 'LED 4',
+            '3': 'LED 3',
+            '2': 'LED 2',
+            '1': 'LED 1 (Bottom)',
+            '5,6,7': 'Top Half LEDs',
+            '3,4,5': 'Middle LEDs',
+            '1,2,3': 'Bottom Half LEDs',
+            'var': 'Variable LED'
+        ],
+        effects   : ['255': 'Stop Effect', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Falling', '7': 'Rising', '8': 'Aurora', '0': 'LED Off', 'var': 'Variable Effect'],
+        effectsAll: ['255': 'Stop Effect', '1': 'Solid', '2': 'Fast Blink', '3': 'Slow Blink', '4': 'Pulse', '5': 'Chase', '6': 'Open/Close', '7': 'Small-to-Big', '8': 'Aurora', '9': 'Slow Falling', '10': 'Medium Falling', '11': 'Fast Falling',
+                     '12': 'Slow Rising', '13': 'Medium Rising', '14': 'Fast Rising', '15': 'Medium Blink', '16': 'Slow Chase', '17': 'Fast Chase', '18': 'Fast Siren', '19': 'Slow Siren', '0': 'LEDs Off', 'var': 'Variable Effect']
     ],
     'RGB' : [
         title     : 'Generic RGB Device',
