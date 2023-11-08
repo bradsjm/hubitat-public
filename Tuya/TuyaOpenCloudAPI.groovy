@@ -145,6 +145,8 @@ metadata {
 // Tuya Function Categories
 @Field static final Map<String, List<String>> tuyaFunctions = [
     'battery'        : [ 'battery_percentage', 'va_battery' ],
+    'basicFlip'      : [ 'basic_flip' ],
+    'basicPrivate'   : [ 'basic_private'],
     'brightness'     : [ 'bright_value', 'bright_value_v2', 'bright_value_1', 'bright_value_2' ],
     'co'             : [ 'co_state' ],
     'co2'            : [ 'co2_value' ],
@@ -152,18 +154,24 @@ metadata {
     'contact'        : [ 'doorcontact_state' ],
     'ct'             : [ 'temp_value', 'temp_value_v2' ],
     'control'        : [ 'control', 'mach_operate' ],
+    'cruiseMode'     : [ 'cruise_mode' ],
+    'cruiseSwitch'   : [ 'cruise_switch' ],
     'fanSpeed'       : [ 'fan_speed_enum', 'fan_speed' ],
     'fanSwitch'      : [ 'switch_fan', 'switch' ],
+    'motionTracking' : [ 'motion_tracking' ],
+    'motionSwitch'   : [ 'motion_switch' ],
     'light'          : [ 'switch_led', 'switch_led_1', 'switch_led_2', 'light' ],
     'humiditySet'    : [ 'dehumidify_set_value' ],                                                                                       /* Inserted by SJB */
     'humiditySpeed'  : [ 'fan_speed_enum' ],
     'humidity'       : [ 'temp_indoor', 'swing', 'shake', 'child_lock', 'lock', 'fan_speed_enum', 'dehumidify_set_value', 'humidity_indoor', 'humidity', 'envhumid', 'switch', 'mode', 'anion', 'pump', 'dry', 'windspeed', 'countdown', 'countdown_left', 'fault' ],
     'meteringSwitch' : [ 'countdown_1' , 'add_ele' , 'cur_current', 'cur_power', 'cur_voltage' , 'relay_status', 'light_mode' ],
+    'nightvisionMode' : [ 'ir_mode' ],
     'omniSensor'     : [ 'bright_value', 'humidity_value', 'va_humidity', 'bright_sensitivity', 'shock_state', 'inactive_state', 'sensitivity' ],
     'pir'            : [ 'pir' ],
     'power'          : [ 'Power', 'power', 'power_go', 'switch', 'switch_1', 'switch_2', 'switch_3', 'switch_4', 'switch_5', 'switch_6', 'switch_usb1', 'switch_usb2', 'switch_usb3', 'switch_usb4', 'switch_usb5', 'switch_usb6', 'alarm_switch', 'start' ],
     'percentControl' : [ 'percent_control', 'fan_speed_percent', 'position' ],
     'push'           : [ 'manual_feed' ],
+    'recordSwitch'   : ['record_switch'],
     'sceneSwitch'    : [ 'switch1_value', 'switch2_value', 'switch3_value', 'switch4_value', 'switch_mode2', 'switch_mode3', 'switch_mode4' ],
     'smoke'          : [ 'smoke_sensor_status' ],
     'temperatureSet' : [ 'temp_set' ],
@@ -1613,6 +1621,56 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
                     if (txtEnable) { LOG.info "${dw} color mode is EFFECTS" }
                     return [ [ name: 'colorMode', value: 'EFFECTS', descriptionText: 'color mode is EFFECTS' ] ]
             }
+        }
+
+        if (status.code in tuyaFunctions.basicFlip) {
+            String value = status.value ? 'true' : 'false'
+                if (txtEnable) { LOG.info "${dw} flip is ${value}" }
+                return [ [ name: 'basicFlip', value: value, descriptionText: "flip is ${value}" ] ]
+        }
+
+        if (status.code in tuyaFunctions.basicPrivate) {
+            String value = status.value ? 'on' : 'off'
+            if (txtEnable) { LOG.info "${dw} basic private is ${value}" }
+            return [ [ name: 'privateMode', value: value, descriptionText: "basic private is ${value}" ] ]
+        }
+
+        if (status.code in tuyaFunctions.motionTracking) {
+            String value = status.value ? 'on' : 'off'
+            if (txtEnable) { LOG.info "${dw} motion tracking is ${value}" }
+            return [ [ name: 'motionTracking', value: value, descriptionText: "motion tracking is ${value}" ] ]
+        }
+
+        if (status.code in tuyaFunctions.motionSwitch) {
+            String value = status.value ? 'on' : 'off'
+            if (txtEnable) { LOG.info "${dw} motion detection switch is ${value}" }
+            return [ [ name: 'motionDetection', value: value, descriptionText: "motion switch is ${value}" ] ]
+        }
+
+        if (status.code in tuyaFunctions.nightvisionMode) {
+            String value = status.value ? 'on' : 'off'
+            if (txtEnable) { LOG.info "${dw} night vision is ${value}" }
+            return [ [ name: 'nightvisionMode', value: value, descriptionText: "night vision is ${value}" ] ]
+        }
+
+        if (status.code in tuyaFunctions.recordSwitch) {
+            String value = status.value ? 'on' : 'off'
+            if (txtEnable) { LOG.info "${dw} record is ${value}" }
+            return [ [ name: 'recording', value: value, descriptionText: "recording is ${value}" ] ]
+        }
+
+        if (status.code in tuyaFunctions.cruiseSwitch) {
+            String value = status.value ? 'on' : 'off'
+            if (txtEnable) { LOG.info "${dw} patrol is ${value}" }
+            return [ [ name: 'patrol', value: value, descriptionText: "recording is ${value}" ] ]
+        }
+
+        if (status.code in tuyaFunctions.cruiseMode) {
+            String value = status.value
+             if (txtEnable) { LOG.info "${dw} patrol mode value is ${value}" }
+            String mode = value.split(',')[0][0].toBoolean() ? 'Site Patrol' : 'Panoramic Patrol'
+            if (txtEnable) { LOG.info "${dw} patrol mode is ${mode}" }
+            return [ [ name: 'patrolMode', value: mode, descriptionText: "patrol mode is ${mode}" ] ]
         }
 
         if (status.code in tuyaFunctions.humidity) {
