@@ -1,6 +1,6 @@
 /**
  *  MIT License
- *  Copyright 2020 Jonathan Bradshaw (jb@nrgup.net)
+ *  Copyright 2023 Yanay Hollander (yanayh90@gmail.com)
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy
  *  of this software and associated documentation files (the "Software"), to deal
@@ -38,6 +38,7 @@ metadata {
                 importUrl: '') {
         singleThreaded: true
         capability 'Actuator'
+        capability 'AudioVolume'
         capability 'Initialize'
         capability 'Light'
         capability 'Switch'
@@ -66,6 +67,13 @@ metadata {
                 name: 'Dps',
                 type: 'NUMBER'
             ],
+            [
+                name: 'Value',
+                type: 'STRING'
+            ]
+        ]
+
+        command 'basicFlip', [
             [
                 name: 'Value',
                 type: 'STRING'
@@ -208,15 +216,23 @@ void unmute() {
     }
 }
 
-// Component command to mute
-void flip() {
-    LOG.info "flip"
-    sendEvent([ name: 'flip', descriptionText: 'flip' ])
-    if (repeatCommand([ (powerDps as String): true ])) {
-        sendEvent([ name: 'flip', descriptionText: 'flip' ])
-    } else {
-        LOG.info "error flip"
+// Send basic flip command
+void sendBasicFlip(String value) {
+    LOG.info "sending basic flip command ${value}"
+    switch (value.toLowerCase()) {
+        case 'true':
+            repeatCommand([ (value): true ])
+            return
+        case 'false':
+            repeatCommand([ (value): false ])
+            return
     }
+}
+
+// Send basic flip command
+void setVolume(BigDecimal volume) {
+    LOG.info "sending volume command ${volume}"
+    parent?.componentSetVolume(device, volume)
 }
 
 // Component command to start motion tracking
@@ -532,6 +548,7 @@ private Map repeatCommand(Map dps) {
     Map result
     String id = getDataValue('id')
     String localKey = getDataValue('local_key')
+    log.info "id = ${id}, localKey = ${localKey}"
     SynchronousQueue queue = getQ()
     if (!id || !localKey || !ipAddress) { return result }
 
