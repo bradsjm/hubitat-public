@@ -38,44 +38,49 @@ metadata {
                 importUrl: '') {
         singleThreaded: true
         capability 'Actuator'
-        capability 'AudioVolume'
         capability 'Initialize'
         capability 'Light'
         capability 'Switch'
         capability 'SwitchLevel'
         capability 'Refresh'
         capability 'MotionSensor'
-        capability 'VideoCamera'
+        // capability 'VideoCamera'
 
         
         attribute 'retries', 'number'
         attribute 'errors', 'number'
 
-        command 'scanNetwork', [
+        command 'setImageFlip', [
             [
-                name: 'startIp',
-                type: 'STRING'
-            ],
-            [
-                name: 'endIp',
+                name: 'basicFlip',
                 type: 'STRING'
             ]
         ]
 
-        command 'sendCustomDps', [
+        command 'setVolume', [
             [
-                name: 'Dps',
+                name: 'volume',
                 type: 'NUMBER'
-            ],
+            ]
+        ]
+
+        command 'setMotionTracking', [
             [
-                name: 'Value',
+                name: 'enabled',
                 type: 'STRING'
             ]
         ]
 
-        command 'basicFlip', [
+        command 'setMotionDetectionSwitch', [
             [
-                name: 'Value',
+                name: 'enabled',
+                type: 'STRING'
+            ]
+        ]
+
+        command 'setPatrolSwitch', [
+            [
+                name: 'enabled',
                 type: 'STRING'
             ]
         ]
@@ -183,13 +188,13 @@ void heartbeat() {
 // Called when the device is first created
 void installed() {
     LOG.info "driver installed"
+    sendEvent(name: 'flip', value: 'off')
+    sendEvent ([ name: 'retries', value: 0, descriptionText: 'reset' ])
+    sendEvent ([ name: 'errors', value: 0, descriptionText: 'reset' ])
 }
 
 // Called to initialize
 void initialize() {
-    sendEvent ([ name: 'retries', value: 0, descriptionText: 'reset' ])
-    sendEvent ([ name: 'errors', value: 0, descriptionText: 'reset' ])
- 
     heartbeat()
 }
 
@@ -216,23 +221,55 @@ void unmute() {
     }
 }
 
-// Send basic flip command
-void sendBasicFlip(String value) {
-    LOG.info "sending basic flip command ${value}"
-    switch (value.toLowerCase()) {
-        case 'true':
-            repeatCommand([ (value): true ])
-            return
-        case 'false':
-            repeatCommand([ (value): false ])
-            return
+// Send flip image command
+void setImageFlip(final String basicFlip) {
+    LOG.info "sending basic flip command"
+    parent?.componentFlipImage(device, basicFlip.toBoolean())
+}
+
+// Send motion tracking command
+void setMotionTracking(final String enabled) {
+    LOG.info "sending motion tracking command"
+    
+    if (repeatCommand([ (powerDps as String): true ])) {
+        sendEvent([ name: 'motionTracking', value: enabled.toBoolean(), descriptionText: 'motion tracking change' ])
+    } else {
+        parent?.componentMotionTracking(device, enabled.toBoolean())
     }
 }
 
-// Send basic flip command
-void setVolume(BigDecimal volume) {
+// Send motion switch command
+void setMotionDetectionSwitch(final String enabled) {
+    LOG.info "sending motion detection command"
+    
+    if (repeatCommand([ (powerDps as String): true ])) {
+        sendEvent([ name: 'motionDetection', value: enabled.toBoolean(), descriptionText: 'motion detection change' ])
+    } else {
+        parent?.componentMotionDetection(device, enabled.toBoolean())
+    }
+}
+
+// Send patrol switch command
+void setPatrolSwitch(final String enabled) {
+    LOG.info "sending patrol switch command"
+    
+    if (repeatCommand([ (powerDps as String): true ])) {
+        sendEvent([ name: 'patrol', value: enabled.toBoolean(), descriptionText: 'patrol change' ])
+    } else {
+        parent?.componentPatrol(device, enabled.toBoolean())
+    }
+}
+
+// Send volume command
+void setVolume(final BigDecimal volume) {
     LOG.info "sending volume command ${volume}"
-    parent?.componentSetVolume(device, volume)
+
+    if (repeatCommand([ (powerDps as String): true ])) {
+        sendEvent([ name: 'volume', value: volume, descriptionText: 'volume change' ])
+    } else {
+        parent?.componentSetVolume(device, volume)
+    }
+    
 }
 
 // Component command to start motion tracking

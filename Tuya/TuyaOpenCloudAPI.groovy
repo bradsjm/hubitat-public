@@ -760,6 +760,35 @@ void componentSetVolume(DeviceWrapper dw, BigDecimal volume) {
     tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), ['code': code, 'value': volume])
 }
 
+// Component command to flip image
+void componentFlipImage(DeviceWrapper dw, Boolean flip) {
+    Map<String, Map> functions = getFunctions(dw)
+    String code = getFunctionCode(functions, tuyaFunctions.basicFlip)
+    LOG.info "Starting basic flip change ${flip}"
+    tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), ['code': code, 'value': flip])
+}
+
+void componentMotionTracking(DeviceWrapper dw, Boolean enable) {
+    Map<String, Map> functions = getFunctions(dw)
+    String code = getFunctionCode(functions, tuyaFunctions.motionTracking)
+    LOG.info "Starting motion tracking change ${enable}"
+    tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), ['code': code, 'value': enable])
+}
+
+void componentMotionDetection(DeviceWrapper dw, Boolean enable) {
+    Map<String, Map> functions = getFunctions(dw)
+    String code = getFunctionCode(functions, tuyaFunctions.motionSwitch)
+    LOG.info "Starting motion detection change ${enable}"
+    tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), ['code': code, 'value': enable])
+}
+
+void componentPatrol(DeviceWrapper dw, Boolean enable) {
+    Map<String, Map> functions = getFunctions(dw)
+    String code = getFunctionCode(functions, tuyaFunctions.cruiseSwitch)
+    LOG.info "Starting Patrol change ${flip}"
+    tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), ['code': code, 'value': enable])
+}
+
 // Component command to start level change (up or down)
 void componentStartLevelChange(DeviceWrapper dw, String direction) {
     levelChanges[dw.deviceNetworkId] = (direction == 'down') ? -10 : 10
