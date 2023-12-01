@@ -244,6 +244,16 @@ void espHomeSubscribe() {
     sendMessageQueue()
 }
 
+void espHomeCallService(String serviceName) {
+    Map service = state.services.find { service -> service.objectId == serviceName }
+    if (service) {
+        if (settings.logEnable) { log.trace "Calling ESPHome Service: ${serviceName}" }
+        espHomeExecuteServiceRequest(service)
+    } else {
+        if (settings.logEnable) { log.error "No ESPHome Service found: ${serviceName}" }
+    }
+}
+
 @CompileStatic
 void espHomeSubscribeBtleRequest() {
     sendMessage(MSG_SUBSCRIBE_BTLE_REQUEST)
@@ -1029,6 +1039,9 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
         case MSG_GET_TIME_REQUEST:
             espHomeGetTimeRequest()
             break
+        case MSG_LIST_SERVICES_RESPONSE:
+            espHomeListEntitiesServicesResponse(tags)
+            break
         case MSG_LIST_NUMBER_RESPONSE:
             parse espHomeListEntitiesNumberResponse(tags)
             break
@@ -1285,6 +1298,23 @@ private void espHomeSubscribeStatesRequest() {
 @CompileStatic
 private void espHomeSubscribeHaServicesRequest() {
     sendMessage(MSG_SUBSCRIBE_HA_SERVICES_REQUEST)
+}
+
+private void espHomeListEntitiesServicesResponse(Map<Integer, List> tags) {
+    Map service = [
+        objectId: getStringTag(tags, 1),
+        key: getLongTag(tags, 2),
+        args: getStringTagList(tags, 3)
+    ]
+    if (settings.logEnable) { log.trace "ESPHome Service discovered: ${service}" }
+    state.services = (state.services ?: []) << service
+}
+
+@CompileStatic
+private void espHomeExecuteServiceRequest(Map<String, Object> tags) {
+    sendMessage(MSG_EXECUTE_SERVICE_REQUEST, [
+        1: [ tags.key as Integer, WIRETYPE_FIXED32 ]
+    ])
 }
 
 @CompileStatic
