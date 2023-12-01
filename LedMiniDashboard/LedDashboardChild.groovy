@@ -1185,6 +1185,15 @@ void sunriseTrigger() {
 /**
  * Scheduled trigger used for rules that involve time
  */
+void timeBeforeTrigger() {
+    logInfo 'executing time before trigger'
+    notificationDispatcher()
+    subscribeAllScenarios()
+}
+
+/**
+ * Scheduled trigger used for rules that involve time
+ */
 void timeAfterTrigger() {
     logInfo 'executing time after trigger'
     notificationDispatcher()
@@ -2845,6 +2854,7 @@ private Object runClosure(final Closure template, final Map ctx) {
             ],
             delay: false
         ],
+        execute : { final Map ctx -> runOnce(getNextTime(new Date(), ctx.value as String), 'timeBeforeTrigger') },
         test    : { final Map ctx -> new Date() < (timeToday(ctx.value as String) as Date) }
     ],
     'timeAfter'         : [
