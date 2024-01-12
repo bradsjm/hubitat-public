@@ -139,9 +139,9 @@ public void parse(Map message) {
             // Check if the entity key matches the message entity key received to update device state
             if (settings.binarysensor as Long == message.key) {
                 String value = message.state ? 'closed' : 'open'
-                if (device.currentValue('motion') != value) {
+                if (device.currentValue('contact') != value) {
                     sendEvent([
-                        name: 'motion',
+                        name: 'contact',
                         value: value,
                         descriptionText: "Contact is ${value}"
                     ])
