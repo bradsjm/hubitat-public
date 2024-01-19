@@ -5,6 +5,7 @@ This repository contains my [Hubitat](https://www.hubitat.com) published Groovy 
 # LEGACY REPOSITORY - NO LONGER ACTIVELY MAINTAINED
 
 If you are interested in being added as a contributor or taking ownership, please contact me at jb@nrgup.net.
+However, I am reviewing and accepting any pull requests contributed.
 
 ## Hubitat Package Manager
 
