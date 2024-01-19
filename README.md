@@ -2,6 +2,10 @@
 
 This repository contains my [Hubitat](https://www.hubitat.com) published Groovy Applications and Drivers licensed under the [MIT license](LICENSE).
 
+# LEGACY REPOSITORY - NO LONGER ACTIVELY MAINTAINED
+
+If you are interested in being added as a contributor or taking ownership, please contact me at jb@nrgup.net.
+
 ## Hubitat Package Manager
 
 Drivers and applications that have been released to the community are available from the [Hubitat Package Manager](https://hubitatpackagemanager.hubitatcommunity.com/)
