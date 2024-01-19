@@ -429,7 +429,7 @@ void componentOn(DeviceWrapper dw) {
         }
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), ['code': code, 'value': true])
     } else {
-        Integer homeId = dw.getDataValue('homeId')
+        String homeId = dw.getDataValue('homeId')
         String sceneId = dw.getDataValue('sceneId')
         if (sceneId && homeId) {
             if (txtEnable) {
@@ -488,7 +488,7 @@ void componentPush(DeviceWrapper dw, BigDecimal button) {
         }
         tuyaSendDeviceCommandsAsync(dw.getDataValue('id'), ['code': code, 'value': button])
     } else {
-        Integer homeId = dw.getDataValue('homeId')
+        String homeId = dw.getDataValue('homeId')
         String sceneId = dw.getDataValue('sceneId')
         if (sceneId && homeId) {
             tuyaTriggerScene(homeId, sceneId)
@@ -1346,7 +1346,7 @@ private ChildDeviceWrapper createChildDevice(String dni, Map mapping, Map d) {
     return dw
 }
 
-private ChildDeviceWrapper createSceneDevice(Integer homeId, Map scene) {
+private ChildDeviceWrapper createSceneDevice(String homeId, Map scene) {
     String dni = "${device.id}-${scene.scene_id}"
     ChildDeviceWrapper dw = getChildDevice(dni)
     if (dw == null) {
@@ -2217,7 +2217,7 @@ private void tuyaGetHomesResponse(AsyncResponse response, Map data) {
     }
 }
 
-private void tuyaGetScenesAsync(Integer homeId) {
+private void tuyaGetScenesAsync(String homeId) {
     LOG.debug "Requesting scenes for home ${homeId}"
     tuyaGetAsync("/v1.0/homes/${homeId}/scenes", null, 'tuyaGetScenesResponse', [homeId: homeId])
 }
@@ -2278,7 +2278,7 @@ private void tuyaRefreshTokenResponse(AsyncResponse response, Map data) {
     tuyaGetHubConfigAsync()
 }
 
-private void tuyaTriggerScene(Integer homeId, String sceneId) {
+private void tuyaTriggerScene(String homeId, String sceneId) {
     LOG.debug "Triggering scene id ${sceneId}"
     tuyaPostAsync("/v1.0/homes/${homeId}/scenes/${sceneId}/trigger", null, 'tuyaTriggerSceneResponse')
 }
