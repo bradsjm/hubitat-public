@@ -747,7 +747,7 @@ private void scheduleCommandTimeoutCheck(final int delay = COMMAND_TIMEOUT) {
  */
 private void scheduleDeviceHealthCheck(final int intervalMin) {
     final Random rnd = new Random()
-    schedule("${rnd.nextInt(59)} ${rnd.nextInt(9)}/${intervalMin} * ? * * *", 'ping')
+    schedule("${rnd.nextInt(59)} */${intervalMin} * ? * * *", 'ping')
 }
 
 /**
