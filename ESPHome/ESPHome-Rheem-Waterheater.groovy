@@ -32,10 +32,8 @@ metadata {
         capability 'Initialize'
         capability 'SignalStrength'
         capability 'TemperatureMeasurement'
-        capability 'Switch'
         capability 'ThermostatHeatingSetpoint'
         capability 'ThermostatOperatingState'
-        capability 'ThermostatMode'
         
         command 'setWaterHeaterMode', [[name:'Mode*','type':'ENUM','description':'Mode','constraints':['Heat Pump', 'Energy Saver', 'High Demand', 'Normal', 'Vacation', 'Off']]]
 
@@ -173,16 +171,25 @@ public void parse(Map message) {
             if (message.platform == 'climate') {
                 
                 if (message.targetTemperature) {
-                    Double temperatureF = Math.round(message.targetTemperature.toDouble() * 10) / 10.0
+                    Double temperatureF = Math.round((message.targetTemperature.toDouble() * 1.8 + 32) * 10) / 10.0
                     if (device.currentValue('thermostatHeatingSetpoint') != temperatureF) {
                         updateAttribute('thermostatHeatingSetpoint', temperatureF, 'F')
                     }
                 }
 
                 if (message.temperature) {                    
-                    Double temperatureF = Math.round(message.temperature.toDouble() * 10) / 10.0
+                    Double temperatureF = Math.round((message.temperature.toDouble() * 1.8 + 32) * 10) / 10.0
                     if (device.currentValue('upperTankTemperature') != temperatureF) {
                         updateAttribute('upperTankTemperature', temperatureF, 'F')
+                    }
+                }
+
+                if (message.customMode) {                    
+                    if (message.customMode == 'Eco Mode'){
+                        message.customMode = 'Energy Saver'
+                    }
+                    if (device.currentValue('waterHeaterMode') != message.customMode) {
+                        updateAttribute('waterHeaterMode', message.customMode)
                     }
                 }
 

@@ -840,6 +840,7 @@ private static Map espHomeClimateState(Map<Integer, List> tags) {
             targetTemperature: getFloatTag(tags, 4), //for water heaters, set temp
             targetTemperatureLow: getFloatTag(tags, 5),
             targetTemperatureHigh: getFloatTag(tags, 6),
+            customMode: getStringTag(tags, 13)
     ]
 }
 
