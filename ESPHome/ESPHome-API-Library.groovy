@@ -836,8 +836,8 @@ private static Map espHomeClimateState(Map<Integer, List> tags) {
             platform: 'climate',
             key: getLongTag(tags, 1),
             climateMode: toClimateMode(getIntTag(tags, 2)),
-            currentTemperature: getFloatTag(tags, 3),
-            targetTemperature: getFloatTag(tags, 4),
+            temperature: getFloatTag(tags, 3),  //for water heaters, upper tank temp
+            targetTemperature: getFloatTag(tags, 4), //for water heaters, set temp
             targetTemperatureLow: getFloatTag(tags, 5),
             targetTemperatureHigh: getFloatTag(tags, 6),
     ]

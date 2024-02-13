@@ -43,6 +43,8 @@ metadata {
         attribute 'waterHeaterMode', 'enum', ['Heat Pump', 'Energy Saver', 'High Demand', 'Normal', 'Vacation', 'Off']
         attribute 'lowerTankTemperature', 'number'
         attribute 'upperTankTemperature', 'number'
+        attribute 'thermostatHeatingSetpoint', 'number'
+
         attribute 'powerWatts', 'number'
         attribute 'hotWaterAvailabilityPercent', 'number'
 
@@ -152,6 +154,7 @@ public void parse(Map message) {
             break
 
         case 'state':
+            
             // Signal Strength
             if (state.signalStrength as Long == message.key && message.hasState) {
                 Integer rssi = Math.round(message.state as Float)
@@ -164,16 +167,28 @@ public void parse(Map message) {
                 return
             }
 
-            if (settings.temperature as Long == message.key && message.hasState) {
-                String value = message.state
-                if (device.currentValue('temperature') != value) {
 
-                    //updateAttribute('temperature', value, '°C', 'temperature')
+            
 
-
+            if (message.platform == 'climate') {
+                
+                if (message.targetTemperature) {
+                    Double temperatureF = Math.round(message.targetTemperature.toDouble() * 10) / 10.0
+                    if (device.currentValue('thermostatHeatingSetpoint') != temperatureF) {
+                        updateAttribute('thermostatHeatingSetpoint', temperatureF, 'F')
+                    }
                 }
+
+                if (message.temperature) {                    
+                    Double temperatureF = Math.round(message.temperature.toDouble() * 10) / 10.0
+                    if (device.currentValue('upperTankTemperature') != temperatureF) {
+                        updateAttribute('upperTankTemperature', temperatureF, 'F')
+                    }
+                }
+
                 return
             }
+
     }
 }
 
@@ -187,9 +202,9 @@ public void parse(Map message) {
  */
 private void updateAttribute(final String attribute, final Object value, final String unit = null, final String type = null) {
     final String descriptionText = "${attribute} was set to ${value}${unit ?: ''}"
-    if (device.currentValue(attribute) != value && settings.txtEnable) {
-        log.info descriptionText
-    }
+    //if (device.currentValue(attribute) != value && settings.txtEnable) {
+    log.info descriptionText
+    //}
     sendEvent(name: attribute, value: value, unit: unit, type: type, descriptionText: descriptionText)
 }
 
