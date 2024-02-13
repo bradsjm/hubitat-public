@@ -830,7 +830,7 @@ private static Map parseEntity(Map<Integer, List> tags) {
 }
 
 @CompileStatic
-void espHomeClimateState(Map<Integer, List> tags) {
+private static Map espHomeClimateState(Map<Integer, List> tags) {
     return [
             type: 'state',
             platform: 'climate',
