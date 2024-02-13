@@ -829,6 +829,20 @@ private static Map parseEntity(Map<Integer, List> tags) {
     ]
 }
 
+@CompileStatic
+void espHomeClimateState(Map<Integer, List> tags) {
+    return [
+            type: 'state',
+            platform: 'climate',
+            key: getLongTag(tags, 1),
+            climateMode: toClimateMode(getIntTag(tags, 2)),
+            currentTemperature: getFloatTag(tags, 3),
+            targetTemperature: getFloatTag(tags, 4),
+            targetTemperatureLow: getFloatTag(tags, 5),
+            targetTemperatureHigh: getFloatTag(tags, 6),
+    ]
+}
+
 /**
  * Minimal Protobuf Implementation for use with ESPHome
  */
@@ -950,6 +964,20 @@ private static String toEntityCategory(int value) {
         case ENTITY_CATEGORY_NONE: return 'none'
         case ENTITY_CATEGORY_CONFIG: return 'config'
         case ENTITY_CATEGORY_DIAGNOSTIC: return 'diagnostic'
+        default: return value
+    }
+}
+
+@CompileStatic
+private static String toClimateMode(int value) {
+    switch (value) {
+        case CLIMATE_MODE_OFF: return 'off'
+        case CLIMATE_MODE_AUTO: return 'auto'
+        case CLIMATE_MODE_COOL: return 'cool'
+        case CLIMATE_MODE_HEAT_COOL: return 'heat cool'
+        case CLIMATE_MODE_HEAT: return 'heat'
+        case CLIMATE_MODE_FAN_ONLY: return 'fan only'
+        case CLIMATE_MODE_DRY: return 'dry'
         default: return value
     }
 }
@@ -1083,6 +1111,9 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
             break
         case MSG_SELECT_STATE_RESPONSE:
             parse espHomeSelectState(tags)
+            break
+        case MSG_CLIMATE_STATE_RESPONSE:
+            parse espHomeClimateState(tags)
             break
         default:
             if (!handled) {
@@ -1529,7 +1560,7 @@ private void logWarning(String s) {
 @Field static final int MSG_CAMERA_IMAGE_RESPONSE = 44
 @Field static final int MSG_CAMERA_IMAGE_REQUEST = 45
 @Field static final int MSG_LIST_CLIMATE_RESPONSE = 46 // TODO
-@Field static final int MSG_CLIMATE_STATE_RESPONSE = 47 // TODO
+@Field static final int MSG_CLIMATE_STATE_RESPONSE = 47
 @Field static final int MSG_CLIMATE_COMMAND_REQUEST = 48 // TODO
 @Field static final int MSG_LIST_NUMBER_RESPONSE = 49
 @Field static final int MSG_NUMBER_STATE_RESPONSE = 50
