@@ -211,13 +211,13 @@ public void parse(Map message) {
             if (state.power as Long == message.key && message.hasState) {
                 Integer power = Math.round(message.state as Float)
                 if (device.currentValue('powerWatts') != power) {
-                    updateAttribute('thermostatHeatingSetpoint', power, 'F')
+                    updateAttribute('powerWatts', power, 'W')
                 }
                 return
             }
 
             if (state.lowerTankTemperature as Long == message.key && message.hasState) {
-                Double temperatureF = Math.round(message.state)
+                Double temperatureF = Math.round(message.state * 10) / 10.0
                 if (device.currentValue('lowerTankTemperature') != temperatureF) {
                     updateAttribute('lowerTankTemperature', temperatureF, 'F')
                 }
@@ -225,7 +225,7 @@ public void parse(Map message) {
             }
 
             if (state.upperTankTemperature as Long == message.key && message.hasState) {
-                Double temperatureF = Math.round(message.state)
+                Double temperatureF = Math.round(message.state * 10) / 10.0
                 if (device.currentValue('upperTankTemperature') != temperatureF) {
                     updateAttribute('upperTankTemperature', temperatureF, 'F')
                 }
@@ -257,7 +257,7 @@ public void parse(Map message) {
             }
 
             if (state.ambientTemperature as Long == message.key && message.hasState) {
-                Double temperatureF = Math.round(message.state)
+                Double temperatureF = Math.round(message.state * 10) / 10.0
                 if (device.currentValue('ambientTemperature') != temperatureF) {
                     updateAttribute('ambientTemperature', temperatureF, 'F')
                 }
@@ -270,10 +270,16 @@ public void parse(Map message) {
                 }
                 return
             }
-            
+
 
             if (message.platform == 'climate') {
                 state['climate'] = message.key
+                if (message.targetTemperature) {
+                    Double temperatureF = Math.round((message.targetTemperature.toDouble() * 1.8 + 32) * 10) / 10.0
+                    if (device.currentValue('thermostatHeatingSetpoint') != temperatureF) {
+                        updateAttribute('thermostatHeatingSetpoint', temperatureF, 'F')
+                    }
+                }
 
                 if (message.customMode) {                    
                     if (message.customMode == 'Eco Mode'){
