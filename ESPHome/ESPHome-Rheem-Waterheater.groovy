@@ -35,15 +35,22 @@ metadata {
         capability 'ThermostatHeatingSetpoint'
         capability 'ThermostatOperatingState'
         
-        command 'setWaterHeaterMode', [[name:'Mode*','type':'ENUM','description':'Mode','constraints':['Heat Pump', 'Energy Saver', 'High Demand', 'Normal', 'Vacation', 'Off']]]
+        command 'setWaterHeaterMode', [[name:'Mode*','type':'ENUM','description':'Mode','constraints':['Heat Pump', 'Energy Saver', 'High Demand', 'Normal', 'Off']]]
+        command 'setVacationMode', [[name:'VacationMode*','type':'ENUM','description':'VacationMode','constraints':['Off', 'Permanent']]]
 
         attribute 'networkStatus', 'enum', [ 'connecting', 'online', 'offline' ]
-        attribute 'waterHeaterMode', 'enum', ['Heat Pump', 'Energy Saver', 'High Demand', 'Normal', 'Vacation', 'Off']
+        attribute 'waterHeaterMode', 'enum', ['Heat Pump', 'Energy Saver', 'High Demand', 'Normal', 'Off']
         attribute 'lowerTankTemperature', 'number'
         attribute 'upperTankTemperature', 'number'
+        attribute 'powerWatts', 'number'
+        attribute 'lowerHeatingElementRuntime', 'number'
+        attribute 'upperHeatingElementRuntime', 'number'
+        attribute 'ambientTemperature', 'number'
+        attribute 'vacationMode', 'enum', ['Off', 'Timed', 'Permanent']
+        attribute 'heatingElementState', 'enum', ['Off', 'On']
         attribute 'thermostatHeatingSetpoint', 'number'
 
-        attribute 'powerWatts', 'number'
+        
         attribute 'hotWaterAvailabilityPercent', 'number'
 
     }
@@ -138,18 +145,51 @@ public void parse(Map message) {
 
         case 'entity':
             
-            if (message.platform == 'binary' && !message.disabledByDefault && message.entityCategory == 'none') {
 
+            //Each sensor has a unique key that is used to send commands to the device (also used to interpret received state messages)
+            //These are received as a flood of messages when the device is first connected and are used to populate the settings
+
+            switch (message.objectId) {
+                case 'power':
+                    state['power'] = message.key
+                    break
+                case  'lower_tank_temperature':
+                    state['lowerTankTemperature'] = message.key
+                    break
+                case 'upper_tank_temperature':
+                    state['upperTankTemperature'] = message.key
+                    break
+                case 'lower_heating_element_runtime':
+                    state['lowerHeatingElementRuntime'] = message.key
+                    break
+                case 'upper_heating_element_runtime':
+                    state['upperHeatingElementRuntime'] = message.key
+                    break
+                case 'hot_water':
+                    state['hotWater'] = message.key
+                    break
+                case 'ambient_temperature':
+                    state['ambientTemperature'] = message.key
+                    break
+                case 'vacation':
+                    state['vacation'] = message.key
+                    break
+                case 'mode':
+                    state['mode'] = message.key
+                    break
+                case state['heating_element_state']:
+                    state['heatingElementState'] = message.key
+                    break
+                default:
+                    log.debug "Skipping storing key ID for : ${message.objectId} (${message.name})"
             }
 
-            if (message.platform == 'sensor') {
-                switch (message.deviceClass) {
-                    case 'signal_strength':
-                        state['signalStrength'] = message.key
-                        break
+            if (message.platform == 'climate') {
+                if (!climateKey.climate) {
+                   state['climateKey']  = message.key
                 }
+                return
             }
-            break
 
         case 'state':
             
@@ -166,23 +206,74 @@ public void parse(Map message) {
             }
 
 
+            //All the other sensors
+
+            if (state.power as Long == message.key && message.hasState) {
+                Integer power = Math.round(message.state as Float)
+                if (device.currentValue('powerWatts') != power) {
+                    updateAttribute('thermostatHeatingSetpoint', power, 'F')
+                }
+                return
+            }
+
+            if (state.lowerTankTemperature as Long == message.key && message.hasState) {
+                Double temperatureF = Math.round(message.state)
+                if (device.currentValue('lowerTankTemperature') != temperatureF) {
+                    updateAttribute('lowerTankTemperature', temperatureF, 'F')
+                }
+                return
+            }
+
+            if (state.upperTankTemperature as Long == message.key && message.hasState) {
+                Double temperatureF = Math.round(message.state)
+                if (device.currentValue('upperTankTemperature') != temperatureF) {
+                    updateAttribute('upperTankTemperature', temperatureF, 'F')
+                }
+                return
+            }
+
+            if (state.upperHeatingElementRuntime as Long == message.key && message.hasState) {
+                Integer runtime = Math.round(message.state as Float)
+                if (device.currentValue('upperHeatingElementRuntime') != runtime) {
+                    updateAttribute('upperHeatingElementRuntime', runtime, 'hours')
+                }
+                return
+            }
+
+            if (state.lowerHeatingElementRuntime as Long == message.key && message.hasState) {
+                Integer runtime = Math.round(message.state as Float)
+                if (device.currentValue('lowerHeatingElementRuntime') != runtime) {
+                    updateAttribute('lowerHeatingElementRuntime', runtime, 'hours')
+                }
+                return
+            }
+
+            if (state.hotWater as Long == message.key && message.hasState) {
+                Integer percent = Math.round(message.state as Float)
+                if (device.currentValue('hotWaterAvailabilityPercent') != percent) {
+                    updateAttribute('hotWaterAvailabilityPercent', percent, '%')
+                }
+                return
+            }
+
+            if (state.ambientTemperature as Long == message.key && message.hasState) {
+                Double temperatureF = Math.round(message.state)
+                if (device.currentValue('ambientTemperature') != temperatureF) {
+                    updateAttribute('ambientTemperature', temperatureF, 'F')
+                }
+                return
+            }
+
+            if (state.vacation as Long == message.key && message.hasState) {
+                if (device.currentValue('vacationMode') != mode) {
+                    updateAttribute('vacationMode', message.state)
+                }
+                return
+            }
             
 
             if (message.platform == 'climate') {
-                
-                if (message.targetTemperature) {
-                    Double temperatureF = Math.round((message.targetTemperature.toDouble() * 1.8 + 32) * 10) / 10.0
-                    if (device.currentValue('thermostatHeatingSetpoint') != temperatureF) {
-                        updateAttribute('thermostatHeatingSetpoint', temperatureF, 'F')
-                    }
-                }
-
-                if (message.temperature) {                    
-                    Double temperatureF = Math.round((message.temperature.toDouble() * 1.8 + 32) * 10) / 10.0
-                    if (device.currentValue('upperTankTemperature') != temperatureF) {
-                        updateAttribute('upperTankTemperature', temperatureF, 'F')
-                    }
-                }
+                state['climate'] = message.key
 
                 if (message.customMode) {                    
                     if (message.customMode == 'Eco Mode'){
