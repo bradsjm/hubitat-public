@@ -265,7 +265,7 @@ public void parse(Map message) {
             }
 
             if (state.vacation as Long == message.key && message.hasState) {
-                if (device.currentValue('vacationMode') != mode) {
+                if (device.currentValue('vacationMode') != message.state) {
                     updateAttribute('vacationMode', message.state)
                 }
                 return
