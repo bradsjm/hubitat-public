@@ -1,6 +1,6 @@
 /**
  *  MIT License
- *  Copyright 2022 Jonathan Bradshaw (jb@nrgup.net)
+ *  Copyright 2024 Kris Linquist (kris@linquist.net)
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy
  *  of this software and associated documentation files (the "Software"), to deal
@@ -36,11 +36,11 @@ metadata {
         capability 'ThermostatHeatingSetpoint'
         capability 'ThermostatOperatingState'
         
-        command 'setWaterHeaterMode', [[name:'Mode*','type':'ENUM','description':'Mode','constraints':['Heat Pump', 'Energy Saver', 'High Demand', 'Off']]]
+        command 'setWaterHeaterMode', [[name:'Mode*','type':'ENUM','description':'Mode','constraints':['Heat Pump', 'Energy Saver', 'High Demand', 'Electric/Gas', 'Off']]]
         command 'setVacationMode', [[name:'VacationMode*','type':'ENUM','description':'VacationMode','constraints':['Off', 'Permanent']]]
 
         attribute 'networkStatus', 'enum', [ 'connecting', 'online', 'offline' ]
-        attribute 'waterHeaterMode', 'enum', ['Heat Pump', 'Energy Saver', 'High Demand', 'Normal', 'Off']
+        attribute 'waterHeaterMode', 'enum', ['Heat Pump', 'Energy Saver', 'High Demand', 'Electric/Gas', 'Off']
         attribute 'lowerTankTemperature', 'number'
         attribute 'upperTankTemperature', 'number'
         attribute 'powerWatts', 'number'
