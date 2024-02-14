@@ -144,7 +144,7 @@ public void setWaterHeaterMode(String value) {
 
 public void setVacationMode(String value) {
     if (logTextEnable) { log.info "${device} setVacationMode to ${value}" }
-    espHomeSwitchCommand(key: state.vacation, state: value)
+    espHomeTextCommand(key: state.vacation, state: value)
 }
 
 public void setHeatingSetpoint(float value) {

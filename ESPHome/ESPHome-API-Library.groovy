@@ -298,6 +298,15 @@ void espHomeSwitchCommand(Map<String, Object> tags) {
             3: [ tags.state as String, WIRETYPE_LENGTH_DELIMITED ]
     ], MSG_SWITCH_STATE_RESPONSE)
 }
+
+@CompileStatic
+void espHomeTextCommand(Map<String, Object> tags) {
+    sendMessage(MSG_TEXT_COMMAND_REQUEST, [
+            1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
+            3: [ tags.state as String, WIRETYPE_LENGTH_DELIMITED ]
+    ], MSG_TEXT_SENSOR_STATE_RESPONSE)
+}
+
 /*
  * ESPHome Message Parsing
  */
@@ -1593,7 +1602,7 @@ private void logWarning(String s) {
 @Field static final int MSG_CAMERA_IMAGE_REQUEST = 45
 @Field static final int MSG_LIST_CLIMATE_RESPONSE = 46 // TODO
 @Field static final int MSG_CLIMATE_STATE_RESPONSE = 47
-@Field static final int MSG_CLIMATE_COMMAND_REQUEST = 48 // TODO
+@Field static final int MSG_CLIMATE_COMMAND_REQUEST = 48
 @Field static final int MSG_LIST_NUMBER_RESPONSE = 49
 @Field static final int MSG_NUMBER_STATE_RESPONSE = 50
 @Field static final int MSG_NUMBER_COMMAND_REQUEST = 51
@@ -1613,6 +1622,7 @@ private void logWarning(String s) {
 @Field static final int MSG_MEDIA_COMMAND_REQUEST = 65
 @Field static final int MSG_SUBSCRIBE_BTLE_REQUEST = 66
 @Field static final int MSG_BLUETOOTH_LE_RESPONSE = 67
+@Field static final int MSG_TEXT_COMMAND_REQUEST = 99
 
 @Field static final int ENTITY_CATEGORY_NONE = 0
 @Field static final int ENTITY_CATEGORY_CONFIG = 1
