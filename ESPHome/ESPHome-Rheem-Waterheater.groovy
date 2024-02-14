@@ -147,9 +147,12 @@ public void setVacationMode(String value) {
     espHomeSwitchCommand(key: state.vacation, state: value)
 }
 
-public void setHeatingSetpoint(BigDecimal value) {
-    if (logTextEnable) { log.info "${device} setThermostatHeatingSetpoint to ${value}" }
-    espHomeClimateCommand(key: state.climate, targetTemperature: ((value.doubleValue() - 32) / 1.8) as Double)
+public void setHeatingSetpoint(float value) {
+
+    valueC = ((value - 32) / 1.8) as float
+    if (logTextEnable) { log.info "${device} setThermostatHeatingSetpoint to ${value} (${valueC} celsius)" }
+    //ESPHome expects Celsius
+    espHomeClimateCommand(key: state.climate, targetTemperature: valueC)
 }
 
 
