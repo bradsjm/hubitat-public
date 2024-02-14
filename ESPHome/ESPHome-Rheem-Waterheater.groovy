@@ -123,14 +123,14 @@ public void uninstalled() {
 public void on() {
     if (device.currentValue('switch') != 'on') {
         if (logTextEnable) { log.info "${device} on" }
-        espHomeClimateCommand(key: state.climate as Long, customMode: 'Eco Mode')
+        espHomeClimateCommand(key: state.climate as Long, customPreset: 'Eco Mode')
     }
 }
 
 public void off() {
     if (device.currentValue('switch') != 'off') {
         if (logTextEnable) { log.info "${device} off" }
-        espHomeSwitchCommand(key: state.climate as Long, customMode: 'Off')
+        espHomeSwitchCommand(key: state.climate as Long, customPreset: 'Off')
     }
 }
 
@@ -139,7 +139,7 @@ public void setWaterHeaterMode(String value) {
         value = 'Eco Mode'
     }
     if (logTextEnable) { log.info "${device} setWaterHeaterMode to ${value}" }
-    espHomeClimateCommand(key: state.climate, customMode: value)
+    espHomeClimateCommand(key: state.climate, customPreset: value)
 }
 
 public void setVacationMode(String value) {
@@ -292,12 +292,12 @@ public void parse(Map message) {
                     }
                 }
 
-                if (message.customMode) {                    
-                    if (message.customMode == 'Eco Mode'){
-                        message.customMode = 'Energy Saver'
+                if (message.customPreset) {                    
+                    if (message.customPreset == 'Eco Mode'){
+                        message.customPreset = 'Energy Saver'
                     }
-                    if (device.currentValue('waterHeaterMode') != message.customMode) {
-                        updateAttribute('waterHeaterMode', message.customMode)
+                    if (device.currentValue('waterHeaterMode') != message.customPreset) {
+                        updateAttribute('waterHeaterMode', message.customPreset)
                     }
                 }
 

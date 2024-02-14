@@ -188,6 +188,7 @@ void espHomeLightCommand(Map<String, Object> tags) {
 
 @CompileStatic
 void espHomeClimateCommand(Map<String, Object> tags) {
+
     sendMessage(MSG_CLIMATE_COMMAND_REQUEST, [
             1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
             2: [ tags.mode != null ? 1 : 0, WIRETYPE_VARINT ],
@@ -870,7 +871,7 @@ private static Map espHomeClimateState(Map<Integer, List> tags) {
             targetTemperature: getFloatTag(tags, 4), //for water heaters, set temp
             targetTemperatureLow: getFloatTag(tags, 5),
             targetTemperatureHigh: getFloatTag(tags, 6),
-            customMode: getStringTag(tags, 13)
+            customPreset: getStringTag(tags, 13)
     ]
 }
 
