@@ -31,11 +31,12 @@ metadata {
         capability 'Refresh'
         capability 'Initialize'
         capability 'SignalStrength'
+        capability 'Switch'
         capability 'TemperatureMeasurement'
         capability 'ThermostatHeatingSetpoint'
         capability 'ThermostatOperatingState'
         
-        command 'setWaterHeaterMode', [[name:'Mode*','type':'ENUM','description':'Mode','constraints':['Heat Pump', 'Energy Saver', 'High Demand', 'Normal', 'Off']]]
+        command 'setWaterHeaterMode', [[name:'Mode*','type':'ENUM','description':'Mode','constraints':['Heat Pump', 'Energy Saver', 'High Demand', 'Off']]]
         command 'setVacationMode', [[name:'VacationMode*','type':'ENUM','description':'VacationMode','constraints':['Off', 'Permanent']]]
 
         attribute 'networkStatus', 'enum', [ 'connecting', 'online', 'offline' ]
@@ -122,15 +123,33 @@ public void uninstalled() {
 public void on() {
     if (device.currentValue('switch') != 'on') {
         if (logTextEnable) { log.info "${device} on" }
-        espHomeSwitchCommand(key: settings.switch as Long, state: true)
+        espHomeClimateCommand(key: state.climate as Long, customMode: 'Eco Mode')
     }
 }
 
 public void off() {
     if (device.currentValue('switch') != 'off') {
         if (logTextEnable) { log.info "${device} off" }
-        espHomeSwitchCommand(key: settings.switch as Long, state: false)
+        espHomeSwitchCommand(key: state.climate as Long, customMode: 'Off')
     }
+}
+
+public void setWaterHeaterMode(String value) {
+    if (value == 'Energy Saver'){
+        value = 'Eco Mode'
+    }
+    if (logTextEnable) { log.info "${device} setWaterHeaterMode to ${value}" }
+    espHomeClimateCommand(key: state.climate, customMode: value)
+}
+
+public void setVacationMode(String value) {
+    if (logTextEnable) { log.info "${device} setVacationMode to ${value}" }
+    espHomeSwitchCommand(key: state.vacation, state: value)
+}
+
+public void setHeatingSetpoint(BigDecimal value) {
+    if (logTextEnable) { log.info "${device} setThermostatHeatingSetpoint to ${value}" }
+    espHomeClimateCommand(key: state.climate, targetTemperature: ((value.doubleValue() - 32) / 1.8) as Double)
 }
 
 
@@ -145,7 +164,6 @@ public void parse(Map message) {
 
         case 'entity':
             
-
             //Each sensor has a unique key that is used to send commands to the device (also used to interpret received state messages)
             //These are received as a flood of messages when the device is first connected and are used to populate the settings
 
@@ -182,13 +200,6 @@ public void parse(Map message) {
                     break
                 default:
                     log.debug "Skipping storing key ID for : ${message.objectId} (${message.name})"
-            }
-
-            if (message.platform == 'climate') {
-                if (!climateKey.climate) {
-                   state['climateKey']  = message.key
-                }
-                return
             }
 
         case 'state':

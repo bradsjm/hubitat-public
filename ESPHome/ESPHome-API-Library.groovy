@@ -185,6 +185,36 @@ void espHomeLightCommand(Map<String, Object> tags) {
     ], MSG_LIGHT_STATE_RESPONSE)
 }
 
+
+@CompileStatic
+void espHomeClimateCommand(Map<String, Object> tags) {
+    sendMessage(MSG_CLIMATE_COMMAND_REQUEST, [
+            1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
+            2: [ tags.mode != null ? 1 : 0, WIRETYPE_VARINT ],
+            3: [ tags.mode != null ? tags.mode : 0, WIRETYPE_VARINT ],
+            4: [ tags.targetTemperature != null ? 1 : 0, WIRETYPE_VARINT ],
+            5: [ tags.targetTemperature as Float, WIRETYPE_FIXED32 ],
+            6: [ tags.targetTemperatureLow != null ? 1 : 0, WIRETYPE_VARINT ],
+            7: [ tags.targetTemperatureLow as Float, WIRETYPE_FIXED32 ],
+            8: [ tags.targetTemperatureHigh != null ? 1 : 0, WIRETYPE_VARINT ],
+            9: [ tags.targetTemperatureHigh as Float, WIRETYPE_FIXED32 ],
+            10: [ false, WIRETYPE_VARINT ], // Unused field
+            11: [ false, WIRETYPE_VARINT ], // Unused field
+            12: [ tags.fanMode != null ? 1 : 0, WIRETYPE_VARINT ],
+            13: [ tags.fanMode != null ? tags.fanMode : 0, WIRETYPE_VARINT ],
+            14: [ tags.swingMode != null ? 1 : 0, WIRETYPE_VARINT ],
+            15: [ tags.swingMode != null  ? tags.swingMode : 0, WIRETYPE_VARINT ],
+            16: [ tags.customFanMode != null ? 1 : 0, WIRETYPE_VARINT ],
+            17: [ tags.customFanMode as String, WIRETYPE_LENGTH_DELIMITED ],
+            18: [ tags.preset != null ? 1 : 0, WIRETYPE_VARINT ],
+            19: [ tags.preset != null ? tags.preset : 0, WIRETYPE_VARINT ],
+            20: [ tags.customPreset != null ? 1 : 0, WIRETYPE_VARINT ],
+            21: [ tags.customPreset as String, WIRETYPE_LENGTH_DELIMITED ],
+            22: [ tags.targetHumidity != null ? 1 : 0, WIRETYPE_VARINT ],
+            23: [ tags.targetHumidity as Float, WIRETYPE_FIXED32 ]
+    ], MSG_CLIMATE_STATE_RESPONSE)
+}
+
 @CompileStatic
 void espHomeLockCommand(Map<String, Object> tags) {
     sendMessage(MSG_LOCK_COMMAND_REQUEST, [
@@ -263,10 +293,10 @@ void espHomeSubscribeBtleRequest() {
 void espHomeSwitchCommand(Map<String, Object> tags) {
     sendMessage(MSG_SWITCH_COMMAND_REQUEST, [
             1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
-            2: [ tags.state ? 1 : 0, WIRETYPE_VARINT ],
+            2: [ tags.state != null ? 1 : 0, WIRETYPE_VARINT ],
+            3: [ tags.state as String, WIRETYPE_LENGTH_DELIMITED ]
     ], MSG_SWITCH_STATE_RESPONSE)
 }
-
 /*
  * ESPHome Message Parsing
  */
