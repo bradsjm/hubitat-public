@@ -302,9 +302,17 @@ void espHomeSwitchCommand(Map<String, Object> tags) {
 @CompileStatic
 void espHomeTextCommand(Map<String, Object> tags) {
     sendMessage(MSG_TEXT_COMMAND_REQUEST, [
-            1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
+            1: [ tags.key as Long, WIRETYPE_FIXED64 ],
             2: [ tags.state as String, WIRETYPE_LENGTH_DELIMITED ]
-    ], MSG_TEXT_SENSOR_STATE_RESPONSE)
+    ], MSG_TEXT_STATE_RESPONSE)
+}
+
+@CompileStatic
+void espHomeSelectCommand(Map<String, Object> tags) {
+    sendMessage(MSG_SELECT_COMMAND_REQUEST, [
+            1: [ tags.key as Long, WIRETYPE_FIXED64 ],
+            2: [ tags.state as String, WIRETYPE_LENGTH_DELIMITED ]
+    ], MSG_SELECT_STATE_RESPONSE)
 }
 
 /*
@@ -855,6 +863,18 @@ private static Map espHomeTextSensorState(Map<Integer, List> tags) {
 }
 
 @CompileStatic
+private static Map espHomeTextStateResponse(Map<Integer, List> tags) {
+    return [
+            type: 'state',
+            platform: 'text',
+            key: getLongTag(tags, 1),
+            state: getStringTag(tags, 2),
+            hasState: getBooleanTag(tags, 3, true)
+    ]
+}
+
+
+@CompileStatic
 private static boolean hasCapability(int capabilities, int capability) {
     return capabilities & capability
 }
@@ -1155,6 +1175,9 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
             break
         case MSG_CLIMATE_STATE_RESPONSE:
             parse espHomeClimateState(tags)
+            break
+        case MSG_TEXT_STATE_RESPONSE:
+            parse espHomeTextStateResponse(tags)
             break
         default:
             if (!handled) {
@@ -1607,8 +1630,8 @@ private void logWarning(String s) {
 @Field static final int MSG_NUMBER_STATE_RESPONSE = 50
 @Field static final int MSG_NUMBER_COMMAND_REQUEST = 51
 @Field static final int MSG_LIST_SELECT_RESPONSE = 52
-@Field static final int MSG_SELECT_STATE_RESPONSE = 53 // TODO
-@Field static final int MSG_SELECT_COMMAND_REQUEST = 54 // TODO
+@Field static final int MSG_SELECT_STATE_RESPONSE = 53
+@Field static final int MSG_SELECT_COMMAND_REQUEST = 54
 @Field static final int MSG_LIST_SIREN_RESPONSE = 55
 @Field static final int MSG_SIREN_STATE_RESPONSE = 56
 @Field static final int MSG_SIREN_COMMAND_REQUEST = 57
@@ -1622,6 +1645,7 @@ private void logWarning(String s) {
 @Field static final int MSG_MEDIA_COMMAND_REQUEST = 65
 @Field static final int MSG_SUBSCRIBE_BTLE_REQUEST = 66
 @Field static final int MSG_BLUETOOTH_LE_RESPONSE = 67
+@Field static final int MSG_TEXT_STATE_RESPONSE = 98
 @Field static final int MSG_TEXT_COMMAND_REQUEST = 99
 
 @Field static final int ENTITY_CATEGORY_NONE = 0

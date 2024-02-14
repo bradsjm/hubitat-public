@@ -139,12 +139,12 @@ public void setWaterHeaterMode(String value) {
         value = 'Eco Mode'
     }
     if (logTextEnable) { log.info "${device} setWaterHeaterMode to ${value}" }
-    espHomeClimateCommand(key: state.climate, customPreset: value)
+    espHomeClimateCommand(key: state.climate as Long, customPreset: value)
 }
 
 public void setVacationMode(String value) {
-    if (logTextEnable) { log.info "${device} setVacationMode to ${value}" }
-    espHomeTextCommand(key: state.vacation, state: value)
+    if (logTextEnable) { log.info "${device} setVacationMode to ${value} using key ${state.vacation}" }
+    espHomeSelectCommand(key: state.vacation as Long, state: value)
 }
 
 public void setHeatingSetpoint(float value) {
@@ -152,7 +152,7 @@ public void setHeatingSetpoint(float value) {
     valueC = ((value - 32) / 1.8) as float
     if (logTextEnable) { log.info "${device} setThermostatHeatingSetpoint to ${value} (${valueC} celsius)" }
     //ESPHome expects Celsius
-    espHomeClimateCommand(key: state.climate, targetTemperature: valueC)
+    espHomeClimateCommand(key: state.climate as Long, targetTemperature: valueC)
 }
 
 
