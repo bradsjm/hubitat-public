@@ -302,6 +302,11 @@ public void parse(Map message) {
             }
 
             if (state.compressorState as Long == message.key && message.hasState) {
+                if (message.state == false){
+                    message.state = 'Not Running'
+                } else {
+                    message.state = 'Running'}
+
                 if (device.currentValue('compressorState') != message.state) {
                     updateAttribute('compressorState', message.state)
                 }
