@@ -302,7 +302,7 @@ public void parse(Map message) {
             }
 
             if (state.compressorState as Long == message.key && message.hasState) {
-                if (device.currentValue('heatingElementState') != message.state) {
+                if (device.currentValue('compressorState') != message.state) {
                     updateAttribute('compressorState', message.state)
                 }
                 return
