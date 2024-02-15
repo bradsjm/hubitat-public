@@ -137,6 +137,14 @@
       "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-UpsyDesky.groovy",
       "required": false,
       "version": "1.0"
+    },
+    {
+      "id": "cbf964c6-7b23-406b-a5ed-287b67b0cc12",
+      "name": "ESPHome ratGDO",
+      "namespace": "esphome",
+      "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-ratGDO.groovy",
+      "required": false,
+      "version": "1.0"
     }
   ]
 }
