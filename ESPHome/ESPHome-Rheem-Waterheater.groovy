@@ -49,6 +49,7 @@ metadata {
         attribute 'ambientTemperature', 'number'
         attribute 'vacationMode', 'enum', ['Off', 'Timed', 'Permanent']
         attribute 'heatingElementState', 'enum', ['Off', 'On']
+        attribute 'compressorState', 'string'
         attribute 'thermostatHeatingSetpoint', 'number'
 
         
@@ -149,6 +150,11 @@ public void setVacationMode(String value) {
 
 public void setHeatingSetpoint(float value) {
 
+    if (value < 110 || value > 140){
+        log.error "${device} setThermostatHeatingSetpoint to ${value} is out of range (110-140)"
+        return
+    }
+
     valueC = ((value - 32) / 1.8) as float
     if (logTextEnable) { log.info "${device} setThermostatHeatingSetpoint to ${value} (${valueC} celsius)" }
     //ESPHome expects Celsius
@@ -201,6 +207,9 @@ public void parse(Map message) {
                 case state['heating_element_state']:
                     state['heatingElementState'] = message.key
                     break
+                case state['compressor']:
+                    state['compressorState'] = message.key
+                    break                    
                 default:
                     log.debug "Skipping storing key ID for : ${message.objectId} (${message.name})"
             }
@@ -284,6 +293,20 @@ public void parse(Map message) {
                 }
                 return
             }
+
+            if (state.heatingElementState as Long == message.key && message.hasState) {
+                if (device.currentValue('heatingElementState') != message.state) {
+                    updateAttribute('heatingElementState', message.state)
+                }
+                return
+            }
+
+            if (state.compressorState as Long == message.key && message.hasState) {
+                if (device.currentValue('heatingElementState') != message.state) {
+                    updateAttribute('compressorState', message.state)
+                }
+                return
+            }            
 
 
             if (message.platform == 'climate') {
