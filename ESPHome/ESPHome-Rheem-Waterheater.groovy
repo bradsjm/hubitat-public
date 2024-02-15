@@ -204,10 +204,10 @@ public void parse(Map message) {
                 case 'mode':
                     state['mode'] = message.key
                     break
-                case state['heating_element_state']:
+                case 'heating_element_state':
                     state['heatingElementState'] = message.key
                     break
-                case state['compressor']:
+                case 'compressor':
                     state['compressorState'] = message.key
                     break                    
                 default:
