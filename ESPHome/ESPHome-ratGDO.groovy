@@ -57,6 +57,7 @@ metadata {
         command 'learnOn'
         command 'learnOff'
         command 'restart'
+        command 'stop'
         command 'sync'
         command 'toggle'
     }
@@ -418,7 +419,6 @@ private DeviceWrapper getDryContactCloseDevice(key) {
 // driver commands
 public void open() {
     if (state.doorKey) {
-        String doorState = device.currentValue('door')
         // API library cover command, entity key for the cover is required
         if (logTextEnable) { log.info "${device} open" }
         espHomeCoverCommand(key: state.doorKey as Long, position: 1.0)
@@ -427,10 +427,17 @@ public void open() {
 
 public void close() {
     if (state.doorKey) {
-        String doorState = device.currentValue('door')
         // API library cover command, entity key for the cover is required
         if (logTextEnable) { log.info "${device} close" }
         espHomeCoverCommand(key: state.doorKey as Long, position: 0.0)
+    }
+}
+
+public void stop() {
+    if (state.doorKey) {
+        // API library cover command, entity key for the cover is required
+        if (logTextEnable) { log.info "${device} close" }
+        espHomeCoverCommand(key: state.doorKey as Long, stop: 1)
     }
 }
 
