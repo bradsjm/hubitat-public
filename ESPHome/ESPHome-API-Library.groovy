@@ -1554,6 +1554,9 @@ private boolean supervisionCheck(int msgType, Map<Integer, List> tags) {
                 onSuccess.add(entry.onSuccess)
             }
             return true
+        } else {
+            descriptionText = "ESPHome received unexpected message type #${msgType} (expected #${entry.expectedMsgType})"
+            log.warn descriptionText
         }
         return false
     }
