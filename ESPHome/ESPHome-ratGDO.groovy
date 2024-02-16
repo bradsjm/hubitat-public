@@ -56,6 +56,9 @@ metadata {
         
         command 'learnOn'
         command 'learnOff'
+        command 'restart'
+        command 'sync'
+        command 'toggle'
     }
 
     preferences {
@@ -68,78 +71,6 @@ metadata {
                 type: 'text',
                 title: 'Device Password <i>(if required)</i>',
                 required: false
-
-        input name: 'cover',        // allows the user to select which cover entity to use
-            type: 'enum',
-            title: 'ESPHome Door Entity',
-            required: state.covers?.size() > 0,
-            options: state.covers?.collectEntries { k, v -> [ k, v.name ] }
-
-        input name: 'light', // allows the user to select which light entity to use
-            type: 'enum',
-            title: 'ESPHome Light Entity',
-            required: state.lights?.size() > 0,
-            options: state.lights?.collectEntries { k, v -> [ k, v.name ] }
-
-        input name: 'lock', // allows the user to select which light entity to use
-            type: 'enum',
-            title: 'ESPHome Lock Entity',
-            required: state.locks?.size() > 0,
-            options: state.locks?.collectEntries { k, v -> [ k, v.name ] }
-
-        input name: 'motionsensor', // allows the user to select which sensor entity to use
-            type: 'enum',
-            title: 'ESPHome Motion Sensor Entity',
-            required: state.sensors?.size() > 0,
-            options: state.sensors?.collectEntries { k, v -> [ k, v.name ] }
-
-        input name: 'obstructionsensor', // allows the user to select which sensor entity to use
-            type: 'enum',
-            title: 'ESPHome Obstruction Sensor Entity',
-            required: state.sensors?.size() > 0,
-            options: state.sensors?.collectEntries { k, v -> [ k, v.name ] }
-
-        input name: 'button', // allows the user to select which sensor entity to use
-            type: 'enum',
-            title: 'ESPHome Button',
-            required: state.sensors?.size() > 0,
-            options: state.sensors?.collectEntries { k, v -> [ k, v.name ] }
-
-        input name: 'motor', // allows the user to select which sensor entity to use
-            type: 'enum',
-            title: 'ESPHome Motor Entity',
-            required: state.sensors?.size() > 0,
-            options: state.sensors?.collectEntries { k, v -> [ k, v.name ] }
-
-        input name: 'learn', // allows the user to select which sensor entity to use
-            type: 'enum',
-            title: 'ESPHome Learn Entity',
-            required: state.switches?.size() > 0,
-            options: state.switches?.collectEntries { k, v -> [ k, v.name ] }
-
-        input name: 'drycontactlight', // allows the user to select which sensor entity to use
-            type: 'enum',
-            title: 'ESPHome Dry Contact Light Entity',
-            required: state.sensors?.size() > 0,
-            options: state.sensors?.collectEntries { k, v -> [ k, v.name ] }
-
-        input name: 'drycontactopen', // allows the user to select which sensor entity to use
-            type: 'enum',
-            title: 'ESPHome Dry Contact Open Entity',
-            required: state.sensors?.size() > 0,
-            options: state.sensors?.collectEntries { k, v -> [ k, v.name ] }
-
-        input name: 'drycontactclose', // allows the user to select which sensor entity to use
-            type: 'enum',
-            title: 'ESPHome DryContactClose Entity',
-            required: state.sensors?.size() > 0,
-            options: state.sensors?.collectEntries { k, v -> [ k, v.name ] }
-
-        input name: 'openings', // allows the user to select which sensor entity to use
-            type: 'enum',
-            title: 'ESPHome Openings Entity',
-            required: state.others?.size() > 0,
-            options: state.others?.collectEntries { k, v -> [ k, v.name ] }
         
         input name: 'childrenEnable',
             type: 'bool',
@@ -169,12 +100,6 @@ public void initialize() {
     if (logEnable) {
         runIn(1800, 'logsOff')
     }
-
-    state.forcedRefresh = settings.childrenEnable
-    if (state.forcedRefresh) {
-        runIn(15, 'forcedOff')
-    }
-    refresh()
 }
 
 public void installed() {
@@ -185,10 +110,6 @@ public void logsOff() {
     espHomeSubscribeLogs(LOG_LEVEL_INFO, false) // disable device logging
     device.updateSetting('logEnable', false)
     log.info "${device} debug logging disabled"
-}
-
-public void forcedOff() {
-    state.forcedRefresh = false
 }
 
 public void updated() {
@@ -207,39 +128,338 @@ public void uninstalled() {
     log.info "${device} driver uninstalled"
 }
 
+
+// the parse method is invoked by the API library when messages are received
+public void parse(Map message) {
+    if (logEnable) { log.debug "ESPHome received: ${message}" }
+    switch (message.type) {
+        case 'device':
+            // Device information
+            break
+
+        case 'entity':
+            doParseEntity(message)
+            break
+
+        case 'state':
+            doParseState(message)
+            break
+    }
+}
+
+private void doParseEntity(Map message) {
+    if (message.platform == 'cover') {
+        if (message.name == "Door") {
+            state.doorKey = message.key as Long
+        }
+        return
+    }
+    if (message.platform == 'binary') {
+        if (message.name == "Motion") {
+            state.motionKey = message.key as Long
+            getMotionDevice(message.key)
+        }
+        if (message.name == "Obstruction") {
+            state.obstructionKey = message.key as Long
+            getObstructionDevice(message.key)
+        }
+        if (message.name == "Button") {
+            state.buttonKey = message.key as Long
+            getButtonDevice(message.key)
+        }
+        if (message.name == "Motor") {
+            state.motorKey = message.key as Long
+        }
+        if (message.name == "Dry contact light") {
+            state.dryContactLightKey = message.key as Long
+            getDryContactLightDevice(message.key)
+        }
+        if (message.name == "Dry contact open") {
+            state.dryContactOpenKey = message.key as Long
+            getDryContactOpenDevice(message.key)
+        }
+        if (message.name == "Dry contact close") {
+            state.dryContactOpenKey = message.key as Long
+            getDryContactCloseDevice(message.key)
+        }
+        return
+    }
+
+    if (message.platform == 'light') {
+        if (message.name == "Light") {
+            state.lightKey = message.key as Long
+            getLightDevice(message.key)
+        }
+        return
+    }
+
+    if (message.platform == 'switch') {
+        if (message.name == "Learn") {
+            state.learnKey = message.key as Long
+            getLearnDevice(message.key)
+        }
+        return
+    }
+
+    if (message.platform == 'lock') {
+        if (message.name == "Lock remotes") {
+            state.lockKey = message.key as Long
+            getLockDevice(message.key)
+        }
+        return
+    }
+
+    if (message.platform == 'sensor') {
+        if (message.name == "Openings") {
+            state.openingsKey = message.key as Long
+        }
+        if (message.deviceClass == 'signal_strength') {
+            state.signalStrengthKey = message.key
+        }
+        return
+    }
+
+    if (message.platform == 'button') {
+        if (message.name == "Restart") {
+            state.restartKey = message.key
+        }
+        if (message.name == "Sync") {
+            state.syncKey = message.key
+        }
+        if (message.name == "Toggle door") {
+            state.toggleKey = message.key
+        }
+        return
+    }
+}
+
+private void doParseState(Map message) {
+    String type = message.isDigital ? 'digital' : 'physical'
+    // Check if the entity key matches the message entity key received to update device state
+    if (state.doorKey as Long == message.key) {
+        String value
+        String contact
+        switch (message.currentOperation) {
+            case COVER_OPERATION_IDLE:
+                value = message.position > 0 ? 'open' : 'closed'
+            contact = value
+            break
+            case COVER_OPERATION_IS_OPENING:
+                value = 'opening'
+            break
+            case COVER_OPERATION_IS_CLOSING:
+                value = 'closing'
+            break
+        }
+        sendDeviceEvent("door", value, type, "Door")
+        sendDeviceEvent("contact", contact, type, "Contact")
+        int position = Math.round(message.position * 100) as int
+        sendDeviceEvent("position", position, type, "Position")
+        return
+    }
+
+    if (state.motionKey as Long == message.key) {
+        String value = message.state ? "active" : "inactive"
+        sendDeviceEvent("motion", value, type, "Motion", getMotionDevice(message.key))
+        return
+    }
+
+    if (state.obstructionKey as Long == message.key) {
+        String value = message.state ? "present" : "not present"
+        sendDeviceEvent("obstruction", value, type, "Obstruction", getObstructionDevice(message.key), "presence")
+        return
+    }
+
+    if (state.motorKey as Long == message.key) {
+        String value = message.state ? "running" : "idle"
+        sendDeviceEvent("motor", value, type, "Motor")
+        return
+    }
+
+    if (state.learnKey as Long == message.key) {
+        String value = message.state ? "on" : "off"
+        sendDeviceEvent("learn", value, type, "Learn", getLearnDevice(message.key), "switch")
+        return
+    }
+
+    if (state.lightKey as Long == message.key) {
+        String value = message.state ? "on" : "off"
+        sendDeviceEvent("switch", value, type, "Light", getLightDevice(message.key))
+        return
+    }
+
+    if (state.lockKey as Long == message.key) {
+        String value = message.state == 1 ? "locked" : "unlocked"
+        sendDeviceEvent("lock", value, type, "Remotes lock", getLockDevice(message.key))
+        return
+    }
+
+    if (state.openingsKey as Long == message.key) {
+        int value = message.state as int
+        sendDeviceEvent("openings", value, type, "Openings")
+        return
+    }
+
+    if (state.dryContactLightKey as Long == message.key) {
+        String value = message.state == 1 ? "closed" : "open"
+        sendDeviceEvent("dryContactLight", value, type, "Dry Contact Light", getDryContactLightDevice(message.key))
+        return
+    }
+
+    if (state.dryContactOpenKey as Long == message.key) {
+        String value = message.state == 1 ? "closed" : "open"
+        sendDeviceEvent("dryContactOpen", value, type, "Dry Contact Open", getDryContactOpenDevice(message.key))
+        return
+    }
+
+    if (state.dryContactCloseKey as Long == message.key) {
+        String value = message.state == 1 ? "closed" : "open"
+        sendDeviceEvent("dryContactClose", value, type, "Dry Contact Close", getDryContactCloseDevice(message.key))
+        return
+    }
+
+    if (state.buttonKey as Long == message.key && message.hasState) {
+        if (message.state) {
+            sendDeviceEvent("pushed", 1, type, "Button", getButtonDevice(message.key), null, true)
+        }
+        return
+    }
+
+    if (state.signalStrengthKey as Long == message.key && message.hasState) {
+        Integer rssi = Math.round(message.state as Float)
+        String unit = "dBm"
+        if (device.currentValue("rssi") != rssi) {
+            descriptionText = "${device} rssi is ${rssi}"
+            sendEvent(name: "rssi", value: rssi, unit: unit, type: type, descriptionText: descriptionText)
+            if (logTextEnable) { log.info descriptionText }
+        }
+        return
+    }
+}
+
+
+// child device management
+private void sendDeviceEvent(name, value, type, description, child = null, childEventName = null, isStateChange = null) {
+    String descriptionText = "${description} is ${value} (${type})"
+    def event = [name: name, value: value, type: type, descriptionText: descriptionText]
+    if (isStateChange) {
+        event.isStateChange = true
+    }
+    if (isStateChange || device.currentValue(name) != value) {
+        if (logTextEnable) { log.info descriptionText }
+        sendEvent(event)
+    }
+    if (child) {
+        if (isStateChange || child.currentValue(name) != value) {
+            if (childEventName) {
+                event.name = childEventName
+            }
+            child.parse([event])
+        }
+    }
+
+}
+                               
+private DeviceWrapper getOrCreateDevice(key, deviceType, label = null) {
+    if (key == null || !settings.childrenEnable) {
+        return null
+    }
+    String dni = "${device.id}-${key}" as String
+    def d = getChildDevice(dni)
+    if (!d) {
+        d = addChildDevice(
+            "hubitat",
+            "Generic Component ${deviceType}",
+            dni                            
+        )
+        d.name = "${device.label} ${label?:deviceType}"
+        d.label = "${device.label} ${label?:deviceType}"
+    }
+    return d
+}
+
+private DeviceWrapper getMotionDevice(key) {
+    return getOrCreateDevice(key, "Motion Sensor")
+}
+
+private DeviceWrapper getButtonDevice(key) {
+    return getOrCreateDevice(key, "Button Controller", "Button")
+}
+
+private DeviceWrapper getLearnDevice(key) {
+    return getOrCreateDevice(key, "Switch", "Learn")
+}
+
+private DeviceWrapper getLightDevice(key) {
+    return getOrCreateDevice(key, "Switch", "Light")
+}
+
+private DeviceWrapper getLockDevice(key) {
+    return getOrCreateDevice(key, "Lock")
+}
+
+private DeviceWrapper getObstructionDevice(key) {
+    return getOrCreateDevice(key, "Presence Sensor", "Obstruction")
+}
+
+private DeviceWrapper getDryContactLightDevice(key) {
+    return getOrCreateDevice(key, "Contact Sensor", "Light Dry Contact")
+}
+
+private DeviceWrapper getDryContactOpenDevice(key) {
+    return getOrCreateDevice(key, "Contact Sensor", "Open Dry Contact")
+}
+
+private DeviceWrapper getDryContactCloseDevice(key) {
+    return getOrCreateDevice(key, "Contact Sensor", "Close Dry Contact")
+}
+
+
 // driver commands
 public void open() {
-    String doorState = device.currentValue('door')
-    // API library cover command, entity key for the cover is required
-    if (logTextEnable) { log.info "${device} open" }
-    espHomeCoverCommand(key: settings.cover as Long, position: 1.0)
+    if (state.doorKey) {
+        String doorState = device.currentValue('door')
+        // API library cover command, entity key for the cover is required
+        if (logTextEnable) { log.info "${device} open" }
+        espHomeCoverCommand(key: state.doorKey as Long, position: 1.0)
+    }
 }
 
 public void close() {
-    String doorState = device.currentValue('door')
-    // API library cover command, entity key for the cover is required
-    if (logTextEnable) { log.info "${device} close" }
-    espHomeCoverCommand(key: settings.cover as Long, position: 0.0)
+    if (state.doorKey) {
+        String doorState = device.currentValue('door')
+        // API library cover command, entity key for the cover is required
+        if (logTextEnable) { log.info "${device} close" }
+        espHomeCoverCommand(key: state.doorKey as Long, position: 0.0)
+    }
 }
 
 public void on() {
-    if (logTextEnable) { log.info "${device} on" }
-    espHomeLightCommand(key: settings.light as Long, state: true)
+    if (state.lightKey) {
+        if (logTextEnable) { log.info "${device} on" }
+        espHomeLightCommand(key: state.lightKey as Long, state: true)
+    }
 }
 
 public void off() {
-    if (logTextEnable) { log.info "${device} off" }
-    espHomeLightCommand(key: settings.light as Long, state: false)
+    if (state.lightKey) {
+        if (logTextEnable) { log.info "${device} off" }
+        espHomeLightCommand(key: state.lightKey as Long, state: false)
+    }
 }
 
 public void lock() {
-    if (logTextEnable) { log.info "${device} locked" }
-    espHomeLockCommand(key: settings.lock as Long, lockCommand: LOCK_LOCK)
+    if (state.lockKey) {           
+        if (logTextEnable) { log.info "${device} locked" }
+        espHomeLockCommand(key: state.lockKey as Long, lockCommand: LOCK_LOCK)
+    }
 }
 
 public void unlock() {
-    if (logTextEnable) { log.info "${device} unlocked" }
-    espHomeLockCommand(key: settings.lock as Long, lockCommand: LOCK_UNLOCK)
+    if (state.lockKey) {
+        if (logTextEnable) { log.info "${device} unlocked" }
+        espHomeLockCommand(key: state.lockKey as Long, lockCommand: LOCK_UNLOCK)
+    }
 }
 
 public void learnOn() {
@@ -260,394 +480,64 @@ public void refresh() {
     espHomeDeviceInfoRequest()
 }
 
-// the parse method is invoked by the API library when messages are received
-public void parse(Map message) {
-    if (logEnable) { log.debug "ESPHome received: ${message}" }
-
-    switch (message.type) {
-        case 'device':
-            // Device information
-            break
-
-        case 'entity':
-            // This will populate the UI dropdowns with all the entities
-            // discovered and the entity key which is required when sending commands
-            if (message.platform == 'cover') {
-                state.covers = (state.covers ?: [:]) + [ (message.key as String): message ]
-                if (!settings.cover && (message.name == "Door")) {
-                    device.updateSetting('cover', message.key as String)
-                }
-                return
-            }
-
-            if (message.platform == 'binary') {
-                state.sensors = (state.sensors ?: [:]) + [ (message.key as String): message ]
-                if (!settings.motionsensor && (message.name == "Motion")) {
-                    device.updateSetting('motionsensor', message.key as String)
-                    getMotionDevice(message)
-                }
-                if (!settings.obstructionsensor && (message.name == "Obstruction")) {
-                    device.updateSetting('obstructionsensor', message.key as String)
-                    getObstructionDevice(message)
-                }
-                if (!settings.button && (message.name == "Button")) {
-                    device.updateSetting('button', message.key as String)
-                    getButtonDevice(message)
-                }
-                if (!settings.motor && (message.name == "Motor")) {
-                    device.updateSetting('motor', message.key as String)
-                }
-                if (!settings.drycontactlight && (message.name == "Dry contact light")) {
-                    device.updateSetting('drycontactlight', message.key as String)
-                    getDryContactLightDevice(message)
-                }
-                if (!settings.drycontactopen && (message.name == "Dry contact open")) {
-                    device.updateSetting('drycontactopen', message.key as String)
-                    getDryContactOpenDevice(message)
-                }
-                if (!settings.drycontactclose && (message.name == "Dry contact close")) {
-                    device.updateSetting('drycontactclose', message.key as String)
-                    getDryContactCloseDevice(message)
-                }
-                return
-            }
-
-            if (message.platform == 'light') {
-                state.lights = (state.lights ?: [:]) + [ (message.key as String): message ]
-                if (!settings.light && (message.name == "Light")) {
-                    device.updateSetting('light', message.key as String)
-                    getLightDevice(message)
-                }
-                return
-            }
-
-            if (message.platform == 'switch') {
-                state.switches = (state.switches ?: [:]) + [ (message.key as String): message ]
-                if (!settings.learn && (message.name == "Learn")) {
-                    device.updateSetting('learn', message.key as String)
-                    getLearnDevice(message)
-                }
-                return
-            }
-
-            if (message.platform == 'lock') {
-                state.locks = (state.locks ?: [:]) + [ (message.key as String): message ]
-                if (!settings.lock && (message.name == "Lock remotes")) {
-                    device.updateSetting('lock', message.key as String)
-                    getLockDevice(message)
-                }
-                return
-            }
-
-            if (message.platform == 'sensor') {
-                state.others = (state.others ?: [:]) + [ (message.key as String): message ]
-                if (!settings.openings && (message.name == "Openings")) {
-                    device.updateSetting('openings', message.key as String)
-                }
-                if (message.deviceClass == 'signal_strength') {
-                    state['signalStrength'] = message.key
-                }
-                return
-            }
-            break
-
-        case 'state':
-            String type = message.isDigital ? 'digital' : 'physical'
-            // Check if the entity key matches the message entity key received to update device state
-            if (settings.cover as Long == message.key) {
-                String value
-                String contact
-                switch (message.currentOperation) {
-                    case COVER_OPERATION_IDLE:
-                        value = message.position > 0 ? 'open' : 'closed'
-                        contact = value
-                        break
-                    case COVER_OPERATION_IS_OPENING:
-                        value = 'opening'
-                        break
-                    case COVER_OPERATION_IS_CLOSING:
-                        value = 'closing'
-                        break
-                }
-                if (device.currentValue('door') != value) {
-                    descriptionText = "${device} door is ${value}"
-                    sendEvent(name: 'door', value: value, type: type, descriptionText: descriptionText)
-                    if (logTextEnable) { log.info descriptionText }
-                }
-                if ((contact != null) && (device.currentValue('contact') != contact)) {
-                    descriptionText = "${device} contact is ${value}"
-                    sendEvent(name: 'contact', value: contact, type: type, descriptionText: descriptionText)
-                    if (logTextEnable) { log.info descriptionText }
-                }
-                if (message.position != null) {
-                position = Math.round(message.position * 100)
-                    if (device.currentValue('position') != position) {
-                        descriptionText = "${device} position is ${position}"
-                        sendEvent(name: 'position', value: position, type: type, descriptionText: descriptionText)
-                        if (logTextEnable) { log.info descriptionText }
-                    }
-                }
-                return
-            }
-        
-            if (settings.motionsensor as Long == message.key) {
-                String value = message.state ? 'active' : 'inactive'
-                DeviceWrapper child = getMotionDevice(message)
-                if (state.forcedRefresh || device.currentValue('motion') != value) {
-                    descriptionText = "${device} motion sensor is ${value}"
-                    def event = [
-                        name: 'motion',
-                        value: value,
-                        descriptionText: "Motion is ${value}"
-                    ]
-                    sendEvent(event)
-                    child?.parse([event])
-                    if (logTextEnable) { log.info descriptionText }
-                }
-                return
-            }
-
-            if (settings.obstructionsensor as Long == message.key) {
-                String value = message.state ? 'present' : 'not present'
-                DeviceWrapper child = getObstructionDevice(message)
-                if (state.forcedRefresh || device.currentValue('obstruction') != value) {
-                    descriptionText = "${device} obstruction sensor is ${value}"
-                    def event = [
-                        name: 'obstruction',
-                        value: value,
-                        descriptionText: "Obstruction is ${value}"
-                    ]
-                    sendEvent(event)
-                    event.name = "presence"
-                    child?.parse([event])
-                    if (logTextEnable) { log.info descriptionText }
-                }
-                return
-            }
-
-            if (settings.motor as Long == message.key) {
-                String value = message.state ? 'running' : 'idle'
-                if (device.currentValue('motor') != value) {
-                    descriptionText = "${device} motor is ${value}"
-                    def event = [
-                        name: 'motor',
-                        value: value,
-                        descriptionText: "Motor is ${value}"
-                    ]
-                    sendEvent(event)
-                    if (logTextEnable) { log.info descriptionText }
-                }
-                return
-            }
-
-            if (settings.learn as Long == message.key) {
-                String value = message.state ? 'on' : 'off'
-                DeviceWrapper child = getLearnDevice(message)
-                if (state.forcedRefresh || device.currentValue('learning') != value) {
-                    descriptionText = "${device} learn is ${value}"
-                    def event = [
-                        name: 'learn',
-                        value: value,
-                        descriptionText: "Learn is ${value}"
-                    ]
-                    sendEvent(event)
-                    event.name = 'switch'
-                    child?.parse([event])
-                    if (logTextEnable) { log.info descriptionText }
-                }
-                return
-            }
-
-            if (settings.light as Long == message.key) {
-                String value = message.state ? 'on' : 'off'
-                DeviceWrapper child = getLightDevice(message)
-                if (state.forcedRefresh || device.currentValue('switch') != value) {
-                    descriptionText = "${device} light is ${value}"
-                    def event = [name: 'switch', value: value, type: type, descriptionText: "Light is ${value} (${type})"]
-                    sendEvent(event)
-                    child?.parse([event])
-                    if (logTextEnable) { log.info descriptionText }
-                }
-                return
-            }
-
-            if (settings.lock as Long == message.key) {
-                String value = message.state == 1 ? 'locked' : 'unlocked'
-                DeviceWrapper child = getLockDevice(message)
-                if (state.forcedRefresh || device.currentValue('lock') != value) {
-                    descriptionText = "${device} lock is ${value}"
-                    def event = [name: 'lock', value: value, type: type, descriptionText: "Lock is ${value} (${type})"]
-                    sendEvent(event)
-                    child?.parse([event])
-                    if (logTextEnable) { log.info descriptionText }
-                }
-                return
-            }
-
-            if (settings.openings as Long == message.key) {
-                int value = message.state as int
-                if (device.currentValue('openings') != value) {
-                    descriptionText = "${device} openings is ${value}"
-                    sendEvent(name: 'openings', value: value, type: type, descriptionText: "Lock is ${value} (${type})")
-                    if (logTextEnable) { log.info descriptionText }
-                }
-                return
-            }
-
-            if (settings.drycontactlight as Long == message.key) {
-                String value = message.state == 1 ? 'closed' : 'open'
-                DeviceWrapper child = getDryContactLightDevice(message)
-                if (state.forcedRefresh || device.currentValue('dryContactLight') != value) {
-                    descriptionText = "${device} dry contact light is ${value}"
-                    def event = [name: 'dryContactLight', value: value, type: type, descriptionText: "Dry Contact Light is ${value} (${type})"]
-                    sendEvent(event)
-                    child?.parse([event])
-                    if (logTextEnable) { log.info descriptionText }
-                }
-                return
-            }
-
-            if (settings.drycontactopen as Long == message.key) {
-                String value = message.state == 1 ? 'closed' : 'open'
-                DeviceWrapper child = getDryContactOpenDevice(message)
-                if (state.forcedRefresh || device.currentValue('dryContactOpen') != value) {
-                    descriptionText = "${device} dry contact open is ${value}"
-                    def event = [name: 'dryContactOpen', value: value, type: type, descriptionText: "Dry Contact Open is ${value} (${type})"]
-                    sendEvent(event)
-                    child?.parse([event])
-                    if (logTextEnable) { log.info descriptionText }
-                }
-                return
-            }
-
-            if (settings.drycontactclose as Long == message.key) {
-                String value = message.state == 1 ? 'closed' : 'open'
-                DeviceWrapper child = getDryContactCloseDevice(message)
-                if (state.forcedRefresh || device.currentValue('dryContactClose') != value) {
-                    descriptionText = "${device} dry contact close is ${value}"
-                    def event = [name: 'dryContactClose', value: value, type: type, descriptionText: "Dry Contact Close is ${value} (${type})"]
-                    sendEvent(event)
-                    child?.parse([event])
-                    if (logTextEnable) { log.info descriptionText }
-                }
-                return
-            }
-
-            if (settings.button as Long == message.key && message.hasState) {
-                if (message.state) {
-                    descriptionText = "Button 1 pushed (${type})"
-                    def event = [name: "pushed", value: 1, type: type, descriptionText: descriptionText, isStateChange: true]
-                    sendEvent(event)
-                    getButtonDevice(message)?.parse([event])
-                    if (logTextEnable) { log.info descriptionText }
-                }
-                return
-            }
-        
-            if (state.signalStrength as Long == message.key && message.hasState) {
-                Integer rssi = Math.round(message.state as Float)
-                String unit = 'dBm'
-                if (device.currentValue('rssi') != rssi) {
-                    descriptionText = "${device} rssi is ${rssi}"
-                    sendEvent(name: 'rssi', value: rssi, unit: unit, type: type, descriptionText: descriptionText)
-                    if (logTextEnable) { log.info descriptionText }
-                }
-                return
-            }
-            break
+public void restart() {
+    if (state.restartKey) {
+        log.info "${device} restart"
+        espHomeButtonCommand(key: state.restartKey as Long)
     }
 }
 
-def getDevice(message, deviceType, label = null) {
-    if (!settings.childrenEnable) {
-        return null
+public void sync() {
+    if (state.syncKey) {
+        log.info "${device} sync"
+        espHomeButtonCommand(key: state.syncKey as Long)
     }
-    String dni = "${device.id}-${message.key}" as String
-    def d = getChildDevice(dni)
-    if (!d) {
-        d = addChildDevice(
-            "hubitat",
-            "Generic Component ${deviceType}",
-            dni                            
-        )
-        d.name = "${device.label} ${label?:deviceType}"
-        d.label = "${device.label} ${label?:deviceType}"
+}
+
+public void toggle() {
+    if (state.toggleKey) {
+        log.info "${device} toggle"
+        espHomeButtonCommand(key: state.toggleKey as Long)
     }
-    return d
 }
 
-def getMotionDevice(message) {
-    return getDevice(message, "Motion Sensor")
-}
 
-def getButtonDevice(message) {
-    return getDevice(message, "Button Controller", "Button")
-}
-
-def getLearnDevice(message) {
-    return getDevice(message, "Switch", "Learn")
-}
-
-def getLightDevice(message) {
-    return getDevice(message, "Switch", "Light")
-}
-
-def getLockDevice(message) {
-    return getDevice(message, "Lock")
-}
-
-def getObstructionDevice(message) {
-    return getDevice(message, "Presence Sensor", "Obstruction")
-}
-
-def getDryContactLightDevice(message) {
-    return getDevice(message, "Contact Sensor", "Light Dry Contact")
-}
-
-def getDryContactOpenDevice(message) {
-    return getDevice(message, "Contact Sensor", "Open Dry Contact")
-}
-
-def getDryContactCloseDevice(message) {
-    return getDevice(message, "Contact Sensor", "Close Dry Contact")
-}
-
-// driver commands
+// child component commands
 public void componentOn(DeviceWrapper dw) {
     Long key = dw.getDeviceNetworkId().minus("${device.id}-") as Long
-    if (settings.light as Long == key) {
+    if (state.lightKey as Long == key) {
         on()
     }
-    if (settings.learn as Long == key) {
+    if (state.learnKey as Long == key) {
         learnOn()
     }
 }
 
 public void componentOff(DeviceWrapper dw) {
     Long key = dw.getDeviceNetworkId().minus("${device.id}-") as Long
-    if (settings.light as Long == key) {
+    if (state.lightKey as Long == key) {
         off()
     }
-    if (settings.learn as Long == key) {
+    if (state.learnKey as Long == key) {
         learnOff()
     }
 }
 
 public void componentLock(DeviceWrapper dw) {
     Long key = dw.getDeviceNetworkId().minus("${device.id}-") as Long
-    if (settings.lock as Long == key) {
+    if (state.lockKey as Long == key) {
         lock()
     }
 }
 
 public void componentUnlock(DeviceWrapper dw) {
     Long key = dw.getDeviceNetworkId().minus("${device.id}-") as Long
-    if (settings.lock as Long == key) {
+    if (state.lockKey as Long == key) {
         unlock()
     }
 }
 
-def void componentRefresh(DeviceWrapper dw) {
+public void componentRefresh(DeviceWrapper dw) {
     refresh()
 }
 
