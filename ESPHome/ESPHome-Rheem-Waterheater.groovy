@@ -122,17 +122,11 @@ public void uninstalled() {
 
 // driver commands
 public void on() {
-    if (device.currentValue('switch') != 'on') {
-        if (logTextEnable) { log.info "${device} on" }
-        espHomeClimateCommand(key: state.climate as Long, customPreset: 'Eco Mode')
-    }
+    setWaterHeaterMode('Eco Mode')
 }
 
 public void off() {
-    if (device.currentValue('switch') != 'off') {
-        if (logTextEnable) { log.info "${device} off" }
-        espHomeSwitchCommand(key: state.climate as Long, customPreset: 'Off')
-    }
+    setWaterHeaterMode('Off')
 }
 
 public void setWaterHeaterMode(String value) {
@@ -251,6 +245,7 @@ public void parse(Map message) {
                 Double temperatureF = Math.round(message.state * 10) / 10.0
                 if (device.currentValue('upperTankTemperature') != temperatureF) {
                     updateAttribute('upperTankTemperature', temperatureF, 'F')
+                    updateAttribute('temperature', temperatureF, 'F') //Set this attribute so the "TemperatureMeasurement" capability works
                 }
                 return
             }
@@ -305,10 +300,16 @@ public void parse(Map message) {
                 if (message.state == false){
                     message.state = 'Not Running'
                 } else {
-                    message.state = 'Running'}
-
+                    message.state = 'Running'
+                }
                 if (device.currentValue('compressorState') != message.state) {
                     updateAttribute('compressorState', message.state)
+                    if (message.state == 'Running'){
+                        updateAttribute('thermostatOperatingState', 'heating')
+                    } else {
+                        updateAttribute('thermostatOperatingState', 'idle')
+                    }
+                    updateAttribute('thermostatOperatingState', message.state)
                 }
                 return
             }            
@@ -320,6 +321,7 @@ public void parse(Map message) {
                     Double temperatureF = Math.round((message.targetTemperature.toDouble() * 1.8 + 32) * 10) / 10.0
                     if (device.currentValue('thermostatHeatingSetpoint') != temperatureF) {
                         updateAttribute('thermostatHeatingSetpoint', temperatureF, 'F')
+                        updateAttribute('heatingSetpoint', temperatureF, 'F') //Set this attribute so the "ThermostatHeatingSetpoint" capability works
                     }
                 }
 
@@ -328,6 +330,11 @@ public void parse(Map message) {
                         message.customPreset = 'Energy Saver'
                     }
                     if (device.currentValue('waterHeaterMode') != message.customPreset) {
+                        if (message.customPreset == 'Off'){
+                            updateAttribute('switch', 'off')
+                        } else {
+                            updateAttribute('switch', 'on')
+                        }
                         updateAttribute('waterHeaterMode', message.customPreset)
                     }
                 }
