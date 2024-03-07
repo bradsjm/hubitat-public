@@ -1372,7 +1372,13 @@ private void espHomeSubscribeLogsResponse(Map<Integer, List> tags) {
             log.error message
             break
         case LOG_LEVEL_WARN:
-            log.warn message
+            if (!message.contains("should block") && !message.contains("took a long time")) {
+                // If the message does not contain the phrases, log it as a warning
+                log.warn message
+            } else {
+                // Otherwise, log it as a debug message
+                log.debug message
+            }
             break
         case LOG_LEVEL_INFO:
             log.info message
