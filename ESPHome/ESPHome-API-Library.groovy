@@ -302,7 +302,7 @@ void espHomeSwitchCommand(Map<String, Object> tags) {
 @CompileStatic
 void espHomeTextCommand(Map<String, Object> tags) {
     sendMessage(MSG_TEXT_COMMAND_REQUEST, [
-            1: [ tags.key as Long, WIRETYPE_FIXED64 ],
+            1: [ tags.key as Long, WIRETYPE_FIXED32 ],
             2: [ tags.state as String, WIRETYPE_LENGTH_DELIMITED ]
     ], MSG_TEXT_STATE_RESPONSE)
 }
@@ -310,7 +310,7 @@ void espHomeTextCommand(Map<String, Object> tags) {
 @CompileStatic
 void espHomeSelectCommand(Map<String, Object> tags) {
     sendMessage(MSG_SELECT_COMMAND_REQUEST, [
-            1: [ tags.key as Long, WIRETYPE_FIXED64 ],
+            1: [ tags.key as Long, WIRETYPE_FIXED32 ],
             2: [ tags.state as String, WIRETYPE_LENGTH_DELIMITED ]
     ], MSG_SELECT_STATE_RESPONSE)
 }
