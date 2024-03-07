@@ -1,13 +1,13 @@
 {
   "packageName": "ESPHome Native API Library",
   "author": "Jonathan Bradshaw",
-  "version": "1.2",
+  "version": "1.3",
   "minimumHEVersion": "2.1.9",
   "communityLink": "https://community.hubitat.com/t/esphome-hubitat/68341",
   "documentationLink": "https://github.com/bradsjm/hubitat-drivers/blob/main/ESPHome/README.md",
   "licenseFile": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/LICENSE",
-  "dateReleased": "2024-03-03",
-  "releaseNotes": "v1.2 - Add support for calling ESPHome user-defined services.",
+  "dateReleased": "2024-03-07",
+  "releaseNotes": "v1.3 - Add support for Rheem water heater.",
   "bundles": [
     {
       "id": "948fa4dc-8209-442b-b590-749f0ae899a0",
@@ -143,6 +143,14 @@
       "name": "ESPHome ratGDO",
       "namespace": "esphome",
       "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-ratGDO.groovy",
+      "required": false,
+      "version": "1.0"
+    },
+    {
+      "id": "eac8d066-ea08-427e-ac5d-3e0ccd115120",
+      "name": "ESPHome Rheem Water Heater",
+      "namespace": "esphome",
+      "location": "https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-Rheem-Waterheater.groovy",
       "required": false,
       "version": "1.0"
     }
