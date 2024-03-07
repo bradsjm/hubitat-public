@@ -185,6 +185,37 @@ void espHomeLightCommand(Map<String, Object> tags) {
     ], MSG_LIGHT_STATE_RESPONSE)
 }
 
+
+@CompileStatic
+void espHomeClimateCommand(Map<String, Object> tags) {
+
+    sendMessage(MSG_CLIMATE_COMMAND_REQUEST, [
+            1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
+            2: [ tags.mode != null ? 1 : 0, WIRETYPE_VARINT ],
+            3: [ tags.mode != null ? tags.mode : 0, WIRETYPE_VARINT ],
+            4: [ tags.targetTemperature != null ? 1 : 0, WIRETYPE_VARINT ],
+            5: [ tags.targetTemperature as Float, WIRETYPE_FIXED32 ],
+            6: [ tags.targetTemperatureLow != null ? 1 : 0, WIRETYPE_VARINT ],
+            7: [ tags.targetTemperatureLow as Float, WIRETYPE_FIXED32 ],
+            8: [ tags.targetTemperatureHigh != null ? 1 : 0, WIRETYPE_VARINT ],
+            9: [ tags.targetTemperatureHigh as Float, WIRETYPE_FIXED32 ],
+            10: [ false, WIRETYPE_VARINT ], // Unused field
+            11: [ false, WIRETYPE_VARINT ], // Unused field
+            12: [ tags.fanMode != null ? 1 : 0, WIRETYPE_VARINT ],
+            13: [ tags.fanMode != null ? tags.fanMode : 0, WIRETYPE_VARINT ],
+            14: [ tags.swingMode != null ? 1 : 0, WIRETYPE_VARINT ],
+            15: [ tags.swingMode != null  ? tags.swingMode : 0, WIRETYPE_VARINT ],
+            16: [ tags.customFanMode != null ? 1 : 0, WIRETYPE_VARINT ],
+            17: [ tags.customFanMode as String, WIRETYPE_LENGTH_DELIMITED ],
+            18: [ tags.preset != null ? 1 : 0, WIRETYPE_VARINT ],
+            19: [ tags.preset != null ? tags.preset : 0, WIRETYPE_VARINT ],
+            20: [ tags.customPreset != null ? 1 : 0, WIRETYPE_VARINT ],
+            21: [ tags.customPreset as String, WIRETYPE_LENGTH_DELIMITED ],
+            22: [ tags.targetHumidity != null ? 1 : 0, WIRETYPE_VARINT ],
+            23: [ tags.targetHumidity as Float, WIRETYPE_FIXED32 ]
+    ], MSG_CLIMATE_STATE_RESPONSE)
+}
+
 @CompileStatic
 void espHomeLockCommand(Map<String, Object> tags) {
     sendMessage(MSG_LOCK_COMMAND_REQUEST, [
@@ -263,8 +294,25 @@ void espHomeSubscribeBtleRequest() {
 void espHomeSwitchCommand(Map<String, Object> tags) {
     sendMessage(MSG_SWITCH_COMMAND_REQUEST, [
             1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
-            2: [ tags.state ? 1 : 0, WIRETYPE_VARINT ],
+            2: [ tags.state != null ? 1 : 0, WIRETYPE_VARINT ],
+            3: [ tags.state as String, WIRETYPE_LENGTH_DELIMITED ]
     ], MSG_SWITCH_STATE_RESPONSE)
+}
+
+@CompileStatic
+void espHomeTextCommand(Map<String, Object> tags) {
+    sendMessage(MSG_TEXT_COMMAND_REQUEST, [
+            1: [ tags.key as Long, WIRETYPE_FIXED32 ],
+            2: [ tags.state as String, WIRETYPE_LENGTH_DELIMITED ]
+    ], MSG_TEXT_STATE_RESPONSE)
+}
+
+@CompileStatic
+void espHomeSelectCommand(Map<String, Object> tags) {
+    sendMessage(MSG_SELECT_COMMAND_REQUEST, [
+            1: [ tags.key as Long, WIRETYPE_FIXED32 ],
+            2: [ tags.state as String, WIRETYPE_LENGTH_DELIMITED ]
+    ], MSG_SELECT_STATE_RESPONSE)
 }
 
 /*
@@ -815,6 +863,18 @@ private static Map espHomeTextSensorState(Map<Integer, List> tags) {
 }
 
 @CompileStatic
+private static Map espHomeTextStateResponse(Map<Integer, List> tags) {
+    return [
+            type: 'state',
+            platform: 'text',
+            key: getLongTag(tags, 1),
+            state: getStringTag(tags, 2),
+            hasState: getBooleanTag(tags, 3, true)
+    ]
+}
+
+
+@CompileStatic
 private static boolean hasCapability(int capabilities, int capability) {
     return capabilities & capability
 }
@@ -826,6 +886,21 @@ private static Map parseEntity(Map<Integer, List> tags) {
             key: getLongTag(tags, 2),
             name: getStringTag(tags, 3),
             uniqueId: getStringTag(tags, 4)
+    ]
+}
+
+@CompileStatic
+private static Map espHomeClimateState(Map<Integer, List> tags) {
+    return [
+            type: 'state',
+            platform: 'climate',
+            key: getLongTag(tags, 1),
+            climateMode: toClimateMode(getIntTag(tags, 2)),
+            temperature: getFloatTag(tags, 3),  //for water heaters, upper tank temp
+            targetTemperature: getFloatTag(tags, 4), //for water heaters, set temp
+            targetTemperatureLow: getFloatTag(tags, 5),
+            targetTemperatureHigh: getFloatTag(tags, 6),
+            customPreset: getStringTag(tags, 13)
     ]
 }
 
@@ -950,6 +1025,20 @@ private static String toEntityCategory(int value) {
         case ENTITY_CATEGORY_NONE: return 'none'
         case ENTITY_CATEGORY_CONFIG: return 'config'
         case ENTITY_CATEGORY_DIAGNOSTIC: return 'diagnostic'
+        default: return value
+    }
+}
+
+@CompileStatic
+private static String toClimateMode(int value) {
+    switch (value) {
+        case CLIMATE_MODE_OFF: return 'off'
+        case CLIMATE_MODE_AUTO: return 'auto'
+        case CLIMATE_MODE_COOL: return 'cool'
+        case CLIMATE_MODE_HEAT_COOL: return 'heat cool'
+        case CLIMATE_MODE_HEAT: return 'heat'
+        case CLIMATE_MODE_FAN_ONLY: return 'fan only'
+        case CLIMATE_MODE_DRY: return 'dry'
         default: return value
     }
 }
@@ -1083,6 +1172,12 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
             break
         case MSG_SELECT_STATE_RESPONSE:
             parse espHomeSelectState(tags)
+            break
+        case MSG_CLIMATE_STATE_RESPONSE:
+            parse espHomeClimateState(tags)
+            break
+        case MSG_TEXT_STATE_RESPONSE:
+            parse espHomeTextStateResponse(tags)
             break
         default:
             if (!handled) {
@@ -1277,7 +1372,13 @@ private void espHomeSubscribeLogsResponse(Map<Integer, List> tags) {
             log.error message
             break
         case LOG_LEVEL_WARN:
-            log.warn message
+            if (!message.contains("should block") && !message.contains("took a long time")) {
+                // If the message does not contain the phrases, log it as a warning
+                log.warn message
+            } else {
+                // Otherwise, log it as a debug message
+                log.debug message
+            }
             break
         case LOG_LEVEL_INFO:
             log.info message
@@ -1459,6 +1560,9 @@ private boolean supervisionCheck(int msgType, Map<Integer, List> tags) {
                 onSuccess.add(entry.onSuccess)
             }
             return true
+        } else {
+            descriptionText = "ESPHome received unexpected message type #${msgType} (expected #${entry.expectedMsgType})"
+            log.warn descriptionText
         }
         return false
     }
@@ -1529,14 +1633,14 @@ private void logWarning(String s) {
 @Field static final int MSG_CAMERA_IMAGE_RESPONSE = 44
 @Field static final int MSG_CAMERA_IMAGE_REQUEST = 45
 @Field static final int MSG_LIST_CLIMATE_RESPONSE = 46 // TODO
-@Field static final int MSG_CLIMATE_STATE_RESPONSE = 47 // TODO
-@Field static final int MSG_CLIMATE_COMMAND_REQUEST = 48 // TODO
+@Field static final int MSG_CLIMATE_STATE_RESPONSE = 47
+@Field static final int MSG_CLIMATE_COMMAND_REQUEST = 48
 @Field static final int MSG_LIST_NUMBER_RESPONSE = 49
 @Field static final int MSG_NUMBER_STATE_RESPONSE = 50
 @Field static final int MSG_NUMBER_COMMAND_REQUEST = 51
 @Field static final int MSG_LIST_SELECT_RESPONSE = 52
-@Field static final int MSG_SELECT_STATE_RESPONSE = 53 // TODO
-@Field static final int MSG_SELECT_COMMAND_REQUEST = 54 // TODO
+@Field static final int MSG_SELECT_STATE_RESPONSE = 53
+@Field static final int MSG_SELECT_COMMAND_REQUEST = 54
 @Field static final int MSG_LIST_SIREN_RESPONSE = 55
 @Field static final int MSG_SIREN_STATE_RESPONSE = 56
 @Field static final int MSG_SIREN_COMMAND_REQUEST = 57
@@ -1550,6 +1654,8 @@ private void logWarning(String s) {
 @Field static final int MSG_MEDIA_COMMAND_REQUEST = 65
 @Field static final int MSG_SUBSCRIBE_BTLE_REQUEST = 66
 @Field static final int MSG_BLUETOOTH_LE_RESPONSE = 67
+@Field static final int MSG_TEXT_STATE_RESPONSE = 98
+@Field static final int MSG_TEXT_COMMAND_REQUEST = 99
 
 @Field static final int ENTITY_CATEGORY_NONE = 0
 @Field static final int ENTITY_CATEGORY_CONFIG = 1
