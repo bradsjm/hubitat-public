@@ -238,6 +238,9 @@ private void doParseState(Map message) {
     String type = message.isDigital ? 'digital' : 'physical'
     // Check if the entity key matches the message entity key received to update device state
     if (state.doorKey as Long == message.key) {
+        if (message.position == null) {
+            return
+        }
         String value
         String contact
         switch (message.currentOperation) {
