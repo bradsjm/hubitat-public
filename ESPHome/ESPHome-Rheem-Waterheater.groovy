@@ -355,10 +355,10 @@ public void parse(Map message) {
  */
 private void updateAttribute(final String attribute, final Object value, final String unit = null, final String type = null) {
     final String descriptionText = "${attribute} was set to ${value}${unit ?: ''}"
-    //if (device.currentValue(attribute) != value && settings.txtEnable) {
-    log.info descriptionText
-    //}
-    sendEvent(name: attribute, value: value, unit: unit, type: type, descriptionText: descriptionText)
+    if (device.currentValue(attribute) != value) {
+        sendEvent(name: attribute, value: value, unit: unit, type: type, descriptionText: descriptionText)
+        if (logTextEnable) { log.info descriptionText }
+    }
 }
 
 
