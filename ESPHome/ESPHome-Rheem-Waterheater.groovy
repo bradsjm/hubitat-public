@@ -298,6 +298,13 @@ public void parse(Map message) {
 
             if (state.vacation as Long == message.key && message.hasState) {
                 if (device.currentValue('vacationMode') != message.state) {
+                    if (vacationModeSwitch){
+                        if (message.state == 'Off'){
+                            updateAttribute('switch', 'on')
+                        } else {
+                            updateAttribute('switch', 'off')
+                        }
+                    }
                     updateAttribute('vacationMode', message.state)
                 }
                 return
@@ -345,9 +352,13 @@ public void parse(Map message) {
                     }
                     if (device.currentValue('waterHeaterMode') != message.customPreset) {
                         if (message.customPreset == 'Off'){
-                            updateAttribute('switch', 'off')
+                            if (!vacationModeSwitch){
+                                updateAttribute('switch', 'off')
+                            }
                         } else {
-                            updateAttribute('switch', 'on')
+                            if (!vacationModeSwitch) {
+                                updateAttribute('switch', 'on')
+                            }
                         }
                         updateAttribute('waterHeaterMode', message.customPreset)
                     }
@@ -369,10 +380,9 @@ public void parse(Map message) {
  */
 private void updateAttribute(final String attribute, final Object value, final String unit = null, final String type = null) {
     final String descriptionText = "${attribute} was set to ${value}${unit ?: ''}"
-    if (device.currentValue(attribute) != value) {
-        sendEvent(name: attribute, value: value, unit: unit, type: type, descriptionText: descriptionText)
-        if (logTextEnable) { log.info descriptionText }
-    }
+    sendEvent(name: attribute, value: value, unit: unit, type: type, descriptionText: descriptionText)
+    if (logTextEnable) { log.info descriptionText }
+    
 }
 
 
