@@ -76,7 +76,7 @@ metadata {
 
         input name: 'logTextEnable',
               type: 'bool',
-              title: 'Enable descriptionText logging',
+              title: 'Enable state update logging',
               required: false,
               defaultValue: true
     }
