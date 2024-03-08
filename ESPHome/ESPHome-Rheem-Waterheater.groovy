@@ -79,6 +79,12 @@ metadata {
               title: 'Enable state update logging',
               required: false,
               defaultValue: true
+
+        input name: 'vacationModeSwitch',
+              type: 'bool',
+              title: 'Should on/off switch be used to toggle vacation mode?',
+              required: false,
+              defaultValue: true
     }
 }
 
@@ -122,11 +128,19 @@ public void uninstalled() {
 
 // driver commands
 public void on() {
-    setWaterHeaterMode('Eco Mode')
+    if (vacationModeSwitch) {
+        setVacationMode('Off')
+    } else {
+        setWaterHeaterMode('Eco Mode')
+    }
 }
 
 public void off() {
-    setWaterHeaterMode('Off')
+    if (vacationModeSwitch) {
+        setVacationMode('Permanent')
+    } else {
+        setWaterHeaterMode('Off')
+    }
 }
 
 public void setWaterHeaterMode(String value) {
