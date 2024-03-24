@@ -104,6 +104,10 @@ def convertCtoF(temp) {
     return temp * 9 / 5 + 32
 }
 
+def roundToNearestTenth(value) {
+    return Math.round(value * 10) / 10.0
+}
+
 public void initialize() {
     // API library command to open socket to device, it will automatically reconnect if needed
     openSocket()
@@ -270,8 +274,9 @@ public void parse(Map message) {
             }
 
             if (state.lowerTankTemperature as Long == message.key && message.hasState) {
-                Double temperature = Math.round(message.state * 10) / 10.0
+                Double temperature = message.state
                 if (celsius) temperature = convertFtoC(temperature)
+                temperature = roundToNearestTenth(temperature)
                 if (device.currentValue('lowerTankTemperature') != temperature) {
                     updateAttribute('lowerTankTemperature', temperature, celsius == true ? 'C' : 'F')
                 }
@@ -279,8 +284,9 @@ public void parse(Map message) {
             }
 
             if (state.upperTankTemperature as Long == message.key && message.hasState) {
-                Double temperature = Math.round(message.state * 10) / 10.0
+                Double temperature = message.state
                 if (celsius) temperature = convertFtoC(temperature)
+                temperature = roundToNearestTenth(temperature)
                 if (device.currentValue('upperTankTemperature') != temperature) {
                     updateAttribute('upperTankTemperature', temperature, celsius == true ? 'C' : 'F')
                     updateAttribute('temperature', temperature, celsius == true ? 'C' : 'F') //Set this attribute so the "TemperatureMeasurement" capability works
@@ -313,8 +319,9 @@ public void parse(Map message) {
             }
 
             if (state.ambientTemperature as Long == message.key && message.hasState) {
-                Double temperature = Math.round(message.state * 10) / 10.0
+                Double temperature = message.state
                 if (celsius) temperature = convertFtoC(temperature)
+                temperature = roundToNearestTenth(temperature)
                 if (device.currentValue('ambientTemperature') != temperature) {
                     updateAttribute('ambientTemperature', temperature, celsius == true ? 'C' : 'F')
                 }
@@ -364,8 +371,15 @@ public void parse(Map message) {
             if (message.platform == 'climate') {
                 state['climate'] = message.key
                 if (message.targetTemperature) {
-                    Double temperature = Math.round((message.targetTemperature.toDouble() * 1.8 + 32) * 10) / 10.0
-                    if (celsius) temperature = convertFtoC(temperature)
+                    //The value that comes in from ESPHome is in Celsius
+                    Double temperatureF = roundToNearestTenth(convertCtoF(message.targetTemperature.toDouble()))
+                    Double temperatureC = roundToNearestTenth(message.targetTemperature.toDouble())
+                    if (celsius) {
+                        temperature = temperatureC
+                    } else {
+                        temperature = temperatureF
+                    }
+                    
                     if (device.currentValue('thermostatHeatingSetpoint') != temperature) {
                         updateAttribute('thermostatHeatingSetpoint', temperature, celsius == true ? 'C' : 'F')
                         updateAttribute('heatingSetpoint', temperature, celsius == true ? 'C' : 'F') //Set this attribute so the "ThermostatHeatingSetpoint" capability works
