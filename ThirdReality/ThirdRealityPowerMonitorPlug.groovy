@@ -397,6 +397,10 @@ void parseElectricalMeasureCluster(final Map descMap) {
         case RMS_VOLTAGE_ID:
             handleRmsVoltageValue(value)
             break
+        // added by RAV to handle the 0x0150 unhandled value WARN message in Hubitat log
+        case AC_POWER_FACTOR_ID:
+            //log.warn "Parsed AC_POWER_FACTOR_ID ${device} 0x${descMap.attrId} (value ${descMap.value})"    
+            break
         default:
             log.warn "${device} zigbee received unknown Electrical Measurement cluster attribute 0x${descMap.attrId} (value ${descMap.value})"
             break
@@ -799,6 +803,8 @@ private void updatePowerFactor() {
 @Field static final int METERING_UNIT_OF_MEASURE_ID = 0x0300
 @Field static final int METERING_DIVISOR_ID = 0x0302
 @Field static final int METERING_SUMMATION_FORMATTING_ID = 0x0303
+// added by RAV to handle the 0x0150 unhandled value WARN message in Hubitat log
+@Field static final int AC_POWER_FACTOR_ID = 0x0510
 
 @Field static final Map PowerRestoreOpts = [
     defaultValue: 0xFF,
