@@ -64,7 +64,7 @@ import hubitat.scheduling.AsyncResponse
  *  09/28/22 - 0.3.5 - Make setColor and setColorTemperature turn on light
  *  01/18/23 - 0.3.6 - Fix error in scene triggering
  *  01/24/23 - 0.3.7 - Support fan_speed_percent level
- *  10/24/23 - 0.3.8 - Update tuya auth request
+ *  10/23/24 - 0.3.8 - Update tuya auth request
  *  Custom component drivers located at https://github.com/bradsjm/hubitat-drivers/tree/master/Component
  */
 
