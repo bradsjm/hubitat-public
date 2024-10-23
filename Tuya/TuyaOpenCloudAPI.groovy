@@ -64,6 +64,7 @@ import hubitat.scheduling.AsyncResponse
  *  09/28/22 - 0.3.5 - Make setColor and setColorTemperature turn on light
  *  01/18/23 - 0.3.6 - Fix error in scene triggering
  *  01/24/23 - 0.3.7 - Support fan_speed_percent level
+ *  10/24/23 - 0.3.8 - Update tuya auth request
  *  Custom component drivers located at https://github.com/bradsjm/hubitat-drivers/tree/master/Component
  */
 
@@ -943,6 +944,7 @@ void parse(String data) {
 void mqttClientStatus(String status) {
     switch (status) {
         case 'Status: Connection succeeded':
+            LOG.info "Connected to Tuya MQTT hub"
             sendEvent([name: 'state', value: 'connected', descriptionText: 'Connected to Tuya MQTT hub'])
             runIn(1, 'tuyaHubSubscribeAsync')
             break
@@ -2050,15 +2052,12 @@ private void tuyaAuthenticateAsync() {
         LOG.info "Starting Tuya cloud authentication for ${settings.username}"
         MessageDigest digest = MessageDigest.getInstance('MD5')
         String md5pwd = HexUtils.byteArrayToHexString(digest.digest(settings.password.bytes)).toLowerCase()
-        Map body = [
-                'country_code': state.countryCode,
-                'username'    : settings.username,
-                'password'    : md5pwd,
-                'schema'      : settings.appSchema
+        Map query = [
+                'grant_type': '1',
         ]
         state.tokenInfo.access_token = ''
         sendEvent([name: 'state', value: 'authenticating', descriptionText: 'Authenticating to Tuya'])
-        tuyaPostAsync('/v1.0/iot-01/associated-users/actions/authorized-login', body, 'tuyaAuthenticateResponse')
+        tuyaGetAsync('/v1.0/token', query, 'tuyaAuthenticateResponse')
     } else {
         sendEvent([name: 'state', value: 'not configured', descriptionText: 'Driver not configured'])
         LOG.error 'Driver must be configured before authentication is possible'
@@ -2074,7 +2073,6 @@ private void tuyaAuthenticateResponse(AsyncResponse response, Map data) {
     }
 
     Map result = response.json.result
-    state.endPoint = result.platform_url
     state.tokenInfo = [
             access_token : result.access_token,
             refresh_token: result.refresh_token,
