@@ -543,6 +543,7 @@ private static Map espHomeListEntitiesBinarySensorResponse(Map<Integer, List> ta
     return parseEntity(tags) + [
             type: 'entity',
             platform: 'binary',
+            deviceClass: getStringTag(tags, 5),
             isStatusBinarySensor: getBooleanTag(tags, 6),
             disabledByDefault: getBooleanTag(tags, 7),
             icon: getStringTag(tags, 8),
