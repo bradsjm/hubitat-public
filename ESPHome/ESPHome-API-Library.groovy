@@ -81,9 +81,9 @@ void closeSocket(String reason) {
     if (!isOffline()) {
         sendMessage(MSG_DISCONNECT_REQUEST)
     }
-    interfaces.rawSocket.disconnect()
     setNetworkStatus('offline', reason)
     device.updateDataValue 'Last Disconnected Time', "${new Date()} (${reason})"
+    interfaces.rawSocket.close()
     pauseExecution(1000)
 }
 
