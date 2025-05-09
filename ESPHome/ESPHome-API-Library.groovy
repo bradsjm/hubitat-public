@@ -81,9 +81,9 @@ void closeSocket(String reason) {
     if (!isOffline()) {
         sendMessage(MSG_DISCONNECT_REQUEST)
     }
-    interfaces.rawSocket.disconnect()
     setNetworkStatus('offline', reason)
     device.updateDataValue 'Last Disconnected Time', "${new Date()} (${reason})"
+    interfaces.rawSocket.close()
     pauseExecution(1000)
 }
 
@@ -239,14 +239,6 @@ void espHomeSirenCommand(Map<String, Object> tags) {
     ], MSG_SIREN_STATE_RESPONSE)
 }
 
-@CompileStatic
-void espHomeSwitchCommand(Map<String, Object> tags) {
-    sendMessage(MSG_SWITCH_COMMAND_REQUEST, [
-            1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
-            2: [ tags.state ? 1 : 0, WIRETYPE_VARINT ],
-    ], MSG_SWITCH_STATE_RESPONSE)
-}
-
 void espHomeSubscribe() {
     log.info 'Subscribing to ESPHome HA services'
     espHomeSubscribeHaServicesRequest()
@@ -273,6 +265,14 @@ void espHomeCallService(String serviceName) {
 @CompileStatic
 void espHomeSubscribeBtleRequest() {
     sendMessage(MSG_SUBSCRIBE_BTLE_REQUEST)
+}
+
+@CompileStatic
+void espHomeSwitchCommand(Map<String, Object> tags) {
+    sendMessage(MSG_SWITCH_COMMAND_REQUEST, [
+            1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
+            2: [ tags.state ? 1 : 0, WIRETYPE_VARINT ],
+    ], MSG_SWITCH_STATE_RESPONSE)
 }
 
 /*
