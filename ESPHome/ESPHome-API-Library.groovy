@@ -217,6 +217,14 @@ void espHomeNumberCommand(Map<String, Object> tags) {
 }
 
 @CompileStatic
+void espHomeSelectCommand(Map<String, Object> tags) {
+    sendMessage(MSG_SELECT_COMMAND_REQUEST, [
+            1: [tags.key as Integer, WIRETYPE_FIXED32 ],
+            2: [tags.state as String, WIRETYPE_LENGTH_DELIMITED ]
+    ], MSG_SELECT_STATE_RESPONSE)
+}
+
+@CompileStatic
 void espHomeSirenCommand(Map<String, Object> tags) {
     sendMessage(MSG_SIREN_COMMAND_REQUEST, [
             1: [ tags.key as Integer, WIRETYPE_FIXED32 ],
@@ -1536,8 +1544,8 @@ private void logWarning(String s) {
 @Field static final int MSG_NUMBER_STATE_RESPONSE = 50
 @Field static final int MSG_NUMBER_COMMAND_REQUEST = 51
 @Field static final int MSG_LIST_SELECT_RESPONSE = 52
-@Field static final int MSG_SELECT_STATE_RESPONSE = 53 // TODO
-@Field static final int MSG_SELECT_COMMAND_REQUEST = 54 // TODO
+@Field static final int MSG_SELECT_STATE_RESPONSE = 53
+@Field static final int MSG_SELECT_COMMAND_REQUEST = 54
 @Field static final int MSG_LIST_SIREN_RESPONSE = 55
 @Field static final int MSG_SIREN_STATE_RESPONSE = 56
 @Field static final int MSG_SIREN_COMMAND_REQUEST = 57
