@@ -1,0 +1,26 @@
+name: Update ESPHome API Library Bundle
+
+on:
+  push:
+    paths:
+      - 'ESPHome/ESPHome-API-Library.groovy'
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Update ZIP bundle
+        run: |
+          cd ESPHome
+          cp ESPHome-API-Library.groovy esphome.espHomeApiHelper.groovy
+          zip -u ESPHome-API-Library-Bundle.zip esphome.espHomeApiHelper.groovy
+          rm esphome.espHomeApiHelper.groovy
+
+      - name: Commit and push if changed
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: Update ESPHome-API-Library-Bundle.zip after API library change
+          file_pattern: ESPHome/ESPHome-API-Library-Bundle.zip
