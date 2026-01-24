@@ -12,6 +12,7 @@ The intent of the solution is to make it quick and easy to integrate your ESPHom
 ## Limitations
 - Hubitat does not support MDNS so until it does you'll need to hardcode the device IP address (or use DNS)
 - Transport encryption of the API layer is not supported at this time. When configuring [API](https://esphome.io/components/api.html) support make sure the "encryption" key is not specified
+- ESPHome 2026.1.0 removed native API password authentication; if you're on 2026+ the `password` setting is ignored (use API encryption instead, which Hubitat currently does not support)
 - While the majority of the API is supported, some capabilities are still "TODO"
 
 ## 2. Preparation
@@ -19,7 +20,7 @@ The intent of the solution is to make it quick and easy to integrate your ESPHom
 2. Download the communications [library](ESPHome-API-Library.groovy) and install it in the Hubitat library section (do not try to add it to Drivers or Apps).
 3. Download an example driver from the [repository](https://github.com/bradsjm/hubitat-drivers/tree/main/ESPHome) and install it in the drivers section.
 4. Create a new virtual device and choose the driver you just installed for it.
-5. Open the new device and set the IP address of the ESPHome device and the password if applicable. Make sure the device is NOT using encryption.
+5. Open the new device and set the IP address of the ESPHome device. Set the password only if you're using an older ESPHome (< 2026.1.0) password-authenticated API and make sure the device is NOT using encryption.
 6. Save the preferences and the driver will connect and attempt to download the entities and will default to the first one it finds.
 7. If the wrong entity is in the preferences, use the dropdown to pick the correct one and save the changes again.
 8. If the driver doesn't do exactly what you need, you can edit the code functionality to suit your device.

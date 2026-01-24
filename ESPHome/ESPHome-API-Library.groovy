@@ -29,7 +29,7 @@ library(
         importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-API-Library.groovy'
 )
 
-@Field static final String API_HELPER_VERSION = '1.3'
+@Field static final String API_HELPER_VERSION = '1.4'
 
 import groovy.transform.CompileStatic
 import groovy.transform.Field
@@ -48,6 +48,8 @@ import java.util.concurrent.ConcurrentLinkedQueue
 @Field static final int SEND_RETRY_SECONDS = 5
 @Field static final int MAX_RECONNECT_SECONDS = 60
 @Field static final String NETWORK_ATTRIBUTE = 'networkStatus' // Device attribute
+@Field static final int CLIENT_API_VERSION_MAJOR = 1
+@Field static final int CLIENT_API_VERSION_MINOR = 14 // ESPHome 2026.1.0
 
 // Static objects shared between all devices using this driver library
 @Field static final Map<String, ByteArrayOutputStream> espReceiveBuffer = new ConcurrentHashMap<>()
@@ -78,7 +80,7 @@ void closeSocket(String reason) {
     unschedule('sendMessageQueue')
     espReceiveBuffer.remove(device.id)
     log.info "ESPHome closing socket to ${settings.ipAddress}:${API_PORT_NUMBER}"
-    if (!isOffline()) {
+    if (device.currentValue(NETWORK_ATTRIBUTE) == 'online') {
         sendMessage(MSG_DISCONNECT_REQUEST)
     }
     interfaces.rawSocket.disconnect()
@@ -1206,6 +1208,10 @@ private void espHomeConnectResponse(Map<Integer, List> tags) {
         return
     }
 
+    espHomeConnectionEstablished()
+}
+
+private void espHomeConnectionEstablished() {
     setNetworkStatus('online', 'connection completed')
     device.updateDataValue 'Last Connected Time', new Date().toString()
     state.remove('reconnectDelay')
@@ -1284,7 +1290,9 @@ private void espHomeHelloRequest() {
     String client = "Hubitat ${location.hub.name}"
     log.info 'ESPHome requesting API version'
     sendMessage(MSG_HELLO_REQUEST, [
-            1: [ client as String, WIRETYPE_LENGTH_DELIMITED ]
+            1: [ client as String, WIRETYPE_LENGTH_DELIMITED ],
+            2: [ CLIENT_API_VERSION_MAJOR as Integer, WIRETYPE_VARINT ],
+            3: [ CLIENT_API_VERSION_MINOR as Integer, WIRETYPE_VARINT ]
     ], MSG_HELLO_RESPONSE, 'espHomeHelloResponse')
 }
 
@@ -1292,10 +1300,14 @@ private void espHomeHelloRequest() {
 private void espHomeHelloResponse(Map<Integer, List> tags) {
     // Confirmation of successful connection request.
     // Can only be sent by the server and only at the beginning of the connection
-    String version = getIntTag(tags, 1) + '.' + getIntTag(tags, 2)
+    int major = getIntTag(tags, 1)
+    int minor = getIntTag(tags, 2)
+    String version = "${major}.${minor}"
     log.info "ESPHome API version: ${version}"
     device.updateDataValue 'API Version', version
-    if (getIntTag(tags, 1) > 1) {
+    state.espHomeApiVersionMajor = major
+    state.espHomeApiVersionMinor = minor
+    if (major > 1) {
         log.error 'ESPHome API version > 1 not supported - disconnecting'
         closeSocket('API version not supported')
         return
@@ -1317,8 +1329,16 @@ private void espHomeHelloResponse(Map<Integer, List> tags) {
         }
     }
 
-    // Step 2: Send the ConnectRequest message
-    espHomeConnectRequest(settings.password as String)
+    // ESPHome <= 2025: password authentication (message IDs 3/4)
+    // ESPHome 2026.1.0+: AuthenticationRequest/AuthenticationResponse removed; connection is established after HelloResponse.
+    if (minor >= 14) {
+        if (settings.password) {
+            log.warn 'ESPHome API password authentication was removed in 2026.1.0; the driver password setting is ignored (use API encryption instead).'
+        }
+        espHomeConnectionEstablished()
+    } else {
+        espHomeConnectRequest(settings.password as String)
+    }
 }
 
 private void espHomeListEntitiesRequest() {
