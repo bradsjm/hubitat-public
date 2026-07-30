@@ -29,7 +29,7 @@ library(
         importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-API-Library.groovy'
 )
 
-@Field static final String API_HELPER_VERSION = '1.3.1'
+@Field static final String API_HELPER_VERSION = '1.3.2'
 
 import groovy.transform.CompileStatic
 import groovy.transform.Field
@@ -45,6 +45,11 @@ import java.util.concurrent.ConcurrentLinkedQueue
 // Was: @Field static final int PING_INTERVAL_SECONDS = 60  // FIX-12: beat Hubitat ~120s idle drop
 @Field static final int PING_INTERVAL_SECONDS = 60  // FIX-12: keep socket alive before Hubitat's ~120s idle timeout
 @Field static final int API_PORT_NUMBER = 6053
+// FIX-16: the API version this client implements, declared in HelloRequest.
+// Must be >= 1.14 or ESPHome logs 'using outdated API 0.0, update to 1.14+'.
+// 1.14 means "computes object_id from the entity name itself" -- see FIX-17.
+@Field static final int CLIENT_API_VERSION_MAJOR = 1
+@Field static final int CLIENT_API_VERSION_MINOR = 14
 @Field static final int SEND_RETRY_COUNT = 5
 @Field static final int SEND_RETRY_SECONDS = 5
 @Field static final int MAX_RECONNECT_SECONDS = 60
@@ -1061,8 +1066,16 @@ private void espHomeGetTimeRequest() {
 private void espHomeHelloRequest() {
     String client = "Hubitat ${location.hub.name}"
     log.info 'ESPHome requesting API version'
-    sendMessage(MSG_HELLO_REQUEST, [ 1: [ client as String, WIRETYPE_LENGTH_DELIMITED ] ],
-                MSG_HELLO_RESPONSE, 'espHomeHelloResponse')
+    // FIX-16: declare our API version. HelloRequest has always had api_version_major (2) and
+    // api_version_minor (3) and this library never sent them, so ESPHome recorded us as 0.0.
+    // Harmless until ESPHome 2026.1 gated the object_id backward-compat path on client >= 1.14,
+    // then 2026.7.0 deleted that path outright (esphome#17108) -- so object_id now arrives empty
+    // for every client regardless. FIX-17 derives it locally; declaring 1.14 here is the truth.
+    sendMessage(MSG_HELLO_REQUEST, [
+        1: [ client as String, WIRETYPE_LENGTH_DELIMITED ],
+        2: [ CLIENT_API_VERSION_MAJOR as Integer, WIRETYPE_VARINT ],
+        3: [ CLIENT_API_VERSION_MINOR as Integer, WIRETYPE_VARINT ]
+    ], MSG_HELLO_RESPONSE, 'espHomeHelloResponse')
 }
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
@@ -1329,13 +1342,53 @@ private static boolean hasCapability(int capabilities, int capability) {
 // to the top-level device rather than a sub-device. Drivers can test `if (entity.deviceId)`.
 @CompileStatic
 private static Map parseEntity(Map<Integer, List> tags, int deviceIdField = 0) {
+    String name = getStringTag(tags, 3)
+    // FIX-17: ESPHome 2026.7.0 stopped sending object_id to every client (esphome#17108); API
+    // 1.14 clients are expected to derive it from the entity name. Prefer the wire value when
+    // present (pre-2026.1 firmware still sends it) and fall back to deriving it, so one code
+    // path covers every firmware version. Without this, drivers that identify entities by
+    // objectId silently match nothing on 2026.7+.
+    String objectId = getStringTag(tags, 1) ?: deriveObjectId(name)
     return [
-        objectId: getStringTag(tags, 1),
+        objectId: objectId,
         key:      getLongTag(tags, 2),
-        name:     getStringTag(tags, 3),
+        name:     name,
         uniqueId: getStringTag(tags, 4),
         deviceId: deviceIdField ? getIntTag(tags, deviceIdField) : 0
     ]
+}
+
+// FIX-17: mirrors ESPHome's str_sanitize(str_snake_case(name)) -- to_snake_case_char() lowercases
+// and maps space to underscore, then to_sanitized_char() maps anything outside [-_0-9a-zA-Z] to
+// underscore. See esphome/core/helpers.h. Verified against known Konnected entity names:
+// 'Security+ Protocol' -> 'security__protocol', 'Pre-close warning' -> 'pre-close_warning'.
+//
+// Limitation: an entity with no name of its own inherits the device name (entity_base.cpp
+// configure_entity_) and its object_id was that name sanitized -- but ESPHome only puts `name` on
+// the wire when has_own_name(), so we receive '' and return ''. Deriving it would need the device
+// name from DeviceInfoResponse, which this static method cannot reach. Not a practical loss: such
+// an object_id varies per install, so no driver can match on it anyway.
+@CompileStatic
+private static String deriveObjectId(String name) {
+    if (!name) { return '' }
+    // Byte-wise, not char-wise: ESPHome walks the UTF-8 bytes, so a multi-byte character becomes
+    // one underscore per byte. Avoids String.toLowerCase(), which is locale-sensitive.
+    byte[] bytes = name.getBytes('UTF-8')
+    StringBuilder sb = new StringBuilder(bytes.length)
+    for (int i = 0; i < bytes.length; i++) {
+        int c = bytes[i] & 0xFF
+        if (c == 0x20) {                                // to_snake_case_char: space -> underscore
+            c = 0x5F
+        } else if (c >= 0x41 && c <= 0x5A) {            // to_snake_case_char: A-Z -> a-z
+            c += 0x20
+        }
+        boolean keep = c == 0x2D || c == 0x5F ||        // to_sanitized_char: dash, underscore
+                       (c >= 0x30 && c <= 0x39) ||      //                    digits
+                       (c >= 0x61 && c <= 0x7A)         //                    a-z (A-Z already folded)
+        int out = keep ? c : 0x5F
+        sb.append((char) out)
+    }
+    return sb.toString()
 }
 
 @CompileStatic
