@@ -29,7 +29,7 @@ library(
         importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-API-Library.groovy'
 )
 
-@Field static final String API_HELPER_VERSION = '1.3'
+@Field static final String API_HELPER_VERSION = '1.3.1'
 
 import groovy.transform.CompileStatic
 import groovy.transform.Field
@@ -641,7 +641,7 @@ private static Map espHomeClimateState(Map<Integer, List> tags) {
 
 @CompileStatic
 private static Map espHomeListEntitiesBinarySensorResponse(Map<Integer, List> tags) {
-    return parseEntity(tags) + [
+    return parseEntity(tags, 10) + [
         type: 'entity', platform: 'binary',
         deviceClass: getStringTag(tags, 5),
         isStatusBinarySensor: getBooleanTag(tags, 6),
@@ -653,7 +653,7 @@ private static Map espHomeListEntitiesBinarySensorResponse(Map<Integer, List> ta
 
 @CompileStatic
 private static Map espHomeListEntitiesButtonResponse(Map<Integer, List> tags) {
-    return parseEntity(tags) + [
+    return parseEntity(tags, 9) + [
         type: 'entity', platform: 'button',
         icon: getStringTag(tags, 5),
         disabledByDefault: getBooleanTag(tags, 6),
@@ -664,7 +664,7 @@ private static Map espHomeListEntitiesButtonResponse(Map<Integer, List> tags) {
 
 @CompileStatic
 private static Map espHomeListEntitiesCameraResponse(Map<Integer, List> tags) {
-    return parseEntity(tags) + [
+    return parseEntity(tags, 8) + [
         type: 'entity', platform: 'camera',
         disabledByDefault: getBooleanTag(tags, 5),
         icon: getStringTag(tags, 6),
@@ -674,7 +674,7 @@ private static Map espHomeListEntitiesCameraResponse(Map<Integer, List> tags) {
 
 @CompileStatic
 private static Map espHomeListEntitiesCoverResponse(Map<Integer, List> tags) {
-    return parseEntity(tags) + [
+    return parseEntity(tags, 13) + [
         type: 'entity', platform: 'cover',
         assumedState: getBooleanTag(tags, 5),
         supportsPosition: getBooleanTag(tags, 6),
@@ -688,7 +688,7 @@ private static Map espHomeListEntitiesCoverResponse(Map<Integer, List> tags) {
 
 @CompileStatic
 private static Map espHomeListEntitiesFanResponse(Map<Integer, List> tags) {
-    return parseEntity(tags) + [
+    return parseEntity(tags, 13) + [
         type: 'entity', platform: 'fan',
         supportsOscillation: getBooleanTag(tags, 5),
         supportsSpeed: getBooleanTag(tags, 6),
@@ -702,7 +702,7 @@ private static Map espHomeListEntitiesFanResponse(Map<Integer, List> tags) {
 
 @CompileStatic
 private static Map espHomeListEntitiesLightResponse(Map<Integer, List> tags) {
-    return parseEntity(tags) + [
+    return parseEntity(tags, 16) + [
         type: 'entity', platform: 'light',
         minMireds: getFloatTag(tags, 9),
         maxMireds: getFloatTag(tags, 10),
@@ -716,7 +716,7 @@ private static Map espHomeListEntitiesLightResponse(Map<Integer, List> tags) {
 
 @CompileStatic
 private static Map espHomeListEntitiesLockResponse(Map<Integer, List> tags) {
-    return parseEntity(tags) + [
+    return parseEntity(tags, 12) + [
         type: 'entity', platform: 'lock',
         icon: getStringTag(tags, 5),
         disabledByDefault: getBooleanTag(tags, 6),
@@ -730,7 +730,7 @@ private static Map espHomeListEntitiesLockResponse(Map<Integer, List> tags) {
 
 @CompileStatic
 private static Map espHomeListEntitiesMediaPlayerResponse(Map<Integer, List> tags) {
-    return parseEntity(tags) + [
+    return parseEntity(tags, 10) + [
         type: 'entity', platform: 'media_player',
         icon: getStringTag(tags, 5),
         disabledByDefault: getBooleanTag(tags, 6),
@@ -740,7 +740,7 @@ private static Map espHomeListEntitiesMediaPlayerResponse(Map<Integer, List> tag
 
 @CompileStatic
 private static Map espHomeListEntitiesNumberResponse(Map<Integer, List> tags) {
-    return parseEntity(tags) + [
+    return parseEntity(tags, 14) + [
         type: 'entity', platform: 'number',
         icon: getStringTag(tags, 5),
         minValue: getFloatTag(tags, 6),
@@ -755,7 +755,7 @@ private static Map espHomeListEntitiesNumberResponse(Map<Integer, List> tags) {
 
 @CompileStatic
 private static Map espHomeListEntitiesSensorResponse(Map<Integer, List> tags) {
-    return parseEntity(tags) + [
+    return parseEntity(tags, 14) + [
         type: 'entity', platform: 'sensor',
         icon: getStringTag(tags, 5),
         unitOfMeasurement: getStringTag(tags, 6),
@@ -771,7 +771,7 @@ private static Map espHomeListEntitiesSensorResponse(Map<Integer, List> tags) {
 
 @CompileStatic
 private static Map espHomeListEntitiesSelectResponse(Map<Integer, List> tags) {
-    return parseEntity(tags) + [
+    return parseEntity(tags, 9) + [
         type: 'entity', platform: 'select',
         icon: getStringTag(tags, 5),
         options: getStringTagList(tags, 6),
@@ -782,7 +782,7 @@ private static Map espHomeListEntitiesSelectResponse(Map<Integer, List> tags) {
 
 @CompileStatic
 private static Map espHomeListEntitiesSirenResponse(Map<Integer, List> tags) {
-    return parseEntity(tags) + [
+    return parseEntity(tags, 11) + [
         type: 'entity', platform: 'siren',
         icon: getStringTag(tags, 5),
         disabledByDefault: getBooleanTag(tags, 6),
@@ -795,7 +795,7 @@ private static Map espHomeListEntitiesSirenResponse(Map<Integer, List> tags) {
 
 @CompileStatic
 private static Map espHomeListEntitiesSwitchResponse(Map<Integer, List> tags) {
-    return parseEntity(tags) + [
+    return parseEntity(tags, 10) + [
         type: 'entity', platform: 'switch',
         icon: getStringTag(tags, 5),
         assumedState: getBooleanTag(tags, 6),
@@ -807,7 +807,7 @@ private static Map espHomeListEntitiesSwitchResponse(Map<Integer, List> tags) {
 
 @CompileStatic
 private static Map espHomeListEntitiesTextSensorResponse(Map<Integer, List> tags) {
-    return parseEntity(tags) + [
+    return parseEntity(tags, 9) + [
         type: 'entity', platform: 'text',
         icon: getStringTag(tags, 5),
         disabledByDefault: getBooleanTag(tags, 6),
@@ -819,7 +819,7 @@ private static Map espHomeListEntitiesTextSensorResponse(Map<Integer, List> tags
 // Field numbers per current api.proto ListEntitiesClimateResponse.
 @CompileStatic
 private static Map espHomeListEntitiesClimateResponse(Map<Integer, List> tags) {
-    return parseEntity(tags) + [
+    return parseEntity(tags, 26) + [
         type: 'entity', platform: 'climate',
         supportsCurrentTemperature: getBooleanTag(tags, 5),
         supportsTwoPointTargetTemperature: getBooleanTag(tags, 6),
@@ -859,6 +859,14 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
             espHomeDisconnectRequest(); break
         case MSG_PING_REQUEST:
             sendMessage(MSG_PING_RESPONSE); break
+        // FIX-13: completes FIX-6. ESPHome 2025.10-2025.12 built with USE_API_PASSWORD still
+        // replies with AuthenticationResponse, even though espHomeConnectRequest() no longer
+        // waits for it on API >= 1.12. Without this case the reply is logged as an unhandled
+        // message type and an invalid password is never surfaced. Guarded on !handled so the
+        // supervised API <= 1.11 path (which dispatches via onSuccess) cannot run twice.
+        case MSG_AUTHENTICATION_RESPONSE:
+            if (!handled) { espHomeUnsupervisedAuthenticationResponse(tags) }
+            break
         case MSG_LIST_BINARYSENSOR_RESPONSE:
             parse espHomeListEntitiesBinarySensorResponse(tags); break
         case MSG_LIST_COVER_RESPONSE:
@@ -979,6 +987,20 @@ private void espHomeConnectResponse(Map tags) {
     state.remove('reconnectDelay')
     espHomeSchedulePing()
     espHomeDeviceInfoRequest()
+}
+
+// FIX-13: handles an AuthenticationResponse that arrives on the API >= 1.12 fast path, where the
+// request was sent unsupervised. Only the invalid_password outcome needs acting on -- the
+// connection is already online and DeviceInfo already requested, so this must NOT re-run
+// espHomeConnectResponse() or it would queue a duplicate DeviceInfoRequest.
+/* groovylint-disable-next-line UnusedPrivateMethod */
+private void espHomeUnsupervisedAuthenticationResponse(Map tags) {
+    if (getBooleanTag(tags, 1)) {
+        log.error 'ESPHome invalid password (update configuration setting)'
+        closeSocket('invalid password')
+        return
+    }
+    if (settings.logEnable) { log.trace 'ESPHome authentication acknowledged by device' }
 }
 
 @CompileStatic
@@ -1298,30 +1320,21 @@ private static boolean hasCapability(int capabilities, int capability) {
     return capabilities & capability
 }
 
-// ADD-8: parseEntity() now decodes the ESPHome 2025.7+ device_id field.
-//
-// deviceId is a String that identifies which logical sub-device this entity
-// belongs to on the physical ESPHome node.  It is '' (empty string) on any
-// device running ESPHome < 2025.7 or on single-device YAML configs, so
-// ALL existing drivers remain backward compatible — they receive an extra
-// deviceId key in the entity map which they simply ignore.
-//
-// Drivers that want sub-device routing should check:
-//   if (entity.deviceId) { /* forward to child device */ }
-//
-// The field number is defined by ENTITY_DEVICE_ID_PROTO_FIELD.
-// *** Verify that constant before implementing child-device routing. ***
+// FIX-14: corrects ADD-8/ADD-9. deviceId is ESPHome 2025.7+ sub-device grouping (proto field
+// device_id, uint32). The field number is NOT global: every ListEntitiesXxxResponse assigns
+// device_id its own next-free number (binary_sensor/switch=10, text_sensor/select/button=9,
+// camera=8, cover/fan=13, sensor/number=14, light=16, siren=11, lock=12, media_player=10,
+// climate=26), so each decoder passes its own. Verified against aioesphomeapi/api.proto.
+// Returns 0 when absent: pre-2025.7 firmware, builds without USE_DEVICES, or entities that belong
+// to the top-level device rather than a sub-device. Drivers can test `if (entity.deviceId)`.
 @CompileStatic
-private static Map parseEntity(Map<Integer, List> tags) {
+private static Map parseEntity(Map<Integer, List> tags, int deviceIdField = 0) {
     return [
         objectId: getStringTag(tags, 1),
         key:      getLongTag(tags, 2),
         name:     getStringTag(tags, 3),
         uniqueId: getStringTag(tags, 4),
-        // ADD-8: device_id — ESPHome 2025.7+ sub-device grouping.
-        // Returns '' when field is absent (pre-2025.7 devices, single-device YAML).
-        // Backward-compatible: callers that do not reference deviceId are unaffected.
-        deviceId: getStringTag(tags, ENTITY_DEVICE_ID_PROTO_FIELD)
+        deviceId: deviceIdField ? getIntTag(tags, deviceIdField) : 0
     ]
 }
 
@@ -1368,9 +1381,14 @@ private void logWarning(String s) { log.warn s }
 // Minimal Protobuf codec
 // =============================================================================
 
+// FIX-15: the Map<Integer, List> generics here are load-bearing, not decoration. With a raw Map,
+// tags.computeIfAbsent(tag){...} returns Object and the following .add(val) is a static
+// type-check error: "Cannot find matching method Object#add". Groovy 2.4 (what Hubitat runs
+// today) lets it through; Groovy 3+ rejects it and the whole library fails to compile, taking
+// every driver with it. Restored to the v1.2 signature, which builds on both. Don't re-strip.
 @CompileStatic
-private static Map protobufDecode(ByteArrayInputStream stream, long available) {
-    Map tags = [:]
+private static Map<Integer, List> protobufDecode(ByteArrayInputStream stream, long available) {
+    Map<Integer, List> tags = [:]
     while (available > 0) {
         long tagAndType = readVarInt(stream, true)
         if (tagAndType == -1) { throw new IOException('ESPHome unexpected EOF decoding protobuf message') }
@@ -1536,28 +1554,6 @@ private static String formatMacAddress(Long macAddress) {
 @Field static final int MSG_MEDIA_COMMAND_REQUEST         = 65
 @Field static final int MSG_SUBSCRIBE_BTLE_REQUEST        = 66
 @Field static final int MSG_BLUETOOTH_LE_RESPONSE         = 67
-
-// ADD-9: Proto field number for device_id in ListEntitiesXxxResponse messages.
-//
-// ESPHome 2025.7 added a 'device_id' field to every entity listing response so
-// that entities can be assigned to logical sub-devices.  The field number must
-// not collide with any entity-specific field in any existing entity message.
-// ESPHome chose a field number after the highest field used by any entity type
-// (ClimateResponse tops out at field 25 for visualMaxHumidity).
-//
-// ┌─────────────────────────────────────────────────────────────────────────┐
-// │  *** VERIFY THIS VALUE before implementing sub-device routing ***       │
-// │  1. Open https://github.com/esphome/aioesphomeapi/blob/main/           │
-// │     aioesphomeapi/api.proto                                             │
-// │  2. Search for "device_id" in any ListEntitiesXxxResponse block.        │
-// │  3. Update this constant to match the actual proto field number.        │
-// │  Wrong value impact: deviceId always reads '' — zero harm for           │
-// │  single-device configs, but sub-device routing won't work.              │
-// └─────────────────────────────────────────────────────────────────────────┘
-//
-// Backward compatibility: getStringTag() returns '' by default when the field
-// is absent (all pre-2025.7 devices).  No existing driver breaks.
-@Field static final int ENTITY_DEVICE_ID_PROTO_FIELD = 26  // ← VERIFY against api.proto
 
 // Entity categories
 @Field static final int ENTITY_CATEGORY_NONE             = 0
