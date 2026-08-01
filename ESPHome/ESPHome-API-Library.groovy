@@ -29,7 +29,7 @@ library(
         importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-API-Library.groovy'
 )
 
-@Field static final String API_HELPER_VERSION = '1.3.2'
+@Field static final String API_HELPER_VERSION = '1.3.3'
 
 import groovy.transform.CompileStatic
 import groovy.transform.Field
@@ -1127,7 +1127,8 @@ private void espHomePingRequest() {
 /* groovylint-disable-next-line UnusedPrivateMethod, UnusedPrivateMethodParameter */
 private void espHomePingResponse(Map tags) {
     setNetworkStatus('online', 'ping response')
-    log.debug 'ESPHome ping response received — rescheduling healthCheck'
+    // FIX-18: gate behind logEnable — this is on the 60s heartbeat path
+    if (logEnable) { log.debug 'ESPHome ping response received — rescheduling healthCheck' }
     espHomeSchedulePing()
 }
 
@@ -1135,7 +1136,7 @@ private void espHomeSchedulePing() {
     if (PING_INTERVAL_SECONDS > 0) {
         int jitter = (int) Math.ceil(PING_INTERVAL_SECONDS * 0.5)
         int interval = PING_INTERVAL_SECONDS - random.nextInt(jitter)
-        log.debug "ESPHome scheduling healthCheck in ${interval}s"
+        if (logEnable) { log.debug "ESPHome scheduling healthCheck in ${interval}s" } // FIX-18
         runIn(interval, 'healthCheck')
     }
 }
@@ -1206,7 +1207,8 @@ private ByteArrayOutputStream getReceiveBuffer() {
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void healthCheck() {
-    log.debug "ESPHome healthCheck: online=${!isOffline()} queueEmpty=${getSendQueue().isEmpty()}"
+    // FIX-18: gate behind logEnable — runs every PING_INTERVAL_SECONDS
+    if (logEnable) { log.debug "ESPHome healthCheck: online=${!isOffline()} queueEmpty=${getSendQueue().isEmpty()}" }
     if (device.isDisabled()) {
         state.reconnectDelay = MAX_RECONNECT_SECONDS
         closeSocket('device is disabled')
@@ -1214,7 +1216,7 @@ private void healthCheck() {
         return
     }
     if (!isOffline() && getSendQueue().isEmpty()) {
-        log.debug 'ESPHome sending keepalive ping'
+        if (logEnable) { log.debug 'ESPHome sending keepalive ping' } // FIX-18
         espHomePingRequest()
     }
 }
@@ -1288,8 +1290,18 @@ private void sendMessageQueue() {
 private void setNetworkStatus(String state, String reason = '') {
     String descriptionText = "${device} is ${state}"
     if (reason) { descriptionText += ": ${reason}" }
+    // FIX-18: read the previous value BEFORE sendEvent — currentValue reflects the new
+    // value once the event is dispatched. Note 'state' here is the String parameter,
+    // which shadows the Hubitat state map, so the attribute is the only source of truth.
+    boolean changed = device.currentValue(NETWORK_ATTRIBUTE) != state
     sendEvent([ name: NETWORK_ATTRIBUTE, value: state, descriptionText: descriptionText ])
-    log.info descriptionText
+    // FIX-18: transitions stay at INFO; the unchanged repeat (every ping response, i.e.
+    // once per PING_INTERVAL_SECONDS) drops to gated debug so it cannot flood the log.
+    if (changed) {
+        log.info descriptionText
+    } else if (logEnable) {
+        log.debug descriptionText
+    }
     parse([ 'platform': 'network', 'type': 'state', 'state': state, 'reason': reason ])
 }
 
