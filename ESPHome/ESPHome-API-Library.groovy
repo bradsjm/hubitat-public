@@ -29,7 +29,7 @@ library(
         importUrl: 'https://raw.githubusercontent.com/bradsjm/hubitat-drivers/main/ESPHome/ESPHome-API-Library.groovy'
 )
 
-@Field static final String API_HELPER_VERSION = '1.3.3'
+@Field static final String API_HELPER_VERSION = '1.3.4'
 
 import groovy.transform.CompileStatic
 import groovy.transform.Field
@@ -85,7 +85,8 @@ void closeSocket(String reason) {
     unschedule('healthCheck')
     unschedule('sendMessageQueue')
     espReceiveBuffer.remove(device.id)
-    log.info "ESPHome closing socket to ${settings.ipAddress}:${API_PORT_NUMBER}"
+    // FIX-19: WARN — every caller of closeSocket() is a lost or dropped connection
+    log.warn "ESPHome closing socket to ${settings.ipAddress}:${API_PORT_NUMBER}: ${reason}"
     if (!isOffline()) {
         sendMessage(MSG_DISCONNECT_REQUEST)
     }
@@ -1235,7 +1236,12 @@ private ByteArrayInputStream hexDecode(String hexString) {
 }
 
 private boolean isOffline() {
-    return device.currentValue(NETWORK_ATTRIBUTE) == 'offline'
+    // FIX-19: state is authoritative — on a driver that omits the networkStatus
+    // attribute currentValue() is always null, so this always returned false and the
+    // send path happily wrote commands into a dead socket. Fall back to the attribute
+    // only until setNetworkStatus() has populated state at least once.
+    String status = state.networkStatus ?: device.currentValue(NETWORK_ATTRIBUTE)
+    return status == 'offline'
 }
 
 private void scheduleConnect() {
@@ -1278,7 +1284,7 @@ private void sendMessageQueue() {
                 sendMessage(entry.msgType, entry.tags)
                 return false
             }
-            log.info "ESPHome message type #${entry.msgType} retry count exceeded"
+            log.warn "ESPHome message type #${entry.msgType} retry count exceeded — reconnecting"
             closeSocket('message retry count exceeded')
             scheduleConnect()
             return true
@@ -1287,22 +1293,39 @@ private void sendMessageQueue() {
     }
 }
 
-private void setNetworkStatus(String state, String reason = '') {
-    String descriptionText = "${device} is ${state}"
+private void setNetworkStatus(String status, String reason = '') {
+    String descriptionText = "${device} is ${status}"
     if (reason) { descriptionText += ": ${reason}" }
-    // FIX-18: read the previous value BEFORE sendEvent — currentValue reflects the new
-    // value once the event is dispatched. Note 'state' here is the String parameter,
-    // which shadows the Hubitat state map, so the attribute is the only source of truth.
-    boolean changed = device.currentValue(NETWORK_ATTRIBUTE) != state
-    sendEvent([ name: NETWORK_ATTRIBUTE, value: state, descriptionText: descriptionText ])
-    // FIX-18: transitions stay at INFO; the unchanged repeat (every ping response, i.e.
+    // FIX-19: change detection reads state, not the attribute. FIX-18 compared against
+    // device.currentValue(NETWORK_ATTRIBUTE), which is null forever on any driver that
+    // omits the required 'networkStatus' attribute declaration — Hubitat silently drops
+    // events for undeclared attributes. Every ping response then looked like a
+    // transition and logged at INFO, flooding the log with "is online: ping response".
+    // The parameter is 'status' (was 'state'), so it no longer shadows the state map.
+    boolean changed = state.networkStatus != status
+    state.networkStatus = status
+    sendEvent([ name: NETWORK_ATTRIBUTE, value: status, descriptionText: descriptionText ])
+    // FIX-19: currentValue reflects the event once dispatched, so a null here means the
+    // driver never declared the attribute. Say so once rather than degrading silently.
+    if (device.currentValue(NETWORK_ATTRIBUTE) == null) {
+        if (!state.networkAttributeMissing) {
+            state.networkAttributeMissing = true
+            log.warn "ESPHome ${device} does not declare the '${NETWORK_ATTRIBUTE}' attribute so " +
+                     'connection state cannot be reported — add to the driver metadata: ' +
+                     "attribute '${NETWORK_ATTRIBUTE}', 'enum', ['connecting', 'online', 'offline']"
+        }
+    } else if (state.networkAttributeMissing) {
+        state.remove('networkAttributeMissing')
+    }
+    // FIX-18: transitions are logged; the unchanged repeat (every ping response, i.e.
     // once per PING_INTERVAL_SECONDS) drops to gated debug so it cannot flood the log.
+    // FIX-19: losing the connection is a warning, not an informational message.
     if (changed) {
-        log.info descriptionText
+        if (status == 'offline') { log.warn descriptionText } else { log.info descriptionText }
     } else if (logEnable) {
         log.debug descriptionText
     }
-    parse([ 'platform': 'network', 'type': 'state', 'state': state, 'reason': reason ])
+    parse([ 'platform': 'network', 'type': 'state', 'state': status, 'reason': reason ])
 }
 
 // FIX-9: Re-write the 0x00 frame-delimiter BEFORE stashing the partial payload.
