@@ -65,6 +65,7 @@ import hubitat.scheduling.AsyncResponse
  *  01/18/23 - 0.3.6 - Fix error in scene triggering
  *  01/24/23 - 0.3.7 - Support fan_speed_percent level
  *  10/23/24 - 0.3.8 - Update tuya auth request
+ *  11/22/26 - 0.3.9 - Map enum battery_state (low/middle/high) to battery percentage
  *  Custom component drivers located at https://github.com/bradsjm/hubitat-drivers/tree/master/Component
  */
 
@@ -1430,6 +1431,18 @@ private List<Map> createEvents(DeviceWrapper dw, List<Map> statusList) {
 
     return statusList.collectMany { status ->
         LOG.debug "${dw} status ${status}"
+
+        // Some low-cost sensors (e.g. TH01 Wi-Fi temperature/humidity, category wsdcg) report
+        // battery only as the enum battery_state rather than battery_percentage/va_battery
+        if (status.code == 'battery_state') {
+            Integer pct = [high: 100, middle: 50, low: 10][status.value as String]
+            if (pct != null) {
+                if (txtEnable) {
+                    LOG.info "${dw} battery is ${pct}% (${status.value})"
+                }
+                return [[name: 'battery', value: pct, descriptionText: "battery is ${pct}% (${status.value})", unit: '%']]
+            }
+        }
 
         if (status.code in tuyaFunctions.battery) {
             if (status.code == 'battery_percentage' || status.code == 'va_battery') {
