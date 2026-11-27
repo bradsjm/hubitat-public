@@ -948,7 +948,6 @@ private void parseMessage(ByteArrayInputStream stream, long length) {
                 logWarning "ESPHome received unhandled message type ${msgType} with ${tags}"
             }
     }
-    espHomeSchedulePing()
 }
 
 // =============================================================================
@@ -1208,7 +1207,6 @@ private ByteArrayOutputStream getReceiveBuffer() {
 
 /* groovylint-disable-next-line UnusedPrivateMethod */
 private void healthCheck() {
-    // FIX-18: gate behind logEnable — runs every PING_INTERVAL_SECONDS
     if (logEnable) { log.debug "ESPHome healthCheck: online=${!isOffline()} queueEmpty=${getSendQueue().isEmpty()}" }
     if (device.isDisabled()) {
         state.reconnectDelay = MAX_RECONNECT_SECONDS
@@ -1216,9 +1214,14 @@ private void healthCheck() {
         scheduleConnect()
         return
     }
-    if (!isOffline() && getSendQueue().isEmpty()) {
-        if (logEnable) { log.debug 'ESPHome sending keepalive ping' } // FIX-18
-        espHomePingRequest()
+    if (!isOffline()) {
+        if (getSendQueue().isEmpty()) {
+            if (logEnable) { log.debug 'ESPHome sending keepalive ping' } // FIX-18
+            espHomePingRequest()
+        } else {
+            // Retry so a pending command cannot consume the last health check.
+            runIn(SEND_RETRY_SECONDS, 'healthCheck')
+        }
     }
 }
 

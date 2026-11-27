@@ -56,3 +56,8 @@ void parse(Map message) {
 
 ## 4. Updates
 I am accepting pull requests for additional example drivers or updates to the communication library.
+
+### Heartbeat regression test
+From the repository root, run `groovy ESPHome/tests/healthCheckTest.groovy` (tested with Groovy 2.4.21).
+The test compiles the library with a local Hubitat hex helper stub and mocks socket IO and scheduling; it does not connect to a hub.
+It covers frequent state updates, pending commands, ping responses, retry exhaustion, and legacy authentication.
